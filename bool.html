@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Booleanos (bool) — true, false, stdbool.h e _Bool | Guia C</title>
+<meta name="description" content="O tipo bool em C para quem nunca programou: true e false (palavras da linguagem no C23), por que o printf mostra 1 e 0 e como mostrar sim/não, comparações guardadas em bool, como números viram bool (zero é falso), a história de _Bool e stdbool.h (C99 a C17), código antigo que não compila no C23, bons nomes e o perigo de ler um bool com scanf, com saídas reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Booleanos (bool)</span></h1>
+
+<p class="intro">Muitas perguntas de um programa têm só duas respostas: o cliente pagou? Está chovendo? A senha está certa? A nota é maior que 7? Para guardar essas respostas existe o tipo <code>bool</code>, que só tem dois valores: <code>true</code> (verdadeiro) e <code>false</code> (falso). Ele parece o tipo mais simples de todos, e é, mas em C tem uma história curiosa (por 27 anos ele nem existiu) e algumas surpresas: o <code>printf</code> o mostra como 1 e 0, e qualquer número pode virar <code>bool</code>. Os booleanos são a base de todas as decisões (<code>if</code>) e repetições (<code>while</code>) que vêm depois.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como criar variáveis <code>bool</code> com <code>true</code> e <code>false</code> <span class="versao">C23</span>.</li>
+  <li>Por que o <code>printf</code> mostra 1 e 0, e como mostrar "sim" e "não".</li>
+  <li>Que uma comparação (<code>&gt;</code>, <code>==</code>…) pode ser guardada num <code>bool</code>.</li>
+  <li>Como números viram <code>bool</code> (zero é falso, o resto é verdadeiro), e o caminho inverso.</li>
+  <li>A história: <code>int</code> no C antigo, <code>_Bool</code> e <code>stdbool.h</code> do C99 ao C17, e o código antigo que não compila no C23.</li>
+  <li>Como dar bons nomes a variáveis <code>bool</code>, e por que não ler um <code>bool</code> com <code>scanf</code>.</li>
+</ul>
+</div>
+
+<p>Os programas foram compilados na máquina fictícia da Ana com o comando padrão do guia, <code>gcc -std=c23 -Wall -Wextra</code> (gcc 15.2), na pasta <code>~/c/bool</code>.</p>
+
+<hr>
+
+<h2>A ideia: o interruptor</h2>
+<p>Um interruptor de luz tem duas posições: ligado ou desligado. Não existe "meio ligado". Um <code>bool</code> é um interruptor guardado na memória: <code>true</code> é ligado, <code>false</code> é desligado.</p>
+
+<p>O nome vem de <strong>George Boole</strong>, um matemático inglês do século XIX que criou uma álgebra só com "verdadeiro" e "falso" (a "álgebra booleana"). Cem anos depois, ela virou a base dos circuitos de todo computador.</p>
+
+<hr>
+
+<h2>1. <code>true</code>, <code>false</code> e o que o <code>printf</code> mostra</h2>
+
+<pre class="file" data-file="bool.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool chovendo = true;
+    bool pago = false;
+    printf("chovendo: %d\n", chovendo);
+    printf("pago: %d\n", pago);
+    printf("pago: %s\n", pago ? "sim" : "não");
+    printf("tamanho: %zu byte\n", sizeof(bool));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/bool">$ gcc -std=c23 -Wall -Wextra bool.c -o bool
+$ ./bool
+chovendo: 1
+pago: 0
+pago: não
+tamanho: 1 byte</pre>
+
+<dl class="anatomy">
+  <dt>bool chovendo = true;</dt><dd>Uma variável <code>bool</code> com o valor verdadeiro. <code>bool</code>, <code>true</code> e <code>false</code> são <strong>palavras da linguagem</strong> desde o <span class="versao">C23</span>: não precisam de <code>#include</code>. Escrevem-se em minúsculas e sem aspas (<code>"true"</code> seria um texto; veja a seção 4).</dd>
+  <dt>printf("…%d…", chovendo)</dt><dd>O <code>printf</code> não tem uma lacuna que escreva "true". Um <code>bool</code> vai na lacuna <code>%d</code>, como um número: <code>true</code> aparece como <code>1</code> e <code>false</code> como <code>0</code>. É herança do C antigo, em que "verdadeiro" e "falso" eram só os números 1 e 0 (seção 5).</dd>
+  <dt>pago ? "sim" : "não"</dt><dd>Para mostrar uma palavra, escolha o texto conforme o valor: "se <code>pago</code>, o texto <code>"sim"</code>; senão, <code>"não"</code>". O <code>? :</code> é o <strong>operador ternário</strong>, que tem aula própria (<a href="ternario.html">Operador Ternário</a>); por enquanto, use-o como uma receita, com <code>%s</code>. Pode trocar por <code>"true" : "false"</code>, <code>"ligado" : "desligado"</code>, o que quiser.</dd>
+  <dt>sizeof(bool)</dt><dd>Um <code>bool</code> ocupa 1 byte (aula <a href="sizeof.html">Tamanho dos Tipos</a>), embora só precisasse de 1 bit: o byte é o menor pedaço de memória que o computador consegue endereçar.</dd>
+</dl>
+
+<div class="note">
+<strong>E o <code>%b</code>?</strong>
+<p>O C23 trouxe ao <code>printf</code> a lacuna <code>%b</code>, que mostra um número em <strong>binário</strong> (base 2): no gcc, <code>printf("%b\n", 5)</code> mostra <code>101</code>, e um <code>bool</code> verdadeiro sai <code>1</code>. Não é "true" em palavras, e a biblioteca C do editor do guia ainda não conhece o <code>%b</code> (a linha sai vazia). Para booleanos, fique com <code>%d</code> ou com o <code>? :</code>.</p>
+</div>
+
+<div class="tryc" data-goal="out:Estoque vazio? não,src:estoque_vazio\s*\?,semaviso">
+<p class="try-task"><strong>Missão:</strong> o programa mostra <code>Estoque vazio? 0</code>. Use a receita do <code>? :</code> com <code>%s</code> para ele mostrar <code>Estoque vazio? não</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool estoque_vazio = false;
+    printf("Estoque vazio? %d\n", estoque_vazio);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool estoque_vazio = false;
+    printf("Estoque vazio? %s\n", estoque_vazio ? "sim" : "não");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Comparações cabem num <code>bool</code></h2>
+<p>Você raramente escreve <code>true</code> ou <code>false</code> à mão. Quase sempre, um <code>bool</code> nasce de uma pergunta: uma comparação.</p>
+
+<pre class="file" data-file="compara.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 17;
+    bool maior_de_idade = idade &gt;= 18;
+    bool adolescente = idade &gt;= 13 &amp;&amp; idade &lt;= 19;
+    printf("maior de idade: %d\n", maior_de_idade);
+    printf("adolescente: %d\n", adolescente);
+    printf("idade == 17: %d\n", idade == 17);
+    printf("idade != 17: %d\n", idade != 17);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/bool">$ gcc -std=c23 -Wall -Wextra compara.c -o compara
+$ ./compara
+maior de idade: 0
+adolescente: 1
+idade == 17: 1
+idade != 17: 0</pre>
+
+<dl class="anatomy">
+  <dt>idade &gt;= 18</dt><dd>"<code>idade</code> é maior ou igual a 18?" O C calcula a resposta (0, falso, porque 17 não é) e a guarda em <code>maior_de_idade</code>.</dd>
+  <dt>idade &gt;= 13 &amp;&amp; idade &lt;= 19</dt><dd>Duas perguntas ligadas por <code>&amp;&amp;</code> ("e"): só é verdadeiro se as duas forem. Os operadores lógicos (<code>&amp;&amp;</code>, <code>||</code>, <code>!</code>) têm aula própria: <a href="operadores-logicos.html">Operadores Lógicos</a>.</dd>
+  <dt>idade == 17</dt><dd>"É igual a 17?" Dois sinais de igual: um só (<code>=</code>) guardaria 17 na variável (aula <a href="avisos.html">Avisos</a>).</dd>
+  <dt>idade != 17</dt><dd>"É diferente de 17?"</dd>
+</dl>
+
+<p>Um detalhe do C: a resposta de uma comparação é, tecnicamente, um <code>int</code> que vale 1 ou 0, não um <code>bool</code> (aula <a href="operadores-comparacao.html">Operadores de Comparação</a>). Na prática, tanto faz: guardada num <code>bool</code>, ela vira <code>true</code> ou <code>false</code>. Prefira <code>bool</code> para guardar respostas de sim ou não: o tipo já diz ao leitor o que a variável é.</p>
+
+<hr>
+
+<h2>3. Números viram <code>bool</code> (e vice-versa)</h2>
+<p>O C converte números em <code>bool</code> sozinho, com uma regra só: <strong>zero é <code>false</code>; qualquer outro valor é <code>true</code></strong>. E no caminho inverso, <code>true</code> vira 1 e <code>false</code> vira 0.</p>
+
+<pre class="file" data-file="converte.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool a = 0;
+    bool b = 1;
+    bool c = -7;
+    bool d = 0.0;
+    bool e = 0.5;
+    printf("%d %d %d %d %d\n", a, b, c, d, e);
+    int f = 0.5;
+    bool g = 2;
+    int h = 2;
+    printf("int 0.5 = %d, bool 2 = %d, int 2 = %d\n", f, g, h);
+    printf("true + true = %d\n", true + true);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/bool">$ gcc -std=c23 -Wall -Wextra converte.c -o converte
+$ ./converte
+0 1 1 0 1
+int 0.5 = 0, bool 2 = 1, int 2 = 2
+true + true = 2</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Valor</th><th>Num <code>bool</code> vira</th><th>Por quê</th></tr>
+<tr><td><code>0</code>, <code>0.0</code></td><td><code>false</code> (0)</td><td>Zero é o único "falso".</td></tr>
+<tr><td><code>1</code>, <code>-7</code>, <code>0.5</code>, <code>2</code></td><td><code>true</code> (1)</td><td>Diferente de zero. Até o negativo e o 0,5.</td></tr>
+<tr><td><code>true</code> numa conta ou num <code>int</code></td><td>1</td><td>Por isso <code>true + true</code> deu 2.</td></tr>
+<tr><td><code>false</code> numa conta ou num <code>int</code></td><td>0</td><td></td></tr>
+</table>
+</div>
+
+<p>Repare na segunda linha da saída, que mostra a diferença entre <code>bool</code> e <code>int</code>:</p>
+<ul>
+  <li><code>int f = 0.5;</code> deu <strong>0</strong>: o <code>int</code> joga fora a parte depois da vírgula (aula <a href="conversao-tipos.html">Conversão de Tipos</a>). Já <code>bool e = 0.5;</code> deu <strong>1</strong>: 0,5 não é zero, então é verdadeiro.</li>
+  <li><code>bool g = 2;</code> guardou <strong>1</strong>, e <code>int h = 2;</code> guardou <strong>2</strong>. Um <code>bool</code> só guarda 0 ou 1, nunca outro número. Por isso, para "sim ou não", ele é mais seguro que um <code>int</code>: não existe um "sim" valendo 2.</li>
+</ul>
+
+<p>O <code>gcc</code> não avisou nada. O Clang, no editor do guia, avisa as duas conversões de <code>0.5</code>: <code>implicit conversion from 'double' to 'bool' changes value from 0.5 to true [-Wliteral-conversion]</code> ("conversão implícita de <code>double</code> para <code>bool</code> muda o valor de 0.5 para true").</p>
+
+<p>Essa regra é a mesma que o <code>if</code> usa: <code>if (estoque)</code> quer dizer "se o estoque não for zero" (aula <a href="operadores-logicos.html">Operadores Lógicos</a>). E é por isso que as funções de <code>ctype.h</code>, como <code>isdigit</code>, podem devolver 2048 para dizer "sim" (no Linux, <code>isdigit('7')</code> vale 2048): qualquer número diferente de zero é verdadeiro. Guardado num <code>bool</code>, o 2048 vira 1 (aula <a href="ctype.html">Classificar Caracteres</a>).</p>
+
+<div class="tryc" data-goal="out:Ligado: 1,src:\bbool\s+ligado\b,semaviso">
+<p class="try-task"><strong>Missão:</strong> o programa antigo da Ana usava um <code>int</code> como interruptor, e alguém guardou 2 nele: a saída é <code>Ligado: 2</code>, que não faz sentido. Troque o tipo de <code>ligado</code> para <code>bool</code> (sem mudar o <code>= 2</code>) e rode: o que aparece agora?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int ligado = 2;
+    printf("Ligado: %d\n", ligado);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool ligado = 2;
+    printf("Ligado: %d\n", ligado);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. A pegadinha do texto <code>"false"</code></h2>
+
+<pre class="term" data-cwd="~/c/bool">$ cat texto.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool resposta = "false";
+    printf("%d\n", resposta);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra texto.c -o texto
+$ ./texto
+1                        « o texto "false" virou verdadeiro!</pre>
+
+<p>Sem aviso nenhum, nem do <code>gcc</code> nem do Clang. O texto <code>"false"</code> (com aspas) não é o valor <code>false</code>: é um texto guardado em algum lugar da memória, e o C converteu o <strong>endereço</strong> desse lugar (que não é zero) em verdadeiro. Endereços são assunto de <a href="ponteiros.html">Ponteiros</a>. A lição: <strong><code>true</code> e <code>false</code> nunca levam aspas</strong>.</p>
+
+<hr>
+
+<h2>5. A história: <code>int</code>, <code>_Bool</code>, <code>stdbool.h</code> e o C23</h2>
+<p>Você vai encontrar booleanos escritos de três jeitos, conforme a idade do código:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Época</th><th>Como se escrevia</th><th>Observação</th></tr>
+<tr><td>C89 / C90</td><td><code>int pago = 1;</code> ou <code>#define TRUE 1</code></td><td>Não havia tipo booleano: usava-se <code>int</code>, com 0 e 1 (e cada programa inventava os seus nomes).</td></tr>
+<tr><td><span class="versao">C99</span> ao C17</td><td><code>#include &lt;stdbool.h&gt;</code> e <code>bool pago = true;</code></td><td>O tipo de verdade se chamava <code>_Bool</code> (um nome feio de propósito, para não quebrar programas que já usavam a palavra <code>bool</code>). O cabeçalho <code>stdbool.h</code> criava os apelidos <code>bool</code>, <code>true</code> e <code>false</code>.</td></tr>
+<tr><td><span class="versao">C23</span></td><td><code>bool pago = true;</code></td><td><code>bool</code>, <code>true</code> e <code>false</code> são palavras da linguagem. O <code>stdbool.h</code> ainda existe, para o código antigo continuar compilando, mas não é mais necessário.</td></tr>
+</table>
+</div>
+
+<p>Código do C99 continua compilando no C23, e o contrário funciona com o <code>stdbool.h</code>:</p>
+
+<pre class="file" data-file="c99.c">#include &lt;stdio.h&gt;
+#include &lt;stdbool.h&gt;
+
+int main(void) {
+    bool pronto = true;
+    _Bool velho = 1;
+    printf("%d %d\n", pronto, velho);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/bool">$ gcc -std=c23 -Wall -Wextra c99.c -o c99 &amp;&amp; ./c99
+1 1
+$ gcc -std=c17 -Wall -Wextra c99.c -o c99 &amp;&amp; ./c99
+1 1</pre>
+
+<p>Sem o <code>#include &lt;stdbool.h&gt;</code>, com <code>-std=c17</code>, o <code>bool</code> é um nome desconhecido (<code>unknown type name ‘bool’</code>); a aula <a href="versoes.html">Versões do C</a> mostra esse erro e tem uma missão sobre ele. O <code>_Bool</code> funciona em todas as versões desde o C99, mas ninguém escreve assim em código novo.</p>
+
+<h3>Código antigo que inventou o próprio <code>bool</code></h3>
+<p>Antes do C99, muitos programas criavam o próprio tipo booleano. No C23, isso quebra, porque <code>bool</code>, <code>true</code> e <code>false</code> agora são palavras reservadas:</p>
+
+<pre class="file" data-file="antigo.c">#include &lt;stdio.h&gt;
+
+typedef enum { false, true } bool;
+
+int main(void) {
+    bool pronto = true;
+    printf("%d\n", pronto);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/bool">$ gcc -std=c23 -Wall -Wextra antigo.c -o antigo
+antigo.c:3:16: error: cannot use keyword ‘false’ as enumeration constant
+    3 | typedef enum { false, true } bool;
+      |                ^~~~~
+antigo.c:3:16: note: ‘false’ is a keyword with ‘-std=c23’ onwards
+antigo.c:3:30: error: expected ‘;’, identifier or ‘(’ before ‘bool’
+    3 | typedef enum { false, true } bool;
+      |                              ^~~~
+antigo.c:3:30: warning: useless type name in empty declaration
+$ gcc -std=c17 -Wall -Wextra antigo.c -o antigo &amp;&amp; ./antigo
+1</pre>
+
+<p>A linha 3 (com <code>typedef</code> e <code>enum</code>, assuntos das aulas <a href="typedef.html">typedef</a> e <a href="enums.html">Enums</a>) cria um tipo chamado <code>bool</code> com os valores <code>false</code> e <code>true</code>. O <code>gcc</code> explica: "não é possível usar a palavra-chave <code>false</code> como constante de enumeração", e a nota: "<code>false</code> é palavra-chave a partir de <code>-std=c23</code>". Com <code>-std=c17</code>, compila. <strong>Conserto</strong>, se o código for seu: apague a linha 3 e use o <code>bool</code> da linguagem. Se for um programa antigo de outra pessoa, compile-o com <code>-std=c17</code>.</p>
+
+<hr>
+
+<h2>6. Bons nomes para <code>bool</code></h2>
+<p>Uma variável <code>bool</code> responde a uma pergunta de sim ou não. Dê a ela um nome que soe como a pergunta (ou a afirmação), para que o código se leia como uma frase. No estilo do guia, o <code>snake_case</code> (aula <a href="identificadores.html">Nomes de Variáveis</a>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ruim</th><th>Bom</th><th>Lê-se</th></tr>
+<tr><td><code>bool status;</code></td><td><code>bool pago;</code></td><td>"pago?"</td></tr>
+<tr><td><code>bool flag;</code></td><td><code>bool tem_estoque;</code></td><td>"tem estoque?"</td></tr>
+<tr><td><code>bool idade;</code></td><td><code>bool maior_de_idade;</code></td><td>"é maior de idade?"</td></tr>
+<tr><td><code>bool chuva;</code></td><td><code>bool esta_chovendo;</code></td><td>"está chovendo?"</td></tr>
+<tr><td><code>bool nao_ativo;</code></td><td><code>bool ativo;</code></td><td>Evite nomes negativos: "não não ativo" confunde.</td></tr>
+</table>
+</div>
+
+<h3>Para onde o <code>bool</code> vai</h3>
+<p>Até aqui, você só mostrou booleanos. O verdadeiro uso deles é <strong>decidir</strong>: o <code>if</code> executa um trecho só se a condição for verdadeira, e o <code>while</code> repete enquanto ela for. Um gostinho do que vem em <a href="if-else.html">if e else</a>:</p>
+
+<pre class="term" data-cwd="~/c/bool">$ cat gostinho.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool pago = true;
+    if (pago) {
+        printf("Pode retirar o pedido.\n");
+    }
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra gostinho.c -o gostinho
+$ ./gostinho
+Pode retirar o pedido.</pre>
+
+<p>Com um bom nome, <code>if (pago)</code> se lê "se pago". Troque <code>true</code> por <code>false</code>, e a frase não aparece.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Ler um <code>bool</code> com <code>scanf("%d")</code>: <code>stack smashing detected</code></strong>
+<pre class="term" data-cwd="~/c/bool">$ cat lebool.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool pago = false;
+    printf("Pagou? (1 = sim, 0 = não) ");
+    scanf("%d", &amp;pago);
+    printf("pago = %d\n", pago);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra lebool.c -o lebool
+lebool.c: In function ‘main’:
+lebool.c:6:13: warning: format ‘%d’ expects argument of type ‘int *’, but argument 2 has type ‘_Bool *’ [-Wformat=]
+    6 |     scanf("%d", &amp;pago);
+      |            ~^   ~~~~~
+      |             |   |
+      |             |   _Bool *
+      |             int *
+$ echo 1 | ./lebool
+Pagou? (1 = sim, 0 = não) pago = 1
+*** stack smashing detected ***: terminated
+Abortado                   (imagem do núcleo gravada) echo 1 | ./lebool</pre>
+<p><strong>O que significa:</strong> o <code>%d</code> do <code>scanf</code> escreve um <code>int</code> inteiro (4 bytes) no endereço que recebeu, mas o <code>bool</code> só tem 1 byte. Os outros 3 bytes foram escritos por cima da memória vizinha, e a proteção do <code>gcc</code> percebeu no fim do programa: "esmagamento da pilha detectado" (a pilha é a área da memória das variáveis; aula <a href="pilha-heap.html">Pilha e Heap</a>). O aviso já dizia: <code>%d</code> espera <code>int *</code>, e veio <code>_Bool *</code> (o nome verdadeiro do <code>bool</code>). No editor do guia, o mesmo programa roda sem cair, o que é pior: o estrago acontece em silêncio.</p>
+<p><strong>Como consertar:</strong> não existe formato do <code>scanf</code> para <code>bool</code>. Leia num <code>int</code> e converta: <code>int resposta = 0; scanf("%d", &amp;resposta); bool pago = resposta;</code> (aula <a href="scanf.html">Entrada com scanf</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>printf</code> mostra 1 e 0 em vez de <code>true</code> e <code>false</code></strong>
+<p><strong>O que significa:</strong> é o comportamento normal: o <code>printf</code> não tem uma lacuna para <code>bool</code> em palavras.</p>
+<p><strong>Como consertar:</strong> <code>printf("%s\n", pago ? "true" : "false");</code> (ou "sim"/"não").</p>
+</div>
+
+<div class="cenario">
+<strong>Um <code>bool</code> deu verdadeiro quando deveria ser falso</strong>
+<p><strong>O que significa:</strong> ele recebeu um número diferente de zero (até 0,5 ou −1), ou um texto entre aspas (<code>"false"</code>), que sempre vira verdadeiro.</p>
+<p><strong>Como consertar:</strong> use <code>true</code>/<code>false</code> sem aspas, ou uma comparação: <code>bool tem_estoque = estoque &gt; 0;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>unknown type name ‘bool’</code></strong>
+<p><strong>O que significa:</strong> o código está sendo compilado com um C anterior ao C23 (<code>-std=c17</code>, <code>-std=c99</code>, ou um compilador antigo, como o gcc 13 e anteriores, que não usam o C23 por padrão).</p>
+<p><strong>Como consertar:</strong> compile com <code>-std=c23</code>, ou acrescente <code>#include &lt;stdbool.h&gt;</code> no topo (funciona nos dois).</p>
+</div>
+
+<div class="cenario">
+<strong><code>cannot use keyword ‘false’ as enumeration constant</code></strong>
+<p><strong>O que significa:</strong> um código antigo criou o próprio <code>bool</code>, <code>true</code> ou <code>false</code>, e no C23 essas palavras já são da linguagem (seção 5).</p>
+<p><strong>Como consertar:</strong> apague as definições antigas, ou compile esse programa com <code>-std=c17</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>bool pago = true;</code></td><td>Variável booleana <span class="versao">C23</span> (no C99 ao C17, com <code>#include &lt;stdbool.h&gt;</code>)</td></tr>
+<tr><td><code>printf("%d", pago);</code></td><td>Mostra <code>1</code> ou <code>0</code></td></tr>
+<tr><td><code>printf("%s", pago ? "sim" : "não");</code></td><td>Mostra uma palavra conforme o valor</td></tr>
+<tr><td><code>bool b = x &gt; 10;</code></td><td>Guarda o resultado de uma comparação</td></tr>
+<tr><td><code>bool b = numero;</code></td><td>0 → <code>false</code>; qualquer outro → <code>true</code></td></tr>
+<tr><td><code>int n = true;</code></td><td><code>true</code> → 1; <code>false</code> → 0</td></tr>
+<tr><td><code>sizeof(bool)</code></td><td>1 (byte)</td></tr>
+<tr><td><code>_Bool</code></td><td>O nome antigo do tipo (C99); ainda funciona</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O valor falso</h3>
+<p>Complete com o valor booleano "falso":</p>
+<div class="ex-code">bool pago = <input data-answer="false" aria-label="valor">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. O cabeçalho antigo</h3>
+<p>No C99 ao C17, que cabeçalho é preciso incluir para escrever <code>bool</code>, <code>true</code> e <code>false</code>?</p>
+<div class="ex-code">#include &lt;<input data-answer="stdbool.h" aria-label="cabeçalho">&gt;</div>
+</div>
+
+<div class="exercise">
+<h3>3. Em palavras</h3>
+<p>Complete para mostrar <code>sim</code> ou <code>não</code>:</p>
+<div class="ex-code">printf("%s\n", pago <input data-answer="?" aria-label="símbolo"> "sim" : "não");</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que <code>printf("%d\n", 3 &lt; 2);</code> mostra?</p>
+<label><input type="radio" name="q4"> <code>false</code></label>
+<label><input type="radio" name="q4"> <code>1</code></label>
+<label><input type="radio" name="q4"> <code>0</code></label>
+<label><input type="radio" name="q4"> Erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Quanto vale <code>bool b = -3;</code> quando mostrado com <code>%d</code>?</p>
+<label><input type="radio" name="q5"> <code>1</code>: −3 não é zero, então é verdadeiro</label>
+<label><input type="radio" name="q5"> <code>0</code></label>
+<label><input type="radio" name="q5"> <code>-3</code></label>
+<label><input type="radio" name="q5"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. E <code>bool b = "false";</code>?</p>
+<label><input type="radio" name="q6"> <code>false</code>: o texto diz "false"</label>
+<label><input type="radio" name="q6"> <code>true</code>: o endereço do texto não é zero</label>
+<label><input type="radio" name="q6"> Erro de compilação</label>
+<label><input type="radio" name="q6"> Um valor qualquer, que muda</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. Qual é o jeito seguro de ler "sim ou não" do teclado para um <code>bool</code>?</p>
+<label><input type="radio" name="q7"> <code>scanf("%d", &amp;pago);</code> direto no <code>bool</code></label>
+<label><input type="radio" name="q7"> <code>scanf("%b", &amp;pago);</code></label>
+<label><input type="radio" name="q7"> <code>scanf("%s", &amp;pago);</code></label>
+<label><input type="radio" name="q7"> Ler num <code>int</code> com <code>%d</code> e depois guardar no <code>bool</code></label>
+</div>
+
+<h3>Missão final: votar e dirigir</h3>
+
+<div class="tryc" data-goal="outre:^Pode votar: sim\nPode dirigir: não\n$,src:\bbool\s+pode_votar\s*=\s*idade,src:\bbool\s+pode_dirigir\s*=\s*idade,semaviso">
+<p class="try-task"><strong>Missão:</strong> o Bruno tem 17 anos. Crie duas variáveis <code>bool</code>: <code>pode_votar</code> (no Brasil, a partir de 16 anos) e <code>pode_dirigir</code> (a partir de 18), cada uma calculada com uma comparação usando <code>idade</code>. Mostre as duas em palavras, sem nenhum aviso:</p>
+<pre class="out">Pode votar: sim
+Pode dirigir: não</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 17;
+    // crie pode_votar e pode_dirigir
+    // mostre as duas em palavras
+
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 17;
+    bool pode_votar = idade &gt;= 16;
+    bool pode_dirigir = idade &gt;= 18;
+    printf("Pode votar: %s\n", pode_votar ? "sim" : "não");
+    printf("Pode dirigir: %s\n", pode_dirigir ? "sim" : "não");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>bool</code> guarda <code>true</code> ou <code>false</code> (sem aspas) e ocupa 1 byte. No C23, são palavras da linguagem; do C99 ao C17, vêm do <code>#include &lt;stdbool.h&gt;</code> (o tipo de verdade é o <code>_Bool</code>).</li>
+  <li>O <code>printf</code> mostra um <code>bool</code> com <code>%d</code>: 1 ou 0. Para palavras, <code>pago ? "sim" : "não"</code> com <code>%s</code>.</li>
+  <li>Uma comparação (<code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>) vale 1 ou 0 e pode ser guardada num <code>bool</code>.</li>
+  <li>Zero vira <code>false</code>; qualquer outro número (até −7 e 0,5) vira <code>true</code>. <code>true</code> numa conta vale 1. Um <code>bool</code> nunca guarda outro número.</li>
+  <li>Um texto entre aspas, até <code>"false"</code>, vira <code>true</code>.</li>
+  <li>Código antigo que criou o próprio <code>bool</code> não compila no C23: use o da linguagem, ou <code>-std=c17</code>.</li>
+  <li>Não leia um <code>bool</code> com <code>scanf("%d")</code>: leia num <code>int</code>.</li>
+  <li>Dê nomes que soem como perguntas: <code>pago</code>, <code>tem_estoque</code>, <code>esta_chovendo</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
