@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Listas Ligadas — nós, ponteiros e malloc | Guia C</title>
+<meta name="description" content="Lista ligada em C para quem nunca programou: o nó com struct No *prox, inserir no início e no fim, percorrer, buscar, remover e liberar a lista inteira, com desenhos de caixas e setas, valgrind limpo, os erros reais (lista vazia, usar depois do free, esquecer o retorno) e a comparação com o array, com saídas do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Listas Ligadas</span></h1>
+
+<p class="intro">Um array guarda os valores <strong>colados</strong> na memória, um do lado do outro. Isso é ótimo para ler, mas ruim para crescer e para tirar coisas do meio. A <strong>lista ligada</strong> faz diferente: cada valor mora numa caixinha separada, criada com <code>malloc</code>, e cada caixinha guarda o endereço da próxima. Nesta aula você vai montar uma lista ligada do zero, inserir, percorrer, buscar, remover e devolver toda a memória, conferindo com o <code>valgrind</code> que nada vazou.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um <strong>nó</strong> e por que ele tem um campo <code>struct No *prox</code>.</li>
+  <li>Como <strong>percorrer</strong> a lista com um ponteiro que "anda" de nó em nó até o <code>NULL</code>.</li>
+  <li>Como <strong>inserir no início</strong> (rápido) e <strong>no fim</strong> (precisa andar até o último).</li>
+  <li>Como <strong>buscar</strong> um valor e como <strong>remover</strong> um nó sem perder o resto da lista.</li>
+  <li>Como <strong>liberar</strong> a lista inteira e conferir com o <code>valgrind</code>.</li>
+  <li>Quando usar lista ligada e quando usar array.</li>
+</ul>
+</div>
+
+<p>Esta aula usa <a href="structs.html">structs</a>, <a href="structs-ponteiros.html">a seta <code>-&gt;</code></a> e <a href="malloc-free.html">malloc e free</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Quando aparecer <code>-g</code>, é para o <code>valgrind</code> mostrar o arquivo e a linha (veja <a href="valgrind.html">Valgrind</a>).</p>
+
+<hr>
+
+<h2>A ideia: a caça ao tesouro</h2>
+<p>Pense numa <strong>caça ao tesouro</strong>. Você recebe o primeiro bilhete. Ele diz "a primeira pista é <em>10</em>; o próximo bilhete está embaixo do vaso". No vaso, outro bilhete: "a pista é <em>20</em>; o próximo está na gaveta". Na gaveta: "a pista é <em>30</em>; <strong>acabou</strong>".</p>
+<p>Os bilhetes estão espalhados pela casa, mas você nunca se perde, porque <strong>cada um diz onde está o próximo</strong>. Para chegar ao terceiro, você precisa passar pelo primeiro e pelo segundo. E para pôr um bilhete novo no começo, basta escrever nele "o próximo está onde estava o primeiro".</p>
+<p>Uma lista ligada é isso. Compare com o array, que é uma <strong>fileira de armários colados</strong>, numerados:</p>
+
+<figure>
+<svg viewBox="0 0 276 78" role="img" aria-label="Um array: três valores colados na memória, numerados de 0 a 2" style="width:100%;max-width:276px;height:auto;display:block">
+<title>Um array: três valores colados na memória, numerados de 0 a 2</title>
+<text x="50" y="39" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">array</text><rect x="94" y="14" width="56" height="40" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="122" y="39" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="122" y="71" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">0</text><rect x="150" y="14" width="56" height="40" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="178" y="39" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><text x="178" y="71" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">1</text><rect x="206" y="14" width="56" height="40" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="234" y="39" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><text x="234" y="71" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">2</text>
+</svg>
+<svg viewBox="0 0 472 96" role="img" aria-label="Uma lista ligada: três nós separados; cada um aponta para o próximo e o último aponta para NULL" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Uma lista ligada: três nós separados; cada um aponta para o próximo e o último aponta para NULL</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="62" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">lista</text><line x1="62" y1="25" x2="62" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,42 67,33 57,33" style="fill:var(--accent)"/><circle cx="91" cy="63" r="3.5" style="fill:var(--text)"/><line x1="91" y1="63" x2="149" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="158,63 149,58 149,68" style="fill:var(--text)"/><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<figcaption>Em cima, o array: os três valores colados, e você chega a qualquer um pelo número (<code>array[2]</code>). Embaixo, a lista ligada: cada caixa tem duas partes, o <strong>valor</strong> e uma seta para a <strong>próxima</strong> caixa. A última aponta para <code>NULL</code> ("nada"), que é o "acabou" do bilhete. A variável <code>lista</code> guarda só o endereço da primeira caixa.</figcaption>
+</figure>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na caça ao tesouro</th><th>Na lista ligada</th></tr>
+<tr><td>Um bilhete</td><td>Um <strong>nó</strong> (uma <code>struct</code> criada com <code>malloc</code>)</td></tr>
+<tr><td>A pista escrita no bilhete</td><td>O campo <code>valor</code></td></tr>
+<tr><td>"O próximo está na gaveta"</td><td>O campo <code>prox</code>: o endereço do próximo nó</td></tr>
+<tr><td>"Acabou"</td><td><code>prox</code> valendo <code>NULL</code></td></tr>
+<tr><td>O primeiro bilhete, que você recebe na mão</td><td>A variável <code>lista</code> (também chamada de <em>cabeça</em> ou <em>head</em>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O nó: uma struct que aponta para outra igual</h2>
+<p>Cada caixinha da lista é um <strong>nó</strong> (em inglês, <em>node</em>). Em C, um nó é uma struct com o valor e um ponteiro para o próximo nó:</p>
+
+<pre class="file">struct No {
+    int valor;
+    struct No *prox;
+};
+</pre>
+
+<dl class="anatomy">
+  <dt>struct No</dt><dd>O nome do tipo do nó. "No" é "nó" sem o acento, porque nomes em C não aceitam acentos (veja <a href="identificadores.html">Nomes de Variáveis</a>).</dd>
+  <dt>int valor;</dt><dd>O dado que a lista guarda. Aqui é um <code>int</code>, mas poderia ser um preço, um nome, uma struct inteira.</dd>
+  <dt>struct No *prox;</dt><dd>"Próximo". É um <strong>ponteiro</strong> para outro <code>struct No</code>: guarda o endereço do nó seguinte, ou <code>NULL</code> se este é o último.</dd>
+</dl>
+
+<p>Repare na esquisitice: dentro de <code>struct No</code> aparece <code>struct No</code> de novo. Isso se chama struct <strong>autorreferente</strong> ("que se refere a si mesma"). Funciona porque o campo é um <strong>ponteiro</strong>: um endereço tem sempre o mesmo tamanho (8 bytes no gcc do laboratório), não importa para que tipo ele aponta. O C não precisa saber o tamanho de <code>struct No</code> para reservar 8 bytes para um endereço.</p>
+
+<p>Sem a estrela, não dá: um nó que contém um nó inteiro, que contém outro nó inteiro… teria tamanho infinito. O gcc recusa:</p>
+
+<pre class="file" data-file="autoref.c">struct No {
+    int valor;
+    struct No prox;
+};
+
+int main(void) {
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra autoref.c -o autoref
+autoref.c:3:15: error: field ‘prox’ has incomplete type
+    3 |     struct No prox;
+      |               ^~~~</pre>
+
+<p><em>Field ‘prox’ has incomplete type</em> = "o campo ‘prox’ tem tipo incompleto". Na linha 3, o <code>struct No</code> ainda está sendo definido (o <code>}</code> não chegou), então o compilador não sabe o tamanho dele. Conserto: <code>struct No *prox;</code>, com a estrela.</p>
+
+<hr>
+
+<h2>2. Três nós ligados à mão e o primeiro percurso</h2>
+<p>Antes de usar <code>malloc</code>, vamos montar três nós como variáveis comuns e ligá-los com o operador <code>&amp;</code> ("endereço de"). Isso mostra a ideia sem nenhuma outra novidade:</p>
+
+<pre class="file" data-file="tres.c">#include &lt;stdio.h&gt;
+
+struct No {
+    int valor;
+    struct No *prox;
+};
+
+int main(void) {
+    struct No c = {30, NULL};
+    struct No b = {20, &amp;c};
+    struct No a = {10, &amp;b};
+
+    struct No *p = &amp;a;
+    while (p != NULL) {
+        printf("%d\n", p-&gt;valor);
+        p = p-&gt;prox;
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tres.c -o tres
+$ ./tres
+10
+20
+30</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>struct No c = {30, NULL};</code></td><td>O último nó: valor 30, e o <code>prox</code> é <code>NULL</code> ("acabou").</td></tr>
+<tr><td><code>struct No b = {20, &amp;c};</code></td><td>Valor 20, e o <code>prox</code> guarda o <strong>endereço</strong> de <code>c</code>. Por isso <code>c</code> foi criado antes.</td></tr>
+<tr><td><code>struct No a = {10, &amp;b};</code></td><td>Valor 10, apontando para <code>b</code>. <code>a</code> é o começo da lista.</td></tr>
+<tr><td><code>struct No *p = &amp;a;</code></td><td>Um ponteiro que começa no primeiro nó. É o nosso "dedo" que vai andar pela lista.</td></tr>
+<tr><td><code>while (p != NULL)</code></td><td>Enquanto o dedo estiver em cima de algum nó…</td></tr>
+<tr><td><code>p-&gt;valor</code></td><td>…mostra o valor do nó em que ele está…</td></tr>
+<tr><td><code>p = p-&gt;prox;</code></td><td>…e <strong>anda</strong>: o dedo passa para o endereço guardado no <code>prox</code>. Depois do 30, o <code>prox</code> é <code>NULL</code>, e o laço termina.</td></tr>
+</table>
+</div>
+
+<figure>
+<svg viewBox="0 0 472 96" role="img" aria-label="O ponteiro p começa no primeiro nó" style="width:100%;max-width:472px;height:auto;display:block">
+<title>O ponteiro p começa no primeiro nó</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="62" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">p</text><line x1="62" y1="25" x2="62" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,42 67,33 57,33" style="fill:var(--accent)"/><circle cx="91" cy="63" r="3.5" style="fill:var(--text)"/><line x1="91" y1="63" x2="149" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="158,63 149,58 149,68" style="fill:var(--text)"/><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<svg viewBox="0 0 472 96" role="img" aria-label="Depois de p = p-&gt;prox, p está no segundo nó" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Depois de p = p-&gt;prox, p está no segundo nó</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><circle cx="91" cy="63" r="3.5" style="fill:var(--text)"/><line x1="91" y1="63" x2="149" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="158,63 149,58 149,68" style="fill:var(--text)"/><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><text x="208" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">p</text><line x1="208" y1="25" x2="208" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="208,42 213,33 203,33" style="fill:var(--accent)"/><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<figcaption>A linha <code>p = p-&gt;prox;</code> faz o ponteiro <code>p</code> andar uma casa: de <strong>10</strong> para <strong>20</strong>, depois para <strong>30</strong> e, por fim, para <code>NULL</code>. Os nós não se mexem; quem anda é o <code>p</code>.</figcaption>
+</figure>
+
+<div class="tip">
+<strong>Guarde este laço</strong>
+<p><code>for (p = lista; p != NULL; p = p-&gt;prox)</code> é a forma de percorrer <strong>qualquer</strong> lista ligada. Você vai vê-lo em quase todas as funções desta aula. Ele é o equivalente do <code>for (i = 0; i &lt; n; i++)</code> dos arrays.</p>
+</div>
+
+<hr>
+
+<h2>3. Nós de verdade: criados com malloc</h2>
+<p>Nós em variáveis comuns somem quando a função termina, e você precisa saber de antemão quantos são. Numa lista de verdade, cada nó é criado com <a href="malloc-free.html"><code>malloc</code></a> ("memory allocation", reservar memória) na hora em que é preciso. Vamos escrever uma função que cria um nó e outra que o põe no <strong>início</strong> da lista:</p>
+
+<pre class="file" data-file="inicio.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct No {
+    int valor;
+    struct No *prox;
+};
+
+struct No *novo_no(int valor) {
+    struct No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = NULL;
+    return n;
+}
+
+struct No *inserir_inicio(struct No *lista, int valor) {
+    struct No *n = novo_no(valor);
+    n-&gt;prox = lista;
+    return n;
+}
+
+void imprimir(const struct No *lista) {
+    for (const struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        printf("%d -&gt; ", p-&gt;valor);
+    }
+    printf("NULL\n");
+}
+
+int main(void) {
+    struct No *lista = NULL;
+    imprimir(lista);
+    lista = inserir_inicio(lista, 30);
+    imprimir(lista);
+    lista = inserir_inicio(lista, 20);
+    imprimir(lista);
+    lista = inserir_inicio(lista, 10);
+    imprimir(lista);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra inicio.c -o inicio
+$ ./inicio
+NULL
+30 -&gt; NULL
+20 -&gt; 30 -&gt; NULL
+10 -&gt; 20 -&gt; 30 -&gt; NULL</pre>
+
+<dl class="anatomy">
+  <dt>struct No *lista = NULL;</dt><dd>A lista começa <strong>vazia</strong>. Lista vazia = ponteiro <code>NULL</code>. Nunca deixe esse ponteiro sem valor inicial.</dd>
+  <dt>malloc(sizeof *n)</dt><dd>Reserva espaço para <strong>um</strong> nó. <code>sizeof *n</code> é "o tamanho daquilo para que <code>n</code> aponta"; se um dia o tipo mudar, a conta continua certa (o mesmo que <code>sizeof(struct No)</code>).</dd>
+  <dt>if (n == NULL)</dt><dd>O <code>malloc</code> devolve <code>NULL</code> quando não há memória. Confira sempre. Aqui o programa avisa no <code>stderr</code> e termina com <code>exit(1)</code> (veja <a href="exit.html">exit</a>).</dd>
+  <dt>n-&gt;prox = NULL;</dt><dd>Todo nó nasce "sozinho", sem próximo. Assim nenhum campo fica com lixo.</dd>
+  <dt>n-&gt;prox = lista;</dt><dd>O nó novo aponta para quem <strong>era</strong> o primeiro.</dd>
+  <dt>return n;</dt><dd>O nó novo passa a ser o primeiro. Quem chama precisa guardar esse retorno: <code>lista = inserir_inicio(lista, 30);</code>.</dd>
+  <dt>const struct No *</dt><dd>Em <code>imprimir</code>, o <code>const</code> promete que a função só lê os nós (veja <a href="const-ponteiros.html">const e Ponteiros</a>).</dd>
+</dl>
+
+<h3>Inserir no início, passo a passo</h3>
+<p>Veja o que acontece na última chamada, <code>lista = inserir_inicio(lista, 10);</code>, quando a lista já tem 20 e 30:</p>
+
+<ol class="passo">
+  <li><code>novo_no(10)</code> cria o nó 10, sozinho, com <code>prox</code> em <code>NULL</code>.
+<svg viewBox="0 0 472 216" role="img" aria-label="Passo 1: o nó 10 foi criado, separado da lista" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Passo 1: o nó 10 foi criado, separado da lista</title>
+<rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><text x="208" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">lista</text><line x1="208" y1="25" x2="208" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="208,42 213,33 203,33" style="fill:var(--accent)"/><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text><rect x="14" y="134" width="96" height="38" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><line x1="72" y1="134" x2="72" y2="172" style="stroke:var(--text);stroke-width:1"/><text x="43" y="158" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><line x1="62" y1="191" x2="62" y2="183" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,174 57,183 67,183" style="fill:var(--accent)"/><text x="62" y="207" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">n</text><circle cx="91" cy="153" r="3.5" style="fill:var(--text)"/><line x1="91" y1="153" x2="119" y2="153" style="stroke:var(--text);stroke-width:1.6"/><polygon points="128,153 119,148 119,158" style="fill:var(--text)"/><text x="131" y="158" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg></li>
+  <li><code>n-&gt;prox = lista;</code> faz o nó 10 apontar para o nó 20, o primeiro de agora.
+<svg viewBox="0 0 472 216" role="img" aria-label="Passo 2: o nó 10 aponta para o 20" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Passo 2: o nó 10 aponta para o 20</title>
+<rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><text x="208" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">lista</text><line x1="208" y1="25" x2="208" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="208,42 213,33 203,33" style="fill:var(--accent)"/><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text><rect x="14" y="134" width="96" height="38" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><line x1="72" y1="134" x2="72" y2="172" style="stroke:var(--text);stroke-width:1"/><text x="43" y="158" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><line x1="62" y1="191" x2="62" y2="183" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,174 57,183 67,183" style="fill:var(--accent)"/><text x="62" y="207" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">n</text><circle cx="91" cy="153" r="3.5" style="fill:var(--text)"/><line x1="91" y1="149" x2="186.4" y2="88.8" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="194,84 183.7,84.6 189.1,93" style="fill:var(--accent)"/>
+</svg></li>
+  <li><code>return n;</code> e <code>lista = …</code>: a variável <code>lista</code> passa a apontar para o nó 10.
+<svg viewBox="0 0 472 96" role="img" aria-label="Passo 3: lista aponta para o 10, que aponta para o 20" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Passo 3: lista aponta para o 10, que aponta para o 20</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="62" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">lista</text><line x1="62" y1="25" x2="62" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,42 67,33 57,33" style="fill:var(--accent)"/><circle cx="91" cy="63" r="3.5" style="fill:var(--text)"/><line x1="91" y1="63" x2="149" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="158,63 149,58 149,68" style="fill:var(--text)"/><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg></li>
+</ol>
+
+<p>Nada foi copiado nem empurrado: só <strong>duas setas</strong> mudaram. Por isso inserir no início leva o mesmo tempo com 3 ou com 3 milhões de nós.</p>
+
+<div class="warning">
+<strong>A ordem importa</strong>
+<p>Se você fizer <code>lista = n;</code> <em>antes</em> de <code>n-&gt;prox = lista;</code>, o <code>n-&gt;prox</code> vai apontar para ele mesmo, e o resto da lista se perde para sempre (vazamento). Regra: <strong>primeiro ligue o nó novo, depois mude a cabeça.</strong></p>
+</div>
+
+<h3>Percorrer para contar, somar, imprimir</h3>
+<p>A função <code>imprimir</code> usa o laço que você guardou, na forma de <code>for</code>. Qualquer pergunta sobre "todos os nós" segue o mesmo molde: quantos são, qual a soma, qual o maior. Pratique:</p>
+
+<div class="tryc" data-goal="out:Tamanho: 3,src:total\s*(\+\+|\+=)|\+\+\s*total">
+<p class="try-task"><strong>Experimente:</strong> a função <code>contar</code> sempre devolve 0. Escreva dentro dela um laço que percorre a lista e soma 1 em <code>total</code> para cada nó, até o programa mostrar <code>Tamanho: 3</code>. Apague a linha <code>(void)lista;</code> quando usar o parâmetro.</p>
+<pre class="out">Tamanho: 3</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct No {
+    int valor;
+    struct No *prox;
+};
+
+struct No *inserir_inicio(struct No *lista, int valor) {
+    struct No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = lista;
+    return n;
+}
+
+int contar(const struct No *lista) {
+    int total = 0;
+    // percorra a lista e some 1 para cada nó
+    (void)lista;  // apague esta linha: ela só cala o aviso "unused parameter"
+    return total;
+}
+
+void liberar(struct No *lista) {
+    while (lista != NULL) {
+        struct No *prox = lista-&gt;prox;
+        free(lista);
+        lista = prox;
+    }
+}
+
+int main(void) {
+    struct No *lista = NULL;
+    lista = inserir_inicio(lista, 7);
+    lista = inserir_inicio(lista, 5);
+    lista = inserir_inicio(lista, 9);
+    printf("Tamanho: %d\n", contar(lista));
+    liberar(lista);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct No {
+    int valor;
+    struct No *prox;
+};
+
+struct No *inserir_inicio(struct No *lista, int valor) {
+    struct No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = lista;
+    return n;
+}
+
+int contar(const struct No *lista) {
+    int total = 0;
+    for (const struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        total++;
+    }
+    return total;
+}
+
+void liberar(struct No *lista) {
+    while (lista != NULL) {
+        struct No *prox = lista-&gt;prox;
+        free(lista);
+        lista = prox;
+    }
+}
+
+int main(void) {
+    struct No *lista = NULL;
+    lista = inserir_inicio(lista, 7);
+    lista = inserir_inicio(lista, 5);
+    lista = inserir_inicio(lista, 9);
+    printf("Tamanho: %d\n", contar(lista));
+    liberar(lista);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Inserir no fim</h2>
+<p>Para pôr um valor no <strong>fim</strong>, a lista precisa ser percorrida até o último nó, aquele cujo <code>prox</code> é <code>NULL</code>. Aí o <code>prox</code> do último passa a apontar para o nó novo:</p>
+
+<pre class="file">struct No *inserir_fim(struct No *lista, int valor) {
+    struct No *n = novo_no(valor);
+    if (lista == NULL) {
+        return n;
+    }
+    struct No *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = n;
+    return lista;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>if (lista == NULL) return n;</code></td><td>Lista vazia: o nó novo é o primeiro <strong>e</strong> o último. Sem este <code>if</code>, a linha <code>p-&gt;prox</code> abaixo leria um ponteiro <code>NULL</code> e o programa morreria (veja <a href="#errado">Quando dá errado</a>).</td></tr>
+<tr><td><code>while (p-&gt;prox != NULL)</code></td><td>Repare: aqui o teste é <code>p-&gt;prox</code>, e não <code>p</code>. O laço para <strong>em cima</strong> do último nó, e não depois dele.</td></tr>
+<tr><td><code>p-&gt;prox = n;</code></td><td>O último passa a apontar para o novo. O <code>prox</code> do novo já é <code>NULL</code> (veio assim do <code>novo_no</code>).</td></tr>
+<tr><td><code>return lista;</code></td><td>O primeiro nó não mudou, mas a função devolve a cabeça mesmo assim, para ser usada sempre do mesmo jeito: <code>lista = inserir_fim(lista, 40);</code>.</td></tr>
+</table>
+</div>
+
+<figure>
+<svg viewBox="0 0 618 216" role="img" aria-label="Inserir 40 no fim: p parou no último nó, o 30; o nó 40 foi criado" style="width:100%;max-width:618px;height:auto;display:block">
+<title>Inserir 40 no fim: p parou no último nó, o 30; o nó 40 foi criado</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="62" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">lista</text><line x1="62" y1="25" x2="62" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,42 67,33 57,33" style="fill:var(--accent)"/><circle cx="91" cy="63" r="3.5" style="fill:var(--text)"/><line x1="91" y1="63" x2="149" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="158,63 149,58 149,68" style="fill:var(--text)"/><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><text x="354" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">p</text><line x1="354" y1="25" x2="354" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="354,42 359,33 349,33" style="fill:var(--accent)"/><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text><rect x="452" y="134" width="96" height="38" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><line x1="510" y1="134" x2="510" y2="172" style="stroke:var(--text);stroke-width:1"/><text x="481" y="158" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">40</text><line x1="500" y1="191" x2="500" y2="183" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="500,174 495,183 505,183" style="fill:var(--accent)"/><text x="500" y="207" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">n</text><circle cx="529" cy="153" r="3.5" style="fill:var(--text)"/><line x1="529" y1="153" x2="557" y2="153" style="stroke:var(--text);stroke-width:1.6"/><polygon points="566,153 557,148 557,158" style="fill:var(--text)"/><text x="569" y="158" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<svg viewBox="0 0 618 96" role="img" aria-label="Depois de p-&gt;prox = n, o 30 aponta para o 40" style="width:100%;max-width:618px;height:auto;display:block">
+<title>Depois de p-&gt;prox = n, o 30 aponta para o 40</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="62" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">lista</text><line x1="62" y1="25" x2="62" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,42 67,33 57,33" style="fill:var(--accent)"/><circle cx="91" cy="63" r="3.5" style="fill:var(--text)"/><line x1="91" y1="63" x2="149" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="158,63 149,58 149,68" style="fill:var(--text)"/><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><text x="354" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">p</text><line x1="354" y1="25" x2="354" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="354,42 359,33 349,33" style="fill:var(--accent)"/><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="441" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="450,63 441,58 441,68" style="fill:var(--text)"/><rect x="452" y="44" width="96" height="38" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><line x1="510" y1="44" x2="510" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="481" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">40</text><text x="500" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">n</text><line x1="500" y1="25" x2="500" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="500,42 505,33 495,33" style="fill:var(--accent)"/><circle cx="529" cy="63" r="3.5" style="fill:var(--text)"/><line x1="529" y1="63" x2="557" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="566,63 557,58 557,68" style="fill:var(--text)"/><text x="569" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<figcaption>Em cima, o <code>while</code> já levou <code>p</code> até o último nó (o 30) e o nó 40 acabou de nascer. Embaixo, depois de <code>p-&gt;prox = n;</code>: uma seta só mudou.</figcaption>
+</figure>
+
+<div class="note">
+<strong>Início é rápido; fim é lento (nesta versão)</strong>
+<p>Inserir no início não depende do tamanho da lista. Inserir no fim precisa visitar <strong>todos</strong> os nós: com 1 milhão de nós, são 1 milhão de passos a cada inserção. A seção <a href="#formas">Formas diferentes</a> mostra o conserto: guardar também um ponteiro para o último nó.</p>
+</div>
+
+<hr>
+
+<h2>5. Buscar um valor</h2>
+<p>Buscar é percorrer e parar quando achar. A função devolve o <strong>endereço do nó</strong> encontrado, ou <code>NULL</code> se o valor não está na lista:</p>
+
+<pre class="file">struct No *buscar(struct No *lista, int valor) {
+    for (struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        if (p-&gt;valor == valor) {
+            return p;
+        }
+    }
+    return NULL;
+}
+</pre>
+
+<p>Devolver o nó (e não só "sim" ou "não") deixa quem chamou <strong>mudar</strong> o valor achado: <code>struct No *x = buscar(lista, 30); if (x != NULL) x-&gt;valor = 35;</code>. Sempre confira o <code>NULL</code> antes de usar a seta. Numa lista, buscar é sempre visitar nó por nó, do começo: não existe atalho como <code>array[i]</code>. Em listas grandes, isso pesa (a aula <a href="busca.html">Busca</a> compara as formas de buscar).</p>
+
+<hr>
+
+<h2>6. Remover um nó</h2>
+<p>Remover tem duas partes: <strong>religar</strong> a lista por cima do nó e depois <strong>liberar</strong> o nó com <code>free</code>. Para religar, você precisa do nó <strong>anterior</strong>, porque é o <code>prox</code> dele que muda. Por isso a função anda com dois ponteiros: <code>ant</code> (anterior) e <code>p</code> (atual):</p>
+
+<pre class="file">struct No *remover(struct No *lista, int valor) {
+    struct No *ant = NULL;
+    struct No *p = lista;
+    while (p != NULL &amp;&amp; p-&gt;valor != valor) {
+        ant = p;
+        p = p-&gt;prox;
+    }
+    if (p == NULL) {
+        return lista;
+    }
+    if (ant == NULL) {
+        lista = p-&gt;prox;
+    } else {
+        ant-&gt;prox = p-&gt;prox;
+    }
+    free(p);
+    return lista;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>while (p != NULL &amp;&amp; p-&gt;valor != valor)</dt><dd>Anda até achar o valor ou até a lista acabar. A ordem do <code>&amp;&amp;</code> importa: se <code>p</code> for <code>NULL</code>, o C nem olha <code>p-&gt;valor</code> (veja <a href="operadores-logicos.html">Operadores Lógicos</a>).</dd>
+  <dt>ant = p; p = p-&gt;prox;</dt><dd>Os dois andam juntos: <code>ant</code> fica sempre uma casa atrás de <code>p</code>.</dd>
+  <dt>if (p == NULL) return lista;</dt><dd>Não achou: devolve a lista do jeito que estava.</dd>
+  <dt>if (ant == NULL) lista = p-&gt;prox;</dt><dd>Achou no <strong>primeiro</strong> nó (não há anterior): a cabeça passa a ser o segundo.</dd>
+  <dt>ant-&gt;prox = p-&gt;prox;</dt><dd>Achou no meio ou no fim: o anterior "pula" o nó removido.</dd>
+  <dt>free(p);</dt><dd>Só agora, com a lista já religada, o nó é devolvido. Depois disso, <code>p</code> não pode mais ser usado.</dd>
+</dl>
+
+<figure>
+<svg viewBox="0 0 472 96" role="img" aria-label="Remover 20: ant está no 10 e p no 20" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Remover 20: ant está no 10 e p no 20</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="62" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">ant</text><line x1="62" y1="25" x2="62" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,42 67,33 57,33" style="fill:var(--accent)"/><circle cx="91" cy="63" r="3.5" style="fill:var(--text)"/><line x1="91" y1="63" x2="149" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="158,63 149,58 149,68" style="fill:var(--text)"/><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><text x="208" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">p</text><line x1="208" y1="25" x2="208" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="208,42 213,33 203,33" style="fill:var(--accent)"/><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<svg viewBox="0 0 472 128" role="img" aria-label="Depois de ant-&gt;prox = p-&gt;prox: o 10 pula o 20 e aponta para o 30" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Depois de ant-&gt;prox = p-&gt;prox: o 10 pula o 20 e aponta para o 30</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="62" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">ant</text><line x1="62" y1="25" x2="62" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,42 67,33 57,33" style="fill:var(--accent)"/><circle cx="91" cy="63" r="3.5" style="fill:var(--text)"/><path d="M91,67 Q208.5,136 317.8,87.6" style="fill:none;stroke:var(--accent);stroke-width:1.8"/><polygon points="326,84 315.7,83.1 319.8,92.2" style="fill:var(--accent)"/><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--warn-bg);stroke:var(--warn-border);stroke-dasharray:5 3;stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><text x="208" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">p</text><line x1="208" y1="25" x2="208" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="208,42 213,33 203,33" style="fill:var(--accent)"/><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<figcaption>Em cima, o laço parou: <code>p</code> no nó que sai, <code>ant</code> no anterior. Embaixo, a seta do 10 passou por cima do 20 e foi direto ao 30 (em azul). O nó 20, tracejado, ficou fora da lista, e o <code>free(p)</code> o devolve.</figcaption>
+</figure>
+
+<h3>O programa completo</h3>
+<p>Juntando tudo (com a função <code>liberar</code>, explicada logo abaixo):</p>
+
+<pre class="file" data-file="lista.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct No {
+    int valor;
+    struct No *prox;
+};
+
+struct No *novo_no(int valor) {
+    struct No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = NULL;
+    return n;
+}
+
+struct No *inserir_inicio(struct No *lista, int valor) {
+    struct No *n = novo_no(valor);
+    n-&gt;prox = lista;
+    return n;
+}
+
+struct No *inserir_fim(struct No *lista, int valor) {
+    struct No *n = novo_no(valor);
+    if (lista == NULL) {
+        return n;
+    }
+    struct No *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = n;
+    return lista;
+}
+
+void imprimir(const struct No *lista) {
+    for (const struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        printf("%d -&gt; ", p-&gt;valor);
+    }
+    printf("NULL\n");
+}
+
+struct No *buscar(struct No *lista, int valor) {
+    for (struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        if (p-&gt;valor == valor) {
+            return p;
+        }
+    }
+    return NULL;
+}
+
+struct No *remover(struct No *lista, int valor) {
+    struct No *ant = NULL;
+    struct No *p = lista;
+    while (p != NULL &amp;&amp; p-&gt;valor != valor) {
+        ant = p;
+        p = p-&gt;prox;
+    }
+    if (p == NULL) {
+        return lista;
+    }
+    if (ant == NULL) {
+        lista = p-&gt;prox;
+    } else {
+        ant-&gt;prox = p-&gt;prox;
+    }
+    free(p);
+    return lista;
+}
+
+void liberar(struct No *lista) {
+    while (lista != NULL) {
+        struct No *prox = lista-&gt;prox;
+        free(lista);
+        lista = prox;
+    }
+}
+
+int main(void) {
+    struct No *lista = NULL;
+    lista = inserir_fim(lista, 20);
+    lista = inserir_fim(lista, 30);
+    lista = inserir_inicio(lista, 10);
+    lista = inserir_fim(lista, 40);
+    imprimir(lista);
+
+    struct No *achou = buscar(lista, 30);
+    printf("buscar 30: %s\n", achou != NULL ? "achou" : "não achou");
+    printf("buscar 99: %s\n", buscar(lista, 99) != NULL ? "achou" : "não achou");
+
+    lista = remover(lista, 30);
+    imprimir(lista);
+    lista = remover(lista, 10);
+    imprimir(lista);
+    lista = remover(lista, 99);
+    imprimir(lista);
+
+    liberar(lista);
+    lista = NULL;
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g lista.c -o lista
+$ ./lista
+10 -&gt; 20 -&gt; 30 -&gt; 40 -&gt; NULL
+buscar 30: achou
+buscar 99: não achou
+10 -&gt; 20 -&gt; 40 -&gt; NULL
+20 -&gt; 40 -&gt; NULL
+20 -&gt; 40 -&gt; NULL</pre>
+
+<p>Linha por linha da saída: os três <code>inserir_fim</code> e o <code>inserir_inicio</code> montaram <code>10 20 30 40</code>; a busca achou o 30 e não achou o 99; <code>remover(lista, 30)</code> tirou um nó do meio; <code>remover(lista, 10)</code> tirou o primeiro (e a cabeça mudou para o 20); <code>remover(lista, 99)</code> não achou nada e devolveu a lista igual.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> este é o programa completo. Remova o <strong>último</strong> nó (o 40) e confira que o 20 passa a apontar para <code>NULL</code>. Tente remover de uma lista vazia. Use <code>buscar</code> para trocar o valor 20 por 25.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct No {
+    int valor;
+    struct No *prox;
+};
+
+struct No *novo_no(int valor) {
+    struct No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = NULL;
+    return n;
+}
+
+struct No *inserir_inicio(struct No *lista, int valor) {
+    struct No *n = novo_no(valor);
+    n-&gt;prox = lista;
+    return n;
+}
+
+struct No *inserir_fim(struct No *lista, int valor) {
+    struct No *n = novo_no(valor);
+    if (lista == NULL) {
+        return n;
+    }
+    struct No *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = n;
+    return lista;
+}
+
+void imprimir(const struct No *lista) {
+    for (const struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        printf("%d -&gt; ", p-&gt;valor);
+    }
+    printf("NULL\n");
+}
+
+struct No *buscar(struct No *lista, int valor) {
+    for (struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        if (p-&gt;valor == valor) {
+            return p;
+        }
+    }
+    return NULL;
+}
+
+struct No *remover(struct No *lista, int valor) {
+    struct No *ant = NULL;
+    struct No *p = lista;
+    while (p != NULL &amp;&amp; p-&gt;valor != valor) {
+        ant = p;
+        p = p-&gt;prox;
+    }
+    if (p == NULL) {
+        return lista;
+    }
+    if (ant == NULL) {
+        lista = p-&gt;prox;
+    } else {
+        ant-&gt;prox = p-&gt;prox;
+    }
+    free(p);
+    return lista;
+}
+
+void liberar(struct No *lista) {
+    while (lista != NULL) {
+        struct No *prox = lista-&gt;prox;
+        free(lista);
+        lista = prox;
+    }
+}
+
+int main(void) {
+    struct No *lista = NULL;
+    lista = inserir_fim(lista, 20);
+    lista = inserir_fim(lista, 30);
+    lista = inserir_inicio(lista, 10);
+    lista = inserir_fim(lista, 40);
+    imprimir(lista);
+
+    struct No *achou = buscar(lista, 30);
+    printf("buscar 30: %s\n", achou != NULL ? "achou" : "não achou");
+    printf("buscar 99: %s\n", buscar(lista, 99) != NULL ? "achou" : "não achou");
+
+    lista = remover(lista, 30);
+    imprimir(lista);
+    lista = remover(lista, 10);
+    imprimir(lista);
+    lista = remover(lista, 99);
+    imprimir(lista);
+
+    liberar(lista);
+    lista = NULL;
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>7. Liberar a lista inteira (e o valgrind)</h2>
+<p>Cada nó veio de um <code>malloc</code>, então cada nó precisa do seu <code>free</code>. Esquecer não dá erro nenhum na hora: o programa só vai segurando memória. É o <a href="vazamentos.html">vazamento de memória</a>. O programa <code>inicio.c</code> lá de cima não liberava nada. O <code>valgrind</code> mostra:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g inicio.c -o inicio
+$ valgrind --leak-check=full ./inicio
+==32493== Memcheck, a memory error detector
+==32493== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==32493== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==32493== Command: ./inicio
+==32493==
+NULL
+30 -&gt; NULL
+20 -&gt; 30 -&gt; NULL
+10 -&gt; 20 -&gt; 30 -&gt; NULL
+==32493==
+==32493== HEAP SUMMARY:
+==32493==     in use at exit: 48 bytes in 3 blocks
+==32493==   total heap usage: 4 allocs, 1 frees, 4,144 bytes allocated
+==32493==
+==32493== 48 (16 direct, 32 indirect) bytes in 1 blocks are definitely lost in loss record 3 of 3
+==32493==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==32493==    by 0x40011E1: novo_no (inicio.c:10)
+==32493==    by 0x400124E: inserir_inicio (inicio.c:21)
+==32493==    by 0x4001332: main (inicio.c:40)
+==32493==
+==32493== LEAK SUMMARY:
+==32493==    definitely lost: 16 bytes in 1 blocks
+==32493==    indirectly lost: 32 bytes in 2 blocks
+==32493==      possibly lost: 0 bytes in 0 blocks
+==32493==    still reachable: 0 bytes in 0 blocks
+==32493==         suppressed: 0 bytes in 0 blocks
+==32493==
+==32493== For lists of detected and suppressed errors, rerun with: -s
+==32493== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)</pre>
+
+<ul>
+  <li><strong>in use at exit: 48 bytes in 3 blocks</strong>: no fim, 3 blocos (os 3 nós) ainda estavam reservados. Cada nó tem 16 bytes no laboratório: 4 do <code>int</code>, 4 de "enchimento" para alinhar e 8 do ponteiro (veja <a href="sizeof.html">sizeof</a>).</li>
+  <li><strong>4 allocs, 1 frees</strong>: os 3 nós e mais um bloco que o próprio <code>printf</code> reservou para a saída (e devolveu sozinho no fim).</li>
+  <li><strong>definitely lost: 16 bytes in 1 blocks</strong>: o nó 10, o primeiro. Ninguém mais aponta para ele: está "definitivamente perdido". A linha <code>main (inicio.c:40)</code> mostra onde ele nasceu.</li>
+  <li><strong>indirectly lost: 32 bytes in 2 blocks</strong>: o 20 e o 30. Só eram alcançáveis pelo nó 10; perdido o 10, eles se perderam "indiretamente".</li>
+</ul>
+
+<p>Para liberar, ande pela lista e dê <code>free</code> em cada nó. O detalhe que importa: <strong>guarde o próximo antes de liberar o atual</strong>.</p>
+
+<pre class="file">void liberar(struct No *lista) {
+    while (lista != NULL) {
+        struct No *prox = lista-&gt;prox;
+        free(lista);
+        lista = prox;
+    }
+}
+</pre>
+
+<figure>
+<svg viewBox="0 0 472 96" role="img" aria-label="Liberar: prox já guarda o endereço do 20 antes do free no 10" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Liberar: prox já guarda o endereço do 20 antes do free no 10</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--example-bg);stroke:var(--muted);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="62" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">lista</text><line x1="62" y1="25" x2="62" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,42 67,33 57,33" style="fill:var(--accent)"/><text x="91" y="68" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">?</text><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><text x="208" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">prox</text><line x1="208" y1="25" x2="208" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="208,42 213,33 203,33" style="fill:var(--accent)"/><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<figcaption>Depois de <code>free(lista)</code>, o nó 10 (cinza) não existe mais e o campo <code>prox</code> dele não pode ser lido. Mas o endereço do 20 já estava salvo na variável <code>prox</code>. A linha <code>lista = prox;</code> anda para o 20, e o laço repete.</figcaption>
+</figure>
+
+<p>Com o <code>liberar</code> no fim do <code>main</code>, o programa completo <code>lista.c</code> fica limpo:</p>
+
+<pre class="term" data-cwd="~/c">$ valgrind --leak-check=full ./lista
+==28184== Memcheck, a memory error detector
+==28184== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==28184== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==28184== Command: ./lista
+==28184==
+10 -&gt; 20 -&gt; 30 -&gt; 40 -&gt; NULL
+buscar 30: achou
+buscar 99: não achou
+10 -&gt; 20 -&gt; 40 -&gt; NULL
+20 -&gt; 40 -&gt; NULL
+20 -&gt; 40 -&gt; NULL
+==28184==
+==28184== HEAP SUMMARY:
+==28184==     in use at exit: 0 bytes in 0 blocks
+==28184==   total heap usage: 5 allocs, 5 frees, 4,160 bytes allocated
+==28184==
+==28184== All heap blocks were freed -- no leaks are possible
+==28184==
+==28184== For lists of detected and suppressed errors, rerun with: -s
+==28184== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<p><em>All heap blocks were freed -- no leaks are possible</em> = "todos os blocos foram liberados: não há vazamento possível". São 5 <code>malloc</code> (4 nós + o do <code>printf</code>) e 5 <code>free</code> (2 do <code>remover</code>, 2 do <code>liberar</code>, 1 do <code>printf</code>). <em>ERROR SUMMARY: 0 errors</em>: nenhum acesso errado à memória.</p>
+
+<div class="tip">
+<strong>Depois de liberar, zere a cabeça</strong>
+<p>O <code>main</code> faz <code>liberar(lista); lista = NULL;</code>. Assim, se alguém usar a lista depois, ela está vazia (e não apontando para memória devolvida). A versão com <code>No **</code>, logo abaixo, faz isso sozinha.</p>
+</div>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>O editor não tem <code>valgrind</code>, e lá cada nó tem 8 bytes, e não 16 (o editor é de 32 bits: <code>int</code> e ponteiro têm 4 bytes cada). Os vazamentos e os usos de memória já liberada podem passar calados no editor. Para conferir, use o <code>valgrind</code> no seu computador.</p>
+</div>
+
+<hr>
+
+<h2 id="formas">Formas diferentes</h2>
+
+<h3>a) Com typedef e ponteiro para ponteiro</h3>
+<p>Muito código escreve <code>No</code> em vez de <code>struct No</code> com um <a href="typedef.html">typedef</a>, e passa <code>&amp;lista</code> para as funções mudarem a cabeça elas mesmas, com um <a href="ponteiro-ponteiro.html">ponteiro para ponteiro</a> (<code>No **</code>). A função fica livre para devolver outra coisa, como um <code>bool</code> dizendo se o <code>malloc</code> deu certo:</p>
+
+<pre class="file" data-file="duplo.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct No {
+    int valor;
+    struct No *prox;
+} No;
+
+bool inserir_inicio(No **inicio, int valor) {
+    No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        return false;
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = *inicio;
+    *inicio = n;
+    return true;
+}
+
+void liberar(No **inicio) {
+    No *p = *inicio;
+    while (p != NULL) {
+        No *prox = p-&gt;prox;
+        free(p);
+        p = prox;
+    }
+    *inicio = NULL;
+}
+
+int main(void) {
+    No *lista = NULL;
+    for (int v = 30; v &gt;= 10; v -= 10) {
+        if (!inserir_inicio(&amp;lista, v)) {
+            fprintf(stderr, "Sem memória\n");
+            liberar(&amp;lista);
+            return 1;
+        }
+    }
+    for (No *p = lista; p != NULL; p = p-&gt;prox) {
+        printf("%d ", p-&gt;valor);
+    }
+    printf("\n");
+    liberar(&amp;lista);
+    printf("Depois de liberar: %s\n", lista == NULL ? "NULL" : "ainda aponta");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra duplo.c -o duplo
+$ ./duplo
+10 20 30
+Depois de liberar: NULL</pre>
+
+<dl class="anatomy">
+  <dt>typedef struct No { … } No;</dt><dd>Cria o apelido <code>No</code>. <strong>Dentro</strong> das chaves, o apelido ainda não existe, por isso o campo continua <code>struct No *prox;</code>.</dd>
+  <dt>No **inicio</dt><dd>O endereço da variável <code>lista</code> do <code>main</code>. <code>*inicio</code> é a própria <code>lista</code>.</dd>
+  <dt>*inicio = n;</dt><dd>Muda a <code>lista</code> do <code>main</code> diretamente: ninguém precisa lembrar de guardar o retorno.</dd>
+  <dt>bool</dt><dd>No C23, <code>bool</code>, <code>true</code> e <code>false</code> são palavras da linguagem, sem <code>#include</code> <span class="versao">C23</span>. No C99 a C17, inclua <code>&lt;stdbool.h&gt;</code> (veja <a href="bool.html">Booleanos</a>).</dd>
+</dl>
+
+<h3>b) Com ponteiro para o fim</h3>
+<p>Uma struct "dona da lista" guarda o primeiro nó, o último e o tamanho. Inserir no fim fica tão rápido quanto no início, porque não precisa andar até o último: ele já está guardado.</p>
+
+<pre class="file" data-file="fim_rapido.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct No {
+    int valor;
+    struct No *prox;
+} No;
+
+typedef struct {
+    No *inicio;
+    No *fim;
+    int tamanho;
+} Lista;
+
+bool inserir_fim(Lista *l, int valor) {
+    No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        return false;
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = NULL;
+    if (l-&gt;fim == NULL) {
+        l-&gt;inicio = n;
+    } else {
+        l-&gt;fim-&gt;prox = n;
+    }
+    l-&gt;fim = n;
+    l-&gt;tamanho++;
+    return true;
+}
+
+void liberar(Lista *l) {
+    No *p = l-&gt;inicio;
+    while (p != NULL) {
+        No *prox = p-&gt;prox;
+        free(p);
+        p = prox;
+    }
+    l-&gt;inicio = l-&gt;fim = NULL;
+    l-&gt;tamanho = 0;
+}
+
+int main(void) {
+    Lista senhas = {NULL, NULL, 0};
+    for (int s = 101; s &lt;= 104; s++) {
+        if (!inserir_fim(&amp;senhas, s)) {
+            fprintf(stderr, "Sem memória\n");
+            liberar(&amp;senhas);
+            return 1;
+        }
+    }
+    printf("%d senhas: ", senhas.tamanho);
+    for (No *p = senhas.inicio; p != NULL; p = p-&gt;prox) {
+        printf("%d ", p-&gt;valor);
+    }
+    printf("\nÚltima: %d\n", senhas.fim-&gt;valor);
+    liberar(&amp;senhas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g fim_rapido.c -o fim_rapido
+$ ./fim_rapido
+4 senhas: 101 102 103 104
+Última: 104
+$ valgrind -q --leak-check=full ./fim_rapido
+4 senhas: 101 102 103 104
+Última: 104</pre>
+
+<p>O <code>-q</code> ("quiet", quieto) faz o <code>valgrind</code> falar só quando acha problema: como não apareceu nada além da saída do programa, não há vazamento nem erro. Esta versão é a base das <a href="pilhas-filas.html">filas</a> da próxima aula.</p>
+
+<h3>Qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Como chama</th><th>Quando usar</th></tr>
+<tr><td>Devolve a cabeça</td><td><code>lista = inserir_inicio(lista, 10);</code></td><td>Para aprender e em programas pequenos. Fácil de ler; o perigo é esquecer o <code>lista =</code>.</td></tr>
+<tr><td>Ponteiro para ponteiro</td><td><code>inserir_inicio(&amp;lista, 10);</code></td><td>Quando a função precisa devolver outra coisa (sucesso ou erro). Muito comum em bibliotecas.</td></tr>
+<tr><td>Struct com início, fim e tamanho</td><td><code>inserir_fim(&amp;senhas, 101);</code></td><td>Programas de verdade: inserir no fim e saber o tamanho ficam instantâneos.</td></tr>
+</table>
+</div>
+
+<h3>Lista ligada ou array?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operação</th><th>Array (ou <a href="array-dinamico.html">array que cresce</a>)</th><th>Lista ligada</th></tr>
+<tr><td>Pegar o elemento número <code>i</code></td><td>Instantâneo: <code>v[i]</code></td><td>Lento: andar <code>i</code> nós desde o começo</td></tr>
+<tr><td>Inserir no início</td><td>Lento: empurrar todos uma casa para a direita</td><td>Instantâneo: mudar duas setas</td></tr>
+<tr><td>Inserir no fim</td><td>Rápido (quase sempre; às vezes um <code>realloc</code>)</td><td>Instantâneo com ponteiro para o fim; lento sem ele</td></tr>
+<tr><td>Remover do meio (já sabendo onde)</td><td>Lento: puxar os seguintes uma casa para a esquerda</td><td>Instantâneo: religar uma seta e dar <code>free</code></td></tr>
+<tr><td>Memória por elemento</td><td>Só o valor</td><td>O valor + o ponteiro (e o custo de cada <code>malloc</code>)</td></tr>
+<tr><td>Percorrer tudo</td><td>Muito rápido: tudo colado, o processador adora</td><td>Mais lento: os nós ficam espalhados pela memória</td></tr>
+</table>
+</div>
+<p>Na prática, o array que cresce ganha na maioria dos programas. A lista ligada brilha quando há muitas inserções e remoções no começo ou no meio, e é a base de outras estruturas: <a href="pilhas-filas.html">pilhas e filas</a>, os "baldes" da <a href="tabela-hash.html">tabela hash</a> e, com dois ponteiros por nó, as <a href="arvores-binarias.html">árvores</a>.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Lista vazia: <code>Falha de segmentação</code> (código 139)</strong>
+<p>Esta função quer o último valor e esquece o caso da lista vazia:</p>
+<pre class="file" data-file="vazia.c">#include &lt;stdio.h&gt;
+
+struct No {
+    int valor;
+    struct No *prox;
+};
+
+int ultimo(const struct No *lista) {
+    const struct No *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    return p-&gt;valor;
+}
+
+int main(void) {
+    struct No *lista = NULL;
+    printf("Último: %d\n", ultimo(lista));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra vazia.c -o vazia
+$ ./vazia
+Falha de segmentação (imagem do núcleo gravada)
+$ echo $?
+139</pre>
+<p><strong>O que significa:</strong> com a lista vazia, <code>p</code> é <code>NULL</code>, e <code>p-&gt;prox</code> tenta ler a memória no endereço zero. O sistema mata o programa (veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>). O gcc não avisou nada: o erro só aparece rodando. O editor do guia mostra a mesma mensagem e o mesmo código 139.</p>
+<p><strong>Como consertar:</strong> toda função que usa <code>p-&gt;</code> logo de cara precisa tratar a lista vazia antes: <code>if (lista == NULL) { … }</code>. Desconfie de todo <code>p-&gt;prox-&gt;</code>: o <code>p-&gt;prox</code> pode ser <code>NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Usar o nó depois do <code>free</code>: <code>warning: pointer ‘p’ used after ‘free’</code></strong>
+<p>Um <code>liberar</code> "esperto" demais, com o laço de sempre:</p>
+<pre class="file">void liberar(struct No *lista) {
+    for (struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        free(p);
+    }
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g uaf.c -o uaf
+uaf.c: In function ‘liberar’:
+uaf.c:18:45: warning: pointer ‘p’ used after ‘free’ [-Wuse-after-free]
+   18 |     for (struct No *p = lista; p != NULL; p = p-&gt;prox) {
+      |                                           ~~^~~~~~~~~
+uaf.c:19:9: note: call to ‘free’ here
+   19 |         free(p);
+      |         ^~~~~~~
+$ ./uaf; echo "código: $?"
+free(): invalid pointer
+código: 134</pre>
+<p><strong>O que significa:</strong> o <code>p = p-&gt;prox</code> roda <strong>depois</strong> do <code>free(p)</code>: ele lê o campo de um nó que já foi devolvido. O gcc percebeu e avisou (<em>used after free</em> = "usado depois do free"). No laboratório, a biblioteca do C notou a bagunça e abortou o programa (código 134). Pode ser pior: às vezes o programa roda "normal" e falha só no dia da apresentação. O editor do guia, por exemplo, roda este programa sem reclamar. O <code>valgrind</code> aponta o erro com precisão:</p>
+<pre class="term" data-cwd="~/c">$ valgrind ./uaf
+==29164== Memcheck, a memory error detector
+==29164== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==29164== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==29164== Command: ./uaf
+==29164==
+==29164== Invalid read of size 8
+==29164==    at 0x4001200: liberar (uaf.c:18)
+==29164==    by 0x4001265: main (uaf.c:28)
+==29164==  Address 0x4aa60e8 is 8 bytes inside a block of size 16 free'd
+==29164==    at 0x48538BF: free (vg_replace_malloc.c:990)
+==29164==    by 0x40011FB: liberar (uaf.c:19)
+==29164==    by 0x4001265: main (uaf.c:28)
+==29164==  Block was alloc'd at
+==29164==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==29164==    by 0x40011A5: inserir_inicio (uaf.c:10)
+==29164==    by 0x400124B: main (uaf.c:26)
+==29164==
+==29164==
+==29164== HEAP SUMMARY:
+==29164==     in use at exit: 0 bytes in 0 blocks
+==29164==   total heap usage: 3 allocs, 3 frees, 48 bytes allocated
+==29164==
+==29164== All heap blocks were freed -- no leaks are possible
+==29164==
+==29164== For lists of detected and suppressed errors, rerun with: -s
+==29164== ERROR SUMMARY: 3 errors from 1 contexts (suppressed: 0 from 0)</pre>
+<p><em>Invalid read of size 8</em> = "leitura inválida de 8 bytes" (o ponteiro <code>prox</code>), na linha 18. <em>8 bytes inside a block of size 16 free'd</em>: o byte 8 de um nó de 16 bytes que já tinha sido liberado na linha 19. Foram 3 erros, um por nó.</p>
+<p><strong>Como consertar:</strong> guarde o próximo <strong>antes</strong> do <code>free</code>, como na função <code>liberar</code> da seção 7.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu de guardar o retorno: a lista continua vazia</strong>
+<p>Escrever <code>inserir_inicio(lista, 10);</code> sem o <code>lista =</code> na frente compila sem aviso nenhum. O nó é criado, a função devolve o endereço dele… e ninguém guarda. A lista continua <code>NULL</code> e o nó vaza. No C23 você pode pedir ajuda ao compilador marcando a função com <code>[[nodiscard]]</code> ("não descarte") <span class="versao">C23</span>:</p>
+<pre class="file">[[nodiscard]] struct No *inserir_inicio(struct No *lista, int valor) {
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra esqueceu.c -o esqueceu
+esqueceu.c: In function ‘main’:
+esqueceu.c:19:5: warning: ignoring return value of ‘inserir_inicio’, declared with attribute ‘nodiscard’ [-Wunused-result]
+   19 |     inserir_inicio(lista, 10);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~
+esqueceu.c:9:26: note: declared here
+    9 | [[nodiscard]] struct No *inserir_inicio(struct No *lista, int valor) {
+      |                          ^~~~~~~~~~~~~~
+$ ./esqueceu
+lista vazia</pre>
+<p><strong>O que significa:</strong> <em>ignoring return value</em> = "ignorando o valor de retorno" de uma função marcada como <code>nodiscard</code>. O Clang do editor diz <code>ignoring return value of function declared with 'nodiscard' attribute</code>.</p>
+<p><strong>Como consertar:</strong> <code>lista = inserir_inicio(lista, 10);</code>. Ou use a forma com <code>&amp;lista</code>, que não depende de retorno (veja <a href="atributos.html">Atributos</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: unknown type name ‘No’</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semtypedef.c -o semtypedef
+semtypedef.c:3:5: error: unknown type name ‘No’
+    3 |     No *prox;
+      |     ^~</pre>
+<p><strong>O que significa:</strong> dentro do <code>typedef struct No { … } No;</code>, o campo foi escrito <code>No *prox;</code>. O apelido <code>No</code> só passa a existir no <code>} No;</code> do fim (<em>unknown type name</em> = "nome de tipo desconhecido").</p>
+<p><strong>Como consertar:</strong> dentro das chaves, escreva <code>struct No *prox;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Perdeu o começo da lista</strong>
+<p>Percorrer com a própria variável da cabeça (<code>while (lista != NULL) lista = lista-&gt;prox;</code>) deixa <code>lista</code> em <code>NULL</code> no fim. Os nós continuam na memória, mas ninguém mais sabe onde: vazamento, e a lista "sumiu".</p>
+<p><strong>Como consertar:</strong> percorra com um ponteiro auxiliar (<code>p</code>), nunca com a cabeça. Nas funções, passar a cabeça como parâmetro já protege: o parâmetro é uma cópia (só o <code>liberar</code> anda com ela de propósito).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>struct No { int valor; struct No *prox; };</code></td><td>Define o nó: um valor e o endereço do próximo</td></tr>
+<tr><td><code>struct No *lista = NULL;</code></td><td>Lista vazia</td></tr>
+<tr><td><code>for (p = lista; p != NULL; p = p-&gt;prox)</code></td><td>Percorre todos os nós</td></tr>
+<tr><td><code>n-&gt;prox = lista; lista = n;</code></td><td>Insere <code>n</code> no início (nessa ordem)</td></tr>
+<tr><td><code>while (p-&gt;prox != NULL) p = p-&gt;prox;</code></td><td>Para no último nó (a lista não pode estar vazia)</td></tr>
+<tr><td><code>ultimo-&gt;prox = n;</code></td><td>Insere <code>n</code> no fim</td></tr>
+<tr><td><code>ant-&gt;prox = p-&gt;prox; free(p);</code></td><td>Remove <code>p</code>, que vem depois de <code>ant</code></td></tr>
+<tr><td><code>lista = p-&gt;prox; free(p);</code></td><td>Remove o primeiro nó (<code>p == lista</code>)</td></tr>
+<tr><td><code>prox = p-&gt;prox; free(p); p = prox;</code></td><td>Libera um nó sem perder o resto</td></tr>
+<tr><td><code>valgrind --leak-check=full ./prog</code></td><td>Confere vazamentos e acessos inválidos (compile com <code>-g</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O campo que liga</h3>
+<p>Complete a definição do nó:</p>
+<div class="ex-code">struct No { int valor; <input data-answer="struct No" aria-label="tipo"> *prox; };</div>
+</div>
+
+<div class="exercise">
+<h3>2. Andar uma casa</h3>
+<p>Complete o laço que percorre a lista:</p>
+<div class="ex-code">for (p = lista; p != NULL; p = <input data-answer="p-&gt;prox|(*p).prox" aria-label="passo">)</div>
+</div>
+
+<div class="exercise">
+<h3>3. Lista vazia</h3>
+<p>Que valor tem a cabeça de uma lista vazia?</p>
+<div class="ex-code">struct No *lista = <input data-answer="NULL|nullptr|0" aria-label="valor">;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Para inserir o nó <code>n</code> no início, qual é a ordem certa?</p>
+<label><input type="radio" name="q4"> <code>lista = n; n-&gt;prox = lista;</code></label>
+<label><input type="radio" name="q4"> <code>n-&gt;prox = lista; lista = n;</code></label>
+<label><input type="radio" name="q4"> Tanto faz a ordem</label>
+<label><input type="radio" name="q4"> <code>n = lista; lista-&gt;prox = n;</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que a função <code>remover</code> anda com dois ponteiros, <code>ant</code> e <code>p</code>?</p>
+<label><input type="radio" name="q5"> Para andar duas vezes mais rápido</label>
+<label><input type="radio" name="q5"> Porque o <code>free</code> precisa de dois ponteiros</label>
+<label><input type="radio" name="q5"> Porque é o <code>prox</code> do nó anterior que precisa mudar para pular o nó removido</label>
+<label><input type="radio" name="q5"> Para guardar uma cópia do valor removido</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O <code>valgrind</code> diz <code>definitely lost: 16 bytes in 1 blocks</code> e <code>indirectly lost: 32 bytes in 2 blocks</code>. O que aconteceu?</p>
+<label><input type="radio" name="q6"> O primeiro nó se perdeu sem <code>free</code>, e os dois seguintes, que só eram alcançáveis por ele, se perderam junto</label>
+<label><input type="radio" name="q6"> Três nós foram liberados duas vezes</label>
+<label><input type="radio" name="q6"> O programa leu memória depois do <code>free</code></label>
+<label><input type="radio" name="q6"> Está tudo certo: são blocos do <code>printf</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. Qual operação é <strong>lenta</strong> numa lista ligada e instantânea num array?</p>
+<label><input type="radio" name="q7"> Inserir no início</label>
+<label><input type="radio" name="q7"> Remover um nó que você já sabe onde está</label>
+<label><input type="radio" name="q7"> Liberar a memória</label>
+<label><input type="radio" name="q7"> Pegar o elemento número 500</label>
+</div>
+
+<h3>Missão final: os pedidos da lojinha</h3>
+
+<div class="tryc" data-goal="out:Pedidos: 15 -&gt; 40 -&gt; 25 -&gt; NULL,out:Total: 80">
+<p class="try-task"><strong>Missão:</strong> a Ana anota os pedidos do dia numa lista ligada, na ordem em que chegam: 15, 40 e 25 reais. Mas a função <code>inserir_fim</code> está colocando cada pedido no <strong>início</strong>, e a função <code>somar</code> sempre devolve 0. Conserte as duas: <code>inserir_fim</code> deve andar até o último nó (cuidado com a lista vazia) e <code>somar</code> deve percorrer a lista somando os valores.</p>
+<pre class="out">Pedidos: 15 -&gt; 40 -&gt; 25 -&gt; NULL
+Total: 80</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct No {
+    int valor;
+    struct No *prox;
+};
+
+struct No *novo_no(int valor) {
+    struct No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = NULL;
+    return n;
+}
+
+// CONSERTE: hoje ela coloca o nó novo no INÍCIO
+struct No *inserir_fim(struct No *lista, int valor) {
+    struct No *n = novo_no(valor);
+    n-&gt;prox = lista;
+    return n;
+}
+
+// CONSERTE: hoje ela sempre devolve 0
+int somar(const struct No *lista) {
+    int soma = 0;
+    (void)lista;
+    return soma;
+}
+
+void imprimir(const struct No *lista) {
+    printf("Pedidos: ");
+    for (const struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        printf("%d -&gt; ", p-&gt;valor);
+    }
+    printf("NULL\n");
+}
+
+void liberar(struct No *lista) {
+    while (lista != NULL) {
+        struct No *prox = lista-&gt;prox;
+        free(lista);
+        lista = prox;
+    }
+}
+
+int main(void) {
+    struct No *pedidos = NULL;
+    pedidos = inserir_fim(pedidos, 15);
+    pedidos = inserir_fim(pedidos, 40);
+    pedidos = inserir_fim(pedidos, 25);
+    imprimir(pedidos);
+    printf("Total: %d\n", somar(pedidos));
+    liberar(pedidos);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct No {
+    int valor;
+    struct No *prox;
+};
+
+struct No *novo_no(int valor) {
+    struct No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = NULL;
+    return n;
+}
+
+struct No *inserir_fim(struct No *lista, int valor) {
+    struct No *n = novo_no(valor);
+    if (lista == NULL) {
+        return n;
+    }
+    struct No *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = n;
+    return lista;
+}
+
+int somar(const struct No *lista) {
+    int soma = 0;
+    for (const struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        soma += p-&gt;valor;
+    }
+    return soma;
+}
+
+void imprimir(const struct No *lista) {
+    printf("Pedidos: ");
+    for (const struct No *p = lista; p != NULL; p = p-&gt;prox) {
+        printf("%d -&gt; ", p-&gt;valor);
+    }
+    printf("NULL\n");
+}
+
+void liberar(struct No *lista) {
+    while (lista != NULL) {
+        struct No *prox = lista-&gt;prox;
+        free(lista);
+        lista = prox;
+    }
+}
+
+int main(void) {
+    struct No *pedidos = NULL;
+    pedidos = inserir_fim(pedidos, 15);
+    pedidos = inserir_fim(pedidos, 40);
+    pedidos = inserir_fim(pedidos, 25);
+    imprimir(pedidos);
+    printf("Total: %d\n", somar(pedidos));
+    liberar(pedidos);
+    return 0;
+}
+</pre>
+</div>
+
+<p>No seu computador, compile a solução com <code>-g</code> e rode <code>valgrind --leak-check=full ./pedidos</code>: com o <code>liberar</code> no fim, a resposta tem de ser <code>All heap blocks were freed -- no leaks are possible</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma lista ligada é uma corrente de <strong>nós</strong>. Cada nó é uma struct com o <code>valor</code> e o ponteiro <code>struct No *prox</code> para o próximo; o último aponta para <code>NULL</code>. A lista em si é só o ponteiro para o primeiro nó (<code>NULL</code> = vazia).</li>
+  <li>Percorrer: <code>for (p = lista; p != NULL; p = p-&gt;prox)</code>. Use um ponteiro auxiliar, nunca a cabeça.</li>
+  <li>Inserir no início: <code>n-&gt;prox = lista; lista = n;</code>, nessa ordem. Instantâneo.</li>
+  <li>Inserir no fim: ande até o nó cujo <code>prox</code> é <code>NULL</code> e ligue o novo nele. Trate a lista vazia. Com um ponteiro para o fim, fica instantâneo.</li>
+  <li>Remover: ache o nó e o anterior, religue (<code>ant-&gt;prox = p-&gt;prox</code>, ou mude a cabeça se for o primeiro) e só então <code>free(p)</code>.</li>
+  <li>Liberar: guarde o <code>prox</code> antes de cada <code>free</code>. Todo <code>malloc</code> tem o seu <code>free</code>; confira com <code>valgrind --leak-check=full</code>.</li>
+  <li>Lista ligada ganha em inserir e remover no começo e no meio; o array ganha em acessar por posição e em percorrer.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
