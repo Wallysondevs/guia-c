@@ -1,0 +1,969 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Arrays — vários valores numa variável só | Guia C</title>
+<meta name="description" content="Arrays em C para quem nunca programou: criar com int notas[5], o índice que começa em 0, ler e trocar um elemento, percorrer com for, soma, média, maior valor e busca, as formas de inicializar (incluindo o {} do C23), tamanho com constante e VLA, por que = e == não funcionam com arrays e o que acontece quando o índice passa do fim, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Arrays</span></h1>
+
+<p class="intro">A Ana dá aula para uma turma de 5 alunos e quer guardar as notas. Com o que você viu até aqui, ela criaria <code>nota1</code>, <code>nota2</code>, <code>nota3</code>, <code>nota4</code> e <code>nota5</code>. E se a turma tiver 40 alunos? Quarenta variáveis, quarenta <code>printf</code>, e nenhum laço consegue passar por elas, porque cada uma tem um nome diferente. O <strong>array</strong> (em inglês, "arranjo", "fileira"; em português também se diz <strong>vetor</strong>) resolve isso: <strong>uma</strong> variável que guarda <strong>vários valores do mesmo tipo</strong>, um ao lado do outro, cada um com um número de posição.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como criar um array (<code>int notas[5]</code>) e por que a primeira posição é a <strong>0</strong>.</li>
+  <li>Como ler e trocar um elemento pelo <strong>índice</strong> (<code>notas[2]</code>).</li>
+  <li>Como percorrer o array com um <code>for</code>: mostrar tudo, somar, tirar a média, achar o maior e procurar um valor.</li>
+  <li>As formas de dar valores iniciais, incluindo o <code>= {}</code> do <span class="versao">C23</span>, e o que acontece quando você não dá nenhum.</li>
+  <li>Como escolher o tamanho: número, constante ou um tamanho lido do teclado (VLA).</li>
+  <li>Por que <code>b = a</code> e <code>a == b</code> não fazem o que parece.</li>
+  <li>O erro mais perigoso: o índice que passa do fim, e por que o compilador quase nunca avisa.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Antes desta aula, é bom ter visto o laço <a href="for.html">for</a>: arrays e <code>for</code> andam sempre juntos.</p>
+
+<hr>
+
+<h2>A ideia: a fileira de armários numerados</h2>
+<p>Pense nos armários de um vestiário: uma fileira de portinhas iguais, todas do mesmo tamanho, coladas uma na outra. A fileira tem <strong>um nome</strong> ("armários da turma B") e cada portinha tem <strong>um número</strong>. Para guardar ou pegar alguma coisa, você não precisa de um nome novo para cada armário: diz "armário 3 da turma B".</p>
+
+<p>Um array é exatamente isso:</p>
+<ul>
+  <li>a fileira inteira tem <strong>um nome</strong>: <code>notas</code>;</li>
+  <li>todas as portinhas guardam o <strong>mesmo tipo</strong> de coisa: <code>int</code>, por exemplo;</li>
+  <li>cada portinha tem um <strong>número de posição</strong>, o <strong>índice</strong>, escrito entre colchetes: <code>notas[3]</code>;</li>
+  <li>o número de portinhas é decidido quando a fileira é construída e <strong>não muda</strong> depois.</li>
+</ul>
+
+<p>Só tem uma surpresa: em C, a contagem das portinhas começa no <strong>0</strong>, não no 1. Já já você vê o porquê.</p>
+
+<hr>
+
+<h2>1. O primeiro array</h2>
+
+<pre class="file" data-file="notas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    printf("Primeira nota: %d\n", notas[0]);
+    printf("Terceira nota: %d\n", notas[2]);
+    printf("Última nota: %d\n", notas[4]);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int</dt><dd>O tipo de <strong>cada elemento</strong>. Todos os 5 valores são <code>int</code>. Um array não mistura tipos.</dd>
+  <dt>notas</dt><dd>O nome do array, escolhido por você com as mesmas regras de qualquer variável (aula <a href="identificadores.html">Nomes de Variáveis</a>). Costuma ir no plural: <code>notas</code>, <code>precos</code>, <code>alunos</code>.</dd>
+  <dt>[5]</dt><dd>Quantos elementos o array tem: 5 portinhas. Na criação, o número entre colchetes é o <strong>tamanho</strong>.</dd>
+  <dt>= {7, 8, 6, 9, 10}</dt><dd>Os valores iniciais, entre <strong>chaves</strong>, separados por vírgula, na ordem das posições. Isso se chama <strong>inicializar</strong> o array.</dd>
+  <dt>notas[0]</dt><dd>Depois de criado, o número entre colchetes muda de papel: passa a ser o <strong>índice</strong>, a posição que você quer. <code>notas[0]</code> é o primeiro elemento, que vale 7.</dd>
+  <dt>notas[4]</dt><dd>O último. Num array de 5, as posições vão de <strong>0 a 4</strong>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra notas.c -o notas
+$ ./notas
+Primeira nota: 7
+Terceira nota: 6
+Última nota: 10</pre>
+
+<div class="tip">
+<strong>Os colchetes têm dois papéis</strong>
+<p>Na <strong>criação</strong> (<code>int notas[5]</code>), o número diz <strong>quantos</strong> elementos existem. Em todo o resto do programa (<code>notas[4]</code>), o número diz <strong>qual</strong> elemento você quer. Por isso <code>int notas[5]</code> e <code>notas[5]</code> parecem iguais, mas o segundo é um erro: pede a sexta portinha de uma fileira de cinco (seção 9).</p>
+</div>
+
+<hr>
+
+<h2>2. Por que o índice começa em 0</h2>
+<p>O índice não é "o número do armário" no sentido de contagem humana. Ele é a <strong>distância</strong> desde o começo da fileira: o primeiro elemento está a 0 passos do começo, o segundo a 1 passo, e assim por diante. Na memória, os 5 inteiros ficam colados, cada um com 4 bytes (aula <a href="sizeof.html">Tamanho dos Tipos</a>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Índice</th><td><code>[0]</code></td><td><code>[1]</code></td><td><code>[2]</code></td><td><code>[3]</code></td><td><code>[4]</code></td></tr>
+<tr><th>Valor</th><td>7</td><td>8</td><td>6</td><td>9</td><td>10</td></tr>
+<tr><th>Distância do começo</th><td>0 bytes</td><td>4 bytes</td><td>8 bytes</td><td>12 bytes</td><td>16 bytes</td></tr>
+<tr><th>Para a Ana</th><td>aluno 1</td><td>aluno 2</td><td>aluno 3</td><td>aluno 4</td><td>aluno 5</td></tr>
+</table>
+</div>
+
+<p>Para achar <code>notas[3]</code>, o computador faz uma conta só: "começo da fileira + 3 × 4 bytes". É por isso que acessar qualquer posição é igualmente rápido, seja a primeira ou a milésima. (Essa conta, com ponteiros, é o assunto de <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>, no Nível 2.)</p>
+
+<p>A consequência que você vai usar o tempo todo: <strong>num array de N elementos, os índices vão de 0 a N−1</strong>. O último elemento de um array de 5 é o <code>[4]</code>; o de um array de 40 é o <code>[39]</code>.</p>
+
+<div class="tryc" data-goal="out:Segunda nota: 8,src:notas\[1\]">
+<p class="try-task"><strong>Missão:</strong> complete o segundo <code>printf</code> para mostrar a nota do <strong>segundo</strong> aluno, <code>Segunda nota: 8</code>. Qual é o índice do segundo elemento?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    printf("Primeira nota: %d\n", notas[0]);
+    printf("Segunda nota: %d\n", 0);   // troque o 0 pelo elemento certo
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    printf("Primeira nota: %d\n", notas[0]);
+    printf("Segunda nota: %d\n", notas[1]);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Trocar um elemento</h2>
+<p>Cada elemento funciona como uma variável comum: dá para dar um valor novo com <code>=</code> e usar em contas.</p>
+
+<pre class="file" data-file="trocar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    printf("Antes: notas[2] = %d\n", notas[2]);
+    notas[2] = 10;
+    notas[0] = notas[0] + 1;
+    printf("Depois: notas[2] = %d\n", notas[2]);
+    printf("E notas[0] = %d\n", notas[0]);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>notas[2] = 10;</dt><dd>O terceiro aluno fez a prova de recuperação: a portinha 2 recebe 10. O 6 que estava lá some.</dd>
+  <dt>notas[0] = notas[0] + 1;</dt><dd>Um ponto extra para o primeiro aluno: lê o valor da portinha 0 (7), soma 1 e guarda de volta. Também podia ser <code>notas[0]++;</code> ou <code>notas[0] += 1;</code> (aula <a href="incremento.html">++ e --</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra trocar.c -o trocar
+$ ./trocar
+Antes: notas[2] = 6
+Depois: notas[2] = 10
+E notas[0] = 8</pre>
+
+<h3>O índice pode ser uma variável</h3>
+<p>Entre os colchetes pode ir qualquer conta que dê um número inteiro: <code>notas[i]</code>, <code>notas[i + 1]</code>, <code>notas[total - 1]</code>. É isso que deixa o array poderoso: um laço pode fazer <code>i</code> valer 0, 1, 2, 3, 4, e <code>notas[i]</code> passa por todos os elementos. O índice tem de ser <strong>inteiro</strong>: com um <code>double i = 2;</code>, o gcc recusa <code>notas[i]</code> com <code>error: array subscript is not an integer</code> ("o índice do array não é um inteiro"; <em>subscript</em> é o nome técnico do índice).</p>
+
+<hr>
+
+<h2>4. Percorrer o array com <code>for</code></h2>
+<p>O <code>for (int i = 0; i &lt; 5; i++)</code> da aula <a href="for.html">for</a> dá exatamente os índices de um array de 5: 0, 1, 2, 3 e 4. Com ele, a Ana mostra todas as notas e calcula a média:</p>
+
+<pre class="file" data-file="percorre.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    int soma = 0;
+    for (int i = 0; i &lt; 5; i++) {
+        printf("Aluno %d: nota %d\n", i + 1, notas[i]);
+        soma = soma + notas[i];
+    }
+    printf("Soma: %d\n", soma);
+    printf("Média: %.1f\n", soma / 5.0);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int soma = 0;</dt><dd>O acumulador começa em zero, como no somatório da aula <a href="for.html">for</a>.</dd>
+  <dt>for (int i = 0; i &lt; 5; i++)</dt><dd>Começa no 0 e usa <code>&lt;</code>: passa por 0, 1, 2, 3, 4 e para antes do 5. É a forma padrão de percorrer um array em C.</dd>
+  <dt>i + 1</dt><dd>Para a Ana, o aluno <code>[0]</code> é o "aluno 1". Na tela, mostre a contagem humana; no código, use o índice.</dd>
+  <dt>soma = soma + notas[i];</dt><dd>A cada volta, soma o elemento da posição <code>i</code>.</dd>
+  <dt>soma / 5.0</dt><dd>Dividir por <code>5.0</code> (e não por <code>5</code>) faz a conta com casas decimais (aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra percorre.c -o percorre
+$ ./percorre
+Aluno 1: nota 7
+Aluno 2: nota 8
+Aluno 3: nota 6
+Aluno 4: nota 9
+Aluno 5: nota 10
+Soma: 40
+Média: 8.0</pre>
+
+<p>Se a turma crescer para 40 alunos, o laço continua com 3 linhas. É para isso que o array existe.</p>
+
+<div class="tryc" data-goal="out:Aprovados: 3,src:for\s*\(">
+<p class="try-task"><strong>Missão:</strong> a Ana quer saber quantos alunos passaram (nota <strong>7 ou mais</strong>). Dentro do <code>for</code>, some 1 em <code>aprovados</code> quando <code>notas[i]</code> for maior ou igual a 7. O resultado tem de ser <code>Aprovados: 3</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 4, 9, 6, 8};
+    int aprovados = 0;
+    for (int i = 0; i &lt; 5; i++) {
+        // se a nota for 7 ou mais, conte mais um aprovado
+
+    }
+    printf("Aprovados: %d\n", aprovados);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 4, 9, 6, 8};
+    int aprovados = 0;
+    for (int i = 0; i &lt; 5; i++) {
+        if (notas[i] &gt;= 7) {
+            aprovados++;
+        }
+    }
+    printf("Aprovados: %d\n", aprovados);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Encher o array pelo teclado</h3>
+<p>O <code>scanf</code> (aula <a href="scanf.html">Entrada com scanf</a>) guarda direto numa posição. Como em qualquer variável <code>int</code>, ele precisa do <code>&amp;</code>, agora na frente do elemento:</p>
+
+<pre class="file" data-file="ler.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[3];
+    for (int i = 0; i &lt; 3; i++) {
+        printf("Nota do aluno %d: ", i + 1);
+        if (scanf("%d", &amp;notas[i]) != 1) {
+            return 1;
+        }
+    }
+    printf("Você digitou: %d, %d e %d\n", notas[0], notas[1], notas[2]);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int notas[3];</dt><dd>Três portinhas, ainda sem valor: o <code>scanf</code> vai enchê-las.</dd>
+  <dt>&amp;notas[i]</dt><dd>"O endereço do elemento <code>i</code>": o lugar onde o <code>scanf</code> deve escrever (aula <a href="memoria.html">Memória e Endereços</a>). Os colchetes são resolvidos primeiro: é o endereço de <code>notas[i]</code>, e não de <code>notas</code>.</dd>
+  <dt>!= 1</dt><dd>Se o <code>scanf</code> não conseguiu ler um número (a pessoa digitou letras, ou a entrada acabou), o programa para em vez de continuar com uma nota sem valor.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ler.c -o ler
+$ ./ler
+Nota do aluno 1: 8         « a Ana digita 8 e Enter
+Nota do aluno 2: 7
+Nota do aluno 3: 10
+Você digitou: 8, 7 e 10</pre>
+
+<hr>
+
+<h2>5. Três receitas que todo programa usa</h2>
+<p>Quase tudo que se faz com um array é uma variação de três laços: <strong>acumular</strong> (a soma, que você já viu), <strong>achar o maior</strong> e <strong>procurar</strong>.</p>
+
+<h3>Achar o maior</h3>
+<p>A Ana anotou os pontos de 6 rodadas de um jogo e quer o recorde:</p>
+
+<pre class="file" data-file="maior.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos[6] = {12, 45, 7, 45, 30, 18};
+    int maior = pontos[0];
+    int posicao = 0;
+    for (int i = 1; i &lt; 6; i++) {
+        if (pontos[i] &gt; maior) {
+            maior = pontos[i];
+            posicao = i;
+        }
+    }
+    printf("Maior pontuação: %d (rodada %d)\n", maior, posicao + 1);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int maior = pontos[0];</dt><dd>O "campeão provisório" é o primeiro elemento. Não comece com <code>maior = 0</code>: se todos os valores fossem negativos (temperaturas no inverno da Sibéria), o 0 ganharia sem estar no array.</dd>
+  <dt>for (int i = 1; …)</dt><dd>Começa no 1, porque o elemento 0 já é o campeão: não precisa competir com ele mesmo.</dd>
+  <dt>if (pontos[i] &gt; maior)</dt><dd>Achou alguém maior? Ele vira o novo campeão, e <code>posicao</code> guarda onde ele estava.</dd>
+  <dt>&gt; e não &gt;=</dt><dd>O 45 aparece duas vezes (rodadas 2 e 4). Com <code>&gt;</code>, o empate não troca o campeão, e fica a <strong>primeira</strong> vez. Com <code>&gt;=</code>, ficaria a última.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra maior.c -o maior
+$ ./maior
+Maior pontuação: 45 (rodada 2)</pre>
+
+<p>Para o <strong>menor</strong>, é o mesmo laço com <code>&lt;</code> no <code>if</code>.</p>
+
+<h3>Procurar um valor</h3>
+<p>Na lojinha da Ana, cada produto tem um código. O código 330 está cadastrado? Em que posição?</p>
+
+<pre class="file" data-file="procura.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int codigos[5] = {101, 205, 330, 412, 587};
+    int procurado = 330;
+    int achou = -1;
+    for (int i = 0; i &lt; 5; i++) {
+        if (codigos[i] == procurado) {
+            achou = i;
+            break;
+        }
+    }
+    if (achou &gt;= 0) {
+        printf("Código %d está na posição %d\n", procurado, achou);
+    } else {
+        printf("Código %d não existe\n", procurado);
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int achou = -1;</dt><dd>−1 não é um índice válido (os índices começam em 0). Por isso ele serve de sinal: "ainda não achei".</dd>
+  <dt>break;</dt><dd>Achou: não precisa olhar o resto. O <code>break</code> sai do laço na hora (aula <a href="break-continue.html">break e continue</a>).</dd>
+  <dt>if (achou &gt;= 0)</dt><dd>Depois do laço, se <code>achou</code> deixou de ser −1, o valor foi encontrado.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra procura.c -o procura
+$ ./procura
+Código 330 está na posição 2</pre>
+
+<p>Essa é a <strong>busca linear</strong>: olhar um por um, do começo ao fim. Para arrays pequenos é perfeita. Para arrays enormes e em ordem, existe a busca binária (<code>bsearch</code>, aula <a href="ordenacao.html">Ordenar e Buscar</a>).</p>
+
+<h3>Arrays de outros tipos</h3>
+<p>Tudo isso vale para qualquer tipo: <code>double</code> para preços, <code>char</code> para letras, <code>bool</code> para "sim ou não".</p>
+
+<pre class="file" data-file="compras.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double precos[4] = {4.50, 12.90, 3.25, 8.00};
+    char tamanhos[3] = {'P', 'M', 'G'};
+    double total = 0.0;
+    for (int i = 0; i &lt; 4; i++) {
+        total = total + precos[i];
+    }
+    printf("Total da compra: R$ %.2f\n", total);
+    printf("Tamanhos: %c %c %c\n", tamanhos[0], tamanhos[1], tamanhos[2]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra compras.c -o compras
+$ ./compras
+Total da compra: R$ 28.65
+Tamanhos: P M G</pre>
+
+<p>Um array de <code>char</code> com uma marca de fim é o que o C chama de <strong>string</strong>, o texto. Ele tem aula própria, logo depois desta e da próxima: <a href="strings.html">Strings</a>.</p>
+
+<hr>
+
+<h2>6. As formas de dar valores iniciais</h2>
+
+<pre class="file" data-file="formas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a[5] = {1, 2, 3, 4, 5};
+    int b[] = {1, 2, 3};
+    int c[5] = {1, 2};
+    int d[5] = {};
+    int e[5] = {[1] = 50, [3] = 70};
+
+    printf("a:");
+    for (int i = 0; i &lt; 5; i++) printf(" %d", a[i]);
+    printf("\nb:");
+    for (int i = 0; i &lt; 3; i++) printf(" %d", b[i]);
+    printf("\nc:");
+    for (int i = 0; i &lt; 5; i++) printf(" %d", c[i]);
+    printf("\nd:");
+    for (int i = 0; i &lt; 5; i++) printf(" %d", d[i]);
+    printf("\ne:");
+    for (int i = 0; i &lt; 5; i++) printf(" %d", e[i]);
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra formas.c -o formas
+$ ./formas
+a: 1 2 3 4 5
+b: 1 2 3
+c: 1 2 0 0 0
+d: 0 0 0 0 0
+e: 0 50 0 70 0</pre>
+
+<dl class="anatomy">
+  <dt>int a[5] = {1, 2, 3, 4, 5};</dt><dd>Tamanho e todos os valores. A forma completa.</dd>
+  <dt>int b[] = {1, 2, 3};</dt><dd>Colchetes vazios: o compilador <strong>conta</strong> os valores e cria um array de 3. Bom quando a lista é fixa: acrescente um valor e o tamanho se ajusta sozinho.</dd>
+  <dt>int c[5] = {1, 2};</dt><dd>Menos valores que o tamanho: os que faltam viram <strong>zero</strong>. Sempre, garantido pelo padrão.</dd>
+  <dt>int d[5] = {};</dt><dd>Chaves vazias: tudo zero. <span class="versao">C23</span> Antes do C23, o jeito era <code>= {0}</code> (o primeiro é 0 de propósito e os outros viram 0 pela regra de cima), que você vai ver em muito código e continua valendo.</dd>
+  <dt>int e[5] = {[1] = 50, [3] = 70};</dt><dd><strong>Inicializador designado</strong> <span class="versao">C99</span>: você diz a posição de cada valor. Os outros viram zero. Útil em tabelas grandes com poucos valores.</dd>
+</dl>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> mude os inicializadores e rode. Tente <code>int v[6] = {5};</code> (só o primeiro é 5?), <code>{[5] = 1}</code> (o último) e <code>int v[] = {9, 8, 7, 6, 5, 4};</code>. Repare que o laço usa <code>6</code>: se o array mudar de tamanho, ajuste o laço também (a seção 7 mostra como não esquecer).</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int v[6] = {5};
+    for (int i = 0; i &lt; 6; i++) {
+        printf("v[%d] = %d\n", i, v[i]);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Sem valor inicial: lixo</h3>
+<p>Um array criado <strong>sem</strong> <code>=</code> dentro de uma função não é zerado. Cada portinha guarda o que estava naquele pedaço de memória antes, o famoso <strong>lixo</strong>:</p>
+
+<pre class="file" data-file="lixo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int estoque[8];
+    for (int i = 0; i &lt; 8; i++) {
+        printf("estoque[%d] = %d\n", i, estoque[i]);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lixo.c -o lixo
+lixo.c: In function ‘main’:
+lixo.c:6:9: warning: ‘estoque’ may be used uninitialized [-Wmaybe-uninitialized]
+    6 |         printf("estoque[%d] = %d\n", i, estoque[i]);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+lixo.c:4:9: note: ‘estoque’ declared here
+    4 |     int estoque[8];
+      |         ^~~~~~~
+$ ./lixo
+estoque[0] = 0
+estoque[1] = 0
+estoque[2] = 0
+estoque[3] = 0
+estoque[4] = 0
+estoque[5] = 0
+estoque[6] = 0
+estoque[7] = 0             « zeros por sorte: nada garante isso</pre>
+
+<p><em>‘estoque’ may be used uninitialized</em> = "<code>estoque</code> pode estar sendo usado sem valor inicial". No notebook da Ana saíram zeros, mas foi sorte: aquela memória ainda não tinha sido usada. No editor do guia, o mesmo programa mostrou <code>estoque[0] = 1792246774</code> e <code>estoque[2] = 483000000</code>, e o Clang <strong>nem avisou</strong>. Ler um valor que nunca foi escrito é comportamento indefinido (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>).</p>
+
+<div class="warning">
+<strong>Regra do guia: todo array começa com valor</strong>
+<p>Se você ainda não tem os valores, escreva <code>= {}</code> (ou <code>= {0}</code> antes do C23). A exceção é quando o próximo passo enche <strong>todas</strong> as posições, como o <code>scanf</code> do <code>ler.c</code>. (Arrays criados <strong>fora</strong> de qualquer função, os globais, já começam zerados: aula <a href="escopo.html">Escopo</a>.)</p>
+</div>
+
+<h3>Valores demais</h3>
+<p>O contrário, mais valores que portinhas, o gcc aceita com um aviso, e joga fora o que sobra:</p>
+
+<pre class="term" data-cwd="~/c">$ cat demais.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int v[3] = {1, 2, 3, 4};
+    printf("%d\n", v[0]);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra demais.c -o demais
+demais.c: In function ‘main’:
+demais.c:4:26: warning: excess elements in array initializer
+    4 |     int v[3] = {1, 2, 3, 4};
+      |                          ^
+demais.c:4:26: note: (near initialization for ‘v’)</pre>
+
+<p><em>Excess elements in array initializer</em> = "elementos em excesso no inicializador do array". O 4 foi descartado. Quase sempre o tamanho é que está errado: troque por <code>int v[] = {1, 2, 3, 4};</code> e deixe o compilador contar.</p>
+
+<hr>
+
+<h2>7. O tamanho: número, constante ou VLA</h2>
+<p>No <code>percorre.c</code>, o número 5 aparece duas vezes: no <code>int notas[5]</code> e no <code>i &lt; 5</code>. Se a turma ganhar um aluno e a Ana só mudar um dos dois, o programa erra. Há três jeitos de manter os dois iguais.</p>
+
+<h3>Jeito 1: uma constante com nome</h3>
+
+<pre class="file" data-file="constante.c">#include &lt;stdio.h&gt;
+
+#define ALUNOS 5
+
+int main(void) {
+    int notas[ALUNOS] = {7, 8, 6, 9, 10};
+    int soma = 0;
+    for (int i = 0; i &lt; ALUNOS; i++) {
+        soma = soma + notas[i];
+    }
+    printf("Média de %d alunos: %.1f\n", ALUNOS, (double) soma / ALUNOS);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra constante.c -o constante
+$ ./constante
+Média de 5 alunos: 8.0</pre>
+
+<p><code>#define ALUNOS 5</code> troca a palavra <code>ALUNOS</code> por <code>5</code> em todo o arquivo antes de compilar. Mudou a turma? Muda uma linha. No <span class="versao">C23</span> também dá para escrever <code>constexpr int ALUNOS = 5;</code>, uma constante de verdade, com tipo. Os dois jeitos, e por que um simples <code>const int</code> não serve aqui, estão em <a href="constantes.html">Constantes</a>.</p>
+
+<h3>Jeito 2: deixar o compilador contar</h3>
+<p>Com <code>int notas[] = {…}</code>, quem decide o tamanho é a lista. Para o laço saber quantos são, divida o tamanho do array em bytes pelo tamanho de um elemento:</p>
+
+<pre class="file" data-file="conta.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[] = {7, 8, 6, 9, 10, 5};
+    size_t total = sizeof notas / sizeof notas[0];
+    int soma = 0;
+    for (size_t i = 0; i &lt; total; i++) {
+        soma = soma + notas[i];
+    }
+    printf("%zu notas, média %.1f\n", total, (double) soma / total);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra conta.c -o conta
+$ ./conta
+6 notas, média 7.5      « 24 bytes ÷ 4 bytes = 6 notas</pre>
+
+<dl class="anatomy">
+  <dt>size_t total</dt><dd><code>size_t</code> é o tipo do resultado do <code>sizeof</code>: um inteiro sem sinal, próprio para tamanhos e contagens. Seu formato no <code>printf</code> é <code>%zu</code>.</dd>
+  <dt>sizeof notas / sizeof notas[0]</dt><dd>O array inteiro tem 24 bytes; um elemento, 4. A divisão dá 6. Acrescente uma nota na lista e o <code>total</code> vira 7 sozinho.</dd>
+  <dt>size_t i</dt><dd>O índice com o mesmo tipo do <code>total</code>, para o <code>i &lt; total</code> comparar dois números do mesmo tipo (com <code>int i</code>, o <code>-Wextra</code> avisa: <code>comparison of integer expressions of different signedness</code>, "comparação de inteiros com e sem sinal").</dd>
+</dl>
+
+<p>A conta <code>sizeof notas / sizeof notas[0]</code> é explicada em <a href="sizeof.html">Tamanho dos Tipos</a>. Ela tem uma pegadinha: só funciona onde o array foi <strong>criado</strong>. Dentro de uma função que recebeu o array, ela dá um número errado (aula <a href="parametros.html">Parâmetros</a>).</p>
+
+<h3>Jeito 3: um tamanho que só se sabe rodando (VLA) <span class="versao">C99</span></h3>
+<p>E se a Ana só souber o tamanho da turma quando o programa perguntar? Dentro de uma função, o C99 permite um tamanho que é uma <strong>variável</strong>. Isso se chama <strong>VLA</strong>, <em>variable length array</em>, "array de tamanho variável":</p>
+
+<pre class="file" data-file="vla.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n;
+    printf("Quantos alunos? ");
+    if (scanf("%d", &amp;n) != 1 || n &lt; 1 || n &gt; 100) {
+        return 1;
+    }
+    int notas[n];
+    for (int i = 0; i &lt; n; i++) {
+        printf("Nota %d: ", i + 1);
+        if (scanf("%d", &amp;notas[i]) != 1) {
+            return 1;
+        }
+    }
+    printf("\nO array tem %zu bytes (%d notas).\n", sizeof notas, n);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra vla.c -o vla
+$ ./vla
+Quantos alunos? 3
+Nota 1: 7
+Nota 2: 8
+Nota 3: 9
+
+O array tem 12 bytes (3 notas).</pre>
+
+<dl class="anatomy">
+  <dt>n &lt; 1 || n &gt; 100</dt><dd>Conferir o tamanho <strong>antes</strong> de criar o array. Um VLA de tamanho 0 ou negativo é comportamento indefinido, e um enorme estoura a pilha (8 MB no Linux) e derruba o programa.</dd>
+  <dt>int notas[n];</dt><dd>O array é criado <strong>nesta linha</strong>, com o tamanho que <code>n</code> tiver agora. Depois de criado, o tamanho não muda, mesmo que <code>n</code> mude.</dd>
+  <dt>sizeof notas</dt><dd>Com VLA, o <code>sizeof</code> é calculado na hora: 3 × 4 = 12.</dd>
+</dl>
+
+<p>Os VLAs têm limites. Não aceitam valores iniciais: <code>int v[n] = {1, 2, 3};</code> dá <code>error: variable-sized object may not be initialized except with an empty initializer</code> ("um objeto de tamanho variável não pode ser inicializado, a não ser com um inicializador vazio"); o <code>= {}</code> do C23 é aceito. E o C11 os tornou <strong>opcionais</strong>: o gcc e o Clang têm, mas o compilador da Microsoft (MSVC) não. Para tamanhos grandes ou que mudam enquanto o programa roda, o jeito certo é o <code>malloc</code>, no Nível 2 (<a href="malloc-free.html">malloc e free</a> e <a href="array-dinamico.html">Array que Cresce</a>).</p>
+
+<h3>Qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>#define N 5</code> + <code>int v[N]</code></td><td>O tamanho é conhecido e aparece em vários lugares (laços, mensagens). A mais comum.</td></tr>
+<tr><td><code>int v[] = {…}</code> + <code>sizeof v / sizeof v[0]</code></td><td>Uma lista fixa de valores escrita no código (tabela de preços, dias do mês).</td></tr>
+<tr><td><code>int v[n]</code> (VLA)</td><td>Tamanho pequeno, lido na hora, e você conferiu o limite. Com cuidado.</td></tr>
+<tr><td><code>malloc</code></td><td>Tamanho grande ou que cresce enquanto o programa roda (Nível 2).</td></tr>
+<tr><td><code>int v[5]</code> e <code>i &lt; 5</code> soltos</td><td>Só em exemplos curtos, como os desta aula.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>8. <code>=</code> e <code>==</code> não funcionam com arrays inteiros</h2>
+<p>Com variáveis comuns, <code>b = a</code> copia e <code>a == b</code> compara. Com arrays, nenhum dos dois faz isso.</p>
+
+<h3>Copiar com <code>=</code> não compila</h3>
+
+<pre class="file" data-file="copiar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a[3] = {7, 8, 9};
+    int b[3];
+    b = a;
+    printf("%d\n", b[0]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra copiar.c -o copiar
+copiar.c: In function ‘main’:
+copiar.c:6:7: error: assignment to expression with array type
+    6 |     b = a;
+      |       ^</pre>
+
+<p><em>Assignment to expression with array type</em> = "atribuição a uma expressão do tipo array". Em C, um array <strong>não pode receber outro array</strong> com <code>=</code>. O <code>=</code> com chaves só vale na <strong>criação</strong> (<code>int b[3] = {7, 8, 9};</code>), que é uma inicialização. No editor, o Clang diz <code>array type 'int[3]' is not assignable</code> ("o tipo array não pode receber atribuição"). Para copiar, copie elemento por elemento:</p>
+
+<pre class="file" data-file="copiar2.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a[3] = {7, 8, 9};
+    int b[3];
+    for (int i = 0; i &lt; 3; i++) {
+        b[i] = a[i];
+    }
+    b[0] = 100;
+    printf("a: %d %d %d\n", a[0], a[1], a[2]);
+    printf("b: %d %d %d\n", b[0], b[1], b[2]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra copiar2.c -o copiar2
+$ ./copiar2
+a: 7 8 9
+b: 100 8 9          « b é uma cópia de verdade: mudar b não muda a</pre>
+
+<p>Há também uma função pronta que copia bytes, a <code>memcpy</code> (de <code>&lt;string.h&gt;</code>): <code>memcpy(b, a, sizeof a);</code>. Ela aparece em <a href="funcoes-string.html">Funções de String</a> e no Nível 2.</p>
+
+<h3>Comparar com <code>==</code> compara outra coisa</h3>
+
+<pre class="file" data-file="comparar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a[3] = {7, 8, 9};
+    int b[3] = {7, 8, 9};
+    if (a == b) {
+        printf("Iguais\n");
+    } else {
+        printf("Diferentes\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra comparar.c -o comparar
+comparar.c: In function ‘main’:
+comparar.c:6:11: warning: comparison between two arrays [-Warray-compare]
+    6 |     if (a == b) {
+      |           ^~
+comparar.c:6:11: note: use ‘&amp;a[0] == &amp;b[0]’ to compare the addresses
+$ ./comparar
+Diferentes          « os valores são iguais, mas o == disse que não</pre>
+
+<p><em>Comparison between two arrays</em> = "comparação entre dois arrays", e a nota sugere "use <code>&amp;a[0] == &amp;b[0]</code> para comparar os <strong>endereços</strong>". É isso que o <code>==</code> fez: perguntou "as duas fileiras começam no mesmo lugar da memória?". São duas fileiras diferentes, então a resposta é sempre "não", mesmo com os mesmos valores dentro. O Clang do editor é ainda mais direto: <code>array comparison always evaluates to false</code> ("comparar arrays sempre dá falso"). Para comparar os <strong>valores</strong>, use um laço que confere posição por posição e para na primeira diferença.</p>
+
+<hr>
+
+<h2>9. O índice que passa do fim</h2>
+<p>Agora o erro mais importante desta aula. O C <strong>não confere</strong> se o índice está dentro do array. Se você pedir <code>notas[5]</code> num array de 5, ele faz a conta "começo + 5 × 4 bytes" e lê o que estiver lá, que não é seu. Na maioria das vezes o compilador nem avisa.</p>
+
+<h3>Ler além do fim</h3>
+<p>Este é o erro do "um a mais" da aula <a href="for.html#umamais">for</a>, agora com um array: <code>&lt;=</code> no lugar de <code>&lt;</code>.</p>
+
+<pre class="file" data-file="soma-errada.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    int soma = 0;
+    for (int i = 0; i &lt;= 5; i++) {
+        soma = soma + notas[i];
+    }
+    printf("Soma: %d\n", soma);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra soma-errada.c -o soma-errada     « nenhum aviso
+$ ./soma-errada
+Soma: 40            « certo por sorte: depois do array havia um zero</pre>
+
+<p>O laço somou <code>notas[5]</code>, que não existe. Desta vez, a memória logo depois do array tinha um zero, e a soma saiu certa. É o pior tipo de erro: o que <strong>se esconde</strong>. Num outro dia, com outras variáveis por perto, a soma viria errada.</p>
+
+<p>O gcc só percebe quando você liga a <strong>otimização</strong> (<code>-O2</code>), porque é aí que ele analisa os laços a fundo:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -O2 soma-errada.c -o soma-errada
+soma-errada.c: In function ‘main’:
+soma-errada.c:7:28: warning: iteration 5 invokes undefined behavior [-Waggressive-loop-optimizations]
+    7 |         soma = soma + notas[i];
+      |                       ~~~~~^~~
+soma-errada.c:6:23: note: within this loop
+    6 |     for (int i = 0; i &lt;= 5; i++) {
+      |                     ~~^~~~</pre>
+
+<p><em>Iteration 5 invokes undefined behavior</em> = "a volta 5 provoca comportamento indefinido", e a nota aponta o <code>i &lt;= 5</code>. Para pegar o erro com certeza, na hora de rodar, compile com o <strong>AddressSanitizer</strong> (<code>-fsanitize=address</code>, aula <a href="sanitizers.html">Sanitizers</a>):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address soma-errada.c -o soma-errada
+$ ./soma-errada
+=================================================================
+==417099==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7bb563df0034 at pc 0x55e12bd58477 bp 0x7ffd51901390 sp 0x7ffd51901380
+READ of size 4 at 0x7bb563df0034 thread T0
+    #0 0x55e12bd58476 in main /home/ana/c/soma-errada.c:7
+…
+  This frame has 1 object(s):
+    [32, 52) 'notas' (line 4) &lt;== Memory access at offset 52 overflows this variable
+…
+SUMMARY: AddressSanitizer: stack-buffer-overflow /home/ana/c/soma-errada.c:7 in main
+…                                     « mais linhas com o mapa da memória
+==417099==ABORTING</pre>
+
+<dl class="anatomy">
+  <dt>stack-buffer-overflow</dt><dd>"Estouro de buffer na pilha": um acesso passou do fim de um array local.</dd>
+  <dt>READ of size 4</dt><dd>Uma <strong>leitura</strong> de 4 bytes: um <code>int</code>.</dd>
+  <dt>in main … soma-errada.c:7</dt><dd>A linha culpada: <code>soma = soma + notas[i];</code>.</dd>
+  <dt>[32, 52) 'notas' … offset 52 overflows this variable</dt><dd>O array ocupa os bytes 32 a 51 (5 × 4 = 20 bytes). O acesso foi no byte 52, logo depois do fim: é o <code>notas[5]</code>.</dd>
+</dl>
+
+<h3>Escrever além do fim</h3>
+<p>Ler fora do array dá um valor errado. <strong>Escrever</strong> fora é pior: estraga a memória de outra coisa. A Ana quer zerar 3 notas, mas usou <code>&lt;=</code>:</p>
+
+<pre class="file" data-file="zerar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 100;
+    int notas[3] = {7, 8, 9};
+    for (int i = 0; i &lt;= 3; i++) {
+        notas[i] = 0;
+    }
+    printf("notas[0] = %d\n", notas[0]);
+    printf("pontos = %d\n", pontos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra zerar.c -o zerar     « nenhum aviso
+$ ./zerar
+notas[0] = 0
+pontos = 100
+*** stack smashing detected ***: terminated
+Abortado                   (imagem do núcleo gravada) ./zerar
+$ echo $?
+134</pre>
+
+<p>O programa fez tudo e, na hora de terminar o <code>main</code>, morreu. <em>Stack smashing detected</em> = "esmagamento da pilha detectado". O gcc do Ubuntu coloca, logo depois das variáveis do <code>main</code>, um valor-sentinela chamado <strong>canário</strong> (como os canários que os mineiros levavam para a mina: se o passarinho passasse mal, havia gás). O <code>notas[3] = 0</code> escreveu em cima dele. Quando o <code>main</code> terminou, o sistema conferiu o canário, viu que ele mudou e <strong>abortou</strong> o programa (código 134) em vez de continuar com a memória estragada.</p>
+
+<p>Repare que o aviso vem <strong>no fim</strong>, longe da linha culpada. O <code>-fsanitize=address</code>, de novo, aponta na hora: <code>WRITE of size 4</code> ("escrita de 4 bytes") em <code>/home/ana/c/zerar.c:7</code>, a linha <code>notas[i] = 0;</code>.</p>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>No editor (WebAssembly), os dois programas desta seção terminam <strong>normalmente</strong>: <code>Soma: 40</code>, e o <code>zerar.c</code> mostra <code>pontos = 100</code> sem canário nem <code>Abortado</code>. Lá, o acesso fora do array passa calado (veja <a href="simulador.html">O Editor do Guia</a>). Em compensação, o Clang do editor avisa quando o índice é um número fixo: <code>printf("%d", notas[5]);</code> dá <code>warning: array index 5 is past the end of the array (that has type 'int[5]')</code> ("o índice 5 passa do fim do array"), enquanto o gcc só avisa isso com <code>-O2</code> (<code>array subscript 5 is above array bounds of ‘int[5]’</code>). Não confie no silêncio de nenhum dos dois: confira os limites você mesmo.</p>
+</div>
+
+<div class="warning">
+<strong>Regra do guia: todo índice fica entre 0 e tamanho − 1</strong>
+<p>Percorra com <code>for (int i = 0; i &lt; TAMANHO; i++)</code>, com <code>&lt;</code>. Se o índice vem de fora (do teclado, de um arquivo, de uma conta), confira <strong>antes</strong> de usar: <code>if (i &gt;= 0 &amp;&amp; i &lt; TAMANHO)</code>. E, enquanto estiver testando, compile com <code>-g -fsanitize=address</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: assignment to expression with array type</code></strong>
+<p><strong>O que significa:</strong> você tentou copiar um array inteiro com <code>=</code> (<code>b = a;</code>), ou dar uma lista nova a um array já criado (<code>notas = {1, 2, 3};</code>).</p>
+<p><strong>Como consertar:</strong> copie com um laço (<code>b[i] = a[i]</code>) ou com <code>memcpy(b, a, sizeof a)</code>. Lista entre chaves, só na criação.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: comparison between two arrays [-Warray-compare]</code></strong>
+<p><strong>O que significa:</strong> o <code>a == b</code> compara os endereços das duas fileiras, não os valores. O resultado é sempre "diferentes".</p>
+<p><strong>Como consertar:</strong> compare elemento por elemento, num laço.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: array size missing in ‘notas’</code></strong>
+<p><strong>O que significa:</strong> você escreveu <code>int notas[];</code> sem tamanho e sem lista. Com colchetes vazios, o compilador precisa das chaves para contar. (O Clang do editor diz <code>definition of variable with array type needs an explicit size or an initializer</code>: "precisa de um tamanho ou de valores iniciais".)</p>
+<p><strong>Como consertar:</strong> ponha o tamanho (<code>int notas[5];</code>) ou a lista (<code>int notas[] = {7, 8};</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: excess elements in array initializer</code></strong>
+<p><strong>O que significa:</strong> há mais valores entre as chaves do que portinhas no array. Os de sobra são descartados.</p>
+<p><strong>Como consertar:</strong> aumente o tamanho ou, melhor, use <code>[]</code> e deixe o compilador contar.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘estoque’ may be used uninitialized [-Wmaybe-uninitialized]</code></strong>
+<p><strong>O que significa:</strong> o array foi lido antes de receber valores. As portinhas têm lixo.</p>
+<p><strong>Como consertar:</strong> crie com <code>= {}</code> (ou <code>= {0}</code>), ou encha todas as posições antes de ler.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: array subscript is not an integer</code></strong>
+<p><strong>O que significa:</strong> o índice é um <code>double</code> ou <code>float</code>. Não existe a portinha 2,5.</p>
+<p><strong>Como consertar:</strong> use uma variável <code>int</code> (ou <code>size_t</code>) como índice. Se o valor vem de uma conta com casas decimais, converta: <code>notas[(int) x]</code> (aula <a href="conversao-tipos.html">Conversão de Tipos</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Resultado errado ou estranho, sem nenhum aviso; ou <code>*** stack smashing detected ***</code> e <code>Abortado</code> no fim do programa</strong>
+<p><strong>O que significa:</strong> algum índice passou do fim do array, quase sempre um <code>&lt;=</code> no laço. Ler fora dá valores errados; escrever fora estraga outras variáveis e o canário.</p>
+<p><strong>Como consertar:</strong> procure os laços com <code>&lt;=</code> e os índices que vêm de fora. Compile com <code>-g -fsanitize=address</code> para o programa apontar a linha exata.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: variable-sized object may not be initialized except with an empty initializer</code></strong>
+<p><strong>O que significa:</strong> um array com tamanho variável (<code>int v[n]</code>) recebeu uma lista de valores.</p>
+<p><strong>Como consertar:</strong> use <code>= {}</code> ou encha com um laço. Se o tamanho na verdade é fixo, use <code>#define</code> ou <code>constexpr</code> em vez de uma variável (aula <a href="constantes.html">Constantes</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>int v[5];</code></td><td>Array de 5 <code>int</code>, sem valores (lixo, se estiver dentro de uma função)</td></tr>
+<tr><td><code>int v[5] = {1, 2, 3, 4, 5};</code></td><td>Array de 5 com todos os valores</td></tr>
+<tr><td><code>int v[] = {1, 2, 3};</code></td><td>O compilador conta: 3 elementos</td></tr>
+<tr><td><code>int v[5] = {1, 2};</code></td><td><code>1 2 0 0 0</code>: o que falta vira zero</td></tr>
+<tr><td><code>int v[5] = {};</code> / <code>= {0};</code></td><td>Tudo zero (<code>{}</code> é do C23; <code>{0}</code> funciona em todas as versões)</td></tr>
+<tr><td><code>int v[5] = {[3] = 9};</code></td><td>Inicializador designado (C99): só a posição 3 vale 9</td></tr>
+<tr><td><code>v[0]</code> / <code>v[4]</code></td><td>Primeiro e último elemento de um array de 5</td></tr>
+<tr><td><code>v[i] = 10;</code></td><td>Troca o elemento da posição <code>i</code></td></tr>
+<tr><td><code>scanf("%d", &amp;v[i]);</code></td><td>Lê um número para a posição <code>i</code></td></tr>
+<tr><td><code>for (int i = 0; i &lt; N; i++)</code></td><td>Percorre um array de N elementos</td></tr>
+<tr><td><code>sizeof v / sizeof v[0]</code></td><td>Quantos elementos (só onde o array foi criado)</td></tr>
+<tr><td><code>int v[n];</code></td><td>VLA: tamanho lido na hora (C99; opcional desde o C11)</td></tr>
+<tr><td><code>b = a;</code> / <code>a == b</code></td><td>Errados com arrays: copie e compare elemento por elemento</td></tr>
+<tr><td><code>-g -fsanitize=address</code></td><td>Opções do gcc que pegam índice fora do array ao rodar</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O último elemento</h3>
+<p>Complete para mostrar o último elemento de <code>int dias[7]</code>:</p>
+<div class="ex-code">printf("%d\n", dias[<input data-answer="6" aria-label="índice">]);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Percorrer</h3>
+<p>Complete a condição para percorrer um array de 10 elementos, sem passar do fim:</p>
+<div class="ex-code">for (int i = 0; <input data-answer="i &lt; 10|i&lt;10|i &lt;= 9|i&lt;=9" aria-label="condição">; i++)</div>
+</div>
+
+<div class="exercise">
+<h3>3. Tudo zero</h3>
+<p>Complete para criar um array de 20 <code>double</code> com todos os valores zero, do jeito do C23:</p>
+<div class="ex-code">double saldo[20] = <input data-answer="{}|{0}" aria-label="inicializador">;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Depois de <code>int v[5] = {4, 2};</code>, quanto vale <code>v[3]</code>?</p>
+<label><input type="radio" name="q4"> 4</label>
+<label><input type="radio" name="q4"> 2</label>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> Lixo: qualquer valor</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Um programa com <code>for (int i = 0; i &lt;= 5; i++) soma += notas[i];</code> (array de 5) compilou sem avisos e deu a soma certa. O que se pode concluir?</p>
+<label><input type="radio" name="q5"> Está certo: se fosse erro, o compilador avisaria</label>
+<label><input type="radio" name="q5"> Está errado: leu <code>notas[5]</code>, que não existe, e acertou por sorte</label>
+<label><input type="radio" name="q5"> Está certo: o C para sozinho no fim do array</label>
+<label><input type="radio" name="q5"> Está errado: a soma sempre sai errada com <code>&lt;=</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual destas linhas copia o array <code>a</code> (de 3 elementos) para <code>b</code>?</p>
+<label><input type="radio" name="q6"> <code>b = a;</code></label>
+<label><input type="radio" name="q6"> <code>b[] = a[];</code></label>
+<label><input type="radio" name="q6"> <code>b[3] = a[3];</code></label>
+<label><input type="radio" name="q6"> <code>for (int i = 0; i &lt; 3; i++) b[i] = a[i];</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. Por que, ao procurar o maior valor, o "campeão" começa como <code>v[0]</code> e não como <code>0</code>?</p>
+<label><input type="radio" name="q7"> Porque, se todos os valores forem negativos, o 0 ganharia sem estar no array</label>
+<label><input type="radio" name="q7"> Porque <code>0</code> não é um <code>int</code></label>
+<label><input type="radio" name="q7"> Porque o C não deixa comparar com 0</label>
+<label><input type="radio" name="q7"> Tanto faz: dá sempre o mesmo resultado</label>
+</div>
+
+<h3>Missão final: as temperaturas da semana</h3>
+
+<div class="tryc" data-goal="out:Maior: 32 (dia 7),out:Menor: 25 (dia 5),out:Média: 28.9,src:for\s*\(,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana anotou a temperatura máxima de cada dia da semana. Complete o programa para mostrar a <strong>maior</strong> e a <strong>menor</strong> temperatura, com o dia de cada uma (o dia 1 é <code>temperaturas[0]</code>), e a <strong>média</strong> com uma casa decimal. Use um laço, e sem avisos.</p>
+<pre class="out">Maior: 32 (dia 7)
+Menor: 25 (dia 5)
+Média: 28.9</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define DIAS 7
+
+int main(void) {
+    int temperaturas[DIAS] = {28, 31, 30, 27, 25, 29, 32};
+    int maior = 0, dia_maior = 0;
+    int menor = 0, dia_menor = 0;
+    int soma = 0;
+
+    // percorra o array aqui
+
+    printf("Maior: %d (dia %d)\n", maior, dia_maior);
+    printf("Menor: %d (dia %d)\n", menor, dia_menor);
+    printf("Média: %.1f\n", (double) soma / DIAS);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define DIAS 7
+
+int main(void) {
+    int temperaturas[DIAS] = {28, 31, 30, 27, 25, 29, 32};
+    int maior = temperaturas[0], dia_maior = 1;
+    int menor = temperaturas[0], dia_menor = 1;
+    int soma = 0;
+
+    for (int i = 0; i &lt; DIAS; i++) {
+        if (temperaturas[i] &gt; maior) {
+            maior = temperaturas[i];
+            dia_maior = i + 1;
+        }
+        if (temperaturas[i] &lt; menor) {
+            menor = temperaturas[i];
+            dia_menor = i + 1;
+        }
+        soma = soma + temperaturas[i];
+    }
+
+    printf("Maior: %d (dia %d)\n", maior, dia_maior);
+    printf("Menor: %d (dia %d)\n", menor, dia_menor);
+    printf("Média: %.1f\n", (double) soma / DIAS);
+    return 0;
+}
+</pre>
+</div>
+
+<p>A solução faz as três receitas da seção 5 num laço só. O <code>menor</code> também começa com o primeiro elemento: se começasse com 0, nenhuma temperatura seria menor que ele e a resposta sairia <code>Menor: 0</code>, que nem está no array. A soma é 202, e 202 ÷ 7 = 28,857…, que o <code>%.1f</code> arredonda para 28.9.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <strong>array</strong> guarda vários valores do <strong>mesmo tipo</strong>, colados na memória, com um nome só: <code>int notas[5]</code>. O tamanho é fixo depois de criado.</li>
+  <li>O <strong>índice</strong> começa em <strong>0</strong>: num array de N, as posições vão de 0 a N−1. Cada elemento (<code>notas[i]</code>) funciona como uma variável comum.</li>
+  <li>Percorra com <code>for (int i = 0; i &lt; N; i++)</code>. As receitas básicas: somar, achar o maior (começando pelo primeiro elemento) e procurar (com um sinal como −1).</li>
+  <li>Inicialize sempre: <code>{1, 2, 3}</code>, <code>[]</code> para o compilador contar, <code>= {}</code> (C23) ou <code>= {0}</code> para zerar. O que falta na lista vira zero; sem lista nenhuma, é lixo.</li>
+  <li>Dê nome ao tamanho (<code>#define</code>, <code>constexpr</code>) ou conte com <code>sizeof v / sizeof v[0]</code>. VLA (<code>int v[n]</code>) existe, mas com limites.</li>
+  <li><code>b = a</code> não compila e <code>a == b</code> compara endereços: copie e compare elemento por elemento.</li>
+  <li>O C não confere o índice. Passar do fim é comportamento indefinido: pode dar certo por sorte, dar valor errado ou terminar em <code>stack smashing detected</code>. Use <code>&lt;</code> nos laços e <code>-fsanitize=address</code> nos testes. No editor, esse erro passa calado.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
