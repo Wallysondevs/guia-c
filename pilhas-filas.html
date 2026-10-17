@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Pilhas e Filas — push, pop, enfileirar | Guia C</title>
+<meta name="description" content="Pilhas e filas em C para quem nunca programou: pilha com array e com lista ligada (push, pop, topo), o desfazer (Ctrl+Z) de um editor, fila com lista ligada e com array circular (enfileirar, desenfileirar), a fila do banco, desenhos de caixas e setas e os erros reais (pop em pilha vazia, esquecer o resto %, ponteiro de fim solto), com saídas do gcc 15, valgrind e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Pilhas e Filas</span></h1>
+
+<p class="intro">Muitos programas guardam coisas para usar depois, e a <strong>ordem</strong> em que elas saem é o que importa. O Ctrl+Z de um editor desfaz primeiro a <strong>última</strong> coisa que você fez. O caixa do banco chama primeiro quem <strong>chegou primeiro</strong>. Esses dois jeitos têm nome: <strong>pilha</strong> e <strong>fila</strong>. Nesta aula você vai construir os dois em C, primeiro com um array e depois com uma <a href="listas-ligadas.html">lista ligada</a>, e vai ver o truque do array circular.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma <strong>pilha</strong> (o último a entrar é o primeiro a sair) e uma <strong>fila</strong> (o primeiro a entrar é o primeiro a sair).</li>
+  <li>As operações da pilha: <code>push</code> (empilhar), <code>pop</code> (desempilhar) e ver o topo.</li>
+  <li>Como fazer uma pilha com <strong>array</strong> e com <strong>lista ligada</strong>, e um "desfazer" de verdade.</li>
+  <li>As operações da fila: <strong>enfileirar</strong> e <strong>desenfileirar</strong>, com a fila do banco.</li>
+  <li>Como fazer uma fila com lista ligada (ponteiros de início e fim) e com <strong>array circular</strong> (o resto <code>%</code>).</li>
+  <li>Os erros clássicos: tirar de uma pilha vazia, esquecer o <code>%</code>, esquecer de zerar o fim.</li>
+</ul>
+</div>
+
+<p>Esta aula usa <a href="structs.html">structs</a>, <a href="passagem-ponteiro.html">passar por ponteiro</a> e <a href="listas-ligadas.html">listas ligadas</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: pratos e o banco</h2>
+<p>Na cozinha da Ana, os pratos limpos ficam <strong>empilhados</strong>. Ela sempre põe o prato novo <strong>em cima</strong> e sempre tira o prato <strong>de cima</strong>. O prato que está embaixo de todos foi o primeiro a ser guardado e vai ser o último a ser usado. Isso é uma <strong>pilha</strong> (em inglês, <em>stack</em>).</p>
+<p>No banco, as pessoas pegam uma senha e entram na <strong>fila</strong>. Quem chega vai para o <strong>fim</strong>; o caixa chama quem está no <strong>começo</strong>. Quem chegou primeiro é atendido primeiro. Isso é uma <strong>fila</strong> (em inglês, <em>queue</em>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Pilha</th><th>Fila</th></tr>
+<tr><td>Regra</td><td>O <strong>último</strong> que entra é o <strong>primeiro</strong> que sai</td><td>O <strong>primeiro</strong> que entra é o <strong>primeiro</strong> que sai</td></tr>
+<tr><td>Sigla em inglês</td><td>LIFO (<em>last in, first out</em>)</td><td>FIFO (<em>first in, first out</em>)</td></tr>
+<tr><td>Por onde entra</td><td>Pelo topo</td><td>Pelo fim</td></tr>
+<tr><td>Por onde sai</td><td>Pelo topo</td><td>Pelo começo</td></tr>
+<tr><td>Nomes das operações</td><td><code>push</code> ("empurrar", empilhar), <code>pop</code> ("estourar", desempilhar)</td><td><em>enqueue</em> (enfileirar), <em>dequeue</em> (desenfileirar)</td></tr>
+<tr><td>No computador</td><td>Desfazer (Ctrl+Z), voltar página do navegador, conferir parênteses, a <a href="pilha-heap.html">pilha de chamadas</a> de funções</td><td>Fila de impressão, mensagens esperando resposta, atendimento por ordem de chegada</td></tr>
+</table>
+</div>
+
+<p>Nenhuma das duas deixa você mexer no meio. Essa é a graça: com só duas operações, não tem como errar a ordem.</p>
+
+<hr>
+
+<h2>1. Pilha com array</h2>
+<p>A forma mais simples de pilha é um array e um número, <code>topo</code>, que diz quantos itens estão guardados. Os itens moram em <code>itens[0]</code>, <code>itens[1]</code>… e o de cima está em <code>itens[topo - 1]</code>:</p>
+
+<pre class="file" data-file="pilha_array.c">#include &lt;stdio.h&gt;
+
+#define MAX 5
+
+typedef struct {
+    int itens[MAX];
+    int topo;
+} Pilha;
+
+bool push(Pilha *p, int valor) {
+    if (p-&gt;topo == MAX) {
+        return false;
+    }
+    p-&gt;itens[p-&gt;topo] = valor;
+    p-&gt;topo++;
+    return true;
+}
+
+bool pop(Pilha *p, int *saida) {
+    if (p-&gt;topo == 0) {
+        return false;
+    }
+    p-&gt;topo--;
+    *saida = p-&gt;itens[p-&gt;topo];
+    return true;
+}
+
+bool ver_topo(const Pilha *p, int *saida) {
+    if (p-&gt;topo == 0) {
+        return false;
+    }
+    *saida = p-&gt;itens[p-&gt;topo - 1];
+    return true;
+}
+
+int main(void) {
+    Pilha pratos = {.topo = 0};
+    for (int i = 1; i &lt;= 6; i++) {
+        if (push(&amp;pratos, i * 10)) {
+            printf("push %d\n", i * 10);
+        } else {
+            printf("push %d: pilha cheia!\n", i * 10);
+        }
+    }
+    int x;
+    if (ver_topo(&amp;pratos, &amp;x)) {
+        printf("Topo: %d (com %d itens)\n", x, pratos.topo);
+    }
+    while (pop(&amp;pratos, &amp;x)) {
+        printf("pop %d\n", x);
+    }
+    printf("Vazia: %s\n", pratos.topo == 0 ? "sim" : "não");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pilha_array.c -o pilha_array
+$ ./pilha_array
+push 10
+push 20
+push 30
+push 40
+push 50
+push 60: pilha cheia!
+Topo: 50 (com 5 itens)
+pop 50
+pop 40
+pop 30
+pop 20
+pop 10
+Vazia: sim</pre>
+
+<dl class="anatomy">
+  <dt>#define MAX 5</dt><dd>A capacidade da pilha. Com um array, ela é fixa: o sexto <code>push</code> é recusado.</dd>
+  <dt>int topo;</dt><dd>Quantos itens estão na pilha. Também é a <strong>posição livre</strong> onde o próximo item vai entrar.</dd>
+  <dt>Pilha pratos = {.topo = 0};</dt><dd>Começa vazia. O <code>.topo = 0</code> é um <em>inicializador designado</em> <span class="versao">C99</span>: dá valor ao campo pelo nome, e os campos não citados (o array) ficam zerados.</dd>
+  <dt>bool push(Pilha *p, int valor)</dt><dd>Recebe a pilha por <strong>ponteiro</strong>, para poder mudá-la, e devolve <code>false</code> se ela estiver cheia. Quem chama confere.</dd>
+  <dt>p-&gt;itens[p-&gt;topo] = valor; p-&gt;topo++;</dt><dd>Guarda na posição livre e sobe o topo.</dd>
+  <dt>bool pop(Pilha *p, int *saida)</dt><dd>O valor tirado sai pelo ponteiro <code>saida</code>; o retorno diz se deu certo. Assim, "pilha vazia" nunca se confunde com um valor de verdade.</dd>
+  <dt>p-&gt;topo--; *saida = p-&gt;itens[p-&gt;topo];</dt><dd>Desce o topo e lê o item que estava lá em cima. O valor continua no array, mas agora está na parte "livre" e vai ser sobrescrito no próximo <code>push</code>.</dd>
+  <dt>ver_topo</dt><dd>Olha o item de cima <strong>sem tirar</strong>. Em inglês é o <em>peek</em> ("espiar") ou <em>top</em>.</dd>
+  <dt>while (pop(&amp;pratos, &amp;x))</dt><dd>Desempilha até o <code>pop</code> devolver <code>false</code>. Repare que os números saíram na ordem <strong>contrária</strong> à que entraram.</dd>
+</dl>
+
+<figure>
+<svg viewBox="0 0 746 206" role="img" aria-label="Três momentos da pilha: com 10, 20 e 30; depois de push 40; depois de pop" style="width:100%;max-width:746px;height:auto;display:block">
+<title>Três momentos da pilha: com 10, 20 e 30; depois de push 40; depois de pop</title>
+<rect x="26" y="142" width="90" height="32" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="71" y="163" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="14" y="163" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">0</text><rect x="26" y="110" width="90" height="32" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="71" y="131" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><text x="14" y="131" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">1</text><rect x="26" y="78" width="90" height="32" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="71" y="99" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><text x="14" y="99" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">2</text><rect x="26" y="46" width="90" height="32" style="fill:none;stroke:var(--border);stroke-width:1.5;stroke-dasharray:4 3"/><text x="14" y="67" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">3</text><rect x="26" y="14" width="90" height="32" style="fill:none;stroke:var(--border);stroke-width:1.5;stroke-dasharray:4 3"/><text x="14" y="35" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">4</text><line x1="150" y1="94" x2="128" y2="94" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="119,94 128,99 128,89" style="fill:var(--accent)"/><text x="154" y="99" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle;text-anchor:start;font-size:12px">de cima</text><text x="71" y="196" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">antes: topo = 3</text><rect x="266" y="142" width="90" height="32" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="311" y="163" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="254" y="163" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">0</text><rect x="266" y="110" width="90" height="32" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="311" y="131" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><text x="254" y="131" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">1</text><rect x="266" y="78" width="90" height="32" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="311" y="99" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><text x="254" y="99" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">2</text><rect x="266" y="46" width="90" height="32" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="311" y="67" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">40</text><text x="254" y="67" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">3</text><rect x="266" y="14" width="90" height="32" style="fill:none;stroke:var(--border);stroke-width:1.5;stroke-dasharray:4 3"/><text x="254" y="35" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">4</text><line x1="390" y1="62" x2="368" y2="62" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="359,62 368,67 368,57" style="fill:var(--accent)"/><text x="394" y="67" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle;text-anchor:start;font-size:12px">de cima</text><text x="311" y="196" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">push 40: topo = 4</text><rect x="506" y="142" width="90" height="32" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="551" y="163" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><text x="494" y="163" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">0</text><rect x="506" y="110" width="90" height="32" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="551" y="131" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><text x="494" y="131" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">1</text><rect x="506" y="78" width="90" height="32" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="551" y="99" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><text x="494" y="99" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">2</text><rect x="506" y="46" width="90" height="32" style="fill:none;stroke:var(--border);stroke-width:1.5;stroke-dasharray:4 3"/><text x="494" y="67" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">3</text><rect x="506" y="14" width="90" height="32" style="fill:none;stroke:var(--border);stroke-width:1.5;stroke-dasharray:4 3"/><text x="494" y="35" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">4</text><line x1="630" y1="94" x2="608" y2="94" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="599,94 608,99 608,89" style="fill:var(--accent)"/><text x="634" y="99" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle;text-anchor:start;font-size:12px">de cima</text><text x="551" y="196" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">pop (sai o 40): topo = 3</text>
+</svg>
+<figcaption>A pilha desenhada de baixo para cima, com os índices do array à esquerda. Um <code>push 40</code> guarda o 40 em <code>itens[3]</code> (verde) e o <code>topo</code> passa de 3 para 4. Um <code>pop</code> faz o caminho inverso: o <code>topo</code> volta a 3 e o 40 é devolvido. Nada é empurrado nem copiado: só o <code>topo</code> sobe e desce.</figcaption>
+</figure>
+
+<div class="tryc" data-goal="out:ahlip,src:pop\s*\(">
+<p class="try-task"><strong>Experimente:</strong> o programa já empilhou as letras de <code>"pilha"</code>, uma por uma. Escreva o laço que <strong>desempilha</strong> todas e mostra cada letra com <code>putchar(c)</code>. Como a pilha devolve na ordem contrária, a palavra vai sair de trás para a frente: <code>ahlip</code>.</p>
+<pre class="out">ahlip</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#define MAX 20
+
+typedef struct {
+    char letras[MAX];
+    int topo;
+} Pilha;
+
+bool push(Pilha *p, char c) {
+    if (p-&gt;topo == MAX) {
+        return false;
+    }
+    p-&gt;letras[p-&gt;topo++] = c;
+    return true;
+}
+
+bool pop(Pilha *p, char *saida) {
+    if (p-&gt;topo == 0) {
+        return false;
+    }
+    *saida = p-&gt;letras[--p-&gt;topo];
+    return true;
+}
+
+int main(void) {
+    const char *palavra = "pilha";
+    Pilha p = {.topo = 0};
+    for (size_t i = 0; i &lt; strlen(palavra); i++) {
+        push(&amp;p, palavra[i]);
+    }
+
+    // tire as letras da pilha, uma por uma, e mostre cada uma com putchar
+
+    putchar('\n');
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#define MAX 20
+
+typedef struct {
+    char letras[MAX];
+    int topo;
+} Pilha;
+
+bool push(Pilha *p, char c) {
+    if (p-&gt;topo == MAX) {
+        return false;
+    }
+    p-&gt;letras[p-&gt;topo++] = c;
+    return true;
+}
+
+bool pop(Pilha *p, char *saida) {
+    if (p-&gt;topo == 0) {
+        return false;
+    }
+    *saida = p-&gt;letras[--p-&gt;topo];
+    return true;
+}
+
+int main(void) {
+    const char *palavra = "pilha";
+    Pilha p = {.topo = 0};
+    for (size_t i = 0; i &lt; strlen(palavra); i++) {
+        push(&amp;p, palavra[i]);
+    }
+
+    char c;
+    while (pop(&amp;p, &amp;c)) {
+        putchar(c);
+    }
+
+    putchar('\n');
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare em <code>p-&gt;letras[p-&gt;topo++] = c;</code> e <code>p-&gt;letras[--p-&gt;topo]</code>: são as mesmas duas linhas do <code>pilha_array.c</code> juntadas numa só, com o <code>++</code> depois (usa e depois soma) e o <code>--</code> antes (subtrai e depois usa). Veja <a href="incremento.html">++ e --</a>.</p>
+
+<hr>
+
+<h2>2. Pilha com lista ligada: o desfazer</h2>
+<p>A pilha com array tem tamanho fixo. Com uma <a href="listas-ligadas.html">lista ligada</a>, ela cresce enquanto houver memória, e as operações já existem: <strong>push</strong> é inserir no início e <strong>pop</strong> é remover o primeiro. O topo é a cabeça da lista.</p>
+<p>Vamos fazer o "desfazer" de um editor de texto. Cada ação vai para a pilha; o Ctrl+Z tira a de cima:</p>
+
+<pre class="file" data-file="desfazer.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct Acao {
+    char texto[40];
+    struct Acao *abaixo;
+} Acao;
+
+bool empilhar(Acao **topo, const char *texto) {
+    Acao *a = malloc(sizeof *a);
+    if (a == NULL) {
+        return false;
+    }
+    snprintf(a-&gt;texto, sizeof a-&gt;texto, "%s", texto);
+    a-&gt;abaixo = *topo;
+    *topo = a;
+    return true;
+}
+
+bool desempilhar(Acao **topo, char *saida, size_t tam) {
+    if (*topo == NULL) {
+        return false;
+    }
+    Acao *a = *topo;
+    snprintf(saida, tam, "%s", a-&gt;texto);
+    *topo = a-&gt;abaixo;
+    free(a);
+    return true;
+}
+
+int main(void) {
+    Acao *historico = NULL;
+    const char *feitas[] = {"digitou \"Olá\"", "pôs negrito", "trocou a cor"};
+    for (int i = 0; i &lt; 3; i++) {
+        if (!empilhar(&amp;historico, feitas[i])) {
+            fprintf(stderr, "Sem memória\n");
+            return 1;
+        }
+        printf("Fez: %s\n", feitas[i]);
+    }
+    char ultima[40];
+    for (int i = 0; i &lt; 2; i++) {
+        if (desempilhar(&amp;historico, ultima, sizeof ultima)) {
+            printf("Ctrl+Z desfez: %s\n", ultima);
+        }
+    }
+    printf("Ainda pode desfazer: %s\n", historico != NULL ? historico-&gt;texto : "nada");
+    while (desempilhar(&amp;historico, ultima, sizeof ultima)) {
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g desfazer.c -o desfazer
+$ ./desfazer
+Fez: digitou "Olá"
+Fez: pôs negrito
+Fez: trocou a cor
+Ctrl+Z desfez: trocou a cor
+Ctrl+Z desfez: pôs negrito
+Ainda pode desfazer: digitou "Olá"</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>struct Acao *abaixo;</code></td><td>O <code>prox</code> da lista, com um nome que lembra a pilha: aponta para a ação de <strong>baixo</strong>.</td></tr>
+<tr><td><code>Acao **topo</code></td><td>As funções recebem o endereço da variável <code>historico</code> (um <a href="ponteiro-ponteiro.html">ponteiro para ponteiro</a>), para mudar o topo diretamente.</td></tr>
+<tr><td><code>snprintf(a-&gt;texto, sizeof a-&gt;texto, "%s", texto);</code></td><td>Copia o texto sem passar do tamanho do campo (veja <a href="string-numero.html">snprintf</a>). Mais seguro que <code>strcpy</code>.</td></tr>
+<tr><td><code>a-&gt;abaixo = *topo; *topo = a;</code></td><td>O <strong>push</strong>: a ação nova aponta para o topo antigo e vira o topo.</td></tr>
+<tr><td><code>*topo = a-&gt;abaixo; free(a);</code></td><td>O <strong>pop</strong>: o de baixo vira o topo, e o nó tirado é liberado (o texto já foi copiado para <code>saida</code>).</td></tr>
+<tr><td><code>while (desempilhar(…)) { }</code></td><td>No fim, esvazia o que sobrou: cada <code>desempilhar</code> faz um <code>free</code>. O laço não tem corpo porque o trabalho todo está na condição.</td></tr>
+</table>
+</div>
+
+<figure>
+<svg viewBox="0 0 551.5 96" role="img" aria-label="A pilha do desfazer: o topo é a última ação" style="width:100%;max-width:551.5px;height:auto;display:block">
+<title>A pilha do desfazer: o topo é a última ação</title>
+<rect x="14" y="44" width="122.5" height="38" rx="4" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><line x1="98.5" y1="44" x2="98.5" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="56.25" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">cor</text><text x="75.25" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">historico</text><line x1="75.3" y1="25" x2="75.3" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="75.3,42 80.3,33 70.3,33" style="fill:var(--accent)"/><circle cx="117.5" cy="63" r="3.5" style="fill:var(--text)"/><line x1="117.5" y1="63" x2="175.5" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="184.5,63 175.5,58 175.5,68" style="fill:var(--text)"/><rect x="186.5" y="44" width="122.5" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="271" y1="44" x2="271" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="228.75" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">negrito</text><circle cx="290" cy="63" r="3.5" style="fill:var(--text)"/><line x1="290" y1="63" x2="348" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="357,63 348,58 348,68" style="fill:var(--text)"/><rect x="359" y="44" width="122.5" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="443.5" y1="44" x2="443.5" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="401.25" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">Olá</text><circle cx="462.5" cy="63" r="3.5" style="fill:var(--text)"/><line x1="462.5" y1="63" x2="490.5" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="499.5,63 490.5,58 490.5,68" style="fill:var(--text)"/><text x="502.5" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<figcaption>A pilha deitada: a cabeça da lista (<code>historico</code>) é o topo, a ação mais recente. O Ctrl+Z tira "trocou a cor" e o topo passa a ser "pôs negrito". A primeira ação ("digitou Olá") é a última a ser desfeita.</figcaption>
+</figure>
+
+<p>O <code>valgrind</code> confirma que o laço final devolveu tudo (3 ações + o bloco do <code>printf</code>):</p>
+
+<pre class="term" data-cwd="~/c">$ valgrind --leak-check=full ./desfazer 2&gt;&amp;1 | tail -8
+==64513== HEAP SUMMARY:
+==64513==     in use at exit: 0 bytes in 0 blocks
+==64513==   total heap usage: 4 allocs, 4 frees, 4,240 bytes allocated
+==64513==
+==64513== All heap blocks were freed -- no leaks are possible
+==64513==
+==64513== For lists of detected and suppressed errors, rerun with: -s
+==64513== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<p>O <code>2&gt;&amp;1 | tail -8</code> junta o relatório do <code>valgrind</code> (que sai no <code>stderr</code>) com a saída normal e mostra só as 8 últimas linhas (veja <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>).</p>
+
+<hr>
+
+<h2>3. Fila com lista ligada: o banco</h2>
+<p>Numa fila, entra-se pelo <strong>fim</strong> e sai-se pelo <strong>começo</strong>. Com uma lista ligada, as duas pontas precisam ser rápidas, então a fila guarda <strong>dois</strong> ponteiros: <code>ini</code> (o próximo a ser atendido) e <code>fim</code> (o último que chegou):</p>
+
+<pre class="file" data-file="fila_lista.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct No {
+    int senha;
+    struct No *prox;
+} No;
+
+typedef struct {
+    No *ini;
+    No *fim;
+} Fila;
+
+bool enfileirar(Fila *f, int senha) {
+    No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        return false;
+    }
+    n-&gt;senha = senha;
+    n-&gt;prox = NULL;
+    if (f-&gt;fim == NULL) {
+        f-&gt;ini = n;
+    } else {
+        f-&gt;fim-&gt;prox = n;
+    }
+    f-&gt;fim = n;
+    return true;
+}
+
+bool desenfileirar(Fila *f, int *senha) {
+    if (f-&gt;ini == NULL) {
+        return false;
+    }
+    No *n = f-&gt;ini;
+    *senha = n-&gt;senha;
+    f-&gt;ini = n-&gt;prox;
+    if (f-&gt;ini == NULL) {
+        f-&gt;fim = NULL;
+    }
+    free(n);
+    return true;
+}
+
+int main(void) {
+    Fila banco = {NULL, NULL};
+    for (int s = 1; s &lt;= 3; s++) {
+        if (!enfileirar(&amp;banco, s)) {
+            return 1;
+        }
+        printf("Chegou a senha %d\n", s);
+    }
+    int s;
+    if (desenfileirar(&amp;banco, &amp;s)) {
+        printf("Caixa chama: %d\n", s);
+    }
+    if (enfileirar(&amp;banco, 4)) {
+        printf("Chegou a senha 4\n");
+    }
+    while (desenfileirar(&amp;banco, &amp;s)) {
+        printf("Caixa chama: %d\n", s);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g fila_lista.c -o fila_lista
+$ ./fila_lista
+Chegou a senha 1
+Chegou a senha 2
+Chegou a senha 3
+Caixa chama: 1
+Chegou a senha 4
+Caixa chama: 2
+Caixa chama: 3
+Caixa chama: 4
+$ valgrind -q --leak-check=full ./fila_lista
+Chegou a senha 1
+Chegou a senha 2
+Chegou a senha 3
+Caixa chama: 1
+Chegou a senha 4
+Caixa chama: 2
+Caixa chama: 3
+Caixa chama: 4</pre>
+
+<p>As senhas foram chamadas na ordem em que chegaram, mesmo com a senha 4 chegando no meio do atendimento. O <code>valgrind -q</code> não reclamou de nada: nenhum vazamento.</p>
+
+<dl class="anatomy">
+  <dt>Fila banco = {NULL, NULL};</dt><dd>Fila vazia: os dois ponteiros em <code>NULL</code>.</dd>
+  <dt>if (f-&gt;fim == NULL) f-&gt;ini = n;</dt><dd><strong>enfileirar</strong> numa fila vazia: o nó novo é o começo e o fim ao mesmo tempo.</dd>
+  <dt>else f-&gt;fim-&gt;prox = n;</dt><dd>Senão, o último de agora aponta para o novo. Sem andar pela lista: o <code>fim</code> já está guardado.</dd>
+  <dt>f-&gt;fim = n;</dt><dd>Nos dois casos, o novo vira o fim.</dd>
+  <dt>f-&gt;ini = n-&gt;prox;</dt><dd><strong>desenfileirar</strong>: o segundo da fila passa a ser o primeiro.</dd>
+  <dt>if (f-&gt;ini == NULL) f-&gt;fim = NULL;</dt><dd>Se a fila esvaziou, o <code>fim</code> também precisa voltar a <code>NULL</code>. Sem esta linha, ele fica apontando para o nó que o <code>free</code> vai devolver (veja <a href="#errado">Quando dá errado</a>).</dd>
+</dl>
+
+<figure>
+<svg viewBox="0 0 472 96" role="img" aria-label="Fila com as senhas 2, 3 e 4: ini aponta para a 2, fim para a 4" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Fila com as senhas 2, 3 e 4: ini aponta para a 2, fim para a 4</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">2</text><text x="62" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">ini</text><line x1="62" y1="25" x2="62" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,42 67,33 57,33" style="fill:var(--accent)"/><circle cx="91" cy="63" r="3.5" style="fill:var(--text)"/><line x1="91" y1="63" x2="149" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="158,63 149,58 149,68" style="fill:var(--text)"/><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">3</text><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">4</text><text x="354" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">fim</text><line x1="354" y1="25" x2="354" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="354,42 359,33 349,33" style="fill:var(--accent)"/><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<svg viewBox="0 0 472 96" role="img" aria-label="Depois de desenfileirar: a 2 sai, ini passa para a 3" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Depois de desenfileirar: a 2 sai, ini passa para a 3</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--warn-bg);stroke:var(--warn-border);stroke-dasharray:5 3;stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">2</text><text x="91" y="68" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">?</text><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">3</text><text x="208" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">ini</text><line x1="208" y1="25" x2="208" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="208,42 213,33 203,33" style="fill:var(--accent)"/><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">4</text><text x="354" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">fim</text><line x1="354" y1="25" x2="354" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="354,42 359,33 349,33" style="fill:var(--accent)"/><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<svg viewBox="0 0 472 96" role="img" aria-label="Depois de enfileirar 5: a 4 aponta para a 5, e fim passa para a 5" style="width:100%;max-width:472px;height:auto;display:block">
+<title>Depois de enfileirar 5: a 4 aponta para a 5, e fim passa para a 5</title>
+<rect x="14" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="72" y1="44" x2="72" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="43" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">3</text><text x="62" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">ini</text><line x1="62" y1="25" x2="62" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="62,42 67,33 57,33" style="fill:var(--accent)"/><circle cx="91" cy="63" r="3.5" style="fill:var(--text)"/><line x1="91" y1="63" x2="149" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="158,63 149,58 149,68" style="fill:var(--text)"/><rect x="160" y="44" width="96" height="38" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><line x1="218" y1="44" x2="218" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="189" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">4</text><circle cx="237" cy="63" r="3.5" style="fill:var(--text)"/><line x1="237" y1="63" x2="295" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="304,63 295,58 295,68" style="fill:var(--text)"/><rect x="306" y="44" width="96" height="38" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><line x1="364" y1="44" x2="364" y2="82" style="stroke:var(--text);stroke-width:1"/><text x="335" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">5</text><text x="354" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">fim</text><line x1="354" y1="25" x2="354" y2="33" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="354,42 359,33 349,33" style="fill:var(--accent)"/><circle cx="383" cy="63" r="3.5" style="fill:var(--text)"/><line x1="383" y1="63" x2="411" y2="63" style="stroke:var(--text);stroke-width:1.6"/><polygon points="420,63 411,58 411,68" style="fill:var(--text)"/><text x="423" y="68" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle;fill:var(--muted);text-anchor:start">NULL</text>
+</svg>
+<figcaption>Em cima, a fila com três senhas. No meio, o caixa chamou a 2: o <code>ini</code> andou uma casa e o nó da 2 (tracejado) foi liberado. Embaixo, chegou a senha 5: ela entrou depois do antigo <code>fim</code>. Cada operação mexe só numa ponta.</figcaption>
+</figure>
+
+<hr>
+
+<h2>4. Fila com array circular</h2>
+<p>Dá para fazer fila com array, mas tem uma pegadinha. Se o começo da fila andar para a direita a cada atendimento, logo ele chega ao fim do array, mesmo com o array quase vazio. Empurrar todo mundo para a esquerda a cada atendimento resolveria, mas é lento.</p>
+<p>O truque é tratar o array como um <strong>círculo</strong>, como as cadeiras numa mesa redonda: depois da última posição vem a primeira de novo. Quem faz a volta é o resto da divisão, o <code>%</code> (veja <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>): com 4 posições, <code>(3 + 1) % 4</code> dá <code>0</code>.</p>
+
+<pre class="file" data-file="circular.c">#include &lt;stdio.h&gt;
+
+#define CAP 4
+
+typedef struct {
+    int itens[CAP];
+    int ini;
+    int qtd;
+} Fila;
+
+bool enfileirar(Fila *f, int valor) {
+    if (f-&gt;qtd == CAP) {
+        return false;
+    }
+    int fim = (f-&gt;ini + f-&gt;qtd) % CAP;
+    f-&gt;itens[fim] = valor;
+    f-&gt;qtd++;
+    printf("  entra %d na posição %d\n", valor, fim);
+    return true;
+}
+
+bool desenfileirar(Fila *f, int *saida) {
+    if (f-&gt;qtd == 0) {
+        return false;
+    }
+    *saida = f-&gt;itens[f-&gt;ini];
+    printf("  sai %d da posição %d\n", *saida, f-&gt;ini);
+    f-&gt;ini = (f-&gt;ini + 1) % CAP;
+    f-&gt;qtd--;
+    return true;
+}
+
+int main(void) {
+    Fila f = {.ini = 0, .qtd = 0};
+    int x;
+    for (int s = 1; s &lt;= 4; s++) {
+        enfileirar(&amp;f, s);
+    }
+    if (!enfileirar(&amp;f, 99)) {
+        printf("  fila cheia: 99 não entrou\n");
+    }
+    desenfileirar(&amp;f, &amp;x);
+    desenfileirar(&amp;f, &amp;x);
+    enfileirar(&amp;f, 5);
+    enfileirar(&amp;f, 6);
+    while (desenfileirar(&amp;f, &amp;x)) {
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra circular.c -o circular
+$ ./circular
+  entra 1 na posição 0
+  entra 2 na posição 1
+  entra 3 na posição 2
+  entra 4 na posição 3
+  fila cheia: 99 não entrou
+  sai 1 da posição 0
+  sai 2 da posição 1
+  entra 5 na posição 0
+  entra 6 na posição 1
+  sai 3 da posição 2
+  sai 4 da posição 3
+  sai 5 da posição 0
+  sai 6 da posição 1</pre>
+
+<dl class="anatomy">
+  <dt>int ini; int qtd;</dt><dd>A posição do primeiro da fila e quantos itens existem. Com os dois, dá para calcular tudo.</dd>
+  <dt>int fim = (f-&gt;ini + f-&gt;qtd) % CAP;</dt><dd>A posição livre depois do último. Com <code>ini = 2</code> e <code>qtd = 2</code>: <code>(2 + 2) % 4 = 0</code>. A fila "dá a volta" e usa a posição 0, que o 1 tinha deixado livre.</dd>
+  <dt>f-&gt;ini = (f-&gt;ini + 1) % CAP;</dt><dd>Depois de tirar o primeiro, o começo anda uma casa, também dando a volta: de 3 vai para 0.</dd>
+  <dt>if (f-&gt;qtd == CAP)</dt><dd>Cheia. Com <code>qtd</code> guardado à parte, "cheia" e "vazia" nunca se confundem (as duas teriam <code>ini</code> igual ao <code>fim</code>).</dd>
+</dl>
+
+<figure>
+<svg viewBox="0 0 252 156" role="img" aria-label="Depois de sair o 1 e o 2: ini na posição 2, a próxima vaga é a 0" style="width:100%;max-width:252px;height:auto;display:block">
+<title>Depois de sair o 1 e o 2: ini na posição 2, a próxima vaga é a 0</title>
+<rect x="14" y="52" width="56" height="40" style="fill:var(--example-bg);stroke:var(--muted);stroke-width:1.5"/><text x="42" y="77" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle"></text><text x="42" y="109" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">0</text><rect x="70" y="52" width="56" height="40" style="fill:var(--example-bg);stroke:var(--muted);stroke-width:1.5"/><text x="98" y="77" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle"></text><text x="98" y="109" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">1</text><rect x="126" y="52" width="56" height="40" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="154" y="77" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">3</text><text x="154" y="109" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">2</text><rect x="182" y="52" width="56" height="40" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="210" y="77" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">4</text><text x="210" y="109" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">3</text><text x="154" y="30" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">ini</text><line x1="154" y1="34" x2="154" y2="41" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="154,50 159,41 149,41" style="fill:var(--accent)"/><line x1="42" y1="130" x2="42" y2="124" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="42,115 37,124 47,124" style="fill:var(--accent)"/><text x="42" y="146" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">fim</text>
+</svg>
+<svg viewBox="0 0 252 134" role="img" aria-label="Depois de entrar o 5 e o 6: a fila dá a volta e ocupa as posições 0 e 1" style="width:100%;max-width:252px;height:auto;display:block">
+<title>Depois de entrar o 5 e o 6: a fila dá a volta e ocupa as posições 0 e 1</title>
+<rect x="14" y="52" width="56" height="40" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="42" y="77" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">5</text><text x="42" y="109" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">0</text><rect x="70" y="52" width="56" height="40" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="98" y="77" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">6</text><text x="98" y="109" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">1</text><rect x="126" y="52" width="56" height="40" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="154" y="77" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">3</text><text x="154" y="109" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">2</text><rect x="182" y="52" width="56" height="40" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="210" y="77" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">4</text><text x="210" y="109" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">3</text><text x="154" y="30" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:bold;text-anchor:middle">ini</text><line x1="154" y1="34" x2="154" y2="41" style="stroke:var(--accent);stroke-width:1.6"/><polygon points="154,50 159,41 149,41" style="fill:var(--accent)"/><text x="126" y="128" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">ordem da fila: 3, 4, 5, 6</text>
+</svg>
+<figcaption>Em cima, depois de atender o 1 e o 2: as posições 0 e 1 estão livres (cinza), o <code>ini</code> está na 2 e a próxima vaga (<code>fim</code>) é a 0. Embaixo, o 5 e o 6 entraram nas posições 0 e 1 (verde). Lida a partir do <code>ini</code>, dando a volta, a fila é 3, 4, 5, 6.</figcaption>
+</figure>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> troque <code>CAP</code> para 3 e veja em que posições o 5 e o 6 entram. Depois tire o <code>% CAP</code> das duas contas e rode de novo (é o erro da seção <a href="#errado">Quando dá errado</a>).</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define CAP 4
+
+typedef struct {
+    int itens[CAP];
+    int ini;
+    int qtd;
+} Fila;
+
+bool enfileirar(Fila *f, int valor) {
+    if (f-&gt;qtd == CAP) {
+        return false;
+    }
+    int fim = (f-&gt;ini + f-&gt;qtd) % CAP;
+    f-&gt;itens[fim] = valor;
+    f-&gt;qtd++;
+    printf("  entra %d na posição %d\n", valor, fim);
+    return true;
+}
+
+bool desenfileirar(Fila *f, int *saida) {
+    if (f-&gt;qtd == 0) {
+        return false;
+    }
+    *saida = f-&gt;itens[f-&gt;ini];
+    printf("  sai %d da posição %d\n", *saida, f-&gt;ini);
+    f-&gt;ini = (f-&gt;ini + 1) % CAP;
+    f-&gt;qtd--;
+    return true;
+}
+
+int main(void) {
+    Fila f = {.ini = 0, .qtd = 0};
+    int x;
+    for (int s = 1; s &lt;= 4; s++) {
+        enfileirar(&amp;f, s);
+    }
+    if (!enfileirar(&amp;f, 99)) {
+        printf("  fila cheia: 99 não entrou\n");
+    }
+    desenfileirar(&amp;f, &amp;x);
+    desenfileirar(&amp;f, &amp;x);
+    enfileirar(&amp;f, 5);
+    enfileirar(&amp;f, 6);
+    while (desenfileirar(&amp;f, &amp;x)) {
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Estrutura</th><th>Com array</th><th>Com lista ligada</th></tr>
+<tr><td>Pilha</td><td>Array + <code>topo</code>. Simples, rápido, sem <code>malloc</code>; tamanho fixo (ou use um <a href="array-dinamico.html">array que cresce</a>).</td><td>Push = inserir no início; pop = remover o primeiro. Cresce sem limite; um <code>malloc</code> e um <code>free</code> por item.</td></tr>
+<tr><td>Fila</td><td>Array circular: <code>ini</code>, <code>qtd</code> e o <code>%</code>. Rápido, tamanho fixo.</td><td>Ponteiros <code>ini</code> e <code>fim</code>: entra no fim, sai do começo. Cresce sem limite.</td></tr>
+</table>
+</div>
+
+<h3>Qual usar</h3>
+<ul>
+  <li><strong>Sabe o máximo de itens</strong> (uma pilha de até 100 parênteses, uma fila de até 50 pedidos)? Use o <strong>array</strong>: menos código, nenhum <code>malloc</code>, nada para liberar.</li>
+  <li><strong>Não sabe quantos vão ser</strong> (o histórico do desfazer, mensagens chegando)? Use a <strong>lista ligada</strong>, ou um array que cresce com <code>realloc</code>.</li>
+  <li>Qualquer que seja a escolha, esconda-a atrás das funções (<code>push</code>, <code>pop</code>, <code>enfileirar</code>…). Quem usa a pilha não precisa saber se ela é array ou lista, e você pode trocar depois sem mexer no resto do programa.</li>
+</ul>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Tirar de uma pilha vazia (sem conferir)</strong>
+<p>Um <code>pop</code> que não confere se a pilha está vazia:</p>
+<pre class="file" data-file="pop_vazia.c">#include &lt;stdio.h&gt;
+
+#define MAX 5
+
+typedef struct {
+    int itens[MAX];
+    int topo;
+} Pilha;
+
+int pop(Pilha *p) {
+    p-&gt;topo--;
+    return p-&gt;itens[p-&gt;topo];
+}
+
+int main(void) {
+    Pilha pratos = {.topo = 0};
+    int x = pop(&amp;pratos);
+    printf("Tirei %d; agora topo = %d\n", x, pratos.topo);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pop_vazia.c -o pop_vazia
+$ ./pop_vazia
+Tirei 0; agora topo = -1</pre>
+<p><strong>O que significa:</strong> nenhum erro, nenhum aviso, e um valor inventado. Com <code>topo</code> em 0, o <code>pop</code> leu <code>itens[-1]</code>, uma posição <strong>antes</strong> do array, que pertence a outra coisa. O 0 foi sorte; poderia ser qualquer número. E o <code>topo</code> ficou em -1: o próximo <code>push</code> vai escrever fora do array. Com o <a href="sanitizers.html">AddressSanitizer</a>, o erro aparece na hora:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address pop_vazia.c -o pop_vazia
+$ ./pop_vazia
+=================================================================
+==62258==ERROR: AddressSanitizer: stack-buffer-underflow on address 0x76ef711f001c at pc 0x5e09084ec2f2 bp 0x7ffda4d8a480 sp 0x7ffda4d8a470
+READ of size 4 at 0x76ef711f001c thread T0
+    #0 0x5e09084ec2f1 in pop /home/ana/c/pop_vazia.c:12
+    #1 0x5e09084ec418 in main /home/ana/c/pop_vazia.c:17
+«  (… mais linhas: o mapa da memória em volta do erro …)
+SUMMARY: AddressSanitizer: stack-buffer-underflow /home/ana/c/pop_vazia.c:12 in pop</pre>
+<p><em>Stack-buffer-underflow</em> = "leitura antes do começo de um array na pilha". <em>READ of size 4</em>: leu um <code>int</code> (4 bytes), na linha 12 (<code>return p-&gt;itens[p-&gt;topo];</code>), chamada pela linha 17. O editor do guia não tem sanitizers e mostraria só o valor errado.</p>
+<p><strong>Como consertar:</strong> o <code>pop</code> confere a pilha vazia e diz se deu certo, como na seção 1: <code>bool pop(Pilha *p, int *saida)</code>. Do mesmo jeito, o <code>push</code> confere a pilha cheia.</p>
+</div>
+
+<div class="cenario">
+<strong>Fila circular sem o <code>%</code>: posições que não existem</strong>
+<p>O mesmo <code>circular.c</code>, com <code>int fim = f-&gt;ini + f-&gt;qtd;</code> e <code>f-&gt;ini = f-&gt;ini + 1;</code>, sem o resto:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sem_resto.c -o sem_resto
+$ ./sem_resto
+  entra 1 na posição 0
+  entra 2 na posição 1
+  entra 3 na posição 2
+  entra 4 na posição 3
+  fila cheia: 99 não entrou
+  sai 1 da posição 0
+  sai 2 da posição 1
+  entra 5 na posição 4
+  entra 6 na posição 8
+  sai 4 da posição 5
+  sai 44602368 da posição 6
+  sai -914074094 da posição 7
+  sai 6 da posição 8</pre>
+<p><strong>O que significa:</strong> o array tem as posições 0 a 3. O 5 foi escrito na "posição 4", que fica <strong>fora</strong> do array: ali mora o campo seguinte da struct, o <code>ini</code>. O <code>ini</code> virou 5, e daí em diante tudo desandou: o 6 foi para a "posição 8", o "4" que saiu nem é a senha 4 (é o <code>qtd</code>, lido como se fosse item), e os números gigantes são lixo da memória (mudam a cada execução). O gcc não avisou nada.</p>
+<p><strong>Como consertar:</strong> toda conta de posição numa fila circular termina com <code>% CAP</code>. Na dúvida, compile com <code>-fsanitize=address</code> e teste os casos de "dar a volta".</p>
+</div>
+
+<div class="cenario">
+<strong>Fila com lista: o <code>fim</code> ficou apontando para um nó liberado</strong>
+<p>Uma versão de <code>desenfileirar</code> sem as linhas <code>if (f-&gt;ini == NULL) f-&gt;fim = NULL;</code>. O <code>main</code> enfileira 1, desenfileira (a fila fica vazia) e enfileira 2:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g fim_solto.c -o fim_solto
+$ ./fim_solto
+Primeiro da fila: ninguém
+$ valgrind -q ./fim_solto
+==62531== Invalid write of size 8
+==62531==    at 0x4001213: enfileirar (fim_solto.c:24)
+==62531==    by 0x40012E9: main (fim_solto.c:46)
+==62531==  Address 0x4aa6048 is 8 bytes inside a block of size 16 free'd
+==62531==    at 0x48538BF: free (vg_replace_malloc.c:990)
+==62531==    by 0x4001282: desenfileirar (fim_solto.c:37)
+==62531==    by 0x40012D8: main (fim_solto.c:45)
+==62531==  Block was alloc'd at
+==62531==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==62531==    by 0x40011C5: enfileirar (fim_solto.c:15)
+==62531==    by 0x40012C5: main (fim_solto.c:44)
+==62531==
+Primeiro da fila: ninguém</pre>
+<p><strong>O que significa:</strong> a senha 2 entrou, mas a fila diz "ninguém". Depois que a senha 1 saiu, o <code>fim</code> continuou apontando para o nó dela, já liberado. No <code>enfileirar</code> seguinte, <code>f-&gt;fim</code> não era <code>NULL</code>, então a linha 24 (<code>f-&gt;fim-&gt;prox = n;</code>) escreveu dentro do nó morto (<em>Invalid write</em> = "escrita inválida", num bloco <em>free'd</em>, liberado), e o <code>ini</code> nunca recebeu o nó novo, que também vazou.</p>
+<p><strong>Como consertar:</strong> quando a fila esvaziar, zere os <strong>dois</strong> ponteiros. Regra geral: a fila está vazia se e só se <code>ini</code> e <code>fim</code> são <code>NULL</code> juntos.</p>
+</div>
+
+<div class="cenario">
+<strong>Ignorar o <code>false</code> do <code>push</code></strong>
+<p>Se o programa chama <code>push(&amp;p, x);</code> sem olhar o retorno, o item que não coube some sem ninguém saber. Não há erro nem aviso: o <code>bool</code> foi devolvido e jogado fora.</p>
+<p><strong>Como consertar:</strong> confira (<code>if (!push(&amp;p, x)) { … }</code>), como o <code>pilha_array.c</code> faz. No C23, marque a função com <code>[[nodiscard]]</code> e o compilador avisa quem esquecer (veja <a href="atributos.html">Atributos</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operação</th><th>Pilha com array</th><th>Pilha com lista</th></tr>
+<tr><td>Vazia?</td><td><code>p-&gt;topo == 0</code></td><td><code>topo == NULL</code></td></tr>
+<tr><td>Push</td><td><code>p-&gt;itens[p-&gt;topo++] = v;</code> (se não estiver cheia)</td><td><code>n-&gt;abaixo = topo; topo = n;</code></td></tr>
+<tr><td>Pop</td><td><code>v = p-&gt;itens[--p-&gt;topo];</code> (se não estiver vazia)</td><td><code>v = topo-&gt;valor; aux = topo; topo = topo-&gt;abaixo; free(aux);</code></td></tr>
+<tr><td>Ver o topo</td><td><code>p-&gt;itens[p-&gt;topo - 1]</code></td><td><code>topo-&gt;valor</code></td></tr>
+</table>
+</div>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operação</th><th>Fila com array circular</th><th>Fila com lista</th></tr>
+<tr><td>Vazia?</td><td><code>f-&gt;qtd == 0</code></td><td><code>f-&gt;ini == NULL</code></td></tr>
+<tr><td>Enfileirar</td><td><code>f-&gt;itens[(f-&gt;ini + f-&gt;qtd) % CAP] = v; f-&gt;qtd++;</code></td><td><code>fim-&gt;prox = n; fim = n;</code> (ou <code>ini = fim = n</code> se vazia)</td></tr>
+<tr><td>Desenfileirar</td><td><code>v = f-&gt;itens[f-&gt;ini]; f-&gt;ini = (f-&gt;ini + 1) % CAP; f-&gt;qtd--;</code></td><td><code>ini = ini-&gt;prox;</code> + <code>free</code> (e <code>fim = NULL</code> se esvaziou)</td></tr>
+<tr><td>Ver o primeiro</td><td><code>f-&gt;itens[f-&gt;ini]</code></td><td><code>f-&gt;ini-&gt;valor</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A regra da pilha</h3>
+<p>Complete a sigla: numa pilha, o último a entrar é o primeiro a sair, em inglês <em>last in, first out</em>:</p>
+<div class="ex-code"><input data-answer="LIFO|lifo" aria-label="sigla"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Dar a volta</h3>
+<p>Numa fila circular com <code>CAP</code> 5, <code>ini</code> é 3 e <code>qtd</code> é 4. Em que posição entra o próximo item? <code>(3 + 4) % 5</code> =</p>
+<div class="ex-code"><input data-answer="2" aria-label="posição"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Push na pilha de array</h3>
+<p>Complete o push numa linha só (guarda na posição livre e depois sobe o topo):</p>
+<div class="ex-code">p-&gt;itens[<input data-answer="p-&gt;topo++|(p-&gt;topo)++" aria-label="índice">] = valor;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Você empilhou 1, 2 e 3 (nessa ordem) e deu dois <code>pop</code>. O que ficou na pilha?</p>
+<label><input type="radio" name="q4"> 3</label>
+<label><input type="radio" name="q4"> 2 e 3</label>
+<label><input type="radio" name="q4"> 1</label>
+<label><input type="radio" name="q4"> Nada</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. A senha 7 entrou na fila do banco, depois a 8, depois a 9. O caixa chama uma pessoa. Quem?</p>
+<label><input type="radio" name="q5"> A 9, a última que chegou</label>
+<label><input type="radio" name="q5"> A 7, a primeira que chegou</label>
+<label><input type="radio" name="q5"> A 8, a do meio</label>
+<label><input type="radio" name="q5"> Depende da capacidade da fila</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Por que a fila com lista ligada guarda um ponteiro para o <strong>fim</strong>?</p>
+<label><input type="radio" name="q6"> Para saber o tamanho da fila</label>
+<label><input type="radio" name="q6"> Porque o <code>free</code> precisa dele</label>
+<label><input type="radio" name="q6"> Para tirar itens do fim</label>
+<label><input type="radio" name="q6"> Para enfileirar sem precisar andar pela lista inteira até o último nó</label>
+</div>
+
+<h3>Missão final: conferir os parênteses</h3>
+
+<div class="tryc" data-goal="out:(a[b]{c}) -&gt; ok,out:(] -&gt; erro,out:((x) -&gt; erro,out:{[()]} -&gt; ok,out:) -&gt; erro">
+<p class="try-task"><strong>Missão:</strong> todo compilador confere se cada <code>(</code>, <code>[</code> e <code>{</code> foi fechado pelo par certo, na ordem certa. O jeito é uma pilha: cada <strong>abertura</strong> vai para a pilha (<code>push</code>); cada <strong>fechamento</strong> tira o de cima (<code>pop</code>) e confere se ele é o par certo (a função <code>par</code> diz qual é). Se a pilha estiver vazia num fechamento, ou o par não combinar, devolva <code>false</code>. No fim, a pilha precisa estar vazia (isso o código já faz). Complete o laço de <code>balanceado</code>.</p>
+<pre class="out">(a[b]{c}) -&gt; ok
+(] -&gt; erro
+((x) -&gt; erro
+{[()]} -&gt; ok
+) -&gt; erro</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define MAX 100
+
+typedef struct {
+    char itens[MAX];
+    int topo;
+} Pilha;
+
+bool push(Pilha *p, char c) {
+    if (p-&gt;topo == MAX) {
+        return false;
+    }
+    p-&gt;itens[p-&gt;topo++] = c;
+    return true;
+}
+
+bool pop(Pilha *p, char *saida) {
+    if (p-&gt;topo == 0) {
+        return false;
+    }
+    *saida = p-&gt;itens[--p-&gt;topo];
+    return true;
+}
+
+// Devolve o par de abertura de um fechamento: ')' -&gt; '(', ']' -&gt; '[', '}' -&gt; '{'
+char par(char fecha) {
+    switch (fecha) {
+        case ')': return '(';
+        case ']': return '[';
+        default:  return '{';
+    }
+}
+
+bool balanceado(const char *s) {
+    Pilha p = {.topo = 0};
+    for (int i = 0; s[i] != '\0'; i++) {
+        char c = s[i];
+        // COMPLETE: abertura ( [ { -&gt; push
+        //           fechamento ) ] } -&gt; pop e confira se combina com par(c)
+        (void)c;
+    }
+    return p.topo == 0;
+}
+
+int main(void) {
+    const char *testes[] = {"(a[b]{c})", "(]", "((x)", "{[()]}", ")"};
+    for (int i = 0; i &lt; 5; i++) {
+        printf("%s -&gt; %s\n", testes[i], balanceado(testes[i]) ? "ok" : "erro");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define MAX 100
+
+typedef struct {
+    char itens[MAX];
+    int topo;
+} Pilha;
+
+bool push(Pilha *p, char c) {
+    if (p-&gt;topo == MAX) {
+        return false;
+    }
+    p-&gt;itens[p-&gt;topo++] = c;
+    return true;
+}
+
+bool pop(Pilha *p, char *saida) {
+    if (p-&gt;topo == 0) {
+        return false;
+    }
+    *saida = p-&gt;itens[--p-&gt;topo];
+    return true;
+}
+
+// Devolve o par de abertura de um fechamento: ')' -&gt; '(', ']' -&gt; '[', '}' -&gt; '{'
+char par(char fecha) {
+    switch (fecha) {
+        case ')': return '(';
+        case ']': return '[';
+        default:  return '{';
+    }
+}
+
+bool balanceado(const char *s) {
+    Pilha p = {.topo = 0};
+    for (int i = 0; s[i] != '\0'; i++) {
+        char c = s[i];
+        if (c == '(' || c == '[' || c == '{') {
+            if (!push(&amp;p, c)) {
+                return false;
+            }
+        } else if (c == ')' || c == ']' || c == '}') {
+            char aberto;
+            if (!pop(&amp;p, &amp;aberto) || aberto != par(c)) {
+                return false;
+            }
+        }
+    }
+    return p.topo == 0;
+}
+
+int main(void) {
+    const char *testes[] = {"(a[b]{c})", "(]", "((x)", "{[()]}", ")"};
+    for (int i = 0; i &lt; 5; i++) {
+        printf("%s -&gt; %s\n", testes[i], balanceado(testes[i]) ? "ok" : "erro");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare nos três jeitos de errar: <code>(]</code> fecha com o par errado; <code>((x)</code> sobra um <code>(</code> na pilha no fim; <code>)</code> tenta tirar de uma pilha vazia. O seu <code>gcc</code> faz algo parecido quando diz <code>expected ‘}’ at end of input</code> (veja <a href="erros-compilacao.html">Lendo Erros do Compilador</a>).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Pilha</strong>: o último que entra é o primeiro que sai (LIFO). Operações: <code>push</code>, <code>pop</code> e ver o topo. Usos: desfazer, voltar, conferir parênteses.</li>
+  <li><strong>Fila</strong>: o primeiro que entra é o primeiro que sai (FIFO). Operações: enfileirar (no fim) e desenfileirar (do começo). Usos: atendimento por ordem de chegada, filas de tarefas.</li>
+  <li>Pilha com array: <code>itens[]</code> + <code>topo</code> (quantos itens = a próxima posição livre). Pilha com lista: push = inserir no início, pop = remover o primeiro.</li>
+  <li>Fila com lista: ponteiros <code>ini</code> e <code>fim</code>; quando esvaziar, zere os dois. Fila com array: circular, com <code>ini</code>, <code>qtd</code> e toda conta de posição terminando em <code>% CAP</code>.</li>
+  <li>Sempre confira vazia antes de tirar e cheia antes de pôr; devolva <code>bool</code> e entregue o valor por ponteiro. Na lista, cada item tirado ganha o seu <code>free</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
