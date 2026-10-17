@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Olá, Mundo — o primeiro programa linha por linha | Guia C</title>
+<meta name="description" content="O primeiro programa em C para quem nunca programou: o Olá, mundo explicado linha por linha (#include &lt;stdio.h&gt;, int main(void), chaves, printf, aspas, \n, ponto e vírgula, return 0), criar o arquivo no nano, compilar com gcc ola.c -o ola, rodar com ./ola, ver o código de saída com echo $? e os primeiros erros, com saídas reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Olá, Mundo</span></h1>
+
+<p class="intro">Chegou a hora de escrever o seu primeiro programa em C. Ele é pequeno: só mostra a frase <code>Olá, mundo!</code> na tela. Mas, para chegar até ela, você vai fazer o caminho que todo programa em C faz: <strong>escrever</strong> o código num arquivo, <strong>compilar</strong> (transformar o texto em programa) e <strong>rodar</strong>. Nesta aula você entende cada pedacinho das seis linhas do programa, sem pular nenhum símbolo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Criar a pasta e o arquivo <code>ola.c</code> no editor <code>nano</code>.</li>
+  <li>O que faz cada parte do Olá, mundo: <code>#include &lt;stdio.h&gt;</code>, <code>int main(void)</code>, <code>{ }</code>, <code>printf</code>, as aspas, o <code>\n</code>, o <code>;</code> e o <code>return 0;</code>.</li>
+  <li>Compilar com <code>gcc ola.c -o ola</code> e rodar com <code>./ola</code>.</li>
+  <li>Por que precisa do <code>./</code> na frente do nome.</li>
+  <li>O que é o arquivo <code>a.out</code>, que aparece quando você esquece o <code>-o</code>.</li>
+  <li>Ver o código de saída com <code>echo $?</code> e por que o <code>return 0;</code> é opcional só no <code>main</code>.</li>
+  <li>Os primeiros erros que todo mundo comete, com a mensagem real.</li>
+</ul>
+</div>
+
+<p>Todos os comandos desta aula foram executados na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), com o <strong>gcc 15.2</strong> do Ubuntu 26.04, numa pasta chamada <code>~/c</code>. As saídas foram copiadas da tela, sem mudar nada. Se você ainda não instalou o compilador, volte para <a href="instalar-linux.html">Instalar no Linux</a> (ou <a href="instalar-windows-mac.html">Windows e macOS</a>). Se ainda não tem, você também pode fazer quase tudo no editor do guia, que compila e roda C de verdade no navegador (<a href="simulador.html">O Editor do Guia</a>).</p>
+
+<hr>
+
+<h2>A ideia: a receita e o bolo</h2>
+<p>Pense numa receita de bolo escrita num papel. O papel não é o bolo: alguém precisa ler a receita e <strong>fazer</strong> o bolo. Em C é igual:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na cozinha</th><th>Em C</th><th>Nesta aula</th></tr>
+<tr><td>A receita no papel</td><td>O <strong>código-fonte</strong>: um arquivo de texto que você escreve</td><td><code>ola.c</code></td></tr>
+<tr><td>A cozinheira que lê a receita e faz o bolo</td><td>O <strong>compilador</strong></td><td><code>gcc</code></td></tr>
+<tr><td>O bolo pronto</td><td>O <strong>programa executável</strong>, que o computador sabe rodar</td><td><code>ola</code></td></tr>
+<tr><td>Comer o bolo</td><td><strong>Rodar</strong> o programa</td><td><code>./ola</code></td></tr>
+</table>
+</div>
+
+<p>Depois que o bolo está pronto, você pode comê-lo sem a receita. E, se mudar a receita, precisa assar outro bolo: <strong>mudou o código, compile de novo</strong>. Guarde essa ideia, porque ela explica muitos tropeços do começo. O caminho completo, com pré-processador, compilador e ligador, está em <a href="como-funciona.html">Como o C Vira Programa</a>; aqui você só precisa dos três passos: <strong>escrever, compilar, rodar</strong>.</p>
+
+<hr>
+
+<h2>1. Criar a pasta e o arquivo</h2>
+<p>Comece criando uma pasta só para os seus programas, para eles não se misturarem com fotos e documentos. No terminal:</p>
+
+<pre class="term">$ mkdir c                « cria a pasta "c" dentro da sua pasta pessoal
+$ cd c                   « entra nela</pre>
+
+<p>Os dois comandos não mostram nada quando dão certo: o terminal só volta a mostrar o prompt, agora com <code>~/c</code> no fim. (<code>mkdir</code> e <code>cd</code> são comandos do terminal, não do C. Eles são explicados no Guia Bash.)</p>
+
+<p>Agora crie o arquivo. Qualquer editor de texto serve (o VS Code, o Kate, o gedit… veja <a href="editores.html">Editores e IDEs</a>). Aqui vamos usar o <strong>nano</strong>, que roda dentro do próprio terminal e já vem no Ubuntu:</p>
+
+<pre class="term" data-cwd="~/c">$ nano ola.c             « abre o nano com um arquivo novo chamado ola.c</pre>
+
+<p>O terminal vira um editor. No alto aparece <code>GNU nano 8.7.1</code> e o nome <code>ola.c</code>; embaixo, <code>[ Novo arquivo ]</code> e uma lista de atalhos, como <code>^O Gravar</code> e <code>^X Sair</code>. O <code>^</code> quer dizer a tecla <kbd>Ctrl</kbd>. Digite o programa:</p>
+
+<pre class="file" data-file="ola.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+</pre>
+
+<ol class="passo">
+  <li>Digite as seis linhas exatamente como estão (a linha 2 fica em branco; na linha 4, quatro espaços antes do <code>printf</code>).</li>
+  <li>Aperte <kbd>Ctrl</kbd> + <kbd>O</kbd> (<code>^O Gravar</code>). Embaixo aparece <code>Escrever para o arquivo: ola.c</code>.</li>
+  <li>Aperte <kbd>Enter</kbd> para confirmar o nome. O nano responde <code>[ Escrita 6 linhas ]</code>.</li>
+  <li>Aperte <kbd>Ctrl</kbd> + <kbd>X</kbd> (<code>^X Sair</code>) para voltar ao terminal.</li>
+</ol>
+
+<p>Três cuidados ao salvar:</p>
+<ul>
+  <li><strong>A extensão é <code>.c</code></strong>. Ela diz ao compilador e ao editor que o arquivo é código C. (Arquivos <code>.h</code> também são C, mas são outra coisa: aula <a href="headers.html">Arquivos .h e .c</a>.)</li>
+  <li><strong>Sem espaços e sem acentos no nome</strong>: <code>ola.c</code>, e não <code>olá mundo.c</code>. Funciona com espaços, mas você teria de usar aspas em todo comando.</li>
+  <li><strong>Digite, não copie e cole</strong>, pelo menos desta vez. Digitar faz você reparar em cada símbolo, e em C os símbolos importam.</li>
+</ul>
+
+<p>Para conferir que o arquivo está na pasta certa e com o conteúdo certo, use <code>ls</code> (lista os arquivos) e <code>cat</code> (mostra o conteúdo):</p>
+
+<pre class="term" data-cwd="~/c">$ ls
+ola.c
+$ cat ola.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}</pre>
+
+<hr>
+
+<h2>2. O programa, linha por linha</h2>
+<p>São seis linhas, e cada símbolo tem uma função. Leia com calma; não precisa decorar nada agora, porque você vai escrever essas linhas tantas vezes que elas vão grudar sozinhas.</p>
+
+<h3>Linha 1: <code>#include &lt;stdio.h&gt;</code></h3>
+<p>O C "puro" sabe muito pouco: ele nem sabe mostrar texto na tela. Isso fica na <strong>biblioteca padrão</strong>, um conjunto de ferramentas prontas que vem junto com o compilador, dividida em arquivos chamados <strong>cabeçalhos</strong> (<em>headers</em>, com a extensão <code>.h</code>). A linha 1 pede: "antes de compilar, cole aqui o cabeçalho <code>stdio.h</code>".</p>
+
+<dl class="anatomy">
+  <dt>#include</dt><dd>O <code>#</code> marca uma instrução para o <strong>pré-processador</strong>, um ajudante que prepara o arquivo antes do compilador. <code>include</code> = "incluir": copia o conteúdo de outro arquivo para dentro deste, naquele ponto. Linhas com <code>#</code> <strong>não</strong> terminam com <code>;</code>. (O pré-processador tem aula própria: <a href="preprocessador.html">Pré-processador</a>.)</dd>
+  <dt>&lt;stdio.h&gt;</dt><dd>O nome do cabeçalho. <code>stdio</code> vem de <em>standard input/output</em>, "entrada e saída padrão" (pronuncia-se "estê-dê-í-ó"). Ele traz o <code>printf</code>, que mostra texto, e outras funções de entrada e saída, como o <code>scanf</code> (aula <a href="scanf.html">Entrada com scanf</a>). Os sinais <code>&lt; &gt;</code> dizem "procure este arquivo nas pastas do sistema", onde fica a biblioteca padrão.</dd>
+</dl>
+
+<h3>Linha 2: a linha em branco</h3>
+<p>Não faz nada. Ela só separa o "material que eu trouxe" do "programa", para ficar mais fácil de ler. O compilador ignora linhas em branco (mais sobre isso em <a href="sintaxe.html">Sintaxe</a>).</p>
+
+<h3>Linha 3: <code>int main(void) {</code></h3>
+<p>Aqui começa o programa de verdade. Todo programa em C tem uma <strong>função</strong> chamada <code>main</code> ("principal"). Uma função é um bloco de instruções com nome. Quando você roda o programa, o sistema procura a <code>main</code> e executa o que está dentro dela, de cima para baixo. Sem <code>main</code>, não existe programa (você vai ver o erro no fim da aula).</p>
+
+<dl class="anatomy">
+  <dt>int</dt><dd>De <em>integer</em>, "inteiro". Diz que a <code>main</code>, quando terminar, entrega um número inteiro ao sistema: o <strong>código de saída</strong>, que avisa se o programa deu certo. Você vai vê-lo na seção 6.</dd>
+  <dt>main</dt><dd>O nome da função. Tem de ser exatamente <code>main</code>, tudo em minúsculas: <code>Main</code> ou <code>MAIN</code> não servem (a aula <a href="sintaxe.html">Sintaxe</a> mostra o erro).</dd>
+  <dt>(void)</dt><dd>Os parênteses guardam o que a função recebe. <code>void</code> quer dizer "vazio": esta <code>main</code> não recebe nada. Em <a href="argc-argv.html">Argumentos da Linha de Comando</a> você vai ver uma <code>main</code> que recebe coisas.</dd>
+  <dt>{</dt><dd>A <strong>chave de abertura</strong>: "aqui começa o corpo da <code>main</code>". Tudo até a chave de fechamento <code>}</code> correspondente pertence a ela.</dd>
+</dl>
+
+<div class="note">
+<strong><code>int main(void)</code> ou <code>int main()</code>?</strong>
+<p>Você vai ver as duas formas em livros e sites. Até o C17, os parênteses vazios queriam dizer "não sei o que a função recebe", e o <code>(void)</code> era o jeito certo de dizer "não recebe nada". No <span class="versao">C23</span>, <code>()</code> passou a significar o mesmo que <code>(void)</code>. O guia usa <code>(void)</code> porque funciona igual em todas as versões do C.</p>
+</div>
+
+<h3>Linha 4: <code>printf("Olá, mundo!\n");</code></h3>
+<p>Esta é a linha que <strong>faz</strong> alguma coisa: manda o texto para a tela. Ela tem recuo (quatro espaços no começo) porque está <em>dentro</em> da <code>main</code>. O recuo não é obrigatório, mas ajuda muito a ler.</p>
+
+<dl class="anatomy">
+  <dt>printf</dt><dd>De <em>print formatted</em>, "imprimir formatado" (pronuncia-se "print-éf"). É uma função da biblioteca padrão, que veio com o <code>stdio.h</code>: ela mostra na tela o texto que você der a ela. "Imprimir", em programação, quase sempre quer dizer "mostrar na tela", não "mandar para a impressora". O "formatado" é porque ele também sabe encaixar números no meio do texto (aula <a href="printf.html">Saída com printf</a>).</dd>
+  <dt>( )</dt><dd>Os parênteses depois do nome <strong>chamam</strong> a função: "<code>printf</code>, faça o seu trabalho com isto aqui dentro". O que vai entre eles se chama <strong>argumento</strong>.</dd>
+  <dt>"Olá, mundo!\n"</dt><dd>O texto, entre <strong>aspas duplas</strong>. As aspas dizem ao compilador "isto é texto para mostrar, não é código", e não aparecem na tela. Um texto entre aspas se chama <strong>string</strong> (aula <a href="strings.html">Strings</a>). No fim dele, o <code>\n</code> (barra invertida + <code>n</code>, de <em>new line</em>) é a <strong>quebra de linha</strong>: não aparece como "\n" na tela, faz o cursor pular para a linha de baixo. Sem ele, o prompt do terminal gruda no seu texto (aula <a href="escapes.html">Novas Linhas e Escapes</a>).</dd>
+  <dt>;</dt><dd>O <strong>ponto e vírgula</strong> termina a instrução, como o ponto final de uma frase. Esquecê-lo é o erro número um de quem começa, e você vai vê-lo no fim desta aula.</dd>
+</dl>
+
+<h3>Linha 5: <code>return 0;</code></h3>
+<p><code>return</code> = "devolver". Termina a <code>main</code> e entrega o número <code>0</code> ao sistema, que quer dizer "terminei sem problemas". A seção 6 mostra esse número chegando ao terminal.</p>
+
+<h3>Linha 6: <code>}</code></h3>
+<p>A <strong>chave de fechamento</strong>: "acabou a <code>main</code>". Toda <code>{</code> precisa de uma <code>}</code>, como parênteses numa conta.</p>
+
+<div class="tip">
+<strong>Teclas difíceis no teclado brasileiro (ABNT2)</strong>
+<p><code>{</code> e <code>}</code>: <kbd>AltGr</kbd> + <kbd>7</kbd> e <kbd>AltGr</kbd> + <kbd>0</kbd>, ou as teclas ao lado do <kbd>P</kbd> e do <kbd>Ç</kbd> com <kbd>Shift</kbd>. <code>&lt;</code> e <code>&gt;</code>: a tecla ao lado do <kbd>Z</kbd> (sem e com <kbd>Shift</kbd>). <code>\</code>: a mesma tecla ao lado do <kbd>Z</kbd> no ABNT2, ou acima do <kbd>Enter</kbd> no padrão americano. <code>#</code>: <kbd>Shift</kbd> + <kbd>3</kbd>.</p>
+</div>
+
+<hr>
+
+<h2>3. Compilar: de texto para programa</h2>
+<p>O arquivo <code>ola.c</code> é só texto. O computador não sabe rodá-lo. Quem transforma o texto em programa é o compilador <code>gcc</code> (de <em>GNU Compiler Collection</em>, a coleção de compiladores do projeto GNU):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc ola.c -o ola
+$                        « nada! no mundo dos compiladores, silêncio = deu certo</pre>
+
+<p>O <code>gcc</code> não diz "pronto" nem "sucesso". Se ele não reclamou, compilou. Repare que agora há um arquivo novo na pasta:</p>
+
+<pre class="term" data-cwd="~/c">$ ls
+ola  ola.c               « "ola" é o programa (no terminal, ele aparece em verde: é executável)</pre>
+
+<dl class="anatomy">
+  <dt>gcc</dt><dd>O compilador.</dd>
+  <dt>ola.c</dt><dd>O arquivo de código que ele vai ler (a receita).</dd>
+  <dt>-o ola</dt><dd><code>-o</code> de <em>output</em>, "saída": o nome do programa que ele vai criar (o bolo). Pode ser qualquer nome; usar o mesmo nome do arquivo, sem o <code>.c</code>, é o costume.</dd>
+</dl>
+
+<p>Este é o comando <strong>mínimo</strong>. Na próxima aula, <a href="compilar.html">Compilar com gcc</a>, você vai acrescentar opções que escolhem a versão do C e fazem o compilador avisar sobre erros prováveis. A partir dela, o guia usa sempre o comando completo: <code>gcc -std=c23 -Wall -Wextra ola.c -o ola</code>.</p>
+
+<hr>
+
+<h2>4. Rodar o programa</h2>
+<p>Para rodar um programa que está na pasta atual, escreva <code>./</code> e o nome dele:</p>
+
+<pre class="term" data-cwd="~/c">$ ./ola
+Olá, mundo!</pre>
+
+<p>Pronto: esse é o seu primeiro programa em C funcionando. As aspas não apareceram, o <code>\n</code> virou uma quebra de linha e o prompt voltou na linha de baixo, como deveria.</p>
+
+<h3>Por que <code>./</code>?</h3>
+<p>Quando você digita um nome solto, como <code>ls</code> ou <code>gcc</code>, o terminal procura o programa numa lista fixa de pastas do sistema (a variável <code>PATH</code>). A sua pasta <code>~/c</code> não está nessa lista, por segurança. O <code>.</code> quer dizer "a pasta onde estou agora" e a <code>/</code> separa a pasta do arquivo. Então <code>./ola</code> é "o programa <code>ola</code> que está <strong>aqui</strong>". Sem o <code>./</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ ola
+bash: ola: comando não encontrado</pre>
+
+<p>O terminal procurou um comando <code>ola</code> nas pastas do sistema e não achou. Não é um erro do C: o programa está lá, só faltou dizer onde.</p>
+
+<p>Agora é a sua vez. O editor abaixo compila e roda C de verdade no navegador (a primeira vez demora alguns segundos, porque ele baixa o compilador). Ele faz os passos 3 e 4 de uma vez quando você clica em <strong>Rodar</strong>.</p>
+
+<div class="tryc" data-goal="out:Olá\, Ana!">
+<p class="try-task"><strong>Missão:</strong> rode o programa como está. Depois troque <code>mundo</code> pelo nome <code>Ana</code>, de modo que a saída seja <code>Olá, Ana!</code>, e rode de novo. Mexa só no que está entre as aspas.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, Ana!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare na primeira linha que o editor mostra: <code>$ clang -std=c23 -Wall -Wextra programa.c -o programa</code>. O editor usa o <strong>Clang</strong>, outro compilador de C, em vez do <code>gcc</code>, e já com as opções completas da próxima aula. O resultado é o mesmo.</p>
+
+<hr>
+
+<h2>5. Sem o <code>-o</code>: o famoso <code>a.out</code></h2>
+<p>O <code>-o ola</code> é opcional. Se você não disser o nome do programa, o <code>gcc</code> escolhe um sozinho: <strong><code>a.out</code></strong>.</p>
+
+<pre class="term" data-cwd="~/c">$ gcc ola.c
+$ ls
+a.out  ola  ola.c        « apareceu o a.out
+$ ./a.out
+Olá, mundo!</pre>
+
+<p>O <code>a.out</code> é um programa igualzinho ao <code>ola</code>, só com outro nome. Os dois têm até o mesmo tamanho:</p>
+
+<pre class="term" data-cwd="~/c">$ ls -l
+total 36
+-rwxrwxr-x 1 ana ana 15952 out 17 10:30 a.out
+-rwxrwxr-x 1 ana ana 15952 out 17 10:30 ola
+-rw-rw-r-- 1 ana ana    83 out 17 10:30 ola.c</pre>
+
+<p>Repare nos tamanhos: as 6 linhas de texto ocupam 83 bytes; o programa pronto, 15952 bytes (cerca de 16 KB). Ele contém o código traduzido para a linguagem do processador e as informações que o sistema precisa para carregá-lo. E o <code>x</code> em <code>-rwxrwxr-x</code> quer dizer "executável": o <code>gcc</code> já cria o programa com permissão para rodar.</p>
+
+<div class="note">
+<strong>Por que "a.out"?</strong>
+<p>É um nome histórico, dos primeiros sistemas Unix dos anos 1970, a mesma época e o mesmo lugar em que o C nasceu: <em>assembler output</em>, "saída do montador". O nome ficou até hoje. O problema do <code>a.out</code> é que <strong>cada compilação sem <code>-o</code> sobrescreve a anterior</strong>: se você compilar dois programas diferentes sem <code>-o</code>, só o último sobra. Por isso, o guia sempre usa <code>-o nome</code>.</p>
+</div>
+
+<hr>
+
+<h2>6. O <code>return 0;</code> e o código de saída</h2>
+<p>Todo programa, quando termina, entrega um número ao sistema: o <strong>código de saída</strong>. Na <code>main</code>, quem escolhe esse número é o <code>return</code>:</p>
+
+<dl class="anatomy">
+  <dt>return</dt><dd>"Devolver". Termina a função e entrega um valor para quem a chamou. No caso da <code>main</code>, quem chamou foi o sistema operacional.</dd>
+  <dt>0</dt><dd>O valor entregue. Por convenção, <code>0</code> = "terminei sem problemas"; qualquer outro número = "algo deu errado" (cada programa escolhe o que cada número significa).</dd>
+  <dt>;</dt><dd>Como toda instrução, termina com ponto e vírgula.</dd>
+</dl>
+
+<p>No terminal, o código de saída do último programa fica guardado em <code>$?</code>. Veja com <code>echo</code> (o comando que mostra um texto):</p>
+
+<pre class="term" data-cwd="~/c">$ ./ola
+Olá, mundo!
+$ echo $?
+0                        « o 0 do return 0;</pre>
+
+<p>Para ver que o número chega mesmo ao sistema, devolva outro valor:</p>
+
+<pre class="file" data-file="saida3.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Saindo com 3\n");
+    return 3;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc saida3.c -o saida3
+$ ./saida3
+Saindo com 3
+$ echo $?
+3                        « o 3 do return chegou ao terminal</pre>
+
+<p>Para que serve isso? Scripts e outros programas usam o código de saída para saber se o seu programa deu certo. O próprio <code>gcc</code> faz isso: quando a compilação falha, ele sai com o código <code>1</code> (você vai ver na seção "Quando dá errado"). O editor do guia mostra o código de saída embaixo da saída do programa, como <code>[código de saída: 0]</code>.</p>
+
+<div class="tryc" data-goal="exit:7,out:Até logo!">
+<p class="try-task"><strong>Missão:</strong> faça o programa mostrar <code>Até logo!</code> e terminar com o código de saída <code>7</code>. Confira o número que o editor mostra no fim.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Até logo!\n");
+    return 7;
+}
+</pre>
+</div>
+
+<h3>E se eu esquecer o <code>return 0;</code>?</h3>
+<p>Na <code>main</code>, e só nela, nada de ruim acontece. Desde o <span class="versao">C99</span>, a regra é: <strong>se a <code>main</code> chegar ao <code>}</code> final sem <code>return</code>, o C age como se lá estivesse <code>return 0;</code></strong>.</p>
+
+<pre class="file" data-file="semreturn.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc semreturn.c -o semreturn
+$ ./semreturn
+Olá, mundo!
+$ echo $?
+0                        « mesmo sem return, deu 0</pre>
+
+<p>No C antigo (C89, de 1989), essa regra não existia. Compilando o mesmo arquivo como C89, o código de saída vira um número qualquer:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c89 semreturn.c -o semreturn89
+$ ./semreturn89
+Olá, mundo!
+$ echo $?
+13                       « lixo: por acaso, o número de bytes que o printf escreveu</pre>
+
+<div class="tip">
+<strong>Com ou sem <code>return 0;</code>?</strong>
+<p>Os dois estão certos no C de hoje. Mesmo assim, nos exemplos do Nível 1 o guia <strong>sempre escreve</strong> o <code>return 0;</code>: ele deixa claro onde o programa termina, funciona em qualquer versão do C e prepara você para as outras funções. Nelas, esquecer o <code>return</code> é um problema sério (aula <a href="retorno.html">Valor de Retorno</a>).</p>
+</div>
+
+<hr>
+
+<h2>7. Mostrar mais de uma linha</h2>
+<p>A <code>main</code> pode ter quantas instruções você quiser. Elas rodam uma depois da outra, de cima para baixo, cada uma terminada com <code>;</code>:</p>
+
+<pre class="file" data-file="apresentacao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá! Eu sou a Ana.\n");
+    printf("Estou aprendendo C.\n");
+    printf("Este é o meu primeiro programa.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc apresentacao.c -o apresentacao
+$ ./apresentacao
+Olá! Eu sou a Ana.
+Estou aprendendo C.
+Este é o meu primeiro programa.</pre>
+
+<p>Cada <code>\n</code> fecha uma linha. O que acontece se tirar um deles está em <a href="escapes.html">Novas Linhas e Escapes</a>. Mostrar números junto com o texto (<code>printf("Idade: %d\n", 29);</code>) está em <a href="printf.html">Saída com printf</a>.</p>
+
+<h3>Outras formas de escrever o Olá, mundo</h3>
+<p>Você vai encontrar o mesmo programa escrito de jeitos diferentes. Todos funcionam no gcc 15:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Onde aparece</th></tr>
+<tr><td><code>int main(void) { printf("Olá, mundo!\n"); return 0; }</code></td><td>A forma deste guia. Funciona em qualquer versão do C.</td></tr>
+<tr><td><code>int main() { … }</code></td><td>Muito comum em livros e sites. No <span class="versao">C23</span> é igual a <code>(void)</code>.</td></tr>
+<tr><td>Sem o <code>return 0;</code></td><td>Código moderno, a partir do <span class="versao">C99</span>. Vale só na <code>main</code>.</td></tr>
+<tr><td><code>puts("Olá, mundo!");</code></td><td>Outra função do <code>stdio.h</code>, que já pula a linha sozinha (aula <a href="printf.html">Saída com printf</a>).</td></tr>
+<tr><td><code>main() { printf("hello, world\n"); }</code></td><td>O exemplo original do livro de Kernighan e Ritchie (1978). Não compila no C de hoje: o tipo <code>int</code> não pode mais faltar (veja <a href="versoes.html">Versões do C</a>).</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> A primeira, por enquanto. Ela é a mais clara e não depende da versão do C.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+<p>Errar faz parte. Um erro de compilação <strong>não estraga nada</strong>: o <code>gcc</code> só se recusa a criar o programa até você consertar. Estes são os tropeços mais comuns da primeira vez.</p>
+
+<div class="cenario">
+<strong><code>bash: ola: comando não encontrado</code></strong>
+<pre class="term" data-cwd="~/c">$ ola
+bash: ola: comando não encontrado</pre>
+<p><strong>O que significa:</strong> faltou o <code>./</code>. O terminal procurou <code>ola</code> nas pastas do sistema.</p>
+<p><strong>Como consertar:</strong> <code>./ola</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>bash: ./ola: Arquivo ou diretório inexistente</code></strong>
+<pre class="term" data-cwd="~/c">$ ./ola
+bash: ./ola: Arquivo ou diretório inexistente</pre>
+<p><strong>O que significa:</strong> não existe nenhum programa <code>ola</code> nesta pasta. Ou você ainda não compilou, ou a compilação falhou (e, quando falha, o <code>gcc</code> não cria o programa), ou você está em outra pasta.</p>
+<p><strong>Como consertar:</strong> rode <code>ls</code> para ver o que há na pasta. Se o <code>ola.c</code> está lá, compile (<code>gcc ola.c -o ola</code>) e leia se apareceu algum erro. Se nem o <code>ola.c</code> aparece, entre na pasta certa com <code>cd ~/c</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>fatal error: ole.c: Arquivo ou diretório inexistente</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc ole.c -o ola
+cc1: fatal error: ole.c: Arquivo ou diretório inexistente
+compilation terminated.</pre>
+<p><strong>O que significa:</strong> o nome do arquivo de código está errado (aqui, <code>ole</code> em vez de <code>ola</code>), ou ele foi salvo em outra pasta, ou com outra extensão (<code>ola.c.txt</code>, <code>ola.txt</code>). <em>Fatal error</em> = "erro fatal"; <em>compilation terminated</em> = "compilação encerrada". O <code>cc1</code> é a parte do <code>gcc</code> que compila C de fato.</p>
+<p><strong>Como consertar:</strong> <code>ls</code> e confira o nome exato. A tecla <kbd>Tab</kbd> completa nomes de arquivo no terminal e evita esse erro.</p>
+</div>
+
+<div class="cenario">
+<strong><code>input file ‘ola.c’ is the same as output file</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc ola.c -o ola.c
+gcc: fatal error: input file ‘ola.c’ is the same as output file
+compilation terminated.</pre>
+<p><strong>O que significa:</strong> "o arquivo de entrada é o mesmo que o de saída". Você pediu para o programa se chamar <code>ola.c</code>, o que apagaria o seu código. O <code>gcc</code> se recusa, e isso salvou o seu arquivo.</p>
+<p><strong>Como consertar:</strong> o nome depois do <code>-o</code> é o do programa, <strong>sem</strong> <code>.c</code>: <code>gcc ola.c -o ola</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expected ‘;’ before ‘return’</code></strong>
+<pre class="file" data-file="semponto.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n")
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc semponto.c -o semponto
+semponto.c: In function ‘main’:
+semponto.c:4:28: error: expected ‘;’ before ‘return’
+    4 |     printf("Olá, mundo!\n")
+      |                            ^
+      |                            ;
+    5 |     return 0;
+      |     ~~~~~~
+$ echo $?
+1                        « o gcc avisa que falhou: código 1</pre>
+<p><strong>O que significa:</strong> "esperava <code>;</code> antes do <code>return</code>". Faltou o ponto e vírgula no fim da linha 4. A mensagem diz o arquivo (<code>semponto.c</code>), a linha (<code>4</code>) e a coluna (<code>28</code>), e o <code>gcc</code> até desenha o <code>;</code> no lugar onde ele deveria estar. As aspas tortas (<code>‘ ’</code>) fazem parte da mensagem do <code>gcc</code>.</p>
+<p><strong>Como consertar:</strong> coloque o <code>;</code> no fim da linha 4 e compile de novo. No editor do guia, o Clang diz a mesma coisa com outras palavras: <code>error: expected ';' after expression</code>. Ler mensagens assim, com calma, é o assunto da aula <a href="erros-compilacao.html">Lendo Erros do Compilador</a>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘printf’</code></strong>
+<pre class="file" data-file="seminclude.c · erro de propósito">int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc seminclude.c -o seminclude
+seminclude.c: In function ‘main’:
+seminclude.c:2:5: error: implicit declaration of function ‘printf’ [-Wimplicit-function-declaration]
+    2 |     printf("Olá, mundo!\n");
+      |     ^~~~~~
+seminclude.c:1:1: note: include ‘&lt;stdio.h&gt;’ or provide a declaration of ‘printf’
+  +++ |+#include &lt;stdio.h&gt;
+    1 | int main(void) {
+seminclude.c:2:5: warning: incompatible implicit declaration of built-in function ‘printf’ [-Wbuiltin-declaration-mismatch]
+    2 |     printf("Olá, mundo!\n");
+      |     ^~~~~~
+seminclude.c:2:5: note: include ‘&lt;stdio.h&gt;’ or provide a declaration of ‘printf’</pre>
+<p><strong>O que significa:</strong> esqueceu o <code>#include &lt;stdio.h&gt;</code>. Sem ele, o compilador não sabe o que é <code>printf</code> ("declaração implícita da função"). A <code>note</code> (nota) já dá a solução: <em>include ‘&lt;stdio.h&gt;’</em>, e o <code>+++ |+</code> mostra a linha que falta, no lugar certo.</p>
+<p><strong>Como consertar:</strong> acrescente <code>#include &lt;stdio.h&gt;</code> na primeira linha.</p>
+</div>
+
+<div class="cenario">
+<strong><code>undefined reference to `main'</code> (em português: <code>referência não definida para "main"</code>)</strong>
+<pre class="term" data-cwd="~/c">$ cat semmain.c
+#include &lt;stdio.h&gt;
+$ gcc semmain.c -o semmain
+/usr/bin/x86_64-linux-gnu-ld.bfd: /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o: na função "_start":
+(.text+0x1b): referência não definida para "main"
+collect2: error: ld returned 1 exit status</pre>
+<p><strong>O que significa:</strong> o arquivo não tem a função <code>main</code> (ou ela foi escrita com outro nome, como <code>Main</code>). Quem reclama aqui não é o compilador, é o <strong>ligador</strong> (<code>ld</code>, de <em>linker</em>), a última etapa, que monta o programa e precisa saber onde ele começa. Repare que essa parte da mensagem saiu em português: o ligador do Ubuntu tem tradução, o <code>gcc</code> não. Em inglês ela diz <code>undefined reference to `main'</code>.</p>
+<p><strong>Como consertar:</strong> confira se existe <code>int main(void) { … }</code>, escrito exatamente assim.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;stdio.h&gt;</code></td><td>Traz o <code>printf</code> (e outras funções de entrada e saída) da biblioteca padrão</td></tr>
+<tr><td><code>int main(void) { … }</code></td><td>A função principal: o programa começa e termina nela</td></tr>
+<tr><td><code>printf("texto");</code></td><td>Mostra o texto na tela</td></tr>
+<tr><td><code>\n</code></td><td>Quebra de linha, dentro das aspas</td></tr>
+<tr><td><code>;</code></td><td>Termina uma instrução</td></tr>
+<tr><td><code>return 0;</code></td><td>Termina a <code>main</code> com código de saída 0 (opcional só na <code>main</code>, desde o C99)</td></tr>
+<tr><td><code>nano ola.c</code></td><td>Abre (ou cria) o arquivo no editor nano; <kbd>Ctrl</kbd>+<kbd>O</kbd> grava, <kbd>Ctrl</kbd>+<kbd>X</kbd> sai</td></tr>
+<tr><td><code>gcc ola.c -o ola</code></td><td>Compila <code>ola.c</code> e cria o programa <code>ola</code></td></tr>
+<tr><td><code>gcc ola.c</code></td><td>Compila e cria o programa com o nome <code>a.out</code></td></tr>
+<tr><td><code>./ola</code></td><td>Roda o programa <code>ola</code> da pasta atual</td></tr>
+<tr><td><code>echo $?</code></td><td>Mostra o código de saída do último programa</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O cabeçalho</h3>
+<p>Complete a primeira linha para poder usar o <code>printf</code>:</p>
+<div class="ex-code">#include &lt;<input data-answer="stdio.h" aria-label="cabeçalho">&gt;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Compilar com nome</h3>
+<p>Complete o comando para compilar <code>jogo.c</code> e criar o programa <code>jogo</code>:</p>
+<div class="ex-code">gcc jogo.c <input data-answer="-o jogo" aria-label="opção e nome"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Rodar</h3>
+<p>O programa <code>jogo</code> está na pasta atual. Que comando o roda?</p>
+<div class="ex-code">$ <input data-answer="./jogo" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>4. O código de saída</h3>
+<p>Que comando mostra o código de saída do último programa que rodou?</p>
+<div class="ex-code">$ <input data-answer="echo $?" aria-label="comando"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Você compilou com <code>gcc teste.c</code>, sem <code>-o</code>. Como se chama o programa criado?</p>
+<label><input type="radio" name="q5"> <code>teste</code></label>
+<label><input type="radio" name="q5"> <code>a.out</code></label>
+<label><input type="radio" name="q5"> <code>teste.exe</code></label>
+<label><input type="radio" name="q5"> Nenhum: sem <code>-o</code> dá erro</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Qual destas afirmações sobre o <code>return 0;</code> da <code>main</code> está certa?</p>
+<label><input type="radio" name="q6"> Sem ele, o programa não compila</label>
+<label><input type="radio" name="q6"> Ele mostra o número 0 na tela</label>
+<label><input type="radio" name="q6"> Desde o C99 ele é opcional na <code>main</code>: sem ele, o código de saída é 0 do mesmo jeito</label>
+<label><input type="radio" name="q6"> Ele apaga o programa depois de rodar</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. O que o <code>\n</code> faz em <code>"Olá, mundo!\n"</code>?</p>
+<label><input type="radio" name="q7"> Pula para a linha de baixo depois do texto</label>
+<label><input type="radio" name="q7"> Mostra as letras <code>\n</code> na tela</label>
+<label><input type="radio" name="q7"> Termina a instrução, como o <code>;</code></label>
+<label><input type="radio" name="q7"> Fecha as aspas</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">8. Você mudou o texto do <code>printf</code> no <code>ola.c</code> e rodou <code>./ola</code>, mas apareceu o texto antigo. Por quê?</p>
+<label><input type="radio" name="q8"> O <code>printf</code> guarda o texto antigo na memória</label>
+<label><input type="radio" name="q8"> Faltou o <code>return 0;</code></label>
+<label><input type="radio" name="q8"> O terminal precisa ser fechado e aberto de novo</label>
+<label><input type="radio" name="q8"> Faltou compilar de novo: o programa <code>ola</code> ainda é o "bolo" feito com a receita antiga</label>
+</div>
+
+<h3>Missão final: o cartão de visita</h3>
+
+<div class="tryc" data-goal="out:Ana Souza,out:Programadora C,out:Recife - PE,semaviso">
+<p class="try-task"><strong>Missão:</strong> escreva um programa completo, do <code>#include</code> ao <code>}</code>, que mostre o cartão de visita da Ana em três linhas:</p>
+<pre class="out">Ana Souza
+Programadora C
+Recife - PE</pre>
+<p class="try-task">Use um <code>printf</code> para cada linha, não esqueça os <code>\n</code> e termine com <code>return 0;</code>. Se o compilador reclamar, leia a linha e a coluna da mensagem.</p>
+<pre class="script">// escreva o programa inteiro aqui
+
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Ana Souza\n");
+    printf("Programadora C\n");
+    printf("Recife - PE\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Programar em C tem três passos: <strong>escrever</strong> o código (<code>ola.c</code>), <strong>compilar</strong> (<code>gcc ola.c -o ola</code>) e <strong>rodar</strong> (<code>./ola</code>). Mudou o código? Compile de novo.</li>
+  <li><code>#include &lt;stdio.h&gt;</code> traz o <code>printf</code>; <code>int main(void) { … }</code> é onde o programa começa; <code>printf("…");</code> mostra texto; <code>\n</code> quebra a linha; <code>;</code> termina a instrução.</li>
+  <li>O <code>gcc</code> não diz nada quando dá certo. Silêncio = compilou.</li>
+  <li>Programas da pasta atual rodam com <code>./</code> na frente.</li>
+  <li>Sem <code>-o</code>, o programa se chama <code>a.out</code>, e cada compilação sobrescreve o anterior.</li>
+  <li><code>return 0;</code> entrega o código de saída 0 ("deu certo"), que aparece com <code>echo $?</code>. Desde o C99 ele é opcional só na <code>main</code>; o guia o escreve sempre.</li>
+  <li>Próximo passo: <a href="compilar.html">Compilar com gcc</a>, onde você aprende o comando completo que o guia usa daqui para a frente.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
