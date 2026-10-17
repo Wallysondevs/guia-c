@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Operadores de Atribuição — =, +=, -=, *=, /= e %= | Guia C</title>
+<meta name="description" content="Operadores de atribuição em C para quem nunca programou: o = que guarda (e não compara), o lado esquerdo que precisa ser uma variável (lvalue required), os atalhos +=, -=, *=, /= e %=, a armadilha do x *= 2 + 3, a atribuição em cadeia, o valor cortado ao guardar double em int, o =+ trocado e como trocar dois valores, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Operadores de Atribuição</span></h1>
+
+<p class="intro">Na aula anterior você fez contas, mas o resultado ia direto para o <code>printf</code> e se perdia. Para o programa <strong>lembrar</strong> de um resultado (o total da compra, os pontos do jogo, o saldo do cofrinho), ele precisa ser guardado numa variável. Quem guarda é o <code>=</code>, o <strong>operador de atribuição</strong>. Nesta aula você vai ver como ele funciona por dentro, os atalhos <code>+=</code>, <code>-=</code>, <code>*=</code>, <code>/=</code> e <code>%=</code>, que aparecem em quase todo programa C, e os erros que eles causam quando a gente não presta atenção.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o <code>=</code> faz, passo a passo, e por que <code>pontos = pontos + 10</code> não é absurdo.</li>
+  <li>Por que o lado esquerdo tem de ser uma variável (o erro <code>lvalue required</code>).</li>
+  <li>Os atalhos <code>+=</code>, <code>-=</code>, <code>*=</code>, <code>/=</code> e <code>%=</code>, e a armadilha de <code>x *= 2 + 3</code>.</li>
+  <li>Que a atribuição tem um valor, e a atribuição em cadeia <code>a = b = 0</code>.</li>
+  <li>O que acontece ao guardar um <code>double</code> num <code>int</code>.</li>
+  <li>O <code>=+</code> trocado, o <code>const</code> que não deixa mudar e como trocar o valor de duas variáveis.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. As saídas dos programas foram iguais no editor do guia; os avisos que mudam estão indicados.</p>
+
+<hr>
+
+<h2>A ideia: a lousa do placar</h2>
+<p>No campeonato da escola, o placar é uma lousa com o nome do time e um número. Quando o time faz um ponto, o juiz olha o número que está lá, faz a conta de cabeça, <strong>apaga</strong> o número velho e <strong>escreve</strong> o novo. A lousa só guarda um número por vez.</p>
+<p>Uma variável é essa lousa, e o <code>=</code> é o juiz apagando e escrevendo. Por isso, em C, o <code>=</code> não quer dizer "é igual a" (isso é o <code>==</code>, aula <a href="operadores-comparacao.html">Operadores de Comparação</a>). Ele quer dizer "<strong>recebe</strong>": <code>placar = 3</code> se lê "placar recebe 3".</p>
+
+<hr>
+
+<h2>1. O <code>=</code> por dentro</h2>
+<p>Você já viu na aula <a href="variaveis.html">Variáveis</a> que <code>macas = macas + 2;</code> soma 2 ao que estava guardado. Vale a pena olhar a ordem com calma, porque todos os atalhos desta aula seguem a mesma ordem:</p>
+
+<pre class="file">pontos = pontos + 10;</pre>
+
+<ol class="passo">
+  <li>O C calcula <strong>primeiro o lado direito</strong>: lê o valor atual de <code>pontos</code> (digamos, 25) e soma 10. O resultado é 35.</li>
+  <li><strong>Depois</strong> guarda o 35 na variável do lado esquerdo, apagando o 25.</li>
+  <li>A linha terminou: <code>pontos</code> vale 35, e o 25 não existe mais em lugar nenhum.</li>
+</ol>
+
+<p>Na matemática, "pontos = pontos + 10" seria uma equação sem solução. Em C, é uma <strong>ordem</strong>: "pontos recebe o valor de pontos mais 10". A informação anda sempre <strong>da direita para a esquerda</strong>.</p>
+
+<h3>O lado esquerdo tem de ser uma variável</h3>
+<p>Como a informação vai para a esquerda, à esquerda do <code>=</code> precisa haver um <strong>lugar</strong> para guardá-la. Um número ou uma conta não são lugares:</p>
+
+<pre class="file" data-file="esquerda.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 0;
+    10 = pontos;
+    printf("%d\n", pontos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra esquerda.c -o esquerda
+esquerda.c: In function ‘main’:
+esquerda.c:5:8: error: lvalue required as left operand of assignment
+    5 |     10 = pontos;
+      |        ^</pre>
+
+<p>"É preciso um <em>lvalue</em> como operando esquerdo da atribuição." <em>Lvalue</em> (de <em>left value</em>, "valor da esquerda") é o nome técnico de "algo que tem um lugar na memória e pode receber um valor": uma variável. O <code>10</code> é só um valor. O mesmo erro aparece com <code>a + b = 10;</code>: a soma é um resultado, não uma gaveta. No editor, o Clang diz <code>expression is not assignable</code> ("a expressão não pode receber atribuição"). O conserto é inverter: <code>pontos = 10;</code>.</p>
+
+<hr>
+
+<h2>2. Os atalhos: <code>+=</code>, <code>-=</code>, <code>*=</code>, <code>/=</code>, <code>%=</code></h2>
+<p>"Pegue a variável, faça uma conta com ela e guarde nela mesma" é tão comum que o C tem um atalho para cada operador aritmético. <code>cofrinho += 50;</code> quer dizer exatamente <code>cofrinho = cofrinho + 50;</code>. O cofrinho da Ana:</p>
+
+<pre class="file" data-file="cofrinho.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int cofrinho = 0;
+    cofrinho += 50;
+    printf("Depositou 50: %d\n", cofrinho);
+    cofrinho += 20;
+    printf("Depositou 20: %d\n", cofrinho);
+    cofrinho -= 30;
+    printf("Gastou 30:    %d\n", cofrinho);
+    cofrinho *= 2;
+    printf("O avô dobrou: %d\n", cofrinho);
+    cofrinho /= 4;
+    printf("Dividiu com 3 irmãos, ficou com: %d\n", cofrinho);
+    cofrinho %= 7;
+    printf("Sobra depois de comprar figurinhas de 7: %d\n", cofrinho);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra cofrinho.c -o cofrinho
+$ ./cofrinho
+Depositou 50: 50         « 0 + 50
+Depositou 20: 70         « 50 + 20
+Gastou 30:    40         « 70 - 30
+O avô dobrou: 80         « 40 * 2
+Dividiu com 3 irmãos, ficou com: 20         « 80 / 4 (a Ana e os 3 irmãos)
+Sobra depois de comprar figurinhas de 7: 6  « 20 % 7: comprou 2 pacotes (14) e sobraram 6</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Atalho</th><th>É o mesmo que</th><th>Lê-se</th></tr>
+<tr><td><code>x += 5</code></td><td><code>x = x + 5</code></td><td>"some 5 a x"</td></tr>
+<tr><td><code>x -= 5</code></td><td><code>x = x - 5</code></td><td>"tire 5 de x"</td></tr>
+<tr><td><code>x *= 5</code></td><td><code>x = x * 5</code></td><td>"multiplique x por 5"</td></tr>
+<tr><td><code>x /= 5</code></td><td><code>x = x / 5</code></td><td>"divida x por 5" (com <code>int</code>, divisão inteira)</td></tr>
+<tr><td><code>x %= 5</code></td><td><code>x = x % 5</code></td><td>"fique só com o resto de x por 5" (só inteiros)</td></tr>
+</table>
+</div>
+
+<dl class="anatomy">
+  <dt>+=</dt><dd>Os dois sinais vão <strong>grudados</strong> e nesta ordem: primeiro a conta, depois o <code>=</code>. O nome é <strong>atribuição composta</strong> (a conta e a atribuição compostas num operador só).</dd>
+  <dt>as regras da conta</dt><dd>São as da aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>: <code>/=</code> com <code>int</code> corta a parte quebrada (80 / 4 deu 20 exato, mas 81 / 4 também daria 20), <code>%=</code> não aceita <code>double</code> e <code>/= 0</code> com inteiros derruba o programa.</dd>
+  <dt>somar 1</dt><dd>Para o caso mais comum de todos, <code>x += 1</code>, existe um atalho ainda menor: <code>x++</code> (aula <a href="incremento.html">++ e --</a>).</dd>
+</dl>
+
+<div class="tryc" data-goal="out:Total: 32,src:total\s*\+=,src:total\s*-=">
+<p class="try-task"><strong>Missão:</strong> o caixa da padaria soma os itens da Ana do jeito longo. Reescreva as quatro contas com os atalhos: <code>+=</code> para cada item e <code>-=</code> para o cupom de 5 reais. O total continua o mesmo:</p>
+<pre class="out">Total: 32</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 0;
+    total = total + 8;     // pão
+    total = total + 6;     // leite
+    total = total + 23;    // café
+    total = total - 5;     // cupom de desconto
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 0;
+    total += 8;     // pão
+    total += 6;     // leite
+    total += 23;    // café
+    total -= 5;     // cupom de desconto
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A armadilha: <code>x *= 2 + 3</code></h2>
+<p>O atalho calcula <strong>todo o lado direito primeiro</strong> e só depois faz a conta com a variável. É como se o lado direito estivesse entre parênteses:</p>
+
+<pre class="file" data-file="vezes.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int x = 10;
+    x *= 2 + 3;
+    printf("x *= 2 + 3 deu %d\n", x);
+    int y = 10;
+    y = y * 2 + 3;
+    printf("y = y * 2 + 3 deu %d\n", y);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra vezes.c -o vezes
+$ ./vezes
+x *= 2 + 3 deu 50        « x = x * (2 + 3) = 10 * 5
+y = y * 2 + 3 deu 23     « y = (y * 2) + 3 = 20 + 3</pre>
+
+<p>Parecem a mesma coisa, mas não são. <code>x *= 2 + 3</code> é <code>x = x * (2 + 3)</code>, nunca <code>x = x * 2 + 3</code>. Os operadores de atribuição têm a <strong>menor prioridade</strong> de quase todos (aula <a href="precedencia.html">Precedência</a>): tudo à direita deles é calculado antes. Nenhum compilador avisa, porque as duas formas são válidas. Na dúvida, escreva a forma longa, com parênteses.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> antes de rodar, calcule de cabeça quanto <code>x</code> vale no fim. Depois rode e confira. Troque o <code>*=</code> por <code>-=</code> e por <code>/=</code> e calcule de novo: em todos, o <code>2 + 3</code> é feito antes.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int x = 10;
+    x *= 2 + 3;
+    printf("x = %d\n", x);
+    x -= 8 - 3;
+    printf("x = %d\n", x);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. A atribuição tem um valor</h2>
+<p>Em C, <code>x = 42</code> não só guarda: a expressão inteira <strong>vale</strong> 42, o valor que foi guardado. Isso permite zerar várias variáveis numa linha:</p>
+
+<pre class="file" data-file="cadeia.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int vidas;
+    int pontos;
+    int fase;
+    vidas = pontos = fase = 0;
+    printf("%d %d %d\n", vidas, pontos, fase);
+    int x = 0;
+    printf("A atribuição vale %d\n", x = 42);
+    printf("e x agora é %d\n", x);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra cadeia.c -o cadeia
+$ ./cadeia
+0 0 0
+A atribuição vale 42     « o printf recebeu o valor da expressão x = 42
+e x agora é 42           « e o x foi mudado de verdade</pre>
+
+<ol class="passo">
+  <li>A atribuição agrupa <strong>da direita para a esquerda</strong>: <code>vidas = pontos = fase = 0</code> é <code>vidas = (pontos = (fase = 0))</code>.</li>
+  <li><code>fase = 0</code> guarda 0 em <code>fase</code> e vale 0.</li>
+  <li>Esse 0 vai para <code>pontos</code>, e a expressão vale 0 de novo; por fim, o 0 vai para <code>vidas</code>.</li>
+</ol>
+
+<p>É também por causa desse valor que <code>if (estoque = 5)</code> compila: a atribuição vale 5, e 5 é "verdadeiro". Esse é o erro mais famoso do C, explicado em <a href="operadores-comparacao.html">Operadores de Comparação</a>. Use o valor da atribuição com moderação: <code>printf("%d", x = 42)</code> funciona, mas esconde uma mudança de variável no meio de outra instrução. Uma atribuição por linha é mais fácil de ler. A forma em cadeia só serve para dar o <strong>mesmo</strong> valor a várias variáveis; para declarar, prefira uma por linha, cada uma com o seu valor: <code>int vidas = 0;</code>.</p>
+
+<hr>
+
+<h2>5. Guardar um <code>double</code> num <code>int</code></h2>
+<p>A variável não muda de tipo para caber o valor: é o valor que é convertido para o tipo da variável. Num <code>int</code>, a parte depois da vírgula é <strong>cortada</strong> (não arredondada):</p>
+
+<pre class="file" data-file="corta.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int estoque = 10;
+    estoque *= 1.5;
+    printf("Estoque: %d\n", estoque);
+    int notas = 9.99;
+    printf("Nota: %d\n", notas);
+    double media = 7 / 2;
+    printf("Média: %.1f\n", media);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra corta.c -o corta       « nenhum aviso
+$ ./corta
+Estoque: 15      « 10 * 1.5 = 15.0, que cabe certinho num int
+Nota: 9          « 9.99 virou 9: o ,99 foi cortado
+Média: 3.0       « 7 / 2 é divisão inteira (3); só depois o 3 virou 3.0</pre>
+
+<dl class="anatomy">
+  <dt>estoque *= 1.5</dt><dd>É <code>estoque = estoque * 1.5</code>. A conta é feita com <code>double</code> (15.0) e o resultado volta a ser <code>int</code> na hora de guardar. Com 11 no estoque, o resultado 16.5 seria guardado como 16.</dd>
+  <dt>int notas = 9.99;</dt><dd>O 9.99 é cortado para 9. O gcc não avisa com <code>-Wall -Wextra</code>. No editor do guia, o Clang avisa sozinho: <code>implicit conversion from 'double' to 'int' changes value from 9.99 to 9 [-Wliteral-conversion]</code>.</dd>
+  <dt>double media = 7 / 2;</dt><dd>O contrário não salva a conta: o tipo da variável que recebe não muda a conta do lado direito, que é feita antes (aula <a href="conversao-tipos.html">Conversão de Tipos</a>).</dd>
+</dl>
+
+<p>Para o gcc avisar nesses casos, acrescente <code>-Wconversion</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -Wconversion corta.c -o corta
+corta.c: In function ‘main’:
+corta.c:5:16: warning: conversion from ‘double’ to ‘int’ may change value [-Wfloat-conversion]
+    5 |     estoque *= 1.5;
+      |                ^~~
+corta.c:7:17: warning: conversion from ‘double’ to ‘int’ changes value from ‘9.9900000000000002e+0’ to ‘9’ [-Wfloat-conversion]
+    7 |     int notas = 9.99;
+      |                 ^~~~</pre>
+
+<p>"A conversão de <code>double</code> para <code>int</code> pode mudar o valor" e "muda o valor de 9.99… para 9". (O <code>9.9900000000000002e+0</code> é o 9.99 como ele fica guardado de verdade; a aula <a href="ponto-flutuante.html">float e double</a> explica por que não é exato.)</p>
+
+<hr>
+
+<h2>6. <code>=+</code> não é <code>+=</code></h2>
+<p>Os dois sinais trocados de lugar formam outra coisa, e compilam:</p>
+
+<pre class="file" data-file="maismais.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int saldo = 100;
+    saldo =+ 50;
+    printf("Saldo: %d\n", saldo);
+    saldo =- 20;
+    printf("Saldo: %d\n", saldo);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra maismais.c -o maismais      « nenhum aviso!
+$ ./maismais
+Saldo: 50        « era para ser 150
+Saldo: -20       « era para ser 130</pre>
+
+<p>O C lê <code>saldo =+ 50</code> como <code>saldo = +50</code>: "saldo recebe mais cinquenta", com o <code>+</code> unário (o sinal do número, como em <code>-20</code>). Os 100 que estavam lá foram apagados. E <code>saldo =- 20</code> é <code>saldo = -20</code>. O gcc não avisa nada. O Clang do editor desconfia: <code>use of unary operator that may be intended as compound assignment (+=)</code> ("uso de operador unário que talvez devesse ser a atribuição composta <code>+=</code>"). A regra para lembrar: <strong>o <code>=</code> vem sempre por último</strong>, como em <code>+=</code>, <code>-=</code>, <code>==</code>, <code>!=</code>, <code>&lt;=</code>, <code>&gt;=</code>.</p>
+
+<hr>
+
+<h2>7. Trocar o valor de duas variáveis</h2>
+<p>Um problema clássico: o copo A tem suco, o copo B tem leite, e a Ana quer trocar. Despejar um no outro direto não dá certo, e com variáveis também não:</p>
+
+<pre class="file" data-file="troca.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int copo_a = 1;
+    int copo_b = 2;
+    copo_a = copo_b;
+    copo_b = copo_a;
+    printf("A = %d, B = %d\n", copo_a, copo_b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra troca.c -o troca
+$ ./troca
+A = 2, B = 2      « o 1 sumiu!</pre>
+
+<ol class="passo">
+  <li><code>copo_a = copo_b;</code> guarda 2 em <code>copo_a</code>. O 1 que estava lá foi apagado, e não ficou guardado em lugar nenhum.</li>
+  <li><code>copo_b = copo_a;</code> copia o valor <strong>atual</strong> de <code>copo_a</code>, que já é 2.</li>
+</ol>
+<p>Na cozinha, a solução é usar um <strong>terceiro copo</strong>, vazio: despeje o A nele, depois o B no A, e por fim o terceiro copo no B. Em C, o terceiro copo é uma variável a mais, normalmente chamada <code>temp</code> (temporária). Essa é a sua missão final.</p>
+
+<hr>
+
+<h2>Formas diferentes de mudar uma variável</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Atribuição simples</td><td><code>total = 0;</code></td><td>Para dar um valor novo, sem usar o antigo.</td></tr>
+<tr><td>Forma longa</td><td><code>total = total + preco;</code></td><td>Funciona sempre. Útil quando a conta é diferente da variável: <code>total = total * 2 + taxa;</code>.</td></tr>
+<tr><td>Atalho</td><td><code>total += preco;</code></td><td>O jeito mais comum em C para "acumular" ou "descontar". Mais curto e o nome da variável aparece uma vez só (menos chance de errar a digitação).</td></tr>
+<tr><td>Somar ou tirar 1</td><td><code>vidas++;</code> / <code>vidas--;</code></td><td>Contadores (aula <a href="incremento.html">++ e --</a>).</td></tr>
+<tr><td>Em cadeia</td><td><code>a = b = 0;</code></td><td>Para zerar variáveis já declaradas. Para declarar, uma por linha.</td></tr>
+<tr><td>Atalhos de bits</td><td><code>&amp;=</code>, <code>|=</code>, <code>^=</code>, <code>&lt;&lt;=</code>, <code>&gt;&gt;=</code></td><td>Existem também, para os operadores de bits (aula <a href="operadores-bits.html">Operadores de Bits</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: lvalue required as left operand of assignment</code></strong>
+<p><strong>O que significa:</strong> o lado esquerdo do <code>=</code> não é uma variável: é um número (<code>10 = x</code>), uma conta (<code>a + b = 10</code>) ou outra coisa que não tem lugar na memória. No Clang: <code>expression is not assignable</code>.</p>
+<p><strong>Como consertar:</strong> a variável que recebe fica à esquerda: <code>x = 10;</code>. Para "a + b deve dar 10", você quer uma comparação: <code>a + b == 10</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: assignment of read-only variable ‘VIDAS_INICIAIS’</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra constante.c -o constante
+constante.c: In function ‘main’:
+constante.c:5:20: error: assignment of read-only variable ‘VIDAS_INICIAIS’
+    5 |     VIDAS_INICIAIS += 1;
+      |                    ^~</pre>
+<p><strong>O que significa:</strong> "atribuição a uma variável só de leitura". A variável foi declarada com <code>const</code> (<code>const int VIDAS_INICIAIS = 3;</code>), e nenhum operador de atribuição pode mudá-la, nem os atalhos. No Clang: <code>cannot assign to variable 'VIDAS_INICIAIS' with const-qualified type 'const int'</code>.</p>
+<p><strong>Como consertar:</strong> se o valor precisa mudar, ele não é uma constante: use outra variável, sem <code>const</code> (<code>int vidas = VIDAS_INICIAIS;</code>), e mude essa. Mais em <a href="constantes.html">Constantes</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>O valor antigo sumiu (<code>=+</code> no lugar de <code>+=</code>)</strong>
+<p><strong>O que significa:</strong> <code>x =+ 5</code> é <code>x = +5</code>: guarda 5 e apaga o que estava lá. O gcc não avisa; o Clang avisa <code>may be intended as compound assignment</code>.</p>
+<p><strong>Como consertar:</strong> o <code>=</code> por último: <code>x += 5</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A conta com atalho deu um valor diferente da forma longa</strong>
+<p><strong>O que significa:</strong> o atalho calcula todo o lado direito antes: <code>x *= a + b</code> é <code>x = x * (a + b)</code>.</p>
+<p><strong>Como consertar:</strong> se você queria <code>x * a + b</code>, escreva a forma longa: <code>x = x * a + b;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O valor guardado perdeu as casas depois da vírgula</strong>
+<p><strong>O que significa:</strong> a variável é <code>int</code>, e a atribuição cortou a parte quebrada (<code>int n = 9.99;</code> guarda 9; <code>n *= 1.5</code> também corta).</p>
+<p><strong>Como consertar:</strong> se o valor pode ter vírgula, declare a variável como <code>double</code>. Compile com <code>-Wconversion</code> para o gcc mostrar todos os cortes.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Exemplo</th><th>Equivale a</th></tr>
+<tr><td><code>=</code></td><td><code>x = 5</code></td><td>x recebe 5 (e a expressão vale 5)</td></tr>
+<tr><td><code>+=</code></td><td><code>x += 5</code></td><td><code>x = x + 5</code></td></tr>
+<tr><td><code>-=</code></td><td><code>x -= 5</code></td><td><code>x = x - 5</code></td></tr>
+<tr><td><code>*=</code></td><td><code>x *= a + b</code></td><td><code>x = x * (a + b)</code></td></tr>
+<tr><td><code>/=</code></td><td><code>x /= 5</code></td><td><code>x = x / 5</code></td></tr>
+<tr><td><code>%=</code></td><td><code>x %= 5</code></td><td><code>x = x % 5</code> (só inteiros)</td></tr>
+<tr><td><code>&amp;=</code> <code>|=</code> <code>^=</code> <code>&lt;&lt;=</code> <code>&gt;&gt;=</code></td><td><code>x |= 4</code></td><td><code>x = x | 4</code> (<a href="operadores-bits.html">bits</a>)</td></tr>
+<tr><td colspan="3">Agrupam da direita para a esquerda (<code>a = b = 0</code>) e têm prioridade menor que as contas, as comparações e os lógicos.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O atalho</h3>
+<p>Complete com o atalho que tira 3 das vidas:</p>
+<div class="ex-code">vidas <input data-answer="-=" aria-label="operador"> 3;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A forma longa</h3>
+<p><code>preco *= 2;</code> é o mesmo que <code>preco = preco ? 2;</code>. Qual é o operador no lugar do <code>?</code></p>
+<div class="ex-code">preco = preco <input data-answer="*" aria-label="operador"> 2;</div>
+</div>
+
+<div class="exercise">
+<h3>3. Quanto vale?</h3>
+<p>Com <code>int x = 4;</code>, quanto <code>x</code> vale depois de <code>x *= 3 + 1;</code>?</p>
+<div class="ex-code">x = <input data-answer="16" aria-label="valor"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com <code>int pontos = 10;</code>, quanto vale <code>pontos</code> depois de <code>pontos =+ 5;</code>?</p>
+<label><input type="radio" name="q4"> 15</label>
+<label><input type="radio" name="q4"> 5</label>
+<label><input type="radio" name="q4"> 10</label>
+<label><input type="radio" name="q4"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Qual linha <strong>não</strong> compila?</p>
+<label><input type="radio" name="q5"> <code>x = y = 0;</code></label>
+<label><input type="radio" name="q5"> <code>x += y;</code></label>
+<label><input type="radio" name="q5"> <code>x = x % 3;</code></label>
+<label><input type="radio" name="q5"> <code>x + 1 = y;</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Com <code>int total = 7;</code>, quanto vale <code>total</code> depois de <code>total /= 2;</code>?</p>
+<label><input type="radio" name="q6"> 3</label>
+<label><input type="radio" name="q6"> 3.5</label>
+<label><input type="radio" name="q6"> 4</label>
+<label><input type="radio" name="q6"> 1</label>
+</div>
+
+<h3>Missão final: trocar os copos</h3>
+
+<div class="tryc" data-goal="out:A = 2\, B = 1,src:int\s+\w+\s*=\s*copo_[ab]\s*;">
+<p class="try-task"><strong>Missão:</strong> conserte a troca da seção 7 usando um terceiro copo: crie uma variável <code>int temp</code> que guarda o valor de um dos copos <strong>antes</strong> de ele ser apagado, e use-a para terminar a troca. A saída deve ser:</p>
+<pre class="out">A = 2, B = 1</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int copo_a = 1;
+    int copo_b = 2;
+    copo_a = copo_b;
+    copo_b = copo_a;
+    printf("A = %d, B = %d\n", copo_a, copo_b);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int copo_a = 1;
+    int copo_b = 2;
+    int temp = copo_a;
+    copo_a = copo_b;
+    copo_b = temp;
+    printf("A = %d, B = %d\n", copo_a, copo_b);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Depois de acertar, troque os valores iniciais (por exemplo, 30 e 75) e confira que a troca continua funcionando. Você vai usar essa troca de três passos para <strong>ordenar</strong> listas de números, mais adiante no guia.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>=</code> é "recebe": calcula o lado direito e guarda o resultado na variável da esquerda, apagando o valor antigo. Não é comparação (essa é o <code>==</code>).</li>
+  <li>O lado esquerdo precisa ser uma variável; senão, <code>lvalue required as left operand of assignment</code>.</li>
+  <li><code>+=</code>, <code>-=</code>, <code>*=</code>, <code>/=</code> e <code>%=</code> são atalhos para <code>x = x ? valor</code>. O lado direito inteiro é calculado antes: <code>x *= 2 + 3</code> é <code>x = x * 5</code>.</li>
+  <li>A atribuição vale o que foi guardado, e agrupa da direita para a esquerda: <code>a = b = 0</code>.</li>
+  <li>Guardar <code>double</code> em <code>int</code> corta a parte quebrada, sem aviso no gcc (use <code>-Wconversion</code>).</li>
+  <li><code>=+</code> é <code>= +</code>: o <code>=</code> vem sempre por último. <code>const</code> não aceita nenhuma atribuição.</li>
+  <li>Para trocar duas variáveis, use uma terceira: <code>temp = a; a = b; b = temp;</code>.</li>
+  <li>Próximo passo: <a href="operadores-comparacao.html">Operadores de Comparação</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
