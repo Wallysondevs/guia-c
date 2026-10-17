@@ -191,6 +191,12 @@ Conferido com `tools/sim.js --nativo`. **Nas metas, use o que é igual nos dois*
 | `%` solto (`printf("Juros: 2%\n")`) | a linha some | `Juros: 2%` (e `"50% hoje"` imprime lixo) |
 | Função da biblioteca sem `#include` | `error: call to undeclared library function 'printf' with type …` | `error: implicit declaration of function ‘printf’` + `note: include ‘<stdio.h>’ or provide a declaration of ‘printf’` |
 | `scanf("%d", &b)` com `bool b` | roda sem erro | `*** stack smashing detected ***`, 134 |
+| Escrever além do fim de um array local (`for (i = 0; i <= 5; i++) v[i] = 0;`) | termina normal | `*** stack smashing detected ***` no fim do `main`, 134 |
+| Array local sem valor inicial | lixo (`1792246774`…), sem aviso | aviso `may be used uninitialized [-Wmaybe-uninitialized]`; costuma sair 0 |
+| **`isdigit`, `isalpha`, `isupper`… quando é "sim"** | `1` | outro número diferente de 0 (`isdigit` 2048, `isalpha` 1024, `isupper` 256, `isspace` 8192). **Nunca escreva `if (isdigit(c) == 1)`** nem meta que dependa do valor |
+| `toupper(-61)` (`char` negativo, byte de acento) | `-61` | `195` |
+| `isdigit("7")` (aspas duplas) | erro: `incompatible pointer to integer conversion` | compila **sem aviso** e cai: `Falha de segmentação`, 139 |
+| `iswalpha(L'ç')` sem `setlocale` | `1` | `0` |
 | Ordem de avaliação dos argumentos (não especificada pelo C) | `printf("%d %d\n", remove("b.txt"), remove("b.txt"))` dá `0 -1` (da esquerda para a direita) | dá `-1 0` (da direita para a esquerda) |
 
 Iguais nos dois: `int` com 4 bytes, `long long` com 8, `0.1 + 0.2` (`0.30000000000000004` com `%.17g`), a formatação do `printf` (`%5.2f`, `%-5d`, `%05d`, `%x`, `%o`, `%e`), `strtol`, `qsort`, as mensagens do `perror`, os códigos de saída (134, 136, 139), o estouro de `int` (`2147483647 + 1` = `-2147483648`) e a saída perdida do `printf` sem `\n` antes de um segfault.
