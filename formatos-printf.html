@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Formatos do printf — %d, %f, %s, largura e precisão | Guia C</title>
+<meta name="description" content="Os formatos do printf em C para quem nunca programou: %d %i %u %ld %lld %f %.2f %e %g %c %s %x %X %o %p %zu %%, largura (%5d, %-10s), zeros (%05d), sinal (%+d), o que acontece com o formato errado (avisos do -Wall e saída lixo) e uma tabela de referência completa.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Formatos do printf</span></h1>
+
+<p class="intro">Na aula <a href="printf.html">Saída com printf</a> você usou o <code>%d</code> para mostrar um número inteiro. Ele é só um de uma família inteira de <strong>formatos</strong>: há um para números com vírgula, um para letras, um para textos, um para hexadecimal… e todos aceitam ajustes como "ocupe 5 espaços", "mostre 2 casas decimais" ou "complete com zeros". Nesta aula você vai conhecer cada formato, montar uma tabela alinhada (a lista de compras da Ana) e ver o que acontece quando o formato não combina com o valor, um dos erros mais comuns em C.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As partes de um formato: <code>%</code>, ajustes e a letra do tipo.</li>
+  <li>Os formatos de inteiros: <code>%d</code>, <code>%i</code>, <code>%u</code>, <code>%ld</code>, <code>%lld</code>, <code>%x</code>, <code>%X</code>, <code>%o</code>.</li>
+  <li>Os de números com vírgula: <code>%f</code>, <code>%.2f</code>, <code>%e</code>, <code>%g</code>.</li>
+  <li>Os de letras e textos (<code>%c</code>, <code>%s</code>), os especiais <code>%zu</code> e <code>%p</code>, e como mostrar o próprio <code>%</code>.</li>
+  <li>Largura e alinhamento: <code>%5d</code>, <code>%-10s</code>, <code>%05d</code>, <code>%+d</code>.</li>
+  <li>O que acontece com um formato errado: os avisos do <code>-Wall</code> e a saída "lixo".</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Você pode repetir cada um no editor do guia, que compila C de verdade no navegador.</p>
+
+<hr>
+
+<h2>A ideia: um formulário com lacunas</h2>
+<p>Pense num formulário de papel: "Nome: ______ Idade: ___ anos". O texto já está impresso; você só preenche as lacunas. E cada lacuna espera um tipo de resposta: na de idade vai um número, não um nome.</p>
+
+<p>O primeiro texto do <code>printf</code> é esse formulário. Cada <code>%</code> abre uma <strong>lacuna</strong>, e a letra depois dele diz <strong>o que</strong> vai ali. Os valores que vêm depois da vírgula preenchem as lacunas, na ordem:</p>
+
+<pre class="file" data-file="ficha.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Nome: %s  Idade: %d anos  Altura: %.2f m\n", "Ana", 29, 1.65);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ficha.c -o ficha
+$ ./ficha
+Nome: Ana  Idade: 29 anos  Altura: 1.65 m</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Lacuna</th><th>Preenchida por</th><th>Resultado</th></tr>
+<tr><td><code>%s</code> (texto)</td><td><code>"Ana"</code></td><td><code>Ana</code></td></tr>
+<tr><td><code>%d</code> (inteiro)</td><td><code>29</code></td><td><code>29</code></td></tr>
+<tr><td><code>%.2f</code> (número com vírgula, 2 casas)</td><td><code>1.65</code></td><td><code>1.65</code></td></tr>
+</table>
+</div>
+
+<p>O nome técnico de cada lacuna é <strong>especificador de formato</strong> (<em>format specifier</em>), ou só "formato". A regra de ouro desta aula inteira: <strong>o formato tem de combinar com o tipo do valor</strong>. O <code>printf</code> não confere isso sozinho; quem confere é o compilador, com os avisos do <code>-Wall</code> (seção 7).</p>
+
+<hr>
+
+<h2>1. As partes de um formato</h2>
+<p>Um formato pode ter até cinco partes. Só a primeira e a última são obrigatórias:</p>
+
+<pre class="syntax">%  [ajustes]  [largura]  [.precisão]  [tamanho]  tipo
+%     -          10          .2          l        f</pre>
+
+<dl class="anatomy">
+  <dt>%</dt><dd>Abre a lacuna. Tudo até a letra do tipo faz parte do formato.</dd>
+  <dt>ajustes (<em>flags</em>)</dt><dd>Símbolos que mudam o jeito de mostrar: <code>-</code> (alinhar à esquerda), <code>0</code> (completar com zeros), <code>+</code> (sempre mostrar o sinal), espaço e <code>#</code>. Seção 6.</dd>
+  <dt>largura</dt><dd>Quantos caracteres a lacuna ocupa <strong>no mínimo</strong>: <code>%5d</code> ocupa 5.</dd>
+  <dt>.precisão</dt><dd>Um ponto e um número. Para números com vírgula, quantas casas decimais: <code>%.2f</code>. Para textos, quantas letras no máximo: <code>%.3s</code>.</dd>
+  <dt>tamanho</dt><dd>Letras que avisam um tipo maior ou menor: <code>l</code> para <code>long</code>, <code>ll</code> para <code>long long</code>, <code>z</code> para <code>size_t</code>.</dd>
+  <dt>tipo</dt><dd>A letra que diz o que é o valor: <code>d</code> (inteiro), <code>f</code> (com vírgula), <code>s</code> (texto)…</dd>
+</dl>
+
+<p>As próximas seções mostram cada tipo. Ao final, a <a href="#referencia">tabela de referência</a> junta tudo.</p>
+
+<hr>
+
+<h2>2. Números inteiros</h2>
+<p>Este programa mostra cada formato de inteiro ao lado do que ele produz. Repare num truque: para mostrar o próprio sinal <code>%</code> na tela, escreve-se <code>%%</code> (seção 5).</p>
+
+<pre class="file" data-file="inteiros.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    unsigned int visitas = 3000000000u;
+    long populacao = 2147483647L;
+    long long estrelas = 100000000000LL;
+
+    printf("%%d   -&gt; %d\n", idade);
+    printf("%%i   -&gt; %i\n", idade);
+    printf("%%u   -&gt; %u\n", visitas);
+    printf("%%ld  -&gt; %ld\n", populacao);
+    printf("%%lld -&gt; %lld\n", estrelas);
+    printf("%%x   -&gt; %x\n", 255);
+    printf("%%X   -&gt; %X\n", 255);
+    printf("%%o   -&gt; %o\n", 8);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra inteiros.c -o inteiros
+$ ./inteiros
+%d   -&gt; 29
+%i   -&gt; 29
+%u   -&gt; 3000000000
+%ld  -&gt; 2147483647
+%lld -&gt; 100000000000
+%x   -&gt; ff
+%X   -&gt; FF
+%o   -&gt; 10</pre>
+
+<dl class="anatomy">
+  <dt>%d</dt><dd>De <em>decimal</em>: um <code>int</code> na base 10, a que usamos no dia a dia. É o formato que você mais vai usar.</dd>
+  <dt>%i</dt><dd>De <em>integer</em> (inteiro). No <code>printf</code>, é igualzinho ao <code>%d</code>. (No <code>scanf</code> eles são diferentes; veja <a href="scanf.html">Entrada com scanf</a>.)</dd>
+  <dt>%u</dt><dd>De <em>unsigned</em>, "sem sinal": um <code>unsigned int</code>, que não tem negativos e por isso vai mais longe (até 4294967295). Os tipos estão em <a href="inteiros.html">Inteiros</a>.</dd>
+  <dt>%ld</dt><dd>O <code>l</code> (de <em>long</em>) avisa que o valor é um <code>long</code>.</dd>
+  <dt>%lld</dt><dd>Dois <code>l</code>: um <code>long long</code>, o maior inteiro padrão (até 9223372036854775807).</dd>
+  <dt>%x e %X</dt><dd>Mostra o número em <strong>hexadecimal</strong> (base 16, com os "algarismos" 0–9 e a–f). <code>255</code> vira <code>ff</code>; com <code>X</code> maiúsculo, <code>FF</code>. Aparece muito em cores (<code>#FF8800</code>) e em endereços de memória.</dd>
+  <dt>%o</dt><dd>Mostra em <strong>octal</strong> (base 8). <code>8</code> vira <code>10</code>. Hoje quase só aparece nas permissões de arquivos do Linux (<code>chmod 755</code>).</dd>
+</dl>
+
+<div class="note">
+<strong>Os sufixos <code>u</code>, <code>L</code> e <code>LL</code></strong>
+<p>As letras no fim de <code>3000000000u</code>, <code>2147483647L</code> e <code>100000000000LL</code> dizem ao compilador o tipo do número escrito: <code>u</code> = <code>unsigned</code>, <code>L</code> = <code>long</code>, <code>LL</code> = <code>long long</code>. A aula <a href="inteiros.html">Inteiros</a> explica quando são necessárias.</p>
+</div>
+
+<h3>Negativo com <code>%u</code>: o número "dá a volta"</h3>
+<p>O formato não converte nada: ele só diz ao <code>printf</code> como <strong>ler</strong> os bits do valor. Um <code>-1</code> lido como "sem sinal" vira o maior <code>unsigned int</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ cat volta.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%d\n", -1);
+    printf("%u\n", -1);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra volta.c -o volta
+$ ./volta
+-1
+4294967295</pre>
+
+<p>Nem o <code>-Wall</code> avisou. A explicação (como os negativos são guardados) está em <a href="inteiros.html">Inteiros</a> e em <a href="conversao-tipos.html">Conversão de Tipos</a>. A lição aqui: use <code>%u</code> só para valores <code>unsigned</code>.</p>
+
+<h3>Uma letra é um número: <code>%c</code> × <code>%d</code></h3>
+<p>Para o C, um <code>char</code> é um número pequeno (o código da letra na tabela ASCII, veja <a href="char.html">Caracteres</a>). O formato decide se você vê a letra ou o número:</p>
+
+<pre class="file" data-file="letra.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'A';
+    printf("%c %d\n", letra, letra);
+    printf("%c\n", 66);
+    printf("%x %X %o %d\n", 2026, 2026, 2026, 2026);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra letra.c -o letra
+$ ./letra
+A 65                     « a mesma variável: como letra e como número
+B                        « 66 é o código do B
+7ea 7EA 3752 2026        « 2026 em hexadecimal, hexadecimal maiúsculo, octal e decimal</pre>
+
+<hr>
+
+<h2>3. Números com vírgula</h2>
+<p>Para <code>double</code> (e <code>float</code>), há três formatos, cada um com um jeito de escrever o número:</p>
+
+<pre class="file" data-file="reais.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 4.5;
+    printf("%%f   -&gt; %f\n", preco);
+    printf("%%.2f -&gt; %.2f\n", preco);
+    printf("%%e   -&gt; %e\n", preco);
+    printf("%%g   -&gt; %g\n", preco);
+    printf("%g %g %g\n", 0.0001, 1234567.0, 100.0);
+    printf("%e\n", 1234567.0);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra reais.c -o reais
+$ ./reais
+%f   -&gt; 4.500000
+%.2f -&gt; 4.50
+%e   -&gt; 4.500000e+00
+%g   -&gt; 4.5
+0.0001 1.23457e+06 100
+1.234567e+06</pre>
+
+<dl class="anatomy">
+  <dt>%f</dt><dd>De <em>floating point</em> ("ponto flutuante", o nome técnico dos números com vírgula). Sem precisão, mostra sempre <strong>6 casas</strong>: <code>4.500000</code>.</dd>
+  <dt>%.2f</dt><dd>Com precisão: exatamente 2 casas. É o formato de dinheiro: <code>4.50</code>. <code>%.1f</code> dá uma casa, <code>%.0f</code> nenhuma.</dd>
+  <dt>%e</dt><dd>Notação <strong>científica</strong> (<em>exponent</em>): <code>1.234567e+06</code> quer dizer 1.234567 × 10<sup>6</sup>, ou seja, 1234567. Bom para números enormes ou minúsculos.</dd>
+  <dt>%g</dt><dd>De <em>general</em> ("geral"): escolhe sozinho entre <code>%f</code> e <code>%e</code>, o que ficar mais curto, e tira os zeros inúteis do fim. Mostra até 6 algarismos significativos: por isso <code>1234567</code> virou <code>1.23457e+06</code> (arredondado).</dd>
+</dl>
+
+<div class="note">
+<strong>O ponto, não a vírgula</strong>
+<p>O <code>printf</code> sempre usa <strong>ponto</strong> como separador decimal (<code>4.50</code>), como nos Estados Unidos, mesmo num computador em português. Mostrar <code>4,50</code> exige mudar a "localidade" do programa, assunto fora desta aula.</p>
+</div>
+
+<h3>Arredondar com <code>%.Nf</code></h3>
+<p>A precisão <strong>arredonda</strong> (não corta) o que mostra, e a variável não muda. Mas o arredondamento tem uma surpresa:</p>
+
+<pre class="term" data-cwd="~/c">$ cat arredonda.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%.0f %.0f %.0f\n", 2.5, 3.5, 2.6);
+    printf("%.2f\n", 1.005);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra arredonda.c -o arredonda
+$ ./arredonda
+2 4 3
+1.00</pre>
+
+<ul>
+  <li><code>2.5</code> virou <code>2</code>, mas <code>3.5</code> virou <code>4</code>. Quando o número está <strong>exatamente</strong> no meio, a glibc arredonda para o vizinho <strong>par</strong> (é a regra padrão dos computadores, chamada "arredondamento do banqueiro"). <code>2.6</code> não está no meio e vira <code>3</code>, como esperado.</li>
+  <li><code>1.005</code> virou <code>1.00</code>, e não <code>1.01</code>. O computador não consegue guardar 1.005 exato; guarda algo como 1.00499999…, que arredonda para baixo. A aula <a href="ponto-flutuante.html">float e double</a> explica por quê.</li>
+</ul>
+
+<div class="tip">
+<strong><code>%f</code> ou <code>%lf</code>?</strong>
+<p>No <code>printf</code>, tanto faz: <code>%f</code> e <code>%lf</code> mostram um <code>double</code> do mesmo jeito (um <code>float</code> é convertido para <code>double</code> antes de chegar ao <code>printf</code>). No <code>scanf</code> é <strong>diferente</strong>: lá, <code>double</code> exige <code>%lf</code>. A aula <a href="scanf.html">Entrada com scanf</a> mostra o estrago de errar isso.</p>
+</div>
+
+<hr>
+
+<h2>4. Letras e textos: <code>%c</code> e <code>%s</code></h2>
+
+<pre class="file" data-file="textos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char inicial = 'A';
+    char nome[] = "Ana";
+    printf("Inicial: %c\n", inicial);
+    printf("Nome: %s\n", nome);
+    printf("Fruta: %.3s\n", "Banana");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra textos.c -o textos
+$ ./textos
+Inicial: A
+Nome: Ana
+Fruta: Ban</pre>
+
+<dl class="anatomy">
+  <dt>%c</dt><dd>De <em>character</em>: <strong>um</strong> caractere, guardado num <code>char</code> e escrito entre aspas simples (<code>'A'</code>).</dd>
+  <dt>char nome[] = "Ana";</dt><dd>Um texto guardado numa variável. Em C, texto é uma sequência de <code>char</code> (aula <a href="strings.html">Strings</a>).</dd>
+  <dt>%s</dt><dd>De <em>string</em>: um texto inteiro, até o fim. Pode receber uma variável de texto ou um texto entre aspas duplas.</dd>
+  <dt>%.3s</dt><dd>Com precisão, o <code>%s</code> mostra <strong>no máximo</strong> 3 letras: <code>Ban</code>.</dd>
+</dl>
+
+<hr>
+
+<h2>5. Formatos especiais: <code>%zu</code>, <code>%p</code> e <code>%%</code></h2>
+
+<pre class="file" data-file="especiais.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("Bytes de um int: %zu\n", sizeof idade);
+    printf("Endereço de idade: %p\n", (void *)&amp;idade);
+    printf("Desconto: 10%%\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra especiais.c -o especiais
+$ ./especiais
+Bytes de um int: 4
+Endereço de idade: 0x7fff58e00e44
+Desconto: 10%
+$ ./especiais
+Bytes de um int: 4
+Endereço de idade: 0x7ffd974cde64     « outro endereço a cada execução
+Desconto: 10%</pre>
+
+<dl class="anatomy">
+  <dt>%zu</dt><dd>Para o resultado de <code>sizeof</code> (o tamanho de algo, em bytes), que tem o tipo <code>size_t</code>. O <code>z</code> é o "tamanho" de <code>size_t</code>, e o <code>u</code> é de <em>unsigned</em>: tamanho nunca é negativo. Aula <a href="sizeof.html">Tamanho dos Tipos</a>.</dd>
+  <dt>%p</dt><dd>De <em>pointer</em> ("ponteiro"): um <strong>endereço de memória</strong>, em hexadecimal. O <code>&amp;idade</code> é "o endereço de <code>idade</code>", e o <code>(void *)</code> é a forma correta de entregá-lo ao <code>%p</code>. Tudo isso é explicado em <a href="memoria.html">Memória e Endereços</a>.</dd>
+  <dt>%%</dt><dd>Como o <code>%</code> abre uma lacuna, para mostrar um <code>%</code> de verdade escreva dois.</dd>
+</dl>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>O editor roda o programa em WebAssembly de 32 bits, então o <code>%p</code> mostra endereços curtos (como <code>0x7ffff8</code>), diferentes dos do gcc no Linux de 64 bits. O <code>%zu</code> funciona igual. Endereços nunca são iguais entre computadores e execuções: não escreva programas que dependam deles.</p>
+</div>
+
+<hr>
+
+<h2>6. Largura e alinhamento</h2>
+<p>Até aqui, cada lacuna ocupou exatamente o espaço do valor. Com uma <strong>largura</strong>, ela passa a ocupar um mínimo de caracteres, completando com espaços. Os colchetes no programa abaixo só servem para você enxergar onde a lacuna começa e termina:</p>
+
+<pre class="file" data-file="largura.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("[%5d]\n", 42);
+    printf("[%-5d]\n", 42);
+    printf("[%05d]\n", 42);
+    printf("[%+d] [%+d]\n", 42, -42);
+    printf("[%10s]\n", "Ana");
+    printf("[%-10s]\n", "Ana");
+    printf("[%8.2f]\n", 3.14159);
+    printf("[%2d]\n", 12345);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra largura.c -o largura
+$ ./largura
+[   42]
+[42   ]
+[00042]
+[+42] [-42]
+[       Ana]
+[Ana       ]
+[    3.14]
+[12345]</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>Saída</th><th>O que aconteceu</th></tr>
+<tr><td><code>%5d</code></td><td><code>[   42]</code></td><td>5 espaços no mínimo; o número fica à <strong>direita</strong> (3 espaços + <code>42</code>).</td></tr>
+<tr><td><code>%-5d</code></td><td><code>[42   ]</code></td><td>O <code>-</code> alinha à <strong>esquerda</strong>; os espaços vão para o fim.</td></tr>
+<tr><td><code>%05d</code></td><td><code>[00042]</code></td><td>O <code>0</code> antes da largura completa com <strong>zeros</strong> em vez de espaços.</td></tr>
+<tr><td><code>%+d</code></td><td><code>[+42] [-42]</code></td><td>O <code>+</code> mostra o sinal sempre, também nos positivos.</td></tr>
+<tr><td><code>%10s</code> / <code>%-10s</code></td><td><code>[       Ana]</code> / <code>[Ana       ]</code></td><td>Funciona igual com texto. Textos costumam ir à esquerda, números à direita.</td></tr>
+<tr><td><code>%8.2f</code></td><td><code>[    3.14]</code></td><td>Largura e precisão juntas: 8 caracteres no total (contando o ponto), 2 casas.</td></tr>
+<tr><td><code>%2d</code> com 12345</td><td><code>[12345]</code></td><td>A largura é um <strong>mínimo</strong>: um valor maior nunca é cortado.</td></tr>
+</table>
+</div>
+
+<h3>Uma tabela alinhada</h3>
+<p>A largura serve para fazer colunas. A lista de compras da Ana, com o nome à esquerda e os números à direita:</p>
+
+<pre class="file" data-file="compras.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%-10s %5s %8s\n", "Item", "Qtd", "Preço");
+    printf("%-10s %5d %8.2f\n", "Arroz", 2, 6.5);
+    printf("%-10s %5d %8.2f\n", "Feijão", 1, 8.9);
+    printf("%-10s %5d %8.2f\n", "Café", 3, 15.75);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra compras.c -o compras
+$ ./compras
+Item         Qtd   Preço
+Arroz          2     6.50
+Feijão        1     8.90
+Café          3    15.75</pre>
+
+<p>Quase deu certo, mas as linhas de <code>Feijão</code>, <code>Café</code> e o título <code>Preço</code> saíram <strong>tortas</strong>, um espaço a menos. Não é erro seu: o <code>printf</code> conta a largura em <strong>bytes</strong>, e cada letra acentuada (<code>ã</code>, <code>é</code>, <code>ç</code>) ocupa 2 bytes no UTF-8, a codificação usada no Linux. "Feijão" tem 6 letras, mas 7 bytes; o <code>printf</code> acha que já ocupou 7 das 10 posições e põe só 3 espaços. A aula <a href="acentos-utf8.html">Acentos e UTF-8</a> explica a fundo; por ora, em tabelas alinhadas, prefira nomes sem acento ou compense a largura à mão.</p>
+
+<div class="tryc" data-goal="out:Arroz          2     6.50,out:Leite         12     4.25,out:Ovos          30    18.00">
+<p class="try-task"><strong>Missão:</strong> a lista abaixo sai toda grudada. Use larguras para alinhar: o nome à <strong>esquerda</strong> em 10 posições, a quantidade à direita em 5 e o preço à direita em 8, com 2 casas (com um espaço entre as colunas, como no exemplo acima). A saída deve ficar assim:</p>
+<pre class="out">Arroz          2     6.50
+Leite         12     4.25
+Ovos          30    18.00</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%s %d %f\n", "Arroz", 2, 6.5);
+    printf("%s %d %f\n", "Leite", 12, 4.25);
+    printf("%s %d %f\n", "Ovos", 30, 18.0);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%-10s %5d %8.2f\n", "Arroz", 2, 6.5);
+    printf("%-10s %5d %8.2f\n", "Leite", 12, 4.25);
+    printf("%-10s %5d %8.2f\n", "Ovos", 30, 18.0);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Outros ajustes</h3>
+
+<pre class="term" data-cwd="~/c">$ cat ajustes.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("[%*d]\n", 6, 42);
+    printf("[%#x] [%#o]\n", 255, 8);
+    printf("[% d] [% d]\n", 42, -42);
+    printf("Pedido nº %03d\n", 7);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra ajustes.c -o ajustes
+$ ./ajustes
+[    42]
+[0xff] [010]
+[ 42] [-42]
+Pedido nº 007</pre>
+
+<dl class="anatomy">
+  <dt>%*d</dt><dd>O <code>*</code> no lugar da largura diz: "a largura vem de um valor". O primeiro valor (<code>6</code>) é a largura; o segundo (<code>42</code>) é o número. Útil quando a largura é calculada pelo programa.</dd>
+  <dt>%#x e %#o</dt><dd>O <code>#</code> acrescenta o prefixo que identifica a base: <code>0x</code> para hexadecimal, <code>0</code> para octal. São os mesmos prefixos que o C usa para escrever números nessas bases no código.</dd>
+  <dt>% d</dt><dd>Um <strong>espaço</strong> como ajuste: põe um espaço no lugar do <code>+</code> dos positivos, para alinhar com os negativos.</dd>
+  <dt>%03d</dt><dd>Zeros à esquerda até 3 dígitos: o jeito de numerar pedidos, notas fiscais e arquivos (<code>foto007.jpg</code>).</dd>
+</dl>
+
+<hr>
+
+<h2>7. O formato errado</h2>
+<p>O <code>printf</code> confia no formato. Se você diz <code>%f</code> e entrega um <code>int</code>, ele vai procurar um <code>double</code> onde não há, e mostra o que encontrar. Por sorte, o gcc confere os formatos quando o texto está escrito direto no <code>printf</code>, e o <code>-Wall</code> liga esse aviso:</p>
+
+<pre class="file" data-file="errado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double preco = 4.5;
+    printf("Idade: %f\n", idade);
+    printf("Preço: %d\n", preco);
+    printf("Dois números: %d %d\n", idade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra errado.c -o errado
+errado.c: In function ‘main’:
+errado.c:6:21: warning: format ‘%f’ expects argument of type ‘double’, but argument 2 has type ‘int’ [-Wformat=]
+    6 |     printf("Idade: %f\n", idade);
+      |                    ~^     ~~~~~
+      |                     |     |
+      |                     |     int
+      |                     double
+      |                    %d
+errado.c:7:21: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’ [-Wformat=]
+    7 |     printf("Preço: %d\n", preco);
+      |                    ~^     ~~~~~
+      |                     |     |
+      |                     int   double
+      |                    %f
+errado.c:8:31: warning: format ‘%d’ expects a matching ‘int’ argument [-Wformat=]
+    8 |     printf("Dois números: %d %d\n", idade);
+      |                              ~^
+      |                               |
+      |                               int
+$ ./errado
+Idade: 0.000000
+Preço: 2140133728
+Dois números: 29 -2016665569
+$ ./errado
+Idade: 0.000000
+Preço: -1266114704                   « muda a cada execução
+Dois números: 29 835022879</pre>
+
+<dl class="anatomy">
+  <dt>format ‘%f’ expects argument of type ‘double’</dt><dd>"O formato <code>%f</code> espera um valor do tipo <code>double</code>…"</dd>
+  <dt>but argument 2 has type ‘int’</dt><dd>"…mas o argumento 2 é um <code>int</code>." Os argumentos são contados a partir do texto do formato, que é o argumento 1.</dd>
+  <dt>os desenhos com <code>|</code></dt><dd>O gcc liga cada lacuna ao valor que a preenche e escreve o tipo de cada lado: <code>double</code> embaixo do <code>%f</code>, <code>int</code> embaixo de <code>idade</code>.</dd>
+  <dt>%d (na última linha do aviso)</dt><dd>A sugestão de conserto: "troque por <code>%d</code>".</dd>
+  <dt>expects a matching ‘int’ argument</dt><dd>"Espera um argumento <code>int</code> correspondente": há duas lacunas e só um valor.</dd>
+  <dt>[-Wformat=]</dt><dd>A regra de aviso que conferiu os formatos. Ela vem no <code>-Wall</code>.</dd>
+</dl>
+
+<p>São só avisos, então o programa foi gerado, e a saída mostra o estrago: <code>0.000000</code> no lugar de 29, um número sem sentido no lugar de 4.5 e um "segundo número" que ninguém passou. Ler um valor com o formato errado é <strong>comportamento indefinido</strong>: a linguagem não promete nada (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>). Os números mudam a cada execução e de um computador para outro.</p>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>O Clang avisa a mesma coisa com outras palavras: <code>format specifies type 'double' but the argument has type 'int' [-Wformat]</code> ("o formato indica o tipo <code>double</code>, mas o argumento é <code>int</code>") e <code>more '%' conversions than data arguments</code> ("mais lacunas <code>%</code> do que valores"). A saída errada também é diferente: no editor saiu <code>Preço: 0</code> e <code>Dois números: 29 0</code>. Lixo é lixo, em qualquer computador.</p>
+</div>
+
+<h3>Quando o lixo derruba o programa</h3>
+<p>Com <code>%s</code>, o estrago é maior: o <code>printf</code> trata o valor como o <strong>endereço</strong> de um texto e vai ler a memória nesse endereço.</p>
+
+<pre class="term" data-cwd="~/c">$ cat cliente.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int codigo = 65;
+    printf("Cliente: %s\n", codigo);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra cliente.c -o cliente
+cliente.c: In function ‘main’:
+cliente.c:5:23: warning: format ‘%s’ expects argument of type ‘char *’, but argument 2 has type ‘int’ [-Wformat=]
+    5 |     printf("Cliente: %s\n", codigo);
+      |                      ~^     ~~~~~~
+      |                       |     |
+      |                       |     int
+      |                       char *
+      |                      %d
+$ ./cliente
+Falha de segmentação     (imagem do núcleo gravada) ./cliente
+$ echo $?
+139</pre>
+
+<p>O endereço 65 não pertence ao programa, e o sistema o derrubou: <em>Falha de segmentação</em> (<em>segmentation fault</em>) é o aviso do Bash de que o programa tentou mexer numa memória proibida; o código de saída <code>139</code> confirma. O <code>char *</code> da mensagem é o tipo "endereço de texto" (aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>). <strong>Regra:</strong> nunca ignore um aviso <code>-Wformat</code>; ele aponta um erro de verdade.</p>
+
+<div class="tryc" data-goal="out:Idade: 29 anos,out:Preço: R$ 4.50,out:Inicial: A,semaviso">
+<p class="try-task"><strong>Missão:</strong> rode e leia os avisos: os três formatos estão trocados e a saída sai errada. Conserte <strong>só os formatos</strong> (as letras depois do <code>%</code>), sem mexer nas variáveis, para o programa mostrar <code>Idade: 29 anos</code>, <code>Preço: R$ 4.50</code> e <code>Inicial: A</code>, sem nenhum aviso.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double preco = 4.5;
+    char inicial = 'A';
+    printf("Idade: %f anos\n", idade);
+    printf("Preço: R$ %d\n", preco);
+    printf("Inicial: %s\n", inicial);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double preco = 4.5;
+    char inicial = 'A';
+    printf("Idade: %d anos\n", idade);
+    printf("Preço: R$ %.2f\n", preco);
+    printf("Inicial: %c\n", inicial);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes: qual usar</h2>
+<p>Muitas vezes há mais de um formato que "funciona". Esta tabela mostra a escolha do guia:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para mostrar…</th><th>Opções</th><th>Use</th><th>Por quê</th></tr>
+<tr><td>Um <code>int</code></td><td><code>%d</code>, <code>%i</code></td><td><code>%d</code></td><td>Os dois são iguais no <code>printf</code>, mas <code>%d</code> é o que todo mundo usa, e no <code>scanf</code> o <code>%i</code> tem uma pegadinha.</td></tr>
+<tr><td>Dinheiro</td><td><code>%f</code>, <code>%g</code>, <code>%.2f</code></td><td><code>%.2f</code></td><td>Sempre 2 casas: <code>4.50</code>, e não <code>4.500000</code> nem <code>4.5</code>.</td></tr>
+<tr><td>Um resultado de conta, sem saber o tamanho</td><td><code>%f</code>, <code>%g</code></td><td><code>%g</code></td><td>Tira zeros inúteis e muda sozinho para notação científica quando o número é enorme ou minúsculo.</td></tr>
+<tr><td>Números de ciência (distâncias, massas)</td><td><code>%f</code>, <code>%e</code></td><td><code>%e</code></td><td><code>1.989000e+30</code> é legível; <code>%f</code> escreveria 31 algarismos.</td></tr>
+<tr><td>Um <code>sizeof</code></td><td><code>%d</code>, <code>%lu</code>, <code>%zu</code></td><td><code>%zu</code></td><td>É o formato feito para <code>size_t</code>; os outros dão aviso em algum computador.</td></tr>
+<tr><td>Um texto fixo, sem lacunas</td><td><code>printf("Oi\n")</code>, <code>puts("Oi")</code></td><td>Qualquer um</td><td><code>puts</code> ("put string") já põe o <code>\n</code> no fim. O <code>printf</code> é mais flexível. Se o texto tiver um <code>%</code>, no <code>printf</code> ele vira <code>%%</code>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’</code></strong>
+<p><strong>O que significa:</strong> o formato não combina com o tipo do valor. O programa vai mostrar lixo naquela lacuna.</p>
+<p><strong>Como consertar:</strong> troque o formato pelo do tipo certo (a sugestão aparece na última linha do aviso) ou, se você quer mesmo o valor em outro tipo, converta de propósito: <code>(int)preco</code> (aula <a href="conversao-tipos.html">Conversão de Tipos</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects a matching ‘int’ argument</code></strong>
+<p><strong>O que significa:</strong> há mais lacunas <code>%</code> do que valores depois da vírgula. A lacuna sem valor mostra lixo. (Se for o contrário, mais valores que lacunas, o gcc avisa <code>too many arguments for format</code>, e os valores a mais são ignorados.)</p>
+<p><strong>Como consertar:</strong> conte as lacunas e os valores: tem de ser um para um, na mesma ordem.</p>
+</div>
+
+<div class="cenario">
+<strong>Apareceu um número estranho ou <code>0.000000</code>, sem aviso nenhum</strong>
+<p><strong>O que significa:</strong> provavelmente você compilou sem <code>-Wall</code>, e o aviso de formato não apareceu.</p>
+<p><strong>Como consertar:</strong> compile sempre com <code>gcc -std=c23 -Wall -Wextra</code> e leia os avisos <code>-Wformat</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> numa linha com <code>%s</code></strong>
+<p><strong>O que significa:</strong> o <code>%s</code> recebeu algo que não é um texto (um número, um <code>char</code> sozinho), e o <code>printf</code> tentou ler a memória num endereço inválido.</p>
+<p><strong>Como consertar:</strong> para um <code>char</code>, use <code>%c</code>; para números, <code>%d</code> ou <code>%f</code>. O aviso <code>expects argument of type ‘char *’</code> já tinha apontado a linha.</p>
+</div>
+
+<div class="cenario">
+<strong>A tabela sai torta nas linhas com acento</strong>
+<p><strong>O que significa:</strong> a largura (<code>%-10s</code>) conta bytes, e letras acentuadas ocupam 2 bytes em UTF-8.</p>
+<p><strong>Como consertar:</strong> use nomes sem acento nas colunas alinhadas, ou aumente a largura em 1 para cada acento. Detalhes em <a href="acentos-utf8.html">Acentos e UTF-8</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="referencia">Referência</h2>
+
+<h3>Os tipos (a letra do fim)</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>Tipo do valor</th><th>Exemplo</th><th>Saída</th></tr>
+<tr><td><code>%d</code> ou <code>%i</code></td><td><code>int</code> (e <code>char</code>, <code>short</code>)</td><td><code>printf("%d", 29)</code></td><td><code>29</code></td></tr>
+<tr><td><code>%u</code></td><td><code>unsigned int</code></td><td><code>printf("%u", 3000000000u)</code></td><td><code>3000000000</code></td></tr>
+<tr><td><code>%ld</code> / <code>%lu</code></td><td><code>long</code> / <code>unsigned long</code></td><td><code>printf("%ld", 100L)</code></td><td><code>100</code></td></tr>
+<tr><td><code>%lld</code> / <code>%llu</code></td><td><code>long long</code> / <code>unsigned long long</code></td><td><code>printf("%lld", 100000000000LL)</code></td><td><code>100000000000</code></td></tr>
+<tr><td><code>%hd</code> / <code>%hhd</code></td><td><code>short</code> / <code>signed char</code> (raros)</td><td><code>printf("%hd", (short)7)</code></td><td><code>7</code></td></tr>
+<tr><td><code>%x</code> / <code>%X</code></td><td>inteiro sem sinal, em hexadecimal</td><td><code>printf("%x %X", 255, 255)</code></td><td><code>ff FF</code></td></tr>
+<tr><td><code>%o</code></td><td>inteiro sem sinal, em octal</td><td><code>printf("%o", 8)</code></td><td><code>10</code></td></tr>
+<tr><td><code>%f</code> (ou <code>%lf</code>)</td><td><code>double</code> (e <code>float</code>)</td><td><code>printf("%f", 4.5)</code></td><td><code>4.500000</code></td></tr>
+<tr><td><code>%e</code> / <code>%E</code></td><td><code>double</code>, notação científica</td><td><code>printf("%e", 1234567.0)</code></td><td><code>1.234567e+06</code></td></tr>
+<tr><td><code>%g</code> / <code>%G</code></td><td><code>double</code>, o mais curto entre <code>%f</code> e <code>%e</code></td><td><code>printf("%g", 4.5)</code></td><td><code>4.5</code></td></tr>
+<tr><td><code>%Lf</code></td><td><code>long double</code></td><td><code>printf("%Lf", 4.5L)</code></td><td><code>4.500000</code></td></tr>
+<tr><td><code>%c</code></td><td>um caractere (<code>char</code>)</td><td><code>printf("%c", 'A')</code></td><td><code>A</code></td></tr>
+<tr><td><code>%s</code></td><td>texto (<code>char[]</code> ou <code>char *</code>)</td><td><code>printf("%s", "Ana")</code></td><td><code>Ana</code></td></tr>
+<tr><td><code>%zu</code></td><td><code>size_t</code> (resultado de <code>sizeof</code>)</td><td><code>printf("%zu", sizeof(int))</code></td><td><code>4</code></td></tr>
+<tr><td><code>%p</code></td><td>endereço (<code>void *</code>)</td><td><code>printf("%p", (void *)&amp;x)</code></td><td><code>0x7ffc…</code> (muda)</td></tr>
+<tr><td><code>%%</code></td><td>nenhum: mostra um <code>%</code></td><td><code>printf("10%%")</code></td><td><code>10%</code></td></tr>
+</table>
+</div>
+
+<h3>Os ajustes, a largura e a precisão</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Efeito</th><th>Exemplo</th><th>Saída</th></tr>
+<tr><td><code>%5d</code></td><td>largura mínima 5, à direita</td><td><code>printf("[%5d]", 42)</code></td><td><code>[   42]</code></td></tr>
+<tr><td><code>%-5d</code></td><td>largura 5, à esquerda</td><td><code>printf("[%-5d]", 42)</code></td><td><code>[42   ]</code></td></tr>
+<tr><td><code>%05d</code></td><td>completa com zeros</td><td><code>printf("[%05d]", 42)</code></td><td><code>[00042]</code></td></tr>
+<tr><td><code>%+d</code></td><td>sinal sempre</td><td><code>printf("%+d", 42)</code></td><td><code>+42</code></td></tr>
+<tr><td><code>% d</code></td><td>espaço no lugar do <code>+</code></td><td><code>printf("[% d]", 42)</code></td><td><code>[ 42]</code></td></tr>
+<tr><td><code>%#x</code> / <code>%#o</code></td><td>prefixo da base</td><td><code>printf("%#x", 255)</code></td><td><code>0xff</code></td></tr>
+<tr><td><code>%.2f</code></td><td>2 casas decimais (arredonda)</td><td><code>printf("%.2f", 3.14159)</code></td><td><code>3.14</code></td></tr>
+<tr><td><code>%8.2f</code></td><td>largura 8 e 2 casas</td><td><code>printf("[%8.2f]", 3.14159)</code></td><td><code>[    3.14]</code></td></tr>
+<tr><td><code>%.3s</code></td><td>no máximo 3 letras</td><td><code>printf("%.3s", "Banana")</code></td><td><code>Ban</code></td></tr>
+<tr><td><code>%-10s</code></td><td>texto em 10 posições, à esquerda</td><td><code>printf("[%-10s]", "Ana")</code></td><td><code>[Ana       ]</code></td></tr>
+<tr><td><code>%*d</code></td><td>largura vinda de um valor</td><td><code>printf("[%*d]", 6, 42)</code></td><td><code>[    42]</code></td></tr>
+</table>
+</div>
+
+<p>A página <a href="ref-printf.html">printf e scanf</a>, na seção de referência, junta esta tabela com os formatos do <code>scanf</code>.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O formato do dinheiro</h3>
+<p>Complete para mostrar <code>R$ 12.90</code>, com exatamente 2 casas:</p>
+<div class="ex-code">printf("R$ <input data-answer="%.2f" aria-label="formato">\n", 12.9);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Zeros à esquerda</h3>
+<p>Complete para que o pedido 7 apareça como <code>Pedido 0007</code>:</p>
+<div class="ex-code">printf("Pedido <input data-answer="%04d" aria-label="formato">\n", 7);</div>
+</div>
+
+<div class="exercise">
+<h3>3. O sinal de por cento</h3>
+<p>Complete para mostrar <code>Desconto: 15%</code>:</p>
+<div class="ex-code">printf("Desconto: %d<input data-answer="%%" aria-label="formato">\n", 15);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que <code>printf("[%-6s]", "Ana");</code> mostra?</p>
+<label><input type="radio" name="q4"> <code>[   Ana]</code></label>
+<label><input type="radio" name="q4"> <code>[Ana]</code></label>
+<label><input type="radio" name="q4"> <code>[Ana   ]</code></label>
+<label><input type="radio" name="q4"> <code>[-Ana]</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Qual o formato certo para o resultado de <code>sizeof(double)</code>?</p>
+<label><input type="radio" name="q5"> <code>%d</code></label>
+<label><input type="radio" name="q5"> <code>%zu</code></label>
+<label><input type="radio" name="q5"> <code>%f</code></label>
+<label><input type="radio" name="q5"> <code>%s</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. <code>double nota = 7.5;</code> e <code>printf("%d\n", nota);</code>. Compilando com <code>-Wall</code>, o que acontece?</p>
+<label><input type="radio" name="q6"> Mostra <code>7</code>, sem aviso</label>
+<label><input type="radio" name="q6"> Mostra <code>8</code>, arredondado</label>
+<label><input type="radio" name="q6"> Erro de compilação, e o programa não é gerado</label>
+<label><input type="radio" name="q6"> Aviso <code>-Wformat</code>, e o programa mostra um número sem sentido</label>
+</div>
+
+<h3>Missão final: o cupom da lojinha</h3>
+
+<div class="tryc" data-goal="outre:Pedido nº 0042\n,out:Cliente: Ana,out:Caderno        3 x R$    12.90,out:Desconto: 10%,out:Total: R$ 34.83,src:%-?\d*s,semaviso">
+<p class="try-task"><strong>Missão:</strong> complete os <code>printf</code> do cupom (troque cada <code>???</code> pelo formato certo) para a saída ficar exatamente como abaixo, sem avisos. Dicas: o pedido tem 4 dígitos com zeros; o nome do produto ocupa 12 posições à esquerda; a quantidade, 4 à direita; o preço, 8 à direita com 2 casas.</p>
+<pre class="out">Pedido nº 0042
+Cliente: Ana
+Caderno        3 x R$    12.90
+Desconto: 10%
+Total: R$ 34.83</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pedido = 42;
+    char cliente[] = "Ana";
+    char produto[] = "Caderno";
+    int quantidade = 3;
+    double preco = 12.90;
+    int desconto = 10;
+    double total = quantidade * preco * (100 - desconto) / 100;
+
+    printf("Pedido nº ???\n", pedido);
+    printf("Cliente: ???\n", cliente);
+    printf("??????? x R$ ???\n", produto, quantidade, preco);
+    printf("Desconto: ???\n", desconto);
+    printf("Total: R$ ???\n", total);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pedido = 42;
+    char cliente[] = "Ana";
+    char produto[] = "Caderno";
+    int quantidade = 3;
+    double preco = 12.90;
+    int desconto = 10;
+    double total = quantidade * preco * (100 - desconto) / 100;
+
+    printf("Pedido nº %04d\n", pedido);
+    printf("Cliente: %s\n", cliente);
+    printf("%-12s%4d x R$ %8.2f\n", produto, quantidade, preco);
+    printf("Desconto: %d%%\n", desconto);
+    printf("Total: R$ %.2f\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<p>A conta do total usa operadores da próxima parte do guia (<a href="operadores-aritmeticos.html">Operadores Aritméticos</a>): 3 × 12.90 = 38.70, menos 10% = 34.83.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Cada <code>%</code> abre uma lacuna; a letra do fim diz o tipo; os valores preenchem as lacunas na ordem. <strong>O formato tem de combinar com o tipo.</strong></li>
+  <li>Inteiros: <code>%d</code> (ou <code>%i</code>), <code>%u</code> (sem sinal), <code>%ld</code>, <code>%lld</code>; em outras bases, <code>%x</code>/<code>%X</code> (hexadecimal) e <code>%o</code> (octal).</li>
+  <li>Com vírgula: <code>%f</code> (6 casas), <code>%.2f</code> (2 casas, arredonda), <code>%e</code> (científica), <code>%g</code> (o mais curto). No <code>printf</code>, <code>%lf</code> = <code>%f</code>.</li>
+  <li><code>%c</code> = um caractere, <code>%s</code> = texto, <code>%zu</code> = <code>sizeof</code>, <code>%p</code> = endereço, <code>%%</code> = o próprio <code>%</code>.</li>
+  <li>Largura: <code>%5d</code> (direita), <code>%-10s</code> (esquerda), <code>%05d</code> (zeros), <code>%+d</code> (sinal). A largura é mínima, conta bytes (acentos contam 2) e nunca corta.</li>
+  <li>Formato errado = aviso <code>-Wformat</code> do <code>-Wall</code> e saída lixo (ou até <code>Falha de segmentação</code> com <code>%s</code>). Nunca ignore esse aviso.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
