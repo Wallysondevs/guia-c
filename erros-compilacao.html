@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Lendo Erros do Compilador — arquivo:linha:coluna, o primeiro erro e o ligador | Guia C</title>
+<meta name="description" content="Como ler as mensagens de erro do gcc em C: arquivo:linha:coluna, error, warning, note e fatal error, o vocabulário em inglês, um método para consertar, os erros mais comuns de quem começa (ponto e vírgula, #include, aspas, chaves, nome e tipo errados, aspas curvas), por que um erro vira dezenas de linhas, -fmax-errors=1 e os erros do ligador (undefined reference), com as mensagens reais do gcc 15 e do Clang do editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Lendo Erros do Compilador</span></h1>
+
+<p class="intro">Todo programador, do primeiro dia ao vigésimo ano, vê erros de compilação o tempo todo. A diferença é que quem tem experiência lê a mensagem e sabe onde olhar em segundos. As mensagens do <code>gcc</code> estão em inglês e às vezes parecem enormes, mas seguem sempre o mesmo formato e usam um vocabulário pequeno. Nesta aula você aprende a ler esse formato, conhece os erros mais comuns de quem começa, com a mensagem real e o conserto, e descobre por que um erro às vezes aparece na linha errada, ou vira dezenas de linhas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As partes de uma mensagem: <code>arquivo:linha:coluna: error: descrição</code>, a linha copiada e o <code>^</code>.</li>
+  <li>A diferença entre <code>error</code>, <code>warning</code>, <code>note</code> e <code>fatal error</code>.</li>
+  <li>As palavras em inglês que mais aparecem, e um método para consertar sem se perder.</li>
+  <li>Os erros mais comuns: <code>;</code> faltando, <code>#include</code> faltando ou errado, aspas e chaves, nome errado, tipo errado e as aspas curvas copiadas da internet.</li>
+  <li>Por que o erro às vezes aparece na linha de baixo, e por que um erro só gera muitas mensagens.</li>
+  <li>A diferença entre erro de compilação e erro de ligação (<code>undefined reference</code>).</li>
+  <li>As mesmas mensagens no Clang, o compilador do editor do guia.</li>
+</ul>
+</div>
+
+<p>Todos os códigos desta aula têm erros <strong>de propósito</strong>. Eles foram compilados na máquina fictícia da Ana com <code>gcc -std=c23 -Wall -Wextra</code> (gcc 15.2), numa pasta <code>~/c/erros</code>, e as mensagens do Clang são as do editor do guia. Tudo foi copiado sem mudar nada, inclusive as aspas tipográficas ‘assim’ que o <code>gcc</code> usa.</p>
+
+<hr>
+
+<h2>A ideia: o corretor ortográfico</h2>
+<p>Quando você escreve no celular, o corretor sublinha uma palavra em vermelho e sugere outra. Ele não entende o que você quis dizer: só sabe que aquela palavra não está no dicionário dele. Às vezes a sugestão é perfeita; às vezes é engraçada.</p>
+
+<p>O compilador é um corretor muito mais rígido. Ele lê o seu código do começo ao fim e, quando algo não se encaixa nas regras do C, anota <strong>onde percebeu</strong> o problema e <strong>o que esperava</strong> encontrar. Duas coisas para guardar desde já:</p>
+<ul>
+  <li><strong>Um erro de compilação não estraga nada.</strong> O programa só não é criado até você consertar. Pode errar à vontade.</li>
+  <li><strong>O compilador diz onde percebeu o erro, e isso nem sempre é onde você errou.</strong> Você vai ver por quê.</li>
+</ul>
+
+<hr>
+
+<h2>1. Anatomia de uma mensagem</h2>
+<p>A Ana esqueceu o ponto e vírgula no fim da linha 4:</p>
+
+<pre class="file" data-file="pv.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras\n")
+    printf("Arroz\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra pv.c -o pv
+pv.c: In function ‘main’:
+pv.c:4:33: error: expected ‘;’ before ‘printf’
+    4 |     printf("Lista de compras\n")
+      |                                 ^
+      |                                 ;
+    5 |     printf("Arroz\n");
+      |     ~~~~~~                       </pre>
+
+<p>A linha mais importante é a segunda. Ela tem cinco partes, separadas por dois-pontos:</p>
+
+<dl class="anatomy">
+  <dt>pv.c:</dt><dd>O <strong>arquivo</strong> onde está o problema. Em programas com vários arquivos (aula <a href="multiplos-arquivos.html">Vários Arquivos</a>), isso importa muito.</dd>
+  <dt>4:</dt><dd>A <strong>linha</strong>. Os editores mostram o número das linhas na margem; no VS Code, <kbd>Ctrl</kbd>+<kbd>G</kbd> pula direto para uma linha (aula <a href="editores.html">Editores e IDEs</a>).</dd>
+  <dt>33:</dt><dd>A <strong>coluna</strong>: em que caractere da linha, contando da esquerda. Na prática, quem mostra a coluna é o <code>^</code>, logo abaixo.</dd>
+  <dt>error:</dt><dd>O <strong>tipo</strong> da mensagem (veja a tabela abaixo).</dd>
+  <dt>expected ‘;’ before ‘printf’</dt><dd>A <strong>descrição</strong>: "esperava <code>;</code> antes de <code>printf</code>".</dd>
+</dl>
+
+<p>E as outras linhas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha da mensagem</th><th>O que é</th></tr>
+<tr><td><code>pv.c: In function ‘main’:</code></td><td>Contexto: "na função <code>main</code>". Diz em qual função estão os erros que vêm a seguir.</td></tr>
+<tr><td><code>    4 |     printf("Lista de compras\n")</code></td><td>A linha 4 do seu código, copiada, para você não precisar procurar.</td></tr>
+<tr><td><code>      |                                 ^</code></td><td>O acento circunflexo aponta a coluna exata: logo depois do <code>)</code>.</td></tr>
+<tr><td><code>      |                                 ;</code></td><td>Uma <strong>sugestão de conserto</strong> (em inglês, <em>fix-it</em>): o <code>gcc</code> desenha o <code>;</code> onde ele deveria estar.</td></tr>
+<tr><td><code>    5 |     printf…</code> e <code>~~~~~~</code></td><td>A linha 5, com o <code>printf</code> sublinhado (<code>~~~~~~</code>): é o "printf" da descrição, a primeira coisa que o <code>gcc</code> viu depois do lugar onde faltou o <code>;</code>.</td></tr>
+</table>
+</div>
+
+<h3>Os tipos de mensagem</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Quer dizer</th><th>O programa é criado?</th></tr>
+<tr><td><code>error:</code></td><td>Erro: o código está fora das regras do C.</td><td><strong>Não</strong></td></tr>
+<tr><td><code>fatal error:</code></td><td>Erro tão grave que o compilador nem continua lendo (por exemplo, um <code>#include</code> de arquivo que não existe).</td><td><strong>Não</strong></td></tr>
+<tr><td><code>warning:</code></td><td>Aviso: o código segue as regras, mas tem cara de engano (aula <a href="avisos.html">Avisos</a>).</td><td>Sim</td></tr>
+<tr><td><code>note:</code></td><td>Nota: uma informação extra sobre a mensagem <strong>anterior</strong> (onde algo foi declarado, qual parêntese ficou aberto…).</td><td>(não conta)</td></tr>
+</table>
+</div>
+
+<p>Depois de um erro, o programa <strong>não</strong> é criado, e o <code>gcc</code> termina com o código de saída 1, que quer dizer "deu errado" (aula <a href="primeiro-programa.html">Olá, Mundo</a>). O <code>echo $?</code> mostra esse código:</p>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra pv.c -o pv; echo "código de saída: $?"
+pv.c: In function ‘main’:
+pv.c:4:33: error: expected ‘;’ before ‘printf’
+    4 |     printf("Lista de compras\n")
+      |                                 ^
+      |                                 ;
+    5 |     printf("Arroz\n");
+      |     ~~~~~~
+código de saída: 1
+$ ls
+aspas.c
+cascata.c
+chave2.c
+chave.c
+inc.c
+ligacao.c
+nome.c
+pv2.c
+pv.c                  « só os arquivos .c: nenhum programa "pv" foi criado
+tipo.c</pre>
+
+<p>No editor do guia, o Clang diz a mesma coisa com outras palavras: <code>expected ';' after expression</code>, "esperava <code>;</code> depois da expressão", e aponta a mesma coluna. Experimente provocar o erro:</p>
+
+<div class="tryc" data-goal="erro:/expected ['‘];['’]/">
+<p class="try-task"><strong>Missão:</strong> este programa está certo. Apague o <code>;</code> do fim da linha 4, rode e leia a mensagem: o arquivo, a linha, a coluna, o <code>error</code>, a descrição e o <code>;</code> desenhado embaixo. Repare também no <code>[código de saída do clang: 1]</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras\n");
+    printf("Arroz\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras\n")
+    printf("Arroz\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. O vocabulário das mensagens</h2>
+<p>Você não precisa saber inglês para ler erros de compilação. Umas vinte palavras resolvem quase tudo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Em inglês</th><th>Em português</th><th>Exemplo</th></tr>
+<tr><td><code>expected</code></td><td>esperava (e não achou)</td><td><code>expected ‘;’</code></td></tr>
+<tr><td><code>before</code> / <code>after</code></td><td>antes de / depois de</td><td><code>before ‘}’ token</code></td></tr>
+<tr><td><code>token</code></td><td>"pedaço": cada palavra ou símbolo do código</td><td><code>‘}’ token</code></td></tr>
+<tr><td><code>undeclared</code></td><td>não declarado: um nome que ninguém criou</td><td><code>‘idadi’ undeclared</code></td></tr>
+<tr><td><code>first use in this function</code></td><td>primeiro uso nesta função</td><td>idem</td></tr>
+<tr><td><code>undeclared identifier</code></td><td>nome não declarado (forma do Clang)</td><td><code>use of undeclared identifier 'x'</code></td></tr>
+<tr><td><code>implicit declaration of function</code></td><td>uma função usada sem ter sido apresentada</td><td><code>implicit declaration of function ‘printf’</code></td></tr>
+<tr><td><code>did you mean</code></td><td>você quis dizer</td><td><code>did you mean ‘idade’?</code></td></tr>
+<tr><td><code>missing</code></td><td>faltando</td><td><code>missing terminating " character</code></td></tr>
+<tr><td><code>terminating</code></td><td>de fechamento</td><td>idem</td></tr>
+<tr><td><code>at end of input</code></td><td>no fim do arquivo</td><td><code>expected declaration or statement at end of input</code></td></tr>
+<tr><td><code>statement</code> / <code>declaration</code></td><td>instrução / declaração (criação de algo)</td><td>idem</td></tr>
+<tr><td><code>to match this</code></td><td>para fazer par com este</td><td><code>note: to match this ‘(’</code></td></tr>
+<tr><td><code>makes integer from pointer</code></td><td>transforma endereço (ponteiro) em número: tipo errado</td><td><code>initialization of ‘int’ from ‘char *’ makes integer from pointer</code></td></tr>
+<tr><td><code>stray</code></td><td>perdido, solto</td><td><code>stray ‘\342’ in program</code></td></tr>
+<tr><td><code>No such file or directory</code></td><td>arquivo ou diretório inexistente</td><td><code>fatal error: studio.h: …</code></td></tr>
+<tr><td><code>In file included from</code></td><td>no arquivo incluído a partir de</td><td>o caminho até um cabeçalho da biblioteca</td></tr>
+<tr><td><code>undefined reference</code></td><td>referência não definida (erro do <strong>ligador</strong>, seção 6)</td><td><code>undefined reference to `main'</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. O método: um erro de cada vez</h2>
+<ol class="passo">
+  <li><strong>Leia só o primeiro <code>error:</code>.</strong> Os seguintes podem ser consequência dele.</li>
+  <li>Vá até a <strong>linha</strong> e a <strong>coluna</strong> indicadas.</li>
+  <li>Leia a descrição com o vocabulário acima. Se houver um <code>did you mean</code> ou uma sugestão desenhada embaixo da linha, considere-a (mas não obedeça cegamente).</li>
+  <li><strong>Se a linha parece certa, olhe a de cima.</strong> Ponto e vírgula, aspas e chaves esquecidos são percebidos só depois.</li>
+  <li>Corrija <strong>só esse erro</strong> e compile de novo. Muitas vezes os outros somem junto.</li>
+</ol>
+
+<div class="tip">
+<strong>Os editores mostram os erros enquanto você digita</strong>
+<p>O VS Code (com a extensão de C ou o clangd) sublinha os erros em vermelho, com a mesma mensagem do compilador ao passar o mouse (aula <a href="editores.html">Editores e IDEs</a>). Mesmo assim, saber ler a mensagem do terminal é essencial: ela é a palavra final.</p>
+</div>
+
+<hr>
+
+<h2>4. Os erros mais comuns de quem começa</h2>
+
+<h3>4.1. Faltou o <code>;</code>, e o erro aparece na linha de baixo</h3>
+<p>No <code>pv.c</code>, o <code>;</code> faltava na linha 4, e o <code>gcc</code> apontou a linha 4. Mas nem sempre é assim. Aqui o <code>;</code> falta no fim de uma linha que cria uma variável (variáveis são da aula <a href="variaveis.html">Variáveis</a>):</p>
+
+<pre class="file" data-file="pv2.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29
+    printf("A Ana tem %d anos.\n", idade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra pv2.c -o pv2
+pv2.c: In function ‘main’:
+pv2.c:5:5: error: expected ‘,’ or ‘;’ before ‘printf’
+    5 |     printf("A Ana tem %d anos.\n", idade);
+      |     ^~~~~~
+pv2.c:4:9: warning: unused variable ‘idade’ [-Wunused-variable]
+    4 |     int idade = 29
+      |         ^~~~~</pre>
+
+<p>O erro está na linha 4, mas o <code>gcc</code> apontou a <strong>linha 5</strong>, coluna 5. Por quê? Para o compilador, a quebra de linha não significa nada (aula <a href="sintaxe.html">Sintaxe</a>). Ele leu <code>int idade = 29 printf(…</code> como uma coisa só, e só percebeu o problema ao chegar no <code>printf</code>, que não tem como continuar a frase. A descrição ajuda: "esperava <code>,</code> ou <code>;</code> <strong>antes</strong> de <code>printf</code>". Antes do <code>printf</code> está o fim da linha 4.</p>
+
+<p>E o aviso de "variável não usada"? É um efeito colateral: como a linha 5 não foi entendida, o compilador acha que a <code>idade</code> nunca foi usada. Consertando o erro, o aviso some.</p>
+
+<p>O Clang, nesse caso, aponta direto para o lugar certo (é por isso que o editor do guia às vezes é mais preciso que o terminal):</p>
+
+<pre class="file" data-file="o que o editor mostra">$ clang -std=c23 -Wall -Wextra pv2.c -o pv2
+pv2.c:4:19: error: expected ';' at end of declaration
+    4 |     int idade = 29
+      |                   ^
+      |                   ;
+1 error generated.</pre>
+
+<p>"Esperava <code>;</code> no fim da declaração". O Clang termina sempre com uma contagem: <code>1 error generated.</code> ("1 erro gerado").</p>
+<p><strong>Conserto:</strong> o <code>;</code> no fim da linha de cima da que foi apontada (no <code>gcc</code>) ou exatamente onde o <code>^</code> indica (no Clang).</p>
+
+<h3>4.2. Faltou o <code>#include</code>, ou o nome dele está errado</h3>
+
+<pre class="file" data-file="inc.c · erro de propósito">int main(void) {
+    printf("Olá!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra inc.c -o inc
+inc.c: In function ‘main’:
+inc.c:2:5: error: implicit declaration of function ‘printf’ [-Wimplicit-function-declaration]
+    2 |     printf("Olá!\n");
+      |     ^~~~~~
+inc.c:1:1: note: include ‘&lt;stdio.h&gt;’ or provide a declaration of ‘printf’
+  +++ |+#include &lt;stdio.h&gt;
+    1 | int main(void) {
+inc.c:2:5: warning: incompatible implicit declaration of built-in function ‘printf’ [-Wbuiltin-declaration-mismatch]
+    2 |     printf("Olá!\n");
+      |     ^~~~~~
+inc.c:2:5: note: include ‘&lt;stdio.h&gt;’ or provide a declaration of ‘printf’</pre>
+
+<p>"Declaração implícita da função <code>printf</code>": você usou o <code>printf</code> sem que ninguém o apresentasse ao compilador. Quem apresenta é o <code>stdio.h</code>. A <code>note</code> é generosa: "inclua <code>&lt;stdio.h&gt;</code> ou forneça uma declaração de <code>printf</code>", e a linha com <code>+++ |+</code> mostra a linha que ele acrescentaria no topo. No C antigo, isso era só um aviso; no gcc 15, com o C23, é <strong>erro</strong>. No editor do guia, o Clang diz <code>call to undeclared library function 'printf'</code> ("chamada a uma função da biblioteca não declarada") e dá a mesma dica: <code>include the header &lt;stdio.h&gt;</code>.</p>
+
+<p>E se o <code>#include</code> está lá, mas com o nome errado? <code>studio.h</code> é um engano clássico (o certo é <code>stdio.h</code>, de <em>standard input/output</em>, "entrada e saída padrão"):</p>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra studio.c -o studio
+studio.c:1:10: fatal error: studio.h: Arquivo ou diretório inexistente
+    1 | #include &lt;studio.h&gt;
+      |          ^~~~~~~~~~
+compilation terminated.</pre>
+
+<p>Um <code>fatal error</code>: o arquivo <code>studio.h</code> não existe, e o <code>gcc</code> desiste na hora (<code>compilation terminated</code>, "compilação encerrada"). A parte "Arquivo ou diretório inexistente" vem do sistema, por isso sai em português. No Clang: <code>fatal error: 'studio.h' file not found</code>.</p>
+<p><strong>Conserto:</strong> o <code>#include</code> do cabeçalho certo, escrito certo, no topo do arquivo. Cada função da biblioteca mora num cabeçalho; as aulas sempre dizem qual.</p>
+
+<h3>4.3. Aspas que não fecham</h3>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra aspas.c -o aspas            « printf("Olá, Ana!\n);
+aspas.c: In function ‘main’:
+aspas.c:4:12: warning: missing terminating " character
+    4 |     printf("Olá, Ana!\n);
+      |            ^
+aspas.c:4:12: error: missing terminating " character
+    4 |     printf("Olá, Ana!\n);
+      |            ^~~~~~~~~~~~~~
+aspas.c:5:5: error: expected expression before ‘return’
+    5 |     return 0;
+      |     ^~~~~~
+aspas.c:5:14: error: expected ‘;’ before ‘}’ token
+    5 |     return 0;
+      |              ^
+      |              ;
+    6 | }
+      | ~             </pre>
+
+<p>"Falta o caractere <code>"</code> de fechamento". O <code>^~~~</code> sublinha o texto que ficou aberto: das aspas de abertura até o fim da linha. O <code>);</code> foi parar <strong>dentro</strong> do texto, e por isso vieram os outros dois erros, na linha 5: o compilador chegou ao <code>return</code> ainda esperando o resto do <code>printf</code>. Consertando as aspas, eles somem.</p>
+<p><strong>Conserto:</strong> feche as aspas: <code>printf("Olá, Ana!\n");</code>. Os editores pintam o texto de uma cor só até as aspas fecharem, o que ajuda a enxergar. As aspas e as barras dentro do texto estão na aula <a href="escapes.html">Novas Linhas e Escapes</a>.</p>
+
+<h3>4.4. Chave faltando ou sobrando</h3>
+<p>Faltou a <code>}</code> que fecha a <code>main</code> (o arquivo termina logo depois do <code>return 0;</code>):</p>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra chave.c -o chave
+chave.c: In function ‘main’:
+chave.c:5:5: error: expected declaration or statement at end of input
+    5 |     return 0;
+      |     ^~~~~~</pre>
+
+<p>"Esperava uma declaração ou instrução no fim da entrada": o arquivo acabou e o bloco da <code>main</code> ainda estava aberto. O Clang é mais claro e mostra o par que ficou sozinho:</p>
+
+<pre class="file" data-file="o que o editor mostra">$ clang -std=c23 -Wall -Wextra chave.c -o chave
+chave.c:5:14: error: expected '}'
+    5 |     return 0;
+      |              ^
+chave.c:3:16: note: to match this '{'
+    3 | int main(void) {
+      |                ^
+1 error generated.</pre>
+
+<p>"Esperava <code>}</code>", e a <code>note</code>: "para fazer par com esta <code>{</code>". Em programas grandes, a chave que falta pode estar bem longe do fim do arquivo; o recuo bem-feito (aula <a href="sintaxe.html">Sintaxe</a>) é o que permite achá-la. Agora, com uma <code>}</code> <strong>a mais</strong> na linha 7:</p>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra chave2.c -o chave2
+chave2.c:7:1: error: expected identifier or ‘(’ before ‘}’ token
+    7 | }
+      | ^</pre>
+
+<p>O <code>gcc</code> diz "esperava um nome ou <code>(</code> antes de <code>}</code>", porque fora da <code>main</code> ele espera o começo de outra coisa. O Clang é direto: <code>extraneous closing brace ('}')</code>, "chave de fechamento sobrando".</p>
+<p><strong>Conserto:</strong> toda <code>{</code> tem a sua <code>}</code>. Muitos editores destacam o par quando o cursor está numa chave.</p>
+
+<h3>4.5. Nome escrito errado</h3>
+
+<pre class="file" data-file="nome.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("A Ana tem %d anos.\n", idadi);
+    pritnf("Fim\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra nome.c -o nome
+nome.c: In function ‘main’:
+nome.c:5:36: error: ‘idadi’ undeclared (first use in this function); did you mean ‘idade’?
+    5 |     printf("A Ana tem %d anos.\n", idadi);
+      |                                    ^~~~~
+      |                                    idade
+nome.c:5:36: note: each undeclared identifier is reported only once for each function it appears in
+nome.c:6:5: error: implicit declaration of function ‘pritnf’; did you mean ‘printf’? [-Wimplicit-function-declaration]
+    6 |     pritnf("Fim\n");
+      |     ^~~~~~
+      |     printf
+nome.c:4:9: warning: unused variable ‘idade’ [-Wunused-variable]
+    4 |     int idade = 29;
+      |         ^~~~~</pre>
+
+<p>Dois erros independentes (aqui, sim, vale a pena ler os dois):</p>
+<ul>
+  <li><code>‘idadi’ undeclared (first use in this function); did you mean ‘idade’?</code>: "<code>idadi</code> não declarada (primeiro uso nesta função); você quis dizer <code>idade</code>?". A <code>note</code> só avisa que, se o mesmo nome errado aparecer de novo, ele não vai reclamar outra vez.</li>
+  <li><code>implicit declaration of function ‘pritnf’; did you mean ‘printf’?</code>: o mesmo erro do <code>#include</code> faltando (4.2), porque, para o compilador, <code>pritnf</code> é uma função que ninguém apresentou.</li>
+</ul>
+<p>O aviso de <code>idade</code> não usada é, de novo, consequência: a única linha que usava a <code>idade</code> tinha o nome errado. No Clang: <code>use of undeclared identifier 'idadi'; did you mean 'idade'?</code> e <code>use of undeclared identifier 'pritnf'; did you mean 'printf'?</code>.</p>
+<p><strong>Conserto:</strong> o nome exato, com as mesmas maiúsculas. Use a sugestão como pista, não como ordem: o compilador sugere o nome mais parecido que ele conhece, que nem sempre é o que você queria.</p>
+
+<h3>4.6. Tipo errado</h3>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra tipo.c -o tipo              « int idade = "vinte e nove";
+tipo.c: In function ‘main’:
+tipo.c:4:17: error: initialization of ‘int’ from ‘char *’ makes integer from pointer without a cast [-Wint-conversion]
+    4 |     int idade = "vinte e nove";
+      |                 ^~~~~~~~~~~~~~</pre>
+
+<p>Uma variável <code>int</code> guarda números inteiros, e a Ana tentou guardar um texto. A frase é comprida: "inicialização de <code>int</code> a partir de <code>char *</code> transforma ponteiro em inteiro sem conversão". <code>char *</code> é o jeito do C chamar o endereço de um texto (aulas <a href="strings.html">Strings</a> e <a href="ponteiros.html">Ponteiros</a>). No Clang: <code>incompatible pointer to integer conversion initializing 'int' with an expression of type 'char[13]'</code> (um texto de 13 bytes: as letras, os dois espaços e a marca de fim). Nomes de tipo assustam no começo; o que importa é perceber "um lado é número, o outro é texto".</p>
+<p><strong>Conserto:</strong> o valor do tipo certo: <code>int idade = 29;</code>. Tipos são o assunto de <a href="tipos-dados.html">Tipos de Dados</a>.</p>
+
+<h3>4.7. Aspas curvas copiadas da internet: <code>stray ‘\342’</code></h3>
+<p>Copiar código de um PDF, de um site ou de um processador de texto (Word, Google Docs) pode trazer as aspas "bonitas", curvas (<code>“ ”</code>), no lugar das retas (<code>"</code>). Para o compilador, elas são caracteres estranhos:</p>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra stray.c -o stray            « printf(“Olá!\n”);
+stray.c: In function ‘main’:
+stray.c:4:12: error: stray ‘\342’ in program
+    4 |     printf(&lt;U+201C&gt;Ol&lt;U+00E1&gt;!\n&lt;U+201D&gt;);
+      |            ^~~~~~~~
+stray.c:4:13: error: ‘Olá’ undeclared (first use in this function)
+    4 |     printf(“Olá!\n”);
+      |             ^~~
+stray.c:4:13: note: each undeclared identifier is reported only once for each function it appears in
+stray.c:4:16: error: expected ‘)’ before ‘!’ token
+    4 |     printf(“Olá!\n”);
+      |           ~    ^
+      |                )
+stray.c:4:17: error: stray ‘\’ in program
+    4 |     printf(“Olá!\n”);
+      |                 ^
+stray.c:4:19: error: stray ‘\342’ in program
+    4 |     printf(&lt;U+201C&gt;Ol&lt;U+00E1&gt;!\n&lt;U+201D&gt;);
+      |                                 ^~~~~~~~</pre>
+
+<p>"<code>\342</code> perdido no programa". O <code>\342</code> é o primeiro byte da aspa curva em UTF-8 (em octal), e o <code>&lt;U+201C&gt;</code> é o código Unicode dela (aula <a href="acentos-utf8.html">Acentos e UTF-8</a>). Sem aspas de verdade, o <code>Olá</code> virou um nome não declarado, e o <code>\n</code> ficou solto (<code>stray ‘\’</code>). No Clang, mais direto: <code>unexpected character &lt;U+201C&gt;</code>, "caractere inesperado".</p>
+<p><strong>Conserto:</strong> troque as aspas curvas pelas retas, digitando-as no editor de código. Se aparecer <code>stray ‘\342’</code> ou <code>stray ‘\302’</code>, procure aspas curvas, travessões (<code>–</code>) ou espaços especiais vindos de uma cópia.</p>
+
+<div class="tryc" data-goal="outre:^Feira da Ana\nTotal: 30\nObrigada!\n$,semaviso">
+<p class="try-task"><strong>Missão:</strong> este programa tem três erros, de três tipos desta seção. Use o método: rode, conserte <strong>só o primeiro</strong> erro que aparecer, rode de novo, e repita até ele mostrar as três linhas sem nenhum aviso. (O editor usa o Clang, então as mensagens são as da forma do Clang mostrada acima.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Feira da Ana\n")
+    int total = 30;
+    printf("Total: %d\n", totl);
+    printf("Obrigada!\n);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Feira da Ana\n");
+    int total = 30;
+    printf("Total: %d\n", total);
+    printf("Obrigada!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Um erro, muitas linhas</h2>
+<p>Às vezes um erro bobo produz uma parede de texto. A Ana esqueceu de fechar as aspas na primeira linha de uma lista:</p>
+
+<pre class="file" data-file="cascata.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n);
+    printf("Arroz\n");
+    printf("Feijão\n");
+    printf("Café\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra cascata.c -o cascata 2&gt;&amp;1 | wc -l
+32                       « 32 linhas de mensagem
+$ gcc -std=c23 -Wall -Wextra cascata.c -o cascata 2&gt;&amp;1 | grep -c 'error:'
+4                        « 4 erros, mas só 1 engano</pre>
+
+<p>(O <code>2&gt;&amp;1 | wc -l</code> conta as linhas da mensagem e o <code>grep -c 'error:'</code> conta as que têm <code>error:</code>; veja a aula <a href="editores.html">Editores e IDEs</a>.) A mensagem completa:</p>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra cascata.c -o cascata
+cascata.c: In function ‘main’:
+cascata.c:4:12: warning: missing terminating " character
+    4 |     printf("Lista de compras:\n);
+      |            ^
+cascata.c:4:12: error: missing terminating " character     « o erro de verdade
+    4 |     printf("Lista de compras:\n);
+      |            ^~~~~~~~~~~~~~~~~~~~~~
+cascata.c:5:22: error: expected ‘)’ before ‘;’ token
+    5 |     printf("Arroz\n");
+      |                      ^
+      |                      )
+cascata.c:4:11: note: to match this ‘(’
+    4 |     printf("Lista de compras:\n);
+      |           ^
+cascata.c:5:5: error: passing argument 1 of ‘printf’ makes pointer from integer without a cast [-Wint-conversion]
+    5 |     printf("Arroz\n");
+      |     ^~~~~~~~~~~~~~~~~
+      |     |
+      |     int
+In file included from cascata.c:1:
+/usr/include/stdio.h:370:43: note: expected ‘const char * restrict’ but argument is of type ‘int’
+  370 | extern int printf (const char *__restrict __format, ...);
+      |                    ~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~
+cascata.c:9:1: warning: format not a string literal and no format arguments [-Wformat-security]
+    9 | }
+      | ^
+cascata.c:8:14: error: expected ‘;’ before ‘}’ token
+    8 |     return 0;
+      |              ^
+      |              ;
+    9 | }
+      | ~             </pre>
+
+<p>O <strong>primeiro</strong> erro é o verdadeiro: as aspas da linha 4. Sem elas, o compilador "costurou" a linha 4 com a 5 e tentou entender <code>printf(printf("Arroz\n")…</code>, um <code>printf</code> dentro do outro. Daí vieram as outras reclamações: parêntese sem par, "argumento 1 do <code>printf</code>" do tipo errado, até uma <code>note</code> mostrando a linha 370 do <code>/usr/include/stdio.h</code>, dentro da biblioteca, onde o <code>printf</code> é declarado. Nada disso tem a ver com o seu erro, e você nunca precisa mexer nos arquivos da biblioteca.</p>
+
+<p>O Clang, nesse caso, para no essencial: <code>missing terminating '"' character</code> e <code>expected expression</code>, e só.</p>
+
+<h3>Mostrar só o primeiro erro: <code>-fmax-errors=1</code></h3>
+<p>A opção <code>-fmax-errors=1</code> faz o <code>gcc</code> parar no primeiro erro:</p>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra -fmax-errors=1 cascata.c -o cascata
+cascata.c: In function ‘main’:
+cascata.c:4:12: warning: missing terminating " character
+    4 |     printf("Lista de compras:\n);
+      |            ^
+cascata.c:4:12: error: missing terminating " character
+    4 |     printf("Lista de compras:\n);
+      |            ^~~~~~~~~~~~~~~~~~~~~~
+compilation terminated due to -fmax-errors=1.</pre>
+
+<p>"Compilação encerrada por causa de <code>-fmax-errors=1</code>". Sem essa opção, role a tela até o <strong>topo</strong> da mensagem. A regra é sempre a mesma: o primeiro erro primeiro.</p>
+
+<hr>
+
+<h2>6. Erros do ligador: <code>undefined reference</code></h2>
+<p>Até aqui, todos os erros foram do <strong>compilador</strong>, que lê o seu código e confere as regras. Mas fazer um programa tem uma última etapa: a <strong>ligação</strong> (<em>linking</em>). O <strong>ligador</strong> (<code>ld</code>, de <em>linker</em>) junta o seu código já compilado com o código da biblioteca e monta o executável (o caminho todo está em <a href="como-funciona.html">Como o C Vira Programa</a>). Ele tem os próprios erros, com outra cara.</p>
+
+<p>Neste programa, a Ana escreveu <code>Main</code>, com M maiúsculo:</p>
+
+<pre class="file" data-file="ligacao.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int Main(void) {
+    printf("Olá!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra ligacao.c -o ligacao
+/usr/bin/x86_64-linux-gnu-ld.bfd: /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o: na função "_start":
+(.text+0x1b): referência não definida para "main"
+collect2: error: ld returned 1 exit status</pre>
+
+<p>Olhe como é diferente:</p>
+<ul>
+  <li><strong>Não há <code>arquivo:linha:coluna</code>.</strong> Para o compilador, <code>Main</code> é uma função como outra qualquer, e está tudo certo. Quem reclama é o ligador, que trabalha com o código já traduzido e procura a função <code>main</code>, por onde todo programa começa. Ela não existe.</li>
+  <li>O caminho comprido (<code>Scrt1.o</code>, <code>_start</code>) é um pedacinho da biblioteca que chama a sua <code>main</code>. O <code>(.text+0x1b)</code> é uma posição dentro do código traduzido. Pode ignorar os dois.</li>
+  <li><strong>A mensagem está em português!</strong> O ligador do Ubuntu tem tradução (o <code>gcc</code> não tem). Em inglês, que é como você vai encontrá-la em pesquisas, ela é assim:</li>
+</ul>
+
+<pre class="term" data-cwd="~/c/erros">$ LANG=C gcc -std=c23 -Wall -Wextra ligacao.c -o ligacao
+/usr/bin/x86_64-linux-gnu-ld.bfd: /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o: in function `_start':
+(.text+0x1b): undefined reference to `main'
+collect2: error: ld returned 1 exit status</pre>
+
+<p>(<code>LANG=C</code> na frente do comando pede as mensagens sem tradução.) A última linha, <code>collect2: error: ld returned 1 exit status</code>, só diz "o ligador terminou com erro": a explicação está sempre nas linhas de <strong>cima</strong>.</p>
+
+<p>Dá para ver as duas etapas separadas. A opção <code>-c</code> manda o <code>gcc</code> só compilar, sem ligar (aula <a href="compilar.html">Compilar com gcc</a>): o resultado é um arquivo <code>.o</code> ("objeto"). A compilação passa sem reclamar, e o erro só aparece na ligação:</p>
+
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra -c ligacao.c
+$ ls ligacao*
+ligacao.c
+ligacao.o                « compilou! para o compilador, Main é um nome válido
+$ gcc ligacao.o -o ligacao
+/usr/bin/x86_64-linux-gnu-ld.bfd: /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o: na função "_start":
+(.text+0x1b): referência não definida para "main"
+collect2: error: ld returned 1 exit status</pre>
+
+<div class="warning">
+<strong>No editor do guia, este erro não aparece</strong>
+<p>A biblioteca C do editor (feita para WebAssembly) não exige a <code>main</code> na ligação: o programa com <code>Main</code> compila sem erro e, ao rodar, cai com <code>Falha de segmentação</code>. Os dois estão dizendo que falta a <code>main</code>, de jeitos diferentes. O outro erro de ligação comum, a função anunciada e nunca escrita, aparece nos dois; veja a comparação em <a href="simulador.html">O Editor do Guia</a>.</p>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Erro de compilação</th><th>Erro de ligação</th></tr>
+<tr><td>Quem reclama</td><td>O compilador (<code>gcc</code>)</td><td>O ligador (<code>ld</code>, chamado pelo <code>collect2</code>)</td></tr>
+<tr><td>Como começa</td><td><code>arquivo.c:linha:coluna: error:</code></td><td><code>/usr/bin/…ld…: …: na função "…"</code> (<code>in function</code>)</td></tr>
+<tr><td>Frase típica</td><td><code>expected</code>, <code>undeclared</code>, <code>implicit declaration</code>…</td><td><code>referência não definida para</code> (<code>undefined reference to</code>); <code>multiple definition of</code></td></tr>
+<tr><td>Última linha</td><td>(nenhuma especial)</td><td><code>collect2: error: ld returned 1 exit status</code></td></tr>
+<tr><td>Causas comuns no começo</td><td>Sintaxe, nomes, tipos</td><td><code>main</code> faltando ou escrita errada (<code>Main</code>); função anunciada e não escrita (aula <a href="prototipos.html">Protótipos</a>); um <code>.c</code> esquecido no comando (aula <a href="multiplos-arquivos.html">Vários Arquivos</a>); <code>-lm</code> esquecido (aula <a href="matematica.html">Matemática</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>7. Erro, aviso e erro na hora de rodar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Quando aparece</th><th>O programa é criado?</th><th>Aula</th></tr>
+<tr><td><code>error:</code> de compilação</td><td>Ao compilar</td><td>Não</td><td>Esta</td></tr>
+<tr><td>Erro de ligação</td><td>Ao compilar, no fim</td><td>Não</td><td>Esta</td></tr>
+<tr><td><code>warning:</code></td><td>Ao compilar</td><td>Sim, mas provavelmente com um engano</td><td><a href="avisos.html">Avisos</a></td></tr>
+<tr><td>Erro em tempo de execução</td><td>Ao rodar: o programa cai (<code>Falha de segmentação</code>) ou dá resultado errado</td><td>Sim</td><td><a href="comportamento-indefinido.html">Comportamento Indefinido</a>, <a href="depuracao-gdb.html">gdb</a>, <a href="sanitizers.html">Sanitizers</a></td></tr>
+</table>
+</div>
+
+<p>Os erros de compilação são os <strong>melhores</strong> erros que existem: aparecem na hora, dizem a linha e não deixam um programa errado chegar a ninguém. Os piores são os que só aparecem ao rodar. É por isso que, na próxima aula, você vai pedir ao compilador que avise o máximo possível.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"A linha que o compilador apontou está certa!"</strong>
+<p><strong>O que significa:</strong> o compilador aponta onde <strong>percebeu</strong> o problema. Um <code>;</code>, uma aspa ou uma chave esquecidos só são percebidos na linha seguinte, ou até no fim do arquivo (seções 4.1 e 4.4).</p>
+<p><strong>Como consertar:</strong> leia a descrição (<code>before</code> = "antes de") e olhe a linha de cima. Se nada fizer sentido, compare com a mensagem do Clang, no editor do guia: ele costuma apontar o lugar exato.</p>
+</div>
+
+<div class="cenario">
+<strong>"Consertei, mas o erro continua igual"</strong>
+<p><strong>O que significa:</strong> o arquivo não foi salvo (o compilador lê o disco, não a tela), ou você compilou outro arquivo (um <code>pv.c</code> em vez de <code>pv2.c</code>, outra pasta). Confira o nome do arquivo no começo da mensagem.</p>
+<p><strong>Como consertar:</strong> salve (<kbd>Ctrl</kbd>+<kbd>S</kbd>) e confira o comando. A aula <a href="editores.html">Editores e IDEs</a> mostra como ver se o arquivo está salvo.</p>
+</div>
+
+<div class="cenario">
+<strong>Só aparece <code>collect2: error: ld returned 1 exit status</code></strong>
+<p><strong>O que significa:</strong> essa linha é só o resumo de um erro do <strong>ligador</strong>. A causa está nas linhas acima dela (<code>referência não definida para …</code>).</p>
+<p><strong>Como consertar:</strong> role para cima e leia qual nome está faltando (seção 6).</p>
+</div>
+
+<div class="cenario">
+<strong>Dezenas de mensagens com <code>/usr/include/…</code></strong>
+<p><strong>O que significa:</strong> as <code>note</code> que citam arquivos da biblioteca mostram onde algo foi declarado. Elas são consequência de um erro <strong>seu</strong>, mais acima (seção 5).</p>
+<p><strong>Como consertar:</strong> não mexa nos arquivos da biblioteca. Volte ao primeiro <code>error:</code> ou compile com <code>-fmax-errors=1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>fatal error: stdio.h: No such file or directory</code></strong>
+<p><strong>O que significa:</strong> se o nome está certo e mesmo assim o <code>stdio.h</code> não existe, a instalação do compilador está incompleta: falta a parte de desenvolvimento da biblioteca C.</p>
+<p><strong>Como consertar:</strong> no Ubuntu e no Debian, <code>sudo apt install build-essential</code> (aula <a href="instalar-linux.html">Instalar no Linux</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida: gcc × Clang</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>gcc 15 (terminal)</th><th>Clang (editor do guia)</th></tr>
+<tr><td>Falta <code>;</code></td><td><code>expected ‘;’ before ‘…’</code> / <code>expected ‘,’ or ‘;’ before ‘…’</code></td><td><code>expected ';' after expression</code> / <code>at end of declaration</code></td></tr>
+<tr><td>Falta <code>#include</code></td><td><code>implicit declaration of function ‘printf’</code> + <code>note: include ‘&lt;stdio.h&gt;’</code></td><td><code>call to undeclared library function 'printf'</code> + <code>note: include the header &lt;stdio.h&gt;</code></td></tr>
+<tr><td>Cabeçalho que não existe</td><td><code>fatal error: studio.h: Arquivo ou diretório inexistente</code></td><td><code>fatal error: 'studio.h' file not found</code></td></tr>
+<tr><td>Aspas abertas</td><td><code>missing terminating " character</code></td><td><code>missing terminating '"' character</code> + <code>expected expression</code></td></tr>
+<tr><td>Falta <code>}</code></td><td><code>expected declaration or statement at end of input</code></td><td><code>expected '}'</code> + <code>note: to match this '{'</code></td></tr>
+<tr><td>Sobra <code>}</code></td><td><code>expected identifier or ‘(’ before ‘}’ token</code></td><td><code>extraneous closing brace ('}')</code></td></tr>
+<tr><td>Nome errado</td><td><code>‘x’ undeclared (first use in this function)</code></td><td><code>use of undeclared identifier 'x'</code></td></tr>
+<tr><td>Função com nome errado</td><td><code>implicit declaration of function ‘pritnf’; did you mean ‘printf’?</code></td><td><code>use of undeclared identifier 'pritnf'; did you mean 'printf'?</code></td></tr>
+<tr><td>Texto num <code>int</code></td><td><code>initialization of ‘int’ from ‘char *’ makes integer from pointer without a cast</code></td><td><code>incompatible pointer to integer conversion initializing 'int' …</code></td></tr>
+<tr><td>Aspas curvas</td><td><code>stray ‘\342’ in program</code></td><td><code>unexpected character &lt;U+201C&gt;</code></td></tr>
+<tr><td>Falta a <code>main</code></td><td><code>referência não definida para "main"</code> (<code>undefined reference to `main'</code>)</td><td>compila e cai com <code>Falha de segmentação</code></td></tr>
+</table>
+</div>
+
+<p>Mais mensagens, para consulta: <a href="ref-erros.html">Erros Comuns</a>.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Qual linha?</h3>
+<p>Em <code>jogo.c:12:7: error: expected ‘;’ before ‘return’</code>, em que linha o <code>gcc</code> percebeu o erro?</p>
+<div class="ex-code">Linha: <input data-answer="12" aria-label="linha"></div>
+</div>
+
+<div class="exercise">
+<h3>2. E o erro de verdade?</h3>
+<p>Na mesma mensagem, o <code>;</code> provavelmente falta no fim de qual linha?</p>
+<div class="ex-code">Linha: <input data-answer="11" aria-label="linha"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Só o primeiro</h3>
+<p>Complete a opção que faz o <code>gcc</code> parar no primeiro erro:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra <input data-answer="-fmax-errors=1" aria-label="opção"> jogo.c -o jogo</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O <code>gcc</code> mostrou 12 erros. O que fazer primeiro?</p>
+<label><input type="radio" name="q4"> Corrigir o último, que é o mais recente.</label>
+<label><input type="radio" name="q4"> Corrigir o primeiro e compilar de novo: os outros podem ser consequência dele.</label>
+<label><input type="radio" name="q4"> Apagar o arquivo e começar do zero.</label>
+<label><input type="radio" name="q4"> Corrigir os arquivos de <code>/usr/include</code> citados nas notas.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Qual destas mensagens é de um erro de <strong>ligação</strong>?</p>
+<label><input type="radio" name="q5"> <code>error: expected declaration or statement at end of input</code></label>
+<label><input type="radio" name="q5"> <code>error: ‘idade’ undeclared (first use in this function)</code></label>
+<label><input type="radio" name="q5"> <code>warning: unused variable ‘x’</code></label>
+<label><input type="radio" name="q5"> <code>referência não definida para "main"</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. O programa da Ana dá <code>stray ‘\342’ in program</code>. Qual é a causa mais provável?</p>
+<label><input type="radio" name="q6"> Faltou o <code>#include &lt;stdio.h&gt;</code>.</label>
+<label><input type="radio" name="q6"> O arquivo não foi salvo.</label>
+<label><input type="radio" name="q6"> Ela copiou o código de um site ou PDF, e vieram aspas curvas (<code>“ ”</code>).</label>
+<label><input type="radio" name="q6"> O compilador é antigo.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. O que quer dizer <code>note:</code> numa mensagem do compilador?</p>
+<label><input type="radio" name="q7"> Uma informação extra sobre a mensagem anterior.</label>
+<label><input type="radio" name="q7"> Um erro mais grave que o <code>error</code>.</label>
+<label><input type="radio" name="q7"> Um aviso que impede o programa de ser criado.</label>
+<label><input type="radio" name="q7"> Que o programa foi criado com sucesso.</label>
+</div>
+
+<h3>Missão final: o conserto completo</h3>
+
+<div class="tryc" data-goal="outre:^Boletim\nMatemática: 9\nHistória: 8\n$,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana escreveu este boletim com pressa e o compilador recusou. Há um <code>#include</code> faltando, um tipo errado, um nome errado e uma chave faltando. Use o método: primeiro erro, conserto, compilar de novo. No fim, o programa deve mostrar as três linhas abaixo, sem nenhum aviso:</p>
+<pre class="out">Boletim
+Matemática: 9
+História: 8</pre>
+<pre class="script">int main(void) {
+    int matematica = 9;
+    int historia = "8";
+    printf("Boletim\n");
+    printf("Matemática: %d\n", matematica);
+    printf("História: %d\n", histora);
+    return 0;
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int matematica = 9;
+    int historia = 8;
+    printf("Boletim\n");
+    printf("Matemática: %d\n", matematica);
+    printf("História: %d\n", historia);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma mensagem tem <code>arquivo:linha:coluna: tipo: descrição</code>, a linha copiada, o <code>^</code> e, às vezes, uma sugestão desenhada embaixo.</li>
+  <li><code>error</code> e <code>fatal error</code> impedem o programa; <code>warning</code> não impede; <code>note</code> explica a mensagem anterior.</li>
+  <li>O método: leia o <strong>primeiro</strong> erro, vá à linha, leia a descrição, olhe também a linha de cima, conserte só ele e compile de novo.</li>
+  <li>O compilador aponta onde percebeu, não onde você errou: <code>;</code>, aspas e chaves esquecidos aparecem depois.</li>
+  <li>Um erro pode gerar dezenas de linhas; <code>-fmax-errors=1</code> mostra só o primeiro.</li>
+  <li><code>did you mean</code> é um palpite: confira antes de aceitar.</li>
+  <li>Erros do ligador não têm linha, saem em português no Ubuntu (<code>referência não definida para</code>; em inglês, <code>undefined reference to</code>) e terminam com <code>collect2: error: ld returned 1 exit status</code>.</li>
+  <li>Próximo passo: <a href="avisos.html">Avisos (-Wall -Wextra)</a>, os problemas que não impedem o programa, mas que você deve levar a sério.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
