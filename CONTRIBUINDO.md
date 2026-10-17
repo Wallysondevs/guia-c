@@ -202,9 +202,10 @@ Conferido com `tools/sim.js --nativo`. **Nas metas, use o que é igual nos dois*
 | `realloc(p, 0)` (UB no C23) | devolve um ponteiro | devolve `NULL` |
 | `printf("%s\n", p)` com `p == NULL` | `(null)`, código 0 | `Falha de segmentação`, 139 (o gcc troca por `puts`); com texto antes do `%s`, os dois dão `(null)` |
 | Função `[[noreturn]]` que volta | `Falha de segmentação`, 139 | `Instrução ilegal`, 132 |
+| `strdup` com `-std=c17` | funciona | `implicit declaration of function ‘strdup’; did you mean ‘strcmp’?` sem `#define _POSIX_C_SOURCE 200809L` (com `-std=c23` funciona) |
 | Ordem de avaliação dos argumentos (não especificada pelo C) | `printf("%d %d\n", remove("b.txt"), remove("b.txt"))` dá `0 -1` (da esquerda para a direita) | dá `-1 0` (da direita para a esquerda) |
 
-Iguais nos dois: `int` com 4 bytes, `long long` com 8, `0.1 + 0.2` (`0.30000000000000004` com `%.17g`), a formatação do `printf` (`%5.2f`, `%-5d`, `%05d`, `%x`, `%o`, `%e`), `strtol`, `qsort`, as mensagens do `perror`, os códigos de saída (134, 136, 139), o estouro de `int` (`2147483647 + 1` = `-2147483648`) e a saída perdida do `printf` sem `\n` antes de um segfault.
+Iguais nos dois: `int` com 4 bytes, `long long` com 8, `0.1 + 0.2` (`0.30000000000000004` com `%.17g`), a formatação do `printf` (`%5.2f`, `%-5d`, `%05d`, `%x`, `%o`, `%e`), `strtol`, `qsort` (só quando não há empates: a ordem dos itens empatados muda entre a musl e a glibc, então dê sempre um critério de desempate), as mensagens do `perror`, os códigos de saída (134, 136, 139), o estouro de `int` (`2147483647 + 1` = `-2147483648`) e a saída perdida do `printf` sem `\n` antes de um segfault.
 
 **Para metas `erro:`**, use uma regex com as duas formas, por exemplo:
 - variável não declarada: `erro:/undeclared identifier|undeclared \(first use/`;
