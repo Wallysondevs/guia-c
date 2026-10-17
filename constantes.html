@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Constantes — const, #define e constexpr | Guia C</title>
+<meta name="description" content="Constantes em C para quem nunca programou: const, #define (sem ponto e vírgula, sem tipo, troca de texto), constexpr do C23 e enum, com os erros reais do gcc 15 ao tentar mudar uma constante, as armadilhas do #define e uma tabela de qual usar.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Constantes</span></h1>
+
+<p class="intro">Alguns valores <strong>nunca deveriam mudar</strong> enquanto o programa roda: os 7 dias da semana, o preço do suco na lojinha da Ana, o número máximo de alunos de uma turma. Em C, você pode avisar isso ao compilador, e ele passa a <strong>recusar</strong> qualquer linha que tente mudar esse valor. Nesta aula você vai conhecer as três formas de criar uma constante em C (<code>const</code>, <code>#define</code> e <code>constexpr</code>), mais uma quarta que aparece muito (<code>enum</code>), e aprender qual usar em cada caso.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que dar nome a um número em vez de escrevê-lo solto no código.</li>
+  <li>Como criar uma variável que não muda com <code>const</code>, e o erro real quando alguém tenta mudá-la.</li>
+  <li>Como o <code>#define</code> funciona: <strong>troca de texto</strong> antes da compilação, sem tipo e sem <code>;</code>.</li>
+  <li>As duas armadilhas clássicas do <code>#define</code>: o <code>;</code> no fim e a conta sem parênteses.</li>
+  <li>O <code>constexpr</code> do C23: uma constante de verdade, calculada na compilação.</li>
+  <li>O <code>enum</code> como um jeito antigo de criar constantes inteiras.</li>
+  <li>Qual das formas usar em cada situação.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> (cada opção é explicada em <a href="compilar.html">Compilar com gcc</a>). Você pode repetir cada um no editor do guia, que compila C de verdade no navegador.</p>
+
+<hr>
+
+<h2>A ideia: a etiqueta com valor impresso</h2>
+<p>Na aula <a href="variaveis.html">Variáveis</a>, uma variável era uma caixa com etiqueta: você podia tirar o que estava dentro e pôr outra coisa. Agora imagine uma caixa <strong>lacrada</strong>, com o conteúdo à mostra e um aviso: "não abrir". Você pode olhar e usar o valor quantas vezes quiser, mas não pode trocá-lo.</p>
+
+<p>Isso é uma <strong>constante</strong>: um valor com nome que não muda. Ela resolve dois problemas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sem constante</th><th>Com constante</th></tr>
+<tr><td><code>gasto = 4.50 * 7;</code><br>O que é 4.50? O que é 7? Quem lê precisa adivinhar.</td><td><code>gasto = PRECO_SUCO * DIAS_SEMANA;</code><br>O código se explica sozinho.</td></tr>
+<tr><td>O preço subiu para 5.00: você precisa achar <strong>todo</strong> 4.50 do programa (e torcer para não esquecer nenhum, nem trocar um 4.50 que era outra coisa).</td><td>Você muda <strong>uma linha</strong>, a da constante, e o programa inteiro passa a usar o valor novo.</td></tr>
+<tr><td>Uma linha errada pode mudar o valor sem querer (<code>preco = 0;</code>).</td><td>O compilador <strong>recusa</strong> a linha errada.</td></tr>
+</table>
+</div>
+
+<p>Programadores chamam um número solto no meio do código, sem explicação, de <strong>número mágico</strong> (<em>magic number</em>): ele "funciona", mas ninguém sabe por quê. Constantes acabam com os números mágicos.</p>
+
+<hr>
+
+<h2>1. <code>const</code>: uma variável que não muda</h2>
+<p>A forma mais simples é escrever a palavra <code>const</code> (de <em>constant</em>, "constante") antes do tipo de uma variável:</p>
+
+<pre class="file" data-file="lanche.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    const double PRECO_SUCO = 4.50;
+    const int DIAS_SEMANA = 7;
+    double gasto = PRECO_SUCO * DIAS_SEMANA;
+    printf("Suco por dia: R$ %.2f\n", PRECO_SUCO);
+    printf("Na semana: R$ %.2f\n", gasto);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>const</dt><dd>"Esta variável é só de leitura." Depois de receber o valor inicial, ela não pode mais ser mudada.</dd>
+  <dt>double</dt><dd>O tipo, como em qualquer variável: <code>PRECO_SUCO</code> guarda um número com vírgula. O <code>const</code> pode ir antes de qualquer tipo (<code>const int</code>, <code>const char</code>…).</dd>
+  <dt>PRECO_SUCO</dt><dd>O nome. Constantes costumam ser escritas em <strong>MAIÚSCULAS</strong>, com <code>_</code> separando as palavras. O compilador não exige, mas é um costume tão forte que quem lê <code>PRECO_SUCO</code> já sabe que é uma constante.</dd>
+  <dt>= 4.50</dt><dd>O valor. É a <strong>única</strong> chance de dar valor a uma constante: na própria declaração.</dd>
+  <dt>PRECO_SUCO * DIAS_SEMANA</dt><dd>Ler uma constante é igual a ler uma variável: basta usar o nome. O <code>*</code> é a multiplicação (aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>).</dd>
+  <dt>%.2f</dt><dd>Mostra um <code>double</code> com 2 casas depois do ponto (todos os formatos estão em <a href="formatos-printf.html">Formatos do printf</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lanche.c -o lanche
+$ ./lanche
+Suco por dia: R$ 4.50
+Na semana: R$ 31.50</pre>
+
+<p>Nada de novo na saída: o programa funciona igual ao que você escreveria com variáveis comuns. A diferença aparece quando alguém tenta <strong>mudar</strong> o valor.</p>
+
+<h3>Tentar mudar uma constante</h3>
+
+<pre class="file" data-file="semana.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    const int DIAS_SEMANA = 7;
+    DIAS_SEMANA = 8;
+    printf("%d\n", DIAS_SEMANA);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semana.c -o semana
+semana.c: In function ‘main’:
+semana.c:5:17: error: assignment of read-only variable ‘DIAS_SEMANA’
+    5 |     DIAS_SEMANA = 8;
+      |                 ^</pre>
+
+<dl class="anatomy">
+  <dt>semana.c:5:17</dt><dd>Arquivo, linha 5, coluna 17: o compilador aponta o <code>=</code> da linha que tenta mudar o valor.</dd>
+  <dt>error:</dt><dd>É um <strong>erro</strong>, não um aviso: o programa <code>semana</code> nem foi gerado.</dd>
+  <dt>assignment of read-only variable</dt><dd>"Atribuição a uma variável só de leitura." <em>Assignment</em> (atribuição) é guardar um valor com <code>=</code>; <em>read-only</em> é "só de leitura", o que o <code>const</code> fez com ela.</dd>
+  <dt>‘DIAS_SEMANA’</dt><dd>O nome da constante, entre as aspas curvas que o gcc usa.</dd>
+</dl>
+
+<p>Essa é a grande vantagem do <code>const</code>: um engano vira um <strong>erro de compilação</strong>, que aparece na hora, em vez de um número errado que só alguém descobre muito depois. O Clang, que roda no editor do guia, diz a mesma coisa com outras palavras: <code>cannot assign to variable 'DIAS_SEMANA' with const-qualified type 'const int'</code> ("não é possível atribuir à variável, que tem um tipo marcado como <code>const</code>"), e ainda aponta a linha da declaração com <code>note: variable 'DIAS_SEMANA' declared const here</code>.</p>
+
+<div class="tryc" data-goal="erro:/read-only|const-qualified/">
+<p class="try-task"><strong>Missão:</strong> o programa abaixo tem um engano: uma linha zera o preço do café. Rode e veja o total errado. Agora "lacre" o preço: escreva <code>const</code> antes de <code>double preco_cafe</code> e rode de novo. O compilador tem de <strong>recusar</strong> o programa e apontar a linha do engano.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco_cafe = 3.50;
+    int xicaras = 4;
+
+    preco_cafe = 0;   // engano: alguém zerou o preço
+
+    printf("Total: R$ %.2f\n", preco_cafe * xicaras);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    const double preco_cafe = 3.50;
+    int xicaras = 4;
+
+    preco_cafe = 0;   // engano: alguém zerou o preço
+
+    printf("Total: R$ %.2f\n", preco_cafe * xicaras);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Depois de ver o erro, apague a linha do engano: o programa volta a compilar e mostra <code>Total: R$ 14.00</code>. É assim no dia a dia: o <code>const</code> não conserta nada sozinho, ele <strong>mostra</strong> onde está o problema.</p>
+
+<h3>Uma constante sem valor</h3>
+<p>Em C (diferente do C++), declarar um <code>const</code> sem valor não é erro. Mas a constante fica com lixo para sempre, porque depois você não pode mais dar valor a ela:</p>
+
+<pre class="term" data-cwd="~/c">$ cat semvalor.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    const int LIMITE;
+    printf("%d\n", LIMITE);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra semvalor.c -o semvalor
+semvalor.c: In function ‘main’:
+semvalor.c:5:5: warning: ‘LIMITE’ is used uninitialized [-Wuninitialized]
+    5 |     printf("%d\n", LIMITE);
+      |     ^~~~~~~~~~~~~~~~~~~~~~
+semvalor.c:4:15: note: ‘LIMITE’ was declared here
+    4 |     const int LIMITE;
+      |               ^~~~~~
+$ ./semvalor
+0                        « saiu 0 por acaso: o valor é lixo</pre>
+
+<p><em>‘LIMITE’ is used uninitialized</em> = "<code>LIMITE</code> é usada sem ter recebido valor". É só um aviso, então o programa foi gerado, mas ele não faz sentido. O Clang do editor é mais direto e avisa já na declaração: <code>default initialization of an object of type 'const int' leaves the object uninitialized</code> ("a inicialização padrão deixa o objeto sem valor"). <strong>Regra:</strong> todo <code>const</code> nasce com valor.</p>
+
+<h3>O <code>const</code> do C não é uma constante "de verdade"</h3>
+<p>Aqui está uma surpresa que pega até quem já programa. Para o C, um <code>const int</code> é uma <strong>variável</strong> que não pode ser mudada, mas <strong>não</strong> é uma "expressão constante": o compilador não usa o valor dela nos lugares que exigem um número conhecido antes do programa rodar. Dois desses lugares são o tamanho de um array global (aula <a href="arrays.html">Arrays</a>) e o rótulo de um <code>case</code> (aula <a href="switch.html">switch</a>):</p>
+
+<pre class="file" data-file="tamanho.c">#include &lt;stdio.h&gt;
+
+const int TAM = 5;
+int global[TAM];
+
+int main(void) {
+    const int N = 3;
+    int v[N] = {1, 2, 3};
+    printf("%d\n", v[0]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanho.c -o tamanho
+tamanho.c:4:5: error: variably modified ‘global’ at file scope
+    4 | int global[TAM];
+      |     ^~~~~~
+tamanho.c: In function ‘main’:
+tamanho.c:8:16: error: variable-sized object may not be initialized except with an empty initializer
+    8 |     int v[N] = {1, 2, 3};
+      |                ^</pre>
+
+<dl class="anatomy">
+  <dt>variably modified ‘global’ at file scope</dt><dd>"<code>global</code> tem tamanho variável, fora de qualquer função." Para o gcc, <code>TAM</code> é uma variável, então o array teria tamanho variável, e isso não é permitido fora de funções.</dd>
+  <dt>variable-sized object may not be initialized…</dt><dd>"Um objeto de tamanho variável não pode receber valores iniciais (só o inicializador vazio <code>{}</code>)." Dentro do <code>main</code>, <code>int v[N]</code> virou um array de tamanho variável (VLA, aula <a href="arrays.html">Arrays</a>), e esse tipo de array não aceita <code>= {1, 2, 3}</code>.</dd>
+</dl>
+
+<p>No C++, esse mesmo código compila, porque lá um <code>const int</code> com valor conhecido conta como constante. No C, não. Por isso, durante quase 50 anos, programadores C usaram o <code>#define</code> (a próxima seção) para esses casos. O C23 trouxe uma solução melhor, o <code>constexpr</code> (seção 3).</p>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>O Clang do editor é mais tolerante: ele aceita o <code>tamanho.c</code> como uma <em>extensão</em> (algo além do que a linguagem promete) e só avisa: <code>variable length array folded to constant array as an extension [-Wgnu-folding-constant]</code> ("array de tamanho variável transformado em array de tamanho fixo, como extensão"). O <code>case</code> com um <code>const int</code> também passa no Clang e é recusado pelo gcc (<code>case label does not reduce to an integer constant</code>). Código que depende de extensão de um compilador pode quebrar no outro: use <code>constexpr</code>, <code>#define</code> ou <code>enum</code> nesses lugares.</p>
+</div>
+
+<hr>
+
+<h2>2. <code>#define</code>: trocar um nome por um texto</h2>
+<p>A forma mais antiga, e que você vai ver em quase todo código C, é o <code>#define</code> ("definir"):</p>
+
+<pre class="file" data-file="define.c">#include &lt;stdio.h&gt;
+
+#define PRECO_SUCO 4.50
+#define DIAS_SEMANA 7
+#define LOJA "Lojinha da Ana"
+
+int main(void) {
+    double gasto = PRECO_SUCO * DIAS_SEMANA;
+    printf("%s\n", LOJA);
+    printf("Na semana: R$ %.2f\n", gasto);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#define</dt><dd>Uma ordem para o <strong>pré-processador</strong>, a etapa que lê o seu arquivo <em>antes</em> do compilador (a mesma que trata o <code>#include</code>; veja <a href="como-funciona.html">Como o C Vira Programa</a>). Toda linha que começa com <code>#</code> é dele.</dd>
+  <dt>PRECO_SUCO</dt><dd>O nome que será procurado no código. Também em MAIÚSCULAS, por costume.</dd>
+  <dt>4.50</dt><dd>O texto que vai substituir o nome. Repare: <strong>sem tipo</strong> (não há <code>double</code>), <strong>sem <code>=</code></strong> e <strong>sem <code>;</code></strong> no fim.</dd>
+  <dt>"Lojinha da Ana"</dt><dd>O texto pode ser qualquer coisa: um número, um texto entre aspas, até um pedaço de código.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra define.c -o define
+$ ./define
+Lojinha da Ana
+Na semana: R$ 31.50</pre>
+
+<h3>O que o pré-processador faz de verdade</h3>
+<p>O <code>#define</code> não cria variável nenhuma. O pré-processador simplesmente <strong>procura o nome e troca pelo texto</strong>, como o "Localizar e substituir" de um editor de texto. A opção <code>-E</code> do gcc mostra o arquivo depois dessa troca, do jeito que o compilador o recebe (o <code>tail -8</code> mostra só as 8 últimas linhas, porque o <code>stdio.h</code> despeja centenas de linhas antes):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -E define.c | tail -8
+
+# 7 "define.c"
+int main(void) {
+    double gasto = 4.50 * 7;
+    printf("%s\n", "Lojinha da Ana");
+    printf("Na semana: R$ %.2f\n", gasto);
+    return 0;
+}</pre>
+
+<p>Os nomes <code>PRECO_SUCO</code>, <code>DIAS_SEMANA</code> e <code>LOJA</code> <strong>sumiram</strong>: no lugar deles estão <code>4.50</code>, <code>7</code> e <code>"Lojinha da Ana"</code>. As linhas <code>#define</code> também sumiram. A linha <code># 7 "define.c"</code> é um recado do pré-processador para o compilador ("o que vem a seguir é a linha 7 de <code>define.c</code>"), para que as mensagens de erro apontem a linha certa do seu arquivo.</p>
+
+<p>Como o compilador só vê o número, o <code>#define</code> funciona em qualquer lugar que exija uma constante: tamanho de array global, <code>case</code>, tudo. E como é só troca de texto, ele também tem pegadinhas.</p>
+
+<h3>Armadilha 1: o <code>;</code> no fim</h3>
+<p>Quem está acostumado a terminar tudo com <code>;</code> escreve sem pensar:</p>
+
+<pre class="file" data-file="pontovirgula.c">#include &lt;stdio.h&gt;
+#define PRECO 2.50;
+
+int main(void) {
+    double total = PRECO * 3;
+    printf("%.2f\n", total);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pontovirgula.c -o pontovirgula
+pontovirgula.c: In function ‘main’:
+pontovirgula.c:5:26: error: invalid type argument of unary ‘*’ (have ‘int’)
+    5 |     double total = PRECO * 3;
+      |                          ^~~</pre>
+
+<p>A mensagem parece não ter nada a ver com o <code>#define</code>. Faça a troca de texto na cabeça: <code>PRECO</code> vira <code>2.50;</code>, e a linha fica <code>double total = 2.50; * 3;</code>. O <code>;</code> encerrou a declaração no meio, e sobrou um <code>* 3;</code> solto. Um <code>*</code> sozinho na frente de um valor tem outro significado em C (é usado com ponteiros, aula <a href="ponteiros.html">Ponteiros</a>), e o gcc reclama que não dá para usá-lo com um <code>int</code>. <em>Invalid type argument of unary ‘*’</em> = "tipo de argumento inválido para o <code>*</code> de um operando só".</p>
+
+<p><strong>Conserto:</strong> <code>#define PRECO 2.50</code>, sem <code>;</code>. Se um erro estranho aparece numa linha que usa um nome em MAIÚSCULAS, olhe o <code>#define</code> dele.</p>
+
+<h3>Armadilha 2: a conta sem parênteses</h3>
+<p>Esta é pior, porque compila sem nenhum aviso:</p>
+
+<pre class="file" data-file="conta.c">#include &lt;stdio.h&gt;
+#define CINCO 2 + 3
+
+int main(void) {
+    int x = CINCO * 10;
+    printf("%d\n", x);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra conta.c -o conta
+$ ./conta
+32                       « esperava 50</pre>
+
+<p>Troque o texto: <code>int x = 2 + 3 * 10;</code>. A multiplicação é feita antes da soma (aula <a href="precedencia.html">Precedência</a>), então o resultado é 2 + 30 = 32. O pré-processador não sabe fazer contas; ele só cola o texto. <strong>Conserto:</strong> sempre que o texto de um <code>#define</code> for uma conta, ponha parênteses em volta: <code>#define CINCO (2 + 3)</code>. Aí a linha vira <code>(2 + 3) * 10</code>, que dá 50.</p>
+
+<h3>Outras diferenças do <code>#define</code></h3>
+<ul>
+  <li><strong>Não tem tipo.</strong> O tipo vem do texto: <code>7</code> é <code>int</code>, <code>4.50</code> é <code>double</code>, <code>"Ana"</code> é texto.</li>
+  <li><strong>Vale do <code>#define</code> até o fim do arquivo</strong>, inclusive dentro de outras funções. Ele não respeita as chaves <code>{ }</code> (diferente das variáveis, veja <a href="escopo.html">Escopo</a>).</li>
+  <li><strong>Pode ser redefinido</strong>, com só um aviso:</li>
+</ul>
+
+<pre class="term" data-cwd="~/c">$ cat redef.c
+#include &lt;stdio.h&gt;
+
+#define MAX 10
+#define MAX 20
+
+int main(void) {
+    printf("%d\n", MAX);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra redef.c -o redef
+redef.c:4:9: warning: ‘MAX’ redefined
+    4 | #define MAX 20
+      |         ^~~
+redef.c:3:9: note: this is the location of the previous definition
+    3 | #define MAX 10
+      |         ^~~
+$ ./redef
+20</pre>
+
+<p><em>‘MAX’ redefined</em> = "<code>MAX</code> foi redefinido"; <em>this is the location of the previous definition</em> = "aqui está a definição anterior". Vale a última. O <code>#define</code> tem muito mais recursos (inclusive "macros" que recebem parâmetros), vistos em <a href="preprocessador.html">Pré-processador</a> e <a href="macros.html">Macros com Parâmetros</a>.</p>
+
+<div class="tryc" data-goal="out:Total: R$ 7.50">
+<p class="try-task"><strong>Missão:</strong> a Ana vende 3 cadernos a R$ 2,50 e o programa deveria mostrar <code>Total: R$ 7.50</code>. Mas os dois <code>#define</code> têm problemas: um não deixa o programa compilar e o outro faz a conta sair errada. Rode, conserte um de cada vez (só nas linhas do <code>#define</code>) e confira o total.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define PRECO_CADERNO 2.50;
+#define CADERNOS 2 + 1
+
+int main(void) {
+    double total = CADERNOS * PRECO_CADERNO;
+    printf("Total: R$ %.2f\n", total);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define PRECO_CADERNO 2.50
+#define CADERNOS (2 + 1)
+
+int main(void) {
+    double total = CADERNOS * PRECO_CADERNO;
+    printf("Total: R$ %.2f\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Se você tirou só o <code>;</code>, o programa compilou e mostrou <code>Total: R$ 4.50</code>: a linha virou <code>2 + 1 * 2.50</code>. Com os parênteses, <code>(2 + 1) * 2.50</code> dá os 7.50 certos.</p>
+
+<hr>
+
+<h2>3. <code>constexpr</code>: a constante de verdade <span class="versao">C23</span></h2>
+<p>O C23 trouxe do C++ a palavra <code>constexpr</code> (de <em>constant expression</em>, "expressão constante"). Ela junta o melhor dos dois mundos: tem <strong>tipo</strong>, como o <code>const</code>, e é uma <strong>constante de verdade</strong>, conhecida na compilação, como o <code>#define</code>.</p>
+
+<pre class="file" data-file="turma.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    constexpr int MAX = 10;
+    constexpr double PI = 3.14159;
+    int notas[MAX];
+    printf("%d %f %zu\n", MAX, PI, sizeof notas);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>constexpr int MAX = 10;</dt><dd>Uma constante <code>int</code> que o compilador conhece enquanto compila. Pode ser usada como tamanho de array, em <code>case</code>, em qualquer lugar.</dd>
+  <dt>int notas[MAX];</dt><dd>Um array de 10 inteiros, de tamanho fixo. Com <code>const int MAX</code>, o gcc faria um array de tamanho variável; com <code>constexpr</code>, não.</dd>
+  <dt>sizeof notas</dt><dd>Quantos bytes o array ocupa: 10 inteiros de 4 bytes = 40 (aula <a href="sizeof.html">Tamanho dos Tipos</a>). O <code>%zu</code> é o formato do resultado de <code>sizeof</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra turma.c -o turma
+$ ./turma
+10 3.141590 40</pre>
+
+<h3>O valor tem de ser conhecido na compilação</h3>
+<p>"Constante de verdade" quer dizer que o compilador precisa conseguir calcular o valor <strong>sem rodar o programa</strong>. Contas com números e com outras <code>constexpr</code> servem (<code>constexpr int DOBRO = MAX * 2;</code>). Uma variável comum, não:</p>
+
+<pre class="term" data-cwd="~/c">$ cat dobro.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 5;
+    constexpr int DOBRO = n * 2;
+    printf("%d\n", DOBRO);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra dobro.c -o dobro
+dobro.c: In function ‘main’:
+dobro.c:5:27: error: initializer element is not constant
+    5 |     constexpr int DOBRO = n * 2;
+      |                           ^</pre>
+
+<p><em>Initializer element is not constant</em> = "o valor inicial não é constante". O <code>n</code> é uma variável: o valor dela poderia mudar antes daquela linha. O Clang diz: <code>constexpr variable 'DOBRO' must be initialized by a constant expression</code> ("uma variável <code>constexpr</code> precisa ser inicializada com uma expressão constante"). Se o valor só existe com o programa rodando (por exemplo, digitado pelo usuário), use <code>const</code>.</p>
+
+<h3>O <code>constexpr</code> do C é exigente com os tipos</h3>
+<p>O <code>constexpr</code> do C recusa valores que mudariam ao entrar no tipo, coisa que <code>const</code> e variáveis comuns aceitam em silêncio:</p>
+
+<pre class="term" data-cwd="~/c">$ cat exigente.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    constexpr float F = 0.1;
+    constexpr int I = 3.0;
+    printf("%f %d\n", F, I);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra exigente.c -o exigente
+exigente.c: In function ‘main’:
+exigente.c:4:25: error: ‘constexpr’ initializer not representable in type of object
+    4 |     constexpr float F = 0.1;
+      |                         ^~~
+exigente.c:5:23: error: ‘constexpr’ integer initializer is not an integer constant expression
+    5 |     constexpr int I = 3.0;
+      |                       ^~~</pre>
+
+<ul>
+  <li><em>Initializer not representable in type of object</em> = "o valor inicial não cabe exatamente no tipo". <code>0.1</code> é um <code>double</code>, e um <code>float</code> não consegue guardar exatamente o mesmo valor (aula <a href="ponto-flutuante.html">float e double</a>). Conserto: <code>constexpr float F = 0.1f;</code> (o <code>f</code> faz o número já nascer <code>float</code>) ou <code>constexpr double F = 0.1;</code>.</li>
+  <li><em>Integer initializer is not an integer constant expression</em> = "o valor inicial de um inteiro não é uma expressão inteira". <code>3.0</code> é um número com vírgula; escreva <code>3</code>.</li>
+</ul>
+<p>Isso é proposital: uma constante <code>constexpr</code> tem exatamente o valor que você escreveu, sem cortes escondidos.</p>
+
+<h3>E nos compiladores antigos?</h3>
+<p>O <code>constexpr</code> só existe a partir do C23. Com <code>-std=c17</code>, o gcc nem reconhece a palavra:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c17 -Wall -Wextra turma.c -o turma
+turma.c: In function ‘main’:
+turma.c:4:5: error: ‘constexpr’ undeclared (first use in this function)
+    4 |     constexpr int MAX = 10;
+      |     ^~~~~~~~~
+turma.c:4:5: note: each undeclared identifier is reported only once for each function it appears in
+turma.c:4:14: error: expected ‘;’ before ‘int’
+    4 |     constexpr int MAX = 10;
+      |              ^~~~
+      |              ;   « seguem mais erros: MAX e PI também viram "não declarados"</pre>
+
+<p>Para o C17, <code>constexpr</code> é só um nome desconhecido (<em>undeclared</em>, "não declarado"). Se o seu código precisa compilar em compiladores antigos, use <code>#define</code> ou <code>enum</code>. O gcc 15 e o editor do guia já usam C23.</p>
+
+<hr>
+
+<h2>4. <code>enum</code>: constantes inteiras com nome</h2>
+<p>Antes do <code>constexpr</code>, havia um truque muito usado para criar constantes inteiras <strong>com</strong> as regras da linguagem (e não por troca de texto): o <code>enum</code> ("enumeração").</p>
+
+<pre class="file" data-file="enum.c">#include &lt;stdio.h&gt;
+
+enum { MAX_ALUNOS = 30, MAX_NOTAS = 4 };
+
+int main(void) {
+    int notas[MAX_ALUNOS][MAX_NOTAS] = {0};
+    printf("Cabem %d alunos com %d notas cada.\n", MAX_ALUNOS, MAX_NOTAS);
+    printf("%d\n", notas[0][0]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra enum.c -o enum
+$ ./enum
+Cabem 30 alunos com 4 notas cada.
+0</pre>
+
+<p>Os nomes dentro do <code>enum { … }</code> são constantes inteiras de verdade: servem para tamanho de array (aqui, uma tabela de 30 linhas por 4 colunas, aula <a href="arrays-multidimensionais.html">Arrays Multidimensionais</a>) e para <code>case</code>. A limitação: só valem para <strong>inteiros</strong>. O uso principal do <code>enum</code> é outro, dar nomes a uma lista de opções (<code>SEGUNDA</code>, <code>TERCA</code>…), e está na aula <a href="enums.html">Enums</a>.</p>
+
+<hr>
+
+<h2>5. Formas diferentes: qual usar</h2>
+<p>Este programa calcula a mesma coisa de três jeitos. Os três mostram <code>31.50</code>:</p>
+
+<pre class="file" data-file="tres.c">#include &lt;stdio.h&gt;
+
+#define DIAS_A 7
+
+int main(void) {
+    const int DIAS_B = 7;
+    constexpr int DIAS_C = 7;
+    printf("%.2f %.2f %.2f\n", 4.50 * DIAS_A, 4.50 * DIAS_B, 4.50 * DIAS_C);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tres.c -o tres
+$ ./tres
+31.50 31.50 31.50</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Tem tipo?</th><th>Constante de verdade (array global, <code>case</code>)?</th><th>Respeita as chaves <code>{ }</code>?</th><th>Quando usar</th></tr>
+<tr><td><code>const int X = 7;</code></td><td>Sim</td><td>Não (no gcc)</td><td>Sim</td><td>Valores que não devem mudar, mas que só são conhecidos com o programa rodando (por exemplo, calculados a partir do que o usuário digitou).</td></tr>
+<tr><td><code>constexpr int X = 7;</code> <span class="versao">C23</span></td><td>Sim</td><td>Sim</td><td>Sim</td><td><strong>A escolha do guia</strong> para valores fixos (limites, preços, tamanhos), quando o compilador é C23.</td></tr>
+<tr><td><code>#define X 7</code></td><td>Não (troca de texto)</td><td>Sim</td><td>Não (vale até o fim do arquivo)</td><td>Código que precisa compilar em C antigo; e coisas que só o pré-processador faz (aulas <a href="macros.html">Macros</a> e <a href="compilacao-condicional.html">Compilação Condicional</a>). É o que você mais vai encontrar em código existente.</td></tr>
+<tr><td><code>enum { X = 7 };</code></td><td>Sim (<code>int</code>)</td><td>Sim</td><td>Sim</td><td>Constantes inteiras em C antigo, sem os riscos do <code>#define</code>; e listas de opções.</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Na dúvida</strong>
+<p>Para um número fixo, use <code>constexpr</code>. Se o valor depende do programa rodando, use <code>const</code>. Saiba ler <code>#define</code>, porque ele está em toda parte (até no <code>stdio.h</code>: o <code>EOF</code> e o <code>BUFSIZ</code> são <code>#define</code>s).</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: assignment of read-only variable ‘X’</code></strong>
+<p><strong>O que significa:</strong> uma linha tenta mudar com <code>=</code> (ou <code>+=</code>, <code>++</code>…) uma variável declarada com <code>const</code>. No Clang: <code>cannot assign to variable 'X' with const-qualified type</code>.</p>
+<p><strong>Como consertar:</strong> se o valor realmente não deveria mudar, a linha apontada é o engano: apague-a ou corrija-a. Se o valor precisa mudar, ele não é uma constante: tire o <code>const</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: invalid type argument of unary ‘*’</code> (ou <code>expected expression</code>) numa linha que parece certa</strong>
+<p><strong>O que significa:</strong> quase sempre é um <code>#define</code> terminado com <code>;</code> (ou com <code>=</code>, como <code>#define MAX = 10</code>). A troca de texto colou o <code>;</code> no meio da linha.</p>
+<p><strong>Como consertar:</strong> olhe o <code>#define</code> do nome em MAIÚSCULAS que aparece na linha e deixe só <code>#define NOME valor</code>. Para ver o que o compilador recebeu, rode <code>gcc -E arquivo.c | tail</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Conta com <code>#define</code> dá resultado errado, sem aviso</strong>
+<p><strong>O que significa:</strong> o texto do <code>#define</code> é uma conta sem parênteses (<code>#define CINCO 2 + 3</code>), e a precedência dos operadores misturou tudo.</p>
+<p><strong>Como consertar:</strong> parênteses em volta: <code>#define CINCO (2 + 3)</code>. Ou troque por <code>constexpr int CINCO = 2 + 3;</code>, que é uma variável de verdade e não tem esse problema.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: variably modified ‘v’ at file scope</code> / <code>case label does not reduce to an integer constant</code></strong>
+<p><strong>O que significa:</strong> você usou um <code>const int</code> num lugar que exige uma constante de verdade. No C, <code>const</code> não basta.</p>
+<p><strong>Como consertar:</strong> troque <code>const</code> por <code>constexpr</code> (C23), ou use <code>#define</code> ou <code>enum</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: initializer element is not constant</code> num <code>constexpr</code></strong>
+<p><strong>O que significa:</strong> o valor do <code>constexpr</code> usa uma variável comum, que só tem valor com o programa rodando.</p>
+<p><strong>Como consertar:</strong> use só números e outras <code>constexpr</code> na conta. Se o valor depende do programa rodando, use <code>const</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: ‘constexpr’ undeclared (first use in this function)</code></strong>
+<p><strong>O que significa:</strong> o compilador está num padrão anterior ao C23 (<code>-std=c17</code>, <code>-std=c99</code>…) ou é antigo demais.</p>
+<p><strong>Como consertar:</strong> compile com <code>-std=c23</code>, ou use <code>#define</code>/<code>enum</code> para continuar compatível.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>const double PRECO = 4.50;</code></td><td>Variável só de leitura. Mudar depois é erro (<code>read-only variable</code>).</td></tr>
+<tr><td><code>constexpr int MAX = 10;</code></td><td><span class="versao">C23</span> Constante com tipo, calculada na compilação. Serve para tamanho de array e <code>case</code>.</td></tr>
+<tr><td><code>constexpr int DOBRO = MAX * 2;</code></td><td>Conta com outras constantes: permitido.</td></tr>
+<tr><td><code>#define MAX 10</code></td><td>Troca o texto <code>MAX</code> por <code>10</code> antes de compilar. Sem tipo, sem <code>=</code>, sem <code>;</code>.</td></tr>
+<tr><td><code>#define CINCO (2 + 3)</code></td><td>Conta num <code>#define</code>: sempre entre parênteses.</td></tr>
+<tr><td><code>#define LOJA "Lojinha"</code></td><td>Um texto com nome.</td></tr>
+<tr><td><code>enum { MAX = 10 };</code></td><td>Constante inteira, válida em qualquer versão do C.</td></tr>
+<tr><td><code>gcc -E arquivo.c</code></td><td>Mostra o código depois da troca de texto do pré-processador.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Lacrar a caixa</h3>
+<p>Complete para que <code>LIMITE</code> não possa mais ser mudado:</p>
+<div class="ex-code"><input data-answer="const|constexpr" aria-label="palavra"> int LIMITE = 100;</div>
+</div>
+
+<div class="exercise">
+<h3>2. O #define certo</h3>
+<p>Complete a linha para que <code>TAXA</code> seja trocado por <code>5</code> (lembre-se do que <strong>não</strong> vai num <code>#define</code>):</p>
+<div class="ex-code"><input data-answer="#define TAXA 5" aria-label="linha do define"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Com <code>#define DEZ 5 + 5</code>, quanto vale <code>DEZ * 2</code>?</p>
+<label><input type="radio" name="q3"> 20</label>
+<label><input type="radio" name="q3"> 10</label>
+<label><input type="radio" name="q3"> 15</label>
+<label><input type="radio" name="q3"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual destas declarações o gcc 15 <strong>recusa</strong> fora de qualquer função?</p>
+<label><input type="radio" name="q4"> <code>constexpr int N = 5; int v[N];</code></label>
+<label><input type="radio" name="q4"> <code>const int N = 5; int v[N];</code></label>
+<label><input type="radio" name="q4"> <code>#define N 5</code> e depois <code>int v[N];</code></label>
+<label><input type="radio" name="q4"> <code>enum { N = 5 }; int v[N];</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que acontece com <code>const int x = 1;</code> seguido de <code>x = 2;</code>?</p>
+<label><input type="radio" name="q5"> Erro de compilação: <code>assignment of read-only variable ‘x’</code></label>
+<label><input type="radio" name="q5"> Compila, e <code>x</code> passa a valer 2</label>
+<label><input type="radio" name="q5"> Compila com um aviso, e <code>x</code> continua 1</label>
+<label><input type="radio" name="q5"> O programa quebra ao rodar</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual afirmação sobre <code>#define</code> é verdadeira?</p>
+<label><input type="radio" name="q6"> Ele cria uma variável do tipo do valor</label>
+<label><input type="radio" name="q6"> Ele precisa terminar com <code>;</code></label>
+<label><input type="radio" name="q6"> Ele vale só dentro das chaves onde foi escrito</label>
+<label><input type="radio" name="q6"> O pré-processador troca o nome pelo texto antes da compilação</label>
+</div>
+
+<h3>Missão final: aposente os números mágicos</h3>
+
+<div class="tryc" data-goal="out:Dias no mês: 31,out:Total no mês: R$ 77.50,out:Em 2 meses: R$ 155.00,src:(int\s+DIAS\s*=\s*|#define\s+DIAS\s+)31\b,src:(double\s+POR_DIA\s*=\s*|#define\s+POR_DIA\s+)2\.50?\b,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana guarda R$ 2,50 por dia no cofrinho. O programa foi escrito para um mês de 30 dias, com os números espalhados. Agora o mês tem <strong>31</strong> dias. Crie duas constantes, <code>DIAS</code> (valendo 31) e <code>POR_DIA</code> (valendo 2.50), do jeito que preferir (<code>constexpr</code>, <code>const</code> ou <code>#define</code>), e troque <strong>todos</strong> os números mágicos por elas. A saída deve ficar como abaixo, sem avisos.</p>
+<pre class="out">Dias no mês: 31
+Guardado por dia: R$ 2.50
+Total no mês: R$ 77.50
+Em 2 meses: R$ 155.00</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Dias no mês: %d\n", 30);
+    printf("Guardado por dia: R$ %.2f\n", 2.50);
+    printf("Total no mês: R$ %.2f\n", 30 * 2.50);
+    printf("Em 2 meses: R$ %.2f\n", 2 * 30 * 2.50);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    constexpr int DIAS = 31;
+    constexpr double POR_DIA = 2.50;
+
+    printf("Dias no mês: %d\n", DIAS);
+    printf("Guardado por dia: R$ %.2f\n", POR_DIA);
+    printf("Total no mês: R$ %.2f\n", DIAS * POR_DIA);
+    printf("Em 2 meses: R$ %.2f\n", 2 * DIAS * POR_DIA);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que o <code>2</code> de "2 meses" pode continuar no código: ali ele não é mágico, o texto ao lado já explica o que é. Número mágico é o que obriga quem lê a adivinhar. E da próxima vez que o mês mudar, você troca <strong>uma</strong> linha.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Constante = valor com nome que não muda. Acaba com os <strong>números mágicos</strong> e concentra a mudança numa linha só. Por costume, nome em MAIÚSCULAS.</li>
+  <li><code>const int X = 7;</code>: variável só de leitura. Mudar depois dá <code>assignment of read-only variable</code>. Sempre dê o valor na declaração.</li>
+  <li>No C, <code>const</code> <strong>não</strong> é constante de verdade: não serve para tamanho de array global nem <code>case</code> no gcc.</li>
+  <li><code>#define X 7</code>: o pré-processador troca o texto antes de compilar (<code>gcc -E</code> mostra). Sem tipo, sem <code>=</code>, sem <code>;</code>; conta sempre entre parênteses.</li>
+  <li><code>constexpr int X = 7;</code> <span class="versao">C23</span>: tem tipo e é constante de verdade; o valor precisa ser conhecido na compilação e caber exatamente no tipo.</li>
+  <li><code>enum { X = 7 };</code>: constante inteira que funciona em qualquer C.</li>
+  <li>Qual usar: <code>constexpr</code> para valores fixos; <code>const</code> para valores que surgem com o programa rodando; saiba ler <code>#define</code>, que está em todo código C.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
