@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Como Funciona — do código-fonte ao executável | Guia C</title>
+<meta name="description" content="Como um programa em C vira executável: pré-processador, compilador, montador e ligador. Veja cada etapa de verdade com gcc -E, -S e -c, os arquivos .i, .s e .o, o executável, e como reconhecer de qual etapa veio cada mensagem de erro.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Como Funciona</span></h1>
+
+<p class="intro">Você escreve um texto num arquivo <code>ola.c</code>, digita um comando, e aparece um programa que roda. O que acontece no meio? Nesta aula você vai abrir a "caixa-preta" do compilador e ver, de verdade, as quatro etapas que transformam o seu texto num programa executável. Você vai olhar o arquivo que cada etapa produz, entender por que um programa em C roda sem precisar do compilador, e por que toda mudança no código pede uma nova compilação.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O caminho completo: <strong>pré-processador → compilador → montador → ligador</strong>.</li>
+  <li>Como parar o <code>gcc</code> no meio do caminho para ver cada etapa: <code>-E</code>, <code>-S</code> e <code>-c</code>.</li>
+  <li>O que são o arquivo <code>.i</code>, o <code>.s</code> (assembly), o <code>.o</code> (objeto) e o executável.</li>
+  <li>A diferença prática entre linguagem <strong>compilada</strong> e <strong>interpretada</strong>.</li>
+  <li>Por que o programa pronto roda sem o <code>gcc</code>, e por que é preciso compilar de novo depois de cada mudança.</li>
+  <li>Como reconhecer de qual etapa veio uma mensagem de erro.</li>
+</ul>
+</div>
+
+<p>Os comandos desta aula foram executados na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o <strong>gcc 15.2</strong>. Não se preocupe em decorar as opções <code>-E</code>, <code>-S</code> e <code>-c</code>: no dia a dia você vai usar um único comando, que faz as quatro etapas de uma vez. Aqui elas servem para você <strong>enxergar</strong> o caminho.</p>
+
+<hr>
+
+<h2>A ideia: publicar um livro traduzido</h2>
+<p>Imagine que a Ana escreveu um livro em português e quer vendê-lo num país que só lê japonês. O livro passa por quatro pessoas, uma depois da outra:</p>
+
+<ol class="passo">
+  <li><strong>A organizadora</strong> junta tudo num manuscrito só. Onde a Ana escreveu "inserir aqui o capítulo de receitas", ela cola o capítulo inteiro. Ela não traduz nada: só junta.</li>
+  <li><strong>O tradutor</strong> lê o manuscrito completo, confere se as frases fazem sentido (se não fizerem, devolve com um bilhete apontando a linha) e escreve a versão em japonês.</li>
+  <li><strong>A gráfica</strong> transforma o texto traduzido em páginas impressas, prontas, mas ainda soltas. Onde o livro diz "veja o mapa no apêndice", fica um espaço em branco: o mapa vem de outro lugar.</li>
+  <li><strong>O encadernador</strong> junta as páginas da Ana com as partes que vêm de fora (o mapa, o índice padrão da editora), preenche os espaços e entrega <strong>o livro pronto</strong>.</li>
+</ol>
+
+<p>Compilar um programa em C é exatamente isso. Cada pessoa é uma ferramenta, e cada uma produz um arquivo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Etapa</th><th>Ferramenta</th><th>Recebe</th><th>Produz</th><th>Para parar aqui</th></tr>
+<tr><td>1. Juntar</td><td><strong>Pré-processador</strong></td><td><code>ola.c</code> (o seu código)</td><td><code>ola.i</code>: o código com os <code>#include</code> já colados</td><td><code>gcc -E</code></td></tr>
+<tr><td>2. Traduzir</td><td><strong>Compilador</strong> (propriamente dito)</td><td>o código pré-processado</td><td><code>ola.s</code>: <strong>assembly</strong>, as instruções do processador escritas em texto</td><td><code>gcc -S</code></td></tr>
+<tr><td>3. Montar</td><td><strong>Montador</strong> (<em>assembler</em>)</td><td><code>ola.s</code></td><td><code>ola.o</code>: <strong>arquivo objeto</strong>, código de máquina com "espaços em branco"</td><td><code>gcc -c</code></td></tr>
+<tr><td>4. Ligar</td><td><strong>Ligador</strong> (<em>linker</em>)</td><td><code>ola.o</code> + a biblioteca padrão do C</td><td><code>ola</code>: o <strong>executável</strong>, pronto para rodar</td><td>(é o final)</td></tr>
+</table>
+</div>
+
+<p>O <code>gcc</code> é, na verdade, um "gerente": ele chama uma ferramenta de cada vez e passa o resultado de uma para a outra. Quando você digita <code>gcc ola.c -o ola</code>, as quatro etapas acontecem em sequência, e os arquivos intermediários são criados numa pasta temporária e apagados no fim. Vamos fazer uma por uma.</p>
+
+<hr>
+
+<h2>O ponto de partida: o código-fonte</h2>
+<p>O arquivo que você escreve se chama <strong>código-fonte</strong> (<em>source code</em>). É um texto comum, que qualquer editor abre. Este é o programa mais simples que existe:</p>
+
+<pre class="file" data-file="ola.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ ls -l ola.c
+-rw-rw-r-- 1 ana ana 83 out 17 10:30 ola.c        « 83 bytes: só texto</pre>
+
+<p>São 83 bytes, ou seja, 83 caracteres (o <code>á</code> conta como 2, porque no formato UTF-8 ele ocupa dois bytes, e cada quebra de linha conta como 1). Guarde esse número: vamos ver o que acontece com ele em cada etapa.</p>
+
+<hr>
+
+<h2>Etapa 1: o pré-processador (<code>gcc -E</code>)</h2>
+<p>O pré-processador é a "organizadora" do livro. Ele procura as linhas que começam com <code>#</code>, as chamadas <strong>diretivas</strong>, e as executa. A diretiva <code>#include &lt;stdio.h&gt;</code> quer dizer: "cole aqui o conteúdo do arquivo <code>stdio.h</code>". Esse arquivo vem com o sistema e contém tudo o que o compilador precisa saber sobre o <code>printf</code> e as outras funções de entrada e saída (<code>stdio</code> = <em>standard input/output</em>).</p>
+
+<p>A opção <code>-E</code> manda o <code>gcc</code> parar logo depois do pré-processador. O <code>-o ola.i</code> diz em que arquivo guardar o resultado (<code>-o</code> = <em>output</em>, saída; <code>.i</code> é a extensão tradicional de código C pré-processado):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -E ola.c -o ola.i
+$ wc -l ola.c ola.i                                « conta as linhas de cada arquivo
+    6 ola.c
+  844 ola.i                                        « de 6 linhas para 844!
+  850 total</pre>
+
+<p>As 6 linhas viraram <strong>844</strong>. Isso porque o <code>stdio.h</code> inclui outros arquivos, e o pré-processador colou todos eles. Os comandos <code>head</code> e <code>tail</code> mostram só o começo e o fim do arquivo:</p>
+
+<pre class="term" data-cwd="~/c">$ head -5 ola.i
+# 0 "ola.c"
+# 0 "&lt;built-in&gt;"
+# 0 "&lt;command-line&gt;"
+# 1 "/usr/include/stdc-predef.h" 1 3 4
+# 0 "&lt;command-line&gt;" 2
+$ tail -8 ola.i
+# 2 "ola.c" 2
+
+
+# 3 "ola.c"
+int main(void) {                                   « o seu código está lá no final
+    printf("Olá, mundo!\n");
+    return 0;
+}</pre>
+
+<p>As linhas que começam com <code>#</code> e um número são <strong>marcadores</strong>: anotações que o pré-processador deixa para o compilador saber de que arquivo e de que linha veio cada trecho. É graças a elas que, quando há um erro, a mensagem diz <code>ola.c:4</code> e não "linha 841 do arquivo colado".</p>
+
+<p>E onde está o <code>printf</code>? O comando <code>grep</code> procura um texto num arquivo (o <code>-n</code> mostra o número da linha):</p>
+
+<pre class="term" data-cwd="~/c">$ grep -n "extern int printf" ola.i
+492:extern int printf (const char *__restrict __format, ...);   « veio do stdio.h</pre>
+
+<p>A linha 492 é uma <strong>declaração</strong>: ela diz ao compilador "existe uma função chamada <code>printf</code>, que recebe um texto e mais o que vier (<code>...</code>) e devolve um <code>int</code>". Repare: ela diz só <strong>como usar</strong> o <code>printf</code>. As instruções que de fato escrevem na tela <strong>não estão aqui</strong>: estão guardadas em outro lugar, já compiladas. Lembre-se desse "outro lugar": ele volta na etapa 4.</p>
+
+<h3>O pré-processador só mexe em texto</h3>
+<p>Além de colar arquivos, o pré-processador apaga os comentários e troca as palavras definidas com <code>#define</code>. Veja este outro programa:</p>
+
+<pre class="file" data-file="saudacao.c">#include &lt;stdio.h&gt;
+#define NOME "Ana"
+
+int main(void) {
+    // escreve a saudação
+    printf("Oi, %s!\n", NOME);
+    return 0;
+}
+</pre>
+
+<p>Sem o <code>-o</code>, o <code>gcc -E</code> escreve o resultado na tela; o <code>| tail -6</code> mostra só as 6 últimas linhas:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -E saudacao.c | tail -6
+# 4 "saudacao.c"
+int main(void) {
+                                                   « o comentário sumiu
+    printf("Oi, %s!\n", "Ana");                    « NOME virou "Ana"
+    return 0;
+}</pre>
+
+<p>O comentário virou uma linha em branco, e o <code>NOME</code> foi trocado por <code>"Ana"</code>, como um "localizar e substituir" de editor de texto. O compilador nem fica sabendo que existia um <code>NOME</code>. O pré-processador não entende C: ele não sabe se o seu código está certo, só mexe no texto. A aula <a href="preprocessador.html">Pré-processador</a> mostra todas as diretivas.</p>
+
+<div class="tryc" data-goal="out:Oi, Bia!,src:#define NOME &quot;Bia&quot;">
+<p class="try-task"><strong>Missão:</strong> rode e veja <code>Oi, Ana!</code>. Agora mude <strong>só a linha do <code>#define</code></strong> para o programa cumprimentar a <code>Bia</code>, sem mexer no <code>printf</code>. Rode e confira <code>Oi, Bia!</code>: o pré-processador trocou o <code>NOME</code> pelo texto novo antes de o compilador ver o código.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#define NOME "Ana"
+
+int main(void) {
+    // escreve a saudação
+    printf("Oi, %s!\n", NOME);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#define NOME "Bia"
+
+int main(void) {
+    // escreve a saudação
+    printf("Oi, %s!\n", NOME);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Etapa 2: o compilador (<code>gcc -S</code>)</h2>
+<p>Agora entra o "tradutor", o compilador propriamente dito (o programa <code>cc1</code>, que o <code>gcc</code> chama por baixo). Ele lê o código pré-processado, confere se tudo segue as regras do C (é aqui que aparecem quase todas as mensagens de erro) e traduz para <strong>assembly</strong>: as instruções do processador, uma por linha, escritas com palavras curtas em vez de números. A opção <code>-S</code> para o <code>gcc</code> nesse ponto:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -S ola.c -o ola.s
+$ head -28 ola.s                                   « as 28 primeiras linhas
+	.file	"ola.c"
+	.text
+	.section	.rodata
+.LC0:
+	.string	"Ol\303\241, mundo!"                     « o seu texto, guardado como dados
+	.text
+	.globl	main
+	.type	main, @function
+main:                                              « aqui começa a função main
+.LFB0:
+	.cfi_startproc
+	endbr64
+	pushq	%rbp
+	.cfi_def_cfa_offset 16
+	.cfi_offset 6, -16
+	movq	%rsp, %rbp
+	.cfi_def_cfa_register 6
+	leaq	.LC0(%rip), %rax                           « pega o endereço do texto
+	movq	%rax, %rdi
+	call	puts@PLT                                   « chama a função puts
+	movl	$0, %eax                                   « o return 0
+	popq	%rbp
+	.cfi_def_cfa 7, 8
+	ret                                              « volta: fim do main
+	.cfi_endproc
+.LFE0:
+	.size	main, .-main
+	.ident	"GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0"
+</pre>
+
+<p>O resto do arquivo (mais 17 linhas) são anotações para o sistema. Você não precisa entender assembly para programar em C (essa é justamente a vantagem do C!), mas vale reparar em três coisas:</p>
+<dl class="anatomy">
+  <dt>.string "Ol\303\241, mundo!"</dt><dd>O texto do <code>printf</code>, guardado como dados do programa. O <code>á</code> aparece como <code>\303\241</code>: são os dois bytes que o representam em UTF-8, escritos em números (octal). Repare que o <code>\n</code> do fim sumiu. Já vamos ver por quê.</dd>
+  <dt>call puts@PLT</dt><dd>"Chame a função <code>puts</code>". Mas você escreveu <code>printf</code>! O compilador percebeu que você estava imprimindo um texto fixo, terminado em <code>\n</code>, e trocou pela função <code>puts</code> (<em>put string</em>, "pôr um texto"), que faz a mesma coisa mais depressa e sempre acrescenta a quebra de linha sozinha. O compilador tem liberdade para fazer trocas assim, desde que o resultado seja o mesmo.</dd>
+  <dt>movl $0, %eax · ret</dt><dd>O <code>return 0;</code>: coloca o 0 no lugar combinado para a resposta e volta para quem chamou o <code>main</code>.</dd>
+</dl>
+
+<p>O assembly depende do processador: este é o de um processador <strong>x86-64</strong> (Intel e AMD de 64 bits). Num celular ou num Mac com chip Apple (processadores <strong>ARM</strong>), o mesmo <code>ola.c</code> vira um assembly completamente diferente. É exatamente isso que o C resolveu em 1973: você escreve o código uma vez, e o compilador de cada máquina traduz para a língua dela.</p>
+
+<hr>
+
+<h2>Etapa 3: o montador (<code>gcc -c</code>)</h2>
+<p>A "gráfica" é o <strong>montador</strong> (o programa <code>as</code>, de <em>assembler</em>). Ele transforma o texto do assembly nos números do código de máquina e guarda tudo num <strong>arquivo objeto</strong>, com a extensão <code>.o</code>. A opção <code>-c</code> (de <em>compile only</em>, "só compilar") faz as etapas 1, 2 e 3 e para antes de ligar:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -c ola.c -o ola.o
+$ ls -l ola.o
+-rw-rw-r-- 1 ana ana 1496 out 17 10:35 ola.o
+$ file ola.o                                       « o comando file diz que tipo de arquivo é
+ola.o: ELF 64-bit LSB relocatable, x86-64, version 1 (SYSV), not stripped</pre>
+
+<p>O <code>.o</code> não é mais texto: é código de máquina (abri-lo num editor mostra só símbolos estranhos). O <code>file</code> diz que é um arquivo <strong>ELF</strong> (o formato de programas do Linux) do tipo <em>relocatable</em>, "realocável": um pedaço de programa que ainda não está pronto para rodar. Por que não? O comando <code>nm</code> lista os nomes (os <strong>símbolos</strong>) que estão dentro do arquivo objeto:</p>
+
+<pre class="term" data-cwd="~/c">$ nm ola.o
+0000000000000000 T main                            « T: o main está aqui dentro
+                 U puts                            « U: o puts NÃO está aqui</pre>
+
+<p>O <code>T</code> (de <em>text</em>, que nesse mundo quer dizer "código") diz que o <code>main</code> está definido neste arquivo. O <code>U</code> quer dizer <em>undefined</em>, "não definido": o arquivo <strong>usa</strong> o <code>puts</code>, mas não sabe onde ele está. Essa é a página da gráfica com o "espaço em branco para o mapa". Alguém precisa preencher esse buraco.</p>
+
+<hr>
+
+<h2>Etapa 4: o ligador</h2>
+<p>O "encadernador" é o <strong>ligador</strong> (<em>linker</em>; o programa <code>ld</code>). Ele junta o seu <code>ola.o</code> com a <strong>biblioteca padrão do C</strong> (no Linux, a <code>glibc</code>, onde mora o <code>puts</code> já compilado), preenche os buracos e escreve o executável. Para ligar, basta dar o <code>.o</code> ao <code>gcc</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc ola.o -o ola
+$ file ola
+ola: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=2240de07eb0be18171c33c62c7b593f967db3832, for GNU/Linux 3.2.0, not stripped
+$ ./ola
+Olá, mundo!</pre>
+
+<p>Agora o <code>file</code> diz <em>executable</em>, "executável", e o programa roda. Ele é <em>dynamically linked</em> ("ligado dinamicamente"): em vez de copiar o <code>puts</code> para dentro do executável, o ligador anotou "use o <code>puts</code> da biblioteca do sistema". O comando <code>ldd</code> mostra de quais bibliotecas o programa precisa:</p>
+
+<pre class="term" data-cwd="~/c">$ ldd ola
+	linux-vdso.so.1 (0x000076c4d0380000)
+	libc.so.6 =&gt; /usr/lib/x86_64-linux-gnu/libc.so.6 (0x000076c4d0000000)   « a biblioteca do C
+	/lib64/ld-linux-x86-64.so.2 (0x000076c4d0382000)</pre>
+
+<p>A <code>libc.so.6</code> é a biblioteca padrão do C, que vem instalada em todo Linux. Quando o programa começa, o sistema carrega essa biblioteca junto e liga o <code>puts</code> de verdade. A aula <a href="bibliotecas.html">Bibliotecas</a> explica a diferença entre ligar "dinamicamente" e "estaticamente".</p>
+
+<h3>Todos os arquivos, lado a lado</h3>
+<pre class="term" data-cwd="~/c">$ ls -l ola.c ola.i ola.s ola.o ola
+-rwxrwxr-x 1 ana ana 15952 out 17 10:35 ola      « 4. executável (o x quer dizer "pode rodar")
+-rw-rw-r-- 1 ana ana    83 out 17 10:30 ola.c    « 0. código-fonte
+-rw-rw-r-- 1 ana ana 21430 out 17 10:35 ola.i    « 1. pré-processado
+-rw-rw-r-- 1 ana ana  1496 out 17 10:35 ola.o    « 3. objeto
+-rw-rw-r-- 1 ana ana   664 out 17 10:35 ola.s    « 2. assembly</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Arquivo</th><th>Tamanho</th><th>É texto?</th><th>O que tem dentro</th></tr>
+<tr><td><code>ola.c</code></td><td>83 bytes</td><td>Sim</td><td>O que você escreveu.</td></tr>
+<tr><td><code>ola.i</code></td><td>21.430 bytes</td><td>Sim</td><td>O seu código com o <code>stdio.h</code> (e o que ele inclui) colado em cima.</td></tr>
+<tr><td><code>ola.s</code></td><td>664 bytes</td><td>Sim</td><td>As instruções do processador em texto (assembly).</td></tr>
+<tr><td><code>ola.o</code></td><td>1.496 bytes</td><td>Não</td><td>Código de máquina, com um buraco para o <code>puts</code>.</td></tr>
+<tr><td><code>ola</code></td><td>15.952 bytes</td><td>Não</td><td>O programa pronto: o código de máquina e mais as informações que o sistema precisa para carregá-lo e ligá-lo à <code>libc</code>.</td></tr>
+</table>
+</div>
+
+<h3>Tudo de uma vez</h3>
+<p>No dia a dia, ninguém roda as quatro etapas separadas. O comando do guia faz tudo de uma vez:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ola.c -o ola         « as quatro etapas, em sequência
+$ ./ola
+Olá, mundo!</pre>
+
+<p>Os arquivos intermediários existem só por um instante, numa pasta temporária. Se você quiser guardá-los, a opção <code>-save-temps</code> ("guardar os temporários") deixa todos eles na pasta:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -save-temps ola.c -o ola
+$ ls ola*
+ola
+ola.c
+ola.i
+ola.o
+ola.s</pre>
+
+<p>E a opção <code>-v</code> (<em>verbose</em>, "falante") faz o <code>gcc</code> mostrar cada programa que ele chama. Entre dezenas de linhas, lá estão as ferramentas das etapas (as linhas foram cortadas no fim, porque são enormes):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -v ola.c -o ola 2&gt;&amp;1 | grep -E "^ " | cut -c1-70
+ /usr/libexec/gcc/x86_64-linux-gnu/15/cc1 -quiet -v -imultiarch x86_64   « etapas 1 e 2: o cc1
+ /usr/lib/gcc/x86_64-linux-gnu/15/include
+ /usr/local/include
+ /usr/include/x86_64-linux-gnu
+ /usr/include                                                           « as pastas onde ele procura os .h
+ /usr/bin/x86_64-linux-gnu-as -v --64 -o /tmp/ccsCx5i2.o /tmp/cc0hNEg2   « etapa 3: o montador (as)
+ /usr/libexec/gcc/x86_64-linux-gnu/15/collect2 -plugin /usr/libexec/gc   « etapa 4: o collect2, que chama o ld</pre>
+
+<p>Repare: o <code>cc1</code> faz o pré-processamento e a compilação juntos (antigamente eram programas separados), o <code>as</code> monta, e o <code>collect2</code> chama o ligador <code>ld</code>. O nome <code>collect2</code> vai aparecer de novo nas mensagens de erro do ligador.</p>
+
+<h3>No editor do guia</h3>
+<p>As caixas Experimente fazem o mesmo caminho, só que dentro do navegador e com o compilador <strong>Clang</strong>: pré-processar, compilar, montar e ligar, e depois rodar. O "computador" do editor é diferente (é o WebAssembly, um processador imaginário que o navegador sabe executar), então o código de máquina gerado é outro, mas as etapas são as mesmas. Você vai ver isso na missão do fim da aula.</p>
+
+<hr>
+
+<h2>Compilado × interpretado, na prática</h2>
+<p>Na aula <a href="introducao.html">O que é C</a> você viu a diferença em teoria. Agora dá para ver na prática. Num programa Python, o arquivo <code>.py</code> é o próprio programa: toda vez que ele roda, o interpretador <code>python3</code> lê o texto e executa. No C, o arquivo <code>.c</code> só é lido <strong>uma vez</strong>, na compilação; quem roda depois é o executável.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>C (compilado)</th><th>Python (interpretado)</th></tr>
+<tr><td>Para rodar</td><td><code>gcc ola.c -o ola</code> uma vez, depois <code>./ola</code> quantas vezes quiser</td><td><code>python3 ola.py</code>, sempre</td></tr>
+<tr><td>Quem lê o código-fonte</td><td>Só o compilador, na hora de compilar</td><td>O interpretador, a cada execução</td></tr>
+<tr><td>O que você entrega para outra pessoa</td><td>O executável (ela não precisa do compilador nem do código)</td><td>O código-fonte (ela precisa do Python instalado)</td></tr>
+<tr><td>Erros de digitação</td><td>Aparecem <strong>antes</strong> de rodar: sem compilar, não há programa</td><td>Muitos só aparecem quando a linha com erro é executada</td></tr>
+<tr><td>Mudou o código?</td><td>Precisa compilar de novo</td><td>É só rodar de novo</td></tr>
+<tr><td>Funciona em outro tipo de computador?</td><td>Só depois de compilar de novo para ele (o executável x86-64 não roda num processador ARM)</td><td>Sim, se lá tiver o Python</td></tr>
+</table>
+</div>
+
+<h3>O executável roda sem o código-fonte</h3>
+<p>Depois de compilado, o programa não precisa mais do <code>ola.c</code> nem do <code>gcc</code>. Para provar, a Ana apaga o código-fonte e roda o programa:</p>
+
+<pre class="term" data-cwd="~/c">$ rm ola.c                                         « apaga o código-fonte!
+$ ./ola
+Olá, mundo!                                        « o programa continua funcionando</pre>
+
+<p>O executável já contém as instruções de máquina; ele só precisa da biblioteca do sistema que o <code>ldd</code> mostrou, que vem instalada em todo Linux. É assim que os programas que você baixa funcionam: eles chegam prontos, e você não precisa de um compilador para usá-los. (Não faça isso com o seu código de verdade: sem o <code>.c</code>, você não consegue mais mudar o programa. A Ana tinha uma cópia.)</p>
+
+<h3>Mudou o código? Compile de novo</h3>
+<p>O outro lado da moeda: o executável é uma "fotografia" do código no momento em que foi compilado. A Ana trocou <code>mundo</code> por <code>Ana</code> no <code>ola.c</code>, salvou, e rodou o programa:</p>
+
+<pre class="term" data-cwd="~/c">$ cat ola.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, Ana!\n");
+    return 0;
+}
+$ ./ola
+Olá, mundo!                                        « o programa velho: o .c mudou, o executável não
+$ gcc -std=c23 -Wall -Wextra ola.c -o ola          « compila de novo
+$ ./ola
+Olá, Ana!                                          « agora sim</pre>
+
+<p>Esquecer de recompilar é uma das confusões mais comuns de quem começa: "mudei o código e nada mudou!". Lembre-se: <strong>editou, compilou, rodou</strong>. As caixas Experimente fazem isso por você: o botão Rodar sempre compila antes de rodar. Em projetos grandes, compilar tudo de novo demora; por isso existe o <a href="make.html">Makefile</a>, que recompila só os arquivos que mudaram.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+<p>Cada etapa tem os seus erros, e saber <strong>de qual etapa</strong> veio a mensagem já é meio caminho para consertar. A pista está no começo e no fim da mensagem.</p>
+
+<div class="cenario">
+<strong>Etapa 1, pré-processador: <code>fatal error: … No such file</code></strong>
+<pre class="file" data-file="e1.c · erro de propósito">#include &lt;stdoi.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra e1.c -o e1
+e1.c:1:10: fatal error: stdoi.h: Arquivo ou diretório inexistente
+    1 | #include &lt;stdoi.h&gt;
+      |          ^~~~~~~~~
+compilation terminated.</pre>
+<p><strong>O que aconteceu:</strong> o pré-processador tentou colar o arquivo <code>stdoi.h</code> e não achou (as letras <code>i</code> e <code>o</code> trocaram de lugar). "Fatal" quer dizer que o <code>gcc</code> desistiu ali mesmo, sem nem olhar o resto do código. A parte "Arquivo ou diretório inexistente" veio em português porque é o sistema que a escreve; em fóruns, em inglês, ela aparece como <code>No such file or directory</code>. No editor do guia, o Clang diz <code>fatal error: 'stdoi.h' file not found</code>.</p>
+<p><strong>Como consertar:</strong> confira o nome do arquivo no <code>#include</code>: <code>stdio.h</code> (<em>st-d-i-o</em>, de <em>standard input/output</em>).</p>
+</div>
+
+<div class="cenario">
+<strong>Etapa 2, compilador: <code>error:</code> com linha e coluna</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra e2.c -o e2
+e2.c: In function ‘main’:
+e2.c:4:5: error: implicit declaration of function ‘pritnf’; did you mean ‘printf’? [-Wimplicit-function-declaration]
+    4 |     pritnf("Olá, mundo!\n");
+      |     ^~~~~~
+      |     printf</pre>
+<p><strong>O que aconteceu:</strong> a Ana escreveu <code>pritnf</code>. Essa função não foi declarada em lugar nenhum (o <code>stdio.h</code> declara <code>printf</code>, não <code>pritnf</code>), e o compilador reclama: "declaração implícita da função <code>pritnf</code>; você quis dizer <code>printf</code>?". As mensagens do compilador sempre têm o formato <code>arquivo:linha:coluna: error:</code>, aqui linha 4, coluna 5, e vêm em inglês.</p>
+<p><strong>Curiosidade:</strong> no C antigo, isso não era erro. O compilador "adivinhava" que <code>pritnf</code> era alguma função de outro lugar e deixava passar; o problema só aparecia na etapa 4. Com o padrão de 1989, dá para ver:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c89 e2.c -o e2
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccGcXJoA.o: na função "main":
+e2.c:(.text+0x18): referência não definida para "pritnf"
+collect2: error: ld returned 1 exit status</pre>
+<p>Desde o C99 a declaração implícita não é mais permitida, e o gcc 14 passou a tratá-la como erro. É um bom exemplo de como as versões novas do C pegam erros mais cedo (aula <a href="versoes.html">Versões do C</a>).</p>
+<p><strong>Como consertar:</strong> corrija o nome para <code>printf</code>. A aula <a href="erros-compilacao.html">Lendo Erros do Compilador</a> ensina a ler todas as partes dessas mensagens.</p>
+</div>
+
+<div class="cenario">
+<strong>Etapa 4, ligador: <code>referência não definida</code> e <code>collect2</code></strong>
+<pre class="file" data-file="e3.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int mian(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra e3.c -o e3
+/usr/bin/x86_64-linux-gnu-ld.bfd: /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o: na função "_start":
+(.text+0x1b): referência não definida para "main"
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra -c e3.c -o e3.o       « só até a etapa 3: nenhum erro!
+$ echo $?
+0</pre>
+<p><strong>O que aconteceu:</strong> a Ana escreveu <code>mian</code> em vez de <code>main</code>. Para o compilador, tudo bem: <code>mian</code> é um nome válido de função, e a etapa 3 termina sem erro (o <code>echo $?</code> mostra <code>0</code>). Mas todo programa em C precisa de uma função chamada <code>main</code>: é por ela que o sistema começa a rodar o programa. Na hora de montar o executável, o ligador procurou o <code>main</code> e não achou. As pistas de que o erro é do ligador: a mensagem começa com <code>ld</code> (o ligador), não tem número de linha do seu código, e termina com <code>collect2: error: ld returned 1 exit status</code> ("o ld terminou com o código 1"). O ligador fala português na máquina da Ana; em inglês, a frase é <code>undefined reference to `main'</code>, a forma que você vai encontrar em fóruns.</p>
+<p><strong>Como consertar:</strong> corrija o nome para <code>main</code>. Esse mesmo erro aparece quando você chama uma função que foi declarada mas nunca escrita, ou quando esquece de compilar um dos arquivos do projeto (aula <a href="multiplos-arquivos.html">Vários Arquivos</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada" ao rodar o <code>.c</code></strong>
+<pre class="term" data-cwd="~/c">$ ./ola.c
+bash: ./ola.c: Permissão negada
+$ echo $?
+126</pre>
+<p><strong>O que aconteceu:</strong> a Ana tentou rodar o código-fonte. O <code>ola.c</code> é texto, não um programa: o processador não sabe o que fazer com ele, e o sistema nem deixa tentar (ele não tem a permissão de "executável", o <code>x</code> que você viu no <code>ls -l</code>).</p>
+<p><strong>Como consertar:</strong> rode o executável que o <code>gcc</code> criou, o nome que veio depois do <code>-o</code>: <code>./ola</code>. Se você não usou <code>-o</code>, o <code>gcc</code> chama o programa de <code>a.out</code>, e aí é <code>./a.out</code>.</p>
+</div>
+
+<p>Agora é a sua vez. O programa abaixo tem <strong>um erro de cada etapa</strong>. O compilador só mostra um por vez: ele para no primeiro erro de etapa e não chega às seguintes.</p>
+
+<div class="tryc" data-goal="outre:Olá, mundo!\nTchau!">
+<p class="try-task"><strong>Missão:</strong> rode, leia a mensagem, conserte, e rode de novo, até o programa escrever <code>Olá, mundo!</code> e <code>Tchau!</code>. Você vai encontrar, nesta ordem: um erro do <strong>pré-processador</strong> (<code>fatal error</code>), um do <strong>compilador</strong> (<code>error</code> com linha e coluna) e um do <strong>ligador</strong> (a palavra <code>undefined</code>, "não definido", com o nome de uma função). Dica para o último: o programa promete uma função <code>despedir</code> lá em cima, mas a que foi escrita lá embaixo tem outro nome. (Funções têm a sua própria aula, <a href="funcoes.html">Funções</a>; aqui basta achar a diferença.)</p>
+<pre class="script">#include &lt;stdoi.h&gt;
+
+void despedir(void);
+
+int main(void) {
+    pritnf("Olá, mundo!\n");
+    despedir();
+    return 0;
+}
+
+void despedr(void) {
+    printf("Tchau!\n");
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void despedir(void);
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    despedir();
+    return 0;
+}
+
+void despedir(void) {
+    printf("Tchau!\n");
+}
+</pre>
+</div>
+
+<p>No editor, a mensagem do terceiro erro vem do <code>wasm-ld</code>, o ligador do WebAssembly: <code>undefined symbol: despedir</code> ("símbolo não definido"), seguida de <code>linker command failed</code> ("o comando do ligador falhou"). No terminal da Ana, com o gcc, o mesmo erro sai assim:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tchau.c -o tchau
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccAZKudP.o: na função "main":
+tchau.c:(.text+0x18): referência não definida para "despedir"
+collect2: error: ld returned 1 exit status</pre>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Gera</th></tr>
+<tr><td><code>gcc -E ola.c -o ola.i</code></td><td>Só pré-processa (sem <code>-o</code>, mostra na tela)</td><td><code>.i</code> (texto)</td></tr>
+<tr><td><code>gcc -S ola.c -o ola.s</code></td><td>Pré-processa e compila para assembly</td><td><code>.s</code> (texto)</td></tr>
+<tr><td><code>gcc -c ola.c -o ola.o</code></td><td>Pré-processa, compila e monta; não liga</td><td><code>.o</code> (objeto)</td></tr>
+<tr><td><code>gcc ola.o -o ola</code></td><td>Só liga (o <code>.o</code> já estava pronto)</td><td>executável</td></tr>
+<tr><td><code>gcc -std=c23 -Wall -Wextra ola.c -o ola</code></td><td>As quatro etapas de uma vez (o comando do guia)</td><td>executável</td></tr>
+<tr><td><code>gcc ola.c</code></td><td>As quatro etapas, sem escolher o nome</td><td><code>a.out</code></td></tr>
+<tr><td><code>gcc -save-temps ola.c -o ola</code></td><td>Tudo, guardando os arquivos intermediários</td><td><code>.i</code>, <code>.s</code>, <code>.o</code> e executável</td></tr>
+<tr><td><code>gcc -v ola.c -o ola</code></td><td>Tudo, mostrando cada programa chamado</td><td>executável</td></tr>
+<tr><td><code>file arquivo</code></td><td>Diz o tipo do arquivo (texto, objeto, executável)</td><td>(nada)</td></tr>
+<tr><td><code>nm ola.o</code></td><td>Lista os símbolos: <code>T</code> = definido aqui, <code>U</code> = usado, mas está em outro lugar</td><td>(nada)</td></tr>
+<tr><td><code>ldd ola</code></td><td>Mostra as bibliotecas de que o executável precisa</td><td>(nada)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A mensagem tem…</th><th>Veio de</th><th>Exemplo</th></tr>
+<tr><td><code>fatal error: … .h</code> e <code>compilation terminated</code></td><td>Pré-processador</td><td><code>#include</code> com nome errado</td></tr>
+<tr><td><code>arquivo.c:linha:coluna: error:</code></td><td>Compilador</td><td>Falta de <code>;</code>, nome escrito errado</td></tr>
+<tr><td><code>ld</code>, <code>referência não definida</code> (<code>undefined reference</code>), <code>collect2</code></td><td>Ligador</td><td>Falta o <code>main</code>, função declarada e nunca escrita</td></tr>
+<tr><td>Nenhuma mensagem, mas o programa escreve algo errado ou "morre"</td><td>O programa, ao rodar</td><td>Conta errada, falha de segmentação</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. Qual é a ordem das etapas da compilação?</p>
+<label><input type="radio" name="q1"> Compilador → pré-processador → ligador → montador</label>
+<label><input type="radio" name="q1"> Ligador → montador → compilador → pré-processador</label>
+<label><input type="radio" name="q1"> Pré-processador → compilador → montador → ligador</label>
+<label><input type="radio" name="q1"> Montador → compilador → pré-processador → ligador</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. O que o pré-processador faz com a linha <code>#include &lt;stdio.h&gt;</code>?</p>
+<label><input type="radio" name="q2"> Traduz o <code>stdio.h</code> para código de máquina.</label>
+<label><input type="radio" name="q2"> Cola o conteúdo do arquivo <code>stdio.h</code> no lugar da linha.</label>
+<label><input type="radio" name="q2"> Baixa o <code>stdio.h</code> da internet.</label>
+<label><input type="radio" name="q2"> Apaga a linha, porque ela é um comentário.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. A mensagem termina com <code>collect2: error: ld returned 1 exit status</code>. De qual etapa veio o erro?</p>
+<label><input type="radio" name="q3"> Do pré-processador.</label>
+<label><input type="radio" name="q3"> Do compilador.</label>
+<label><input type="radio" name="q3"> Do programa, enquanto rodava.</label>
+<label><input type="radio" name="q3"> Do ligador.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. No <code>nm ola.o</code>, a linha <code>U puts</code> quer dizer:</p>
+<label><input type="radio" name="q4"> Que o arquivo usa o <code>puts</code>, mas ele está em outro lugar: o ligador vai procurá-lo.</label>
+<label><input type="radio" name="q4"> Que o <code>puts</code> foi escrito dentro do <code>ola.c</code>.</label>
+<label><input type="radio" name="q4"> Que o <code>puts</code> tem um erro de digitação.</label>
+<label><input type="radio" name="q4"> Que o <code>puts</code> é uma variável.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. A Ana mudou o texto do <code>printf</code> no <code>ola.c</code>, rodou <code>./ola</code> e apareceu o texto antigo. Por quê?</p>
+<label><input type="radio" name="q5"> O <code>printf</code> guarda o texto antigo na memória para sempre.</label>
+<label><input type="radio" name="q5"> Ela precisava reiniciar o computador.</label>
+<label><input type="radio" name="q5"> Ela não compilou de novo: o executável ainda era o do código antigo.</label>
+<label><input type="radio" name="q5"> O terminal estava com defeito.</label>
+</div>
+
+<div class="exercise">
+<h3>6. Parar antes de ligar</h3>
+<p>Complete o comando para gerar o arquivo objeto <code>ola.o</code>, sem ligar:</p>
+<div class="ex-code">gcc <input data-answer="-c" aria-label="opção"> ola.c -o ola.o</div>
+</div>
+
+<div class="exercise">
+<h3>7. Ver o assembly</h3>
+<p>Complete o comando para ver o assembly que o compilador gera:</p>
+<div class="ex-code">gcc <input data-answer="-S" aria-label="opção"> ola.c -o ola.s</div>
+</div>
+
+<div class="exercise">
+<h3>8. Só o pré-processador</h3>
+<p>Complete o comando para ver o código depois do pré-processador, com o <code>#define</code> já trocado:</p>
+<div class="ex-code">gcc <input data-answer="-E" aria-label="opção"> saudacao.c</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Compilar tem quatro etapas: <strong>pré-processador</strong> (cola os <code>#include</code>, troca os <code>#define</code>, tira os comentários), <strong>compilador</strong> (confere as regras e traduz para assembly), <strong>montador</strong> (gera o código de máquina, o <code>.o</code>) e <strong>ligador</strong> (junta tudo com a biblioteca do C e gera o executável).</li>
+  <li>Para parar no meio: <code>-E</code> (até o <code>.i</code>), <code>-S</code> (até o <code>.s</code>) e <code>-c</code> (até o <code>.o</code>). O <code>-save-temps</code> guarda todos.</li>
+  <li>O <code>stdio.h</code> só <strong>declara</strong> o <code>printf</code>; o código dele já vem compilado na biblioteca do C (a <code>libc</code>), e o ligador faz a ligação.</li>
+  <li>O executável roda sozinho, sem o <code>.c</code> e sem o <code>gcc</code>; mas, se o código mudar, é preciso <strong>compilar de novo</strong>.</li>
+  <li>Cada etapa tem os seus erros: <code>fatal error … .h</code> é do pré-processador; <code>arquivo:linha:coluna: error</code> é do compilador; <code>referência não definida</code> / <code>undefined reference</code> com <code>collect2</code> é do ligador.</li>
+  <li>Próximo passo: conhecer as versões do C e saber qual o seu compilador usa, em <a href="versoes.html">Versões do C</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
