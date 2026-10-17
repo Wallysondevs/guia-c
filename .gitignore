@@ -1,0 +1,4 @@
+.autoria/
+tools/.cache*
+node_modules/
+tools/.wasi-src/
