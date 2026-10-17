@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Data e Hora — time, localtime, strftime e mktime | Guia C</title>
+<meta name="description" content="Data e hora em C (time.h) para iniciantes: time e o time_t, localtime e a struct tm (tm_year + 1900, tm_mon + 1), strftime com datas em português, gmtime e fuso horário, mktime e difftime para contar dias até o Natal, clock e timespec_get para medir tempo, localtime_r e o problema de 2038. Saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Data e Hora</span> (time.h)</h1>
+
+<p class="intro">Quase todo programa de verdade precisa do relógio: o recibo da lojinha da Ana mostra a data da venda, a agenda avisa quantos dias faltam para o aniversário, o jogo mede quanto tempo o jogador levou. Em C, tudo isso vem de um cabeçalho só, o <code>&lt;time.h&gt;</code>. Nesta aula você vai pegar a hora atual, separar dia, mês e ano, escrever a data em português, montar datas para fazer contas com elas e medir quanto tempo um pedaço do programa leva.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o <code>time_t</code> e por que ele conta segundos desde 1970.</li>
+  <li>Como separar a data em partes com <code>localtime</code> e a <code>struct tm</code> (e as duas pegadinhas: o ano e o mês).</li>
+  <li>Como escrever a data do jeito que você quiser com <code>strftime</code>, inclusive "sábado, 17 de outubro de 2026".</li>
+  <li>A diferença entre <code>gmtime</code> e <code>localtime</code>, e o que o fuso horário tem a ver com isso.</li>
+  <li>Como montar uma data com <code>mktime</code> e contar dias com <code>difftime</code>.</li>
+  <li>Como medir tempo com <code>clock</code> e <code>timespec_get</code>, e por que os dois dão números diferentes.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>, sistema em português), na pasta <code>~/c/tempo</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. A Ana mora em São Paulo, no fuso de Brasília (3 horas a menos que Greenwich, <code>-03</code>). As datas e horas dos terminais são as do momento em que cada programa rodou: no seu computador, você vai ver a sua data e a sua hora.</p>
+
+<hr>
+
+<h2>A ideia: o hodômetro e o calendário</h2>
+<p>O carro da Ana tem um <strong>hodômetro</strong>, aquele contador de quilômetros que só anda para a frente: 45.213 km. É um número só, fácil de guardar e de fazer contas ("andei 300 km desde a revisão"). Mas ninguém fala "nasci no segundo 1.792.247.126". As pessoas falam em dia, mês, ano, hora.</p>
+<p>O C guarda o tempo dos dois jeitos:</p>
+<ul>
+  <li><strong><code>time_t</code></strong> é o hodômetro: um número de segundos contados a partir de uma data fixa. Bom para guardar e para fazer contas.</li>
+  <li><strong><code>struct tm</code></strong> é o calendário: uma <a href="structs.html">struct</a> com dia, mês, ano, hora, minuto, segundo, dia da semana. Bom para mostrar às pessoas.</li>
+</ul>
+<p>Quase tudo nesta aula é passar de um para o outro.</p>
+
+<hr>
+
+<h2>1. time: os segundos desde 1970</h2>
+
+<pre class="file" data-file="agora.c">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    time_t agora = time(NULL);
+    printf("Segundos desde 1970: %lld\n", (long long) agora);
+    printf("Em dias, mais ou menos: %lld\n", (long long) agora / 86400);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;time.h&gt;</dt><dd>O cabeçalho de data e hora do C padrão.</dd>
+  <dt>time_t</dt><dd>O tipo que guarda um instante como número de segundos. O nome vem de "time type", tipo do tempo. O <code>_t</code> no fim é o costume do C para nomes de tipos (como <code>size_t</code>).</dd>
+  <dt>time(NULL)</dt><dd>Pergunta ao sistema "que horas são?" e devolve a resposta como <code>time_t</code>. O <code>NULL</code> quer dizer "não precisa guardar em mais nenhum lugar" (a forma antiga, <code>time(&amp;agora)</code>, também guarda o valor na variável).</dd>
+  <dt>(long long) agora</dt><dd>O padrão não diz qual inteiro é o <code>time_t</code>. Convertendo para <code>long long</code> e usando <code>%lld</code>, o <code>printf</code> funciona em qualquer sistema (o cenário "Quando dá errado" mostra o aviso que aparece com <code>%d</code>).</dd>
+  <dt>/ 86400</dt><dd>Um dia tem 24 × 60 × 60 = 86.400 segundos.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra agora.c -o agora
+$ ./agora
+Segundos desde 1970: 1792247126
+Em dias, mais ou menos: 20743
+$ date +%s                         « o comando date mostra o mesmo número
+1792247126</pre>
+
+<p>O ponto de partida, o "zero" do hodômetro, é <strong>1º de janeiro de 1970, meia-noite, no horário de Greenwich</strong> (UTC, o horário de referência do mundo). Ele se chama <strong>era Unix</strong> (<em>Unix epoch</em>): foi a data escolhida pelos criadores do Unix, e hoje Linux, macOS, Android e quase toda a internet contam a partir dela. Desde então passaram uns 20 mil dias.</p>
+
+<div class="note">
+<strong>O problema do ano 2038.</strong> Por décadas, o <code>time_t</code> foi um <code>int</code> de 32 bits, cujo maior valor é 2.147.483.647. Esse segundo cai em 19/01/2038 às 03:14:07 UTC; um segundo depois, o contador "dá a volta" (aula <a href="inteiros.html">Inteiros</a>) e o relógio pularia para 1901. Os sistemas de hoje usam 64 bits, que duram bilhões de anos:
+<pre class="term" data-cwd="~/c/tempo">$ ./y2038
+O maior int32_t: 19/01/2038 03:14:07 UTC
+Um segundo depois: 19/01/2038 03:14:08 UTC
+O time_t tem 8 bytes</pre>
+O editor do guia também usa 8 bytes. Mas programas antigos e aparelhos pequenos que gravam a data num <code>int</code> ainda vão dar trabalho em 2038.
+</div>
+
+<hr>
+
+<h2>2. localtime e a struct tm: dia, mês e ano</h2>
+<p>Para separar o número em partes, use <code>localtime</code>, que devolve um ponteiro para uma <code>struct tm</code> já preenchida (aula <a href="structs-ponteiros.html">Structs e Ponteiros</a> para o <code>-&gt;</code>):</p>
+
+<pre class="file" data-file="partes.c">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    time_t agora = time(NULL);
+    struct tm *t = localtime(&amp;agora);
+
+    printf("Dia %d do mês %d de %d\n", t-&gt;tm_mday, t-&gt;tm_mon + 1, t-&gt;tm_year + 1900);
+    printf("Hora: %02d:%02d:%02d\n", t-&gt;tm_hour, t-&gt;tm_min, t-&gt;tm_sec);
+    printf("Dia da semana: %d (0 = domingo)\n", t-&gt;tm_wday);
+    printf("Dia do ano: %d\n", t-&gt;tm_yday + 1);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra partes.c -o partes
+$ ./partes
+Dia 17 do mês 10 de 2026
+Hora: 11:25:26
+Dia da semana: 6 (0 = domingo)
+Dia do ano: 290
+$ date
+sáb 17 out 2026 11:25:26 -03</pre>
+
+<p>Os campos da <code>struct tm</code> ("time", tempo) têm algumas regras estranhas, que vêm dos anos 1970 e nunca mudaram:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Campo</th><th>O que guarda</th><th>Valores</th><th>Para mostrar</th></tr>
+<tr><td><code>tm_year</code></td><td>Anos <strong>desde 1900</strong></td><td>2026 vira <code>126</code></td><td><code>tm_year + 1900</code></td></tr>
+<tr><td><code>tm_mon</code></td><td>Mês, <strong>começando em 0</strong></td><td>0 = janeiro … 11 = dezembro</td><td><code>tm_mon + 1</code></td></tr>
+<tr><td><code>tm_mday</code></td><td>Dia do mês</td><td>1 a 31 (este começa em 1!)</td><td>direto</td></tr>
+<tr><td><code>tm_hour</code>, <code>tm_min</code></td><td>Hora e minuto</td><td>0 a 23, 0 a 59</td><td>direto</td></tr>
+<tr><td><code>tm_sec</code></td><td>Segundo</td><td>0 a 60 (o 60 é o "segundo bissexto", raríssimo)</td><td>direto</td></tr>
+<tr><td><code>tm_wday</code></td><td>Dia da semana</td><td>0 = domingo … 6 = sábado</td><td>use como índice de uma lista de nomes</td></tr>
+<tr><td><code>tm_yday</code></td><td>Dia do ano</td><td>0 = 1º de janeiro … 365</td><td><code>tm_yday + 1</code></td></tr>
+<tr><td><code>tm_isdst</code></td><td>Horário de verão?</td><td>maior que 0 = sim, 0 = não, negativo = não sei</td><td>(seção 5)</td></tr>
+</table>
+</div>
+
+<p>Por que o mês começa em 0 e o dia em 1? Porque o mês costuma ser usado como <strong>índice</strong> de um array de nomes (<code>meses[t-&gt;tm_mon]</code>), e arrays em C começam em 0 (aula <a href="arrays.html">Arrays</a>). O dia do mês é só um número para mostrar.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e compare a hora com o relógio do seu computador. O editor do guia não sabe o seu fuso horário: ele usa sempre o horário de Greenwich (UTC). Quem está em Brasília vai ver a hora <strong>3 horas adiantada</strong>. Depois crie um array <code>const char *semana[] = {"domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"};</code> e mostre <code>semana[t-&gt;tm_wday]</code> no lugar do número.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    time_t agora = time(NULL);
+    struct tm *t = localtime(&amp;agora);
+
+    printf("Dia %d do mês %d de %d\n", t-&gt;tm_mday, t-&gt;tm_mon + 1, t-&gt;tm_year + 1900);
+    printf("Hora: %02d:%02d:%02d\n", t-&gt;tm_hour, t-&gt;tm_min, t-&gt;tm_sec);
+    printf("Dia da semana: %d (0 = domingo)\n", t-&gt;tm_wday);
+    printf("Dia do ano: %d\n", t-&gt;tm_yday + 1);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. strftime: a data do jeito que você quiser</h2>
+<p>Montar a data com <code>printf</code> e somar 1900 toda vez cansa. O <code>strftime</code> ("string format time", formatar o tempo num texto) faz isso por você, com códigos parecidos com os do <code>printf</code>:</p>
+
+<pre class="file" data-file="formatar.c">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+#include &lt;locale.h&gt;
+
+int main(void) {
+    time_t agora = time(NULL);
+    struct tm *t = localtime(&amp;agora);
+    char texto[100];
+
+    strftime(texto, sizeof texto, "%d/%m/%Y %H:%M", t);
+    printf("Curto: %s\n", texto);
+
+    strftime(texto, sizeof texto, "%A, %d de %B de %Y", t);
+    printf("Antes do setlocale: %s\n", texto);
+
+    setlocale(LC_ALL, "");
+    strftime(texto, sizeof texto, "%A, %d de %B de %Y", t);
+    printf("Depois do setlocale: %s\n", texto);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>char texto[100];</dt><dd>O <code>strftime</code> escreve num array seu, como o <code>snprintf</code> (aula <a href="strings.html">Strings</a>). Ele precisa caber o texto inteiro mais o <code>'\0'</code>.</dd>
+  <dt>strftime(texto, sizeof texto, formato, t)</dt><dd>Quatro coisas: onde escrever, quanto cabe, o molde e a <code>struct tm</code>. Devolve quantos caracteres escreveu, ou <strong>0 se não coube</strong>.</dd>
+  <dt>"%d/%m/%Y %H:%M"</dt><dd>Dia, mês e ano com 4 dígitos, hora e minuto. O <code>strftime</code> já soma o 1 do mês e o 1900 do ano, e põe o zero à esquerda (<code>09</code>).</dd>
+  <dt>%A, %B</dt><dd>O nome do dia da semana e o nome do mês, no idioma do programa.</dd>
+  <dt>setlocale(LC_ALL, "")</dt><dd>Passa a usar o idioma do sistema, como na aula <a href="errno.html">errno e perror</a>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra formatar.c -o formatar
+$ ./formatar
+Curto: 17/10/2026 11:25
+Antes do setlocale: Saturday, 17 de October de 2026
+Depois do setlocale: sábado, 17 de outubro de 2026</pre>
+
+<p>Sem <code>setlocale</code>, todo programa C começa no idioma neutro "C" (inglês): <em>Saturday</em>, <em>October</em>. Com ele, a glibc do Linux escreve em português. No editor do guia, os nomes saem <strong>sempre em inglês</strong>: a biblioteca C dele não traz traduções.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que escreve</th><th>Exemplo (pt_BR)</th></tr>
+<tr><td><code>%d</code></td><td>Dia do mês, 2 dígitos</td><td><code>17</code></td></tr>
+<tr><td><code>%m</code></td><td>Mês, 2 dígitos (já com o +1)</td><td><code>10</code></td></tr>
+<tr><td><code>%Y</code> / <code>%y</code></td><td>Ano com 4 dígitos / os 2 últimos</td><td><code>2026</code> / <code>26</code></td></tr>
+<tr><td><code>%H</code>, <code>%M</code>, <code>%S</code></td><td>Hora (00–23), minuto, segundo</td><td><code>11</code>, <code>25</code>, <code>26</code></td></tr>
+<tr><td><code>%A</code> / <code>%a</code></td><td>Dia da semana, inteiro / abreviado</td><td><code>sábado</code> / <code>sáb</code></td></tr>
+<tr><td><code>%B</code> / <code>%b</code></td><td>Mês, inteiro / abreviado</td><td><code>outubro</code> / <code>out</code></td></tr>
+<tr><td><code>%j</code></td><td>Dia do ano (001–366)</td><td><code>290</code></td></tr>
+<tr><td><code>%z</code></td><td>Distância de Greenwich</td><td><code>-0300</code></td></tr>
+<tr><td><code>%F</code></td><td>O mesmo que <code>%Y-%m-%d</code> (o formato ISO, bom para nomes de arquivo)</td><td><code>2026-10-17</code></td></tr>
+<tr><td><code>%x</code> / <code>%X</code></td><td>A data / a hora no formato do idioma</td><td><code>17/10/2026</code> / <code>11:25:26</code></td></tr>
+<tr><td><code>%%</code></td><td>Um <code>%</code> de verdade</td><td><code>%</code></td></tr>
+</table>
+</div>
+
+<p>Para mostrar uma data que <strong>não</strong> é a de hoje, preencha você mesmo a <code>struct tm</code>. O <code>= {0}</code> zera todos os campos (aula <a href="structs.html">Structs</a>), e depois você ajusta os que importam:</p>
+
+<div class="tryc" data-goal="out:Natal: 25/12/2026">
+<p class="try-task"><strong>Missão:</strong> o programa mostra a data do Natal no formato americano, <code>12/25/26</code> (mês primeiro, ano com 2 dígitos). Mude só o molde do <code>strftime</code> para o formato brasileiro, com o ano inteiro: <code>Natal: 25/12/2026</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    struct tm natal = {0};
+    natal.tm_year = 2026 - 1900;
+    natal.tm_mon = 12 - 1;
+    natal.tm_mday = 25;
+
+    char texto[32];
+    strftime(texto, sizeof texto, "%m/%d/%y", &amp;natal);
+    printf("Natal: %s\n", texto);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    struct tm natal = {0};
+    natal.tm_year = 2026 - 1900;
+    natal.tm_mon = 12 - 1;
+    natal.tm_mday = 25;
+
+    char texto[32];
+    strftime(texto, sizeof texto, "%d/%m/%Y", &amp;natal);
+    printf("Natal: %s\n", texto);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. gmtime, localtime e o fuso horário</h2>
+<p>O <code>time_t</code> é o mesmo no mundo inteiro: no instante em que a Ana roda o programa em São Paulo, o computador de uma amiga em Tóquio tem o mesmo número. O que muda é como cada um <strong>lê</strong> esse número no relógio. Por isso há duas funções:</p>
+<ul>
+  <li><code>gmtime</code> ("Greenwich Mean Time") separa o instante no horário de Greenwich, o UTC;</li>
+  <li><code>localtime</code> separa no fuso do computador.</li>
+</ul>
+
+<pre class="file" data-file="fuso.c">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+void mostrar(const char *nome, const struct tm *t) {
+    char texto[64];
+    strftime(texto, sizeof texto, "%d/%m/%Y %H:%M:%S %z", t);
+    printf("%-10s %s\n", nome, texto);
+}
+
+int main(void) {
+    time_t zero = 0;
+    mostrar("gmtime:", gmtime(&amp;zero));
+    mostrar("localtime:", localtime(&amp;zero));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra fuso.c -o fuso
+$ ./fuso
+gmtime:    01/01/1970 00:00:00 +0000
+localtime: 31/12/1969 21:00:00 -0300
+$ TZ=UTC ./fuso                   « finge que o computador está em Greenwich
+gmtime:    01/01/1970 00:00:00 +0000
+localtime: 01/01/1970 00:00:00 +0000
+$ TZ=Asia/Tokyo ./fuso            « e agora em Tóquio
+gmtime:    01/01/1970 00:00:00 +0000
+localtime: 01/01/1970 09:00:00 +0900</pre>
+
+<p>O segundo zero da era Unix foi meia-noite em Greenwich, mas em São Paulo ainda eram <strong>9 da noite do dia 31 de dezembro de 1969</strong>. O <code>gmtime</code> não muda nunca; o <code>localtime</code> segue o fuso, que no Linux vem do arquivo <code>/etc/localtime</code> ou da variável de ambiente <code>TZ</code> (aula <a href="getenv.html">Variáveis de Ambiente</a>). O <code>TZ=…</code> antes do comando muda a variável só para aquela execução.</p>
+
+<div class="warning">
+<strong>No editor do guia, o fuso é sempre UTC:</strong> lá, <code>localtime</code> e <code>gmtime</code> dão o mesmo resultado (<code>01/01/1970 00:00:00 +0000</code> nos dois). Por isso as missões desta aula nunca dependem da hora atual nem do fuso: elas usam datas fixas.
+</div>
+
+<hr>
+
+<h2>5. mktime: montar uma data e fazer contas</h2>
+<p>O caminho de volta, da <code>struct tm</code> para o <code>time_t</code>, é o <code>mktime</code> ("make time", fazer o tempo). Com dois <code>time_t</code>, a diferença em segundos sai do <code>difftime</code>. Quantos dias faltam para o Natal?</p>
+
+<pre class="file" data-file="natal.c">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    struct tm hoje = {0};
+    hoje.tm_year = 2026 - 1900;
+    hoje.tm_mon = 10 - 1;
+    hoje.tm_mday = 17;
+    hoje.tm_hour = 12;
+    hoje.tm_isdst = -1;
+
+    struct tm natal = hoje;
+    natal.tm_mon = 12 - 1;
+    natal.tm_mday = 25;
+
+    time_t t1 = mktime(&amp;hoje);
+    time_t t2 = mktime(&amp;natal);
+    double segundos = difftime(t2, t1);
+
+    printf("Faltam %.0f dias para o Natal.\n", segundos / 86400);
+    printf("Hoje é o dia %d da semana; o Natal, o dia %d.\n", hoje.tm_wday, natal.tm_wday);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>struct tm hoje = {0};</code></td><td>Começa com tudo zerado. Sem isso, os campos que você não preencher teriam lixo (aula <a href="variaveis.html">Variáveis</a>).</td></tr>
+<tr><td><code>2026 - 1900</code>, <code>10 - 1</code></td><td>As duas pegadinhas da seção 2, escritas de um jeito que se lê: "ano 2026", "mês 10".</td></tr>
+<tr><td><code>tm_hour = 12</code></td><td>Meio-dia: longe da meia-noite, a conta não erra por causa de uma mudança de horário de verão.</td></tr>
+<tr><td><code>tm_isdst = -1</code></td><td>"Não sei se é horário de verão: descubra você." É o valor certo quase sempre.</td></tr>
+<tr><td><code>struct tm natal = hoje;</code></td><td>Copia a struct inteira e muda só o mês e o dia.</td></tr>
+<tr><td><code>mktime(&amp;hoje)</code></td><td>Converte para <code>time_t</code> <strong>e</strong> completa a struct: preenche <code>tm_wday</code> e <code>tm_yday</code>, que você não deu.</td></tr>
+<tr><td><code>difftime(t2, t1)</code></td><td><code>t2 - t1</code> em segundos, como <code>double</code>. Funciona qualquer que seja o tipo por trás do <code>time_t</code>.</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra natal.c -o natal
+$ ./natal
+Faltam 69 dias para o Natal.
+Hoje é o dia 6 da semana; o Natal, o dia 5.</pre>
+
+<p>69 dias, e o <code>mktime</code> descobriu sozinho que 17/10/2026 é um sábado (6) e o Natal, uma sexta (5).</p>
+
+<h3>O mktime arruma datas impossíveis</h3>
+<p>O <code>mktime</code> aceita campos "fora do lugar" e <strong>normaliza</strong>: dia 32 vira o dia 1 do mês seguinte, mês 12 vira janeiro do ano seguinte. Isso deixa somar dias muito fácil:</p>
+
+<pre class="file" data-file="normaliza.c">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    struct tm data = {0};
+    data.tm_year = 2026 - 1900;
+    data.tm_mon = 10 - 1;
+    data.tm_mday = 17 + 100;     // daqui a 100 dias
+    data.tm_hour = 12;
+    data.tm_isdst = -1;
+
+    mktime(&amp;data);
+
+    char texto[32];
+    strftime(texto, sizeof texto, "%d/%m/%Y", &amp;data);
+    printf("Daqui a 100 dias: %s\n", texto);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra normaliza.c -o normaliza
+$ ./normaliza
+Daqui a 100 dias: 25/01/2027</pre>
+
+<p>"Dia 117 de outubro" virou 25 de janeiro de 2027: o <code>mktime</code> contou os dias de outubro, novembro e dezembro e passou o ano. Você não precisa saber quantos dias tem cada mês, nem quais anos são bissextos.</p>
+
+<hr>
+
+<h2>6. Medir quanto tempo leva: clock e timespec_get</h2>
+<p>Há dois tempos diferentes para medir um programa, e o C tem uma função para cada:</p>
+<ul>
+  <li><strong>tempo de relógio</strong>: o que o cronômetro na mão da Ana marcaria, contando as esperas. Use <code>timespec_get</code> <span class="versao">C11</span>, que dá segundos <strong>e</strong> nanossegundos (o <code>time</code> só dá segundos inteiros, pouco para medir).</li>
+  <li><strong>tempo de processador</strong>: só o tempo em que o processador trabalhou para o programa. Use <code>clock</code>.</li>
+</ul>
+
+<pre class="file" data-file="cronometro.c">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+#include &lt;unistd.h&gt;
+
+double segundos_do_relogio(void) {
+    struct timespec agora;
+    timespec_get(&amp;agora, TIME_UTC);
+    return agora.tv_sec + agora.tv_nsec / 1e9;
+}
+
+int main(void) {
+    double r0 = segundos_do_relogio();
+    clock_t c0 = clock();
+
+    sleep(2);                                   // espera 2 s sem trabalhar
+    volatile double soma = 0;
+    for (int i = 0; i &lt; 100000000; i++) {       // trabalha um pouco
+        soma += i;
+    }
+
+    double cpu = (double) (clock() - c0) / CLOCKS_PER_SEC;
+    double relogio = segundos_do_relogio() - r0;
+    printf("Tempo de relógio: %.2f s\n", relogio);
+    printf("Tempo de processador: %.2f s\n", cpu);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>struct timespec</dt><dd>Uma struct com dois campos: <code>tv_sec</code> (segundos, um <code>time_t</code>) e <code>tv_nsec</code> (nanossegundos, bilionésimos de segundo, de 0 a 999.999.999).</dd>
+  <dt>timespec_get(&amp;agora, TIME_UTC)</dt><dd>Preenche a struct com o instante atual. <code>TIME_UTC</code> é a única base que todo sistema tem.</dd>
+  <dt>agora.tv_nsec / 1e9</dt><dd>Transforma os nanossegundos em fração de segundo (<code>1e9</code> é 1 bilhão, como <code>double</code>).</dd>
+  <dt>sleep(2)</dt><dd>Faz o programa dormir 2 segundos (do <code>unistd.h</code>, do POSIX: existe no Linux e no macOS).</dd>
+  <dt>volatile double soma</dt><dd>Obriga o laço a acontecer de verdade (aula <a href="volatile-restrict.html">volatile e restrict</a>).</dd>
+  <dt>clock()</dt><dd>Devolve o tempo de processador gasto até agora, num tipo <code>clock_t</code>, contado em "tiques".</dd>
+  <dt>/ CLOCKS_PER_SEC</dt><dd>Quantos tiques há num segundo. Dividindo, o resultado fica em segundos. O <code>(double)</code> evita uma divisão inteira (aula <a href="conversao-tipos.html">Conversão de Tipos</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra cronometro.c -o cronometro
+$ ./cronometro
+Tempo de relógio: 2.33 s
+Tempo de processador: 0.33 s</pre>
+
+<p>Os 2 segundos do <code>sleep</code> contam no relógio, mas não no processador: enquanto o programa dormia, o processador cuidava de outros programas. Para saber "quanto o meu código é rápido", o <code>clock</code> é melhor, porque não conta as esperas. Para saber "quanto o usuário esperou", use o relógio.</p>
+
+<div class="warning">
+<strong>No editor do guia, <code>clock</code> conta também as esperas.</strong> O mesmo programa mostra <code>Tempo de processador: 2.33 s</code> lá: o editor não tem como medir o tempo de processador dentro do navegador e usa o relógio no lugar. Além disso, o <code>CLOCKS_PER_SEC</code> vale 1.000.000 no Linux e 1.000.000.000 no editor: sempre divida por ele, nunca por um número escrito à mão.
+</div>
+
+<hr>
+
+<h2>7. O localtime reaproveita a mesma struct</h2>
+<p>O <code>localtime</code> e o <code>gmtime</code> devolvem um ponteiro para uma <code>struct tm</code> que fica <strong>dentro da biblioteca</strong>, a mesma para todas as chamadas. Cada chamada escreve por cima da anterior:</p>
+
+<pre class="file" data-file="sobrescreve.c">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    time_t virada = 946728000;      // 1º de janeiro de 2000
+    time_t natal = 1798200000;      // 25 de dezembro de 2026
+    struct tm *a = localtime(&amp;virada);
+    struct tm *b = localtime(&amp;natal);
+    printf("a: ano %d\n", a-&gt;tm_year + 1900);
+    printf("b: ano %d\n", b-&gt;tm_year + 1900);
+    printf("a e b apontam para o mesmo lugar? %s\n", a == b ? "sim" : "não");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra sobrescreve.c -o sobrescreve
+$ ./sobrescreve
+a: ano 2026
+b: ano 2026
+a e b apontam para o mesmo lugar? sim</pre>
+
+<p>O ano 2000 sumiu: a segunda chamada escreveu 2026 no mesmo lugar, e <code>a</code> e <code>b</code> são o mesmo ponteiro. Há dois consertos:</p>
+<ol class="passo">
+  <li><strong>Copie a struct</strong> logo depois de cada chamada: <code>struct tm a = *localtime(&amp;virada);</code> (o <code>*</code> copia o conteúdo, não o endereço).</li>
+  <li><strong>Use <code>localtime_r</code></strong>, que escreve numa struct <strong>sua</strong>. O <code>_r</code> vem de "reentrant" (reentrante): pode ser chamada de vários lugares ao mesmo tempo sem uma atrapalhar a outra, o que importa muito com <a href="threads.html">threads</a>. Veio do POSIX e entrou no C padrão no <span class="versao">C23</span>, junto com <code>gmtime_r</code>.</li>
+</ol>
+
+<pre class="file" data-file="sobrescreve2.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    time_t virada = 946728000;      // 1º de janeiro de 2000
+    time_t natal = 1798200000;      // 25 de dezembro de 2026
+    struct tm a, b;
+    localtime_r(&amp;virada, &amp;a);
+    localtime_r(&amp;natal, &amp;b);
+    printf("a: ano %d\n", a.tm_year + 1900);
+    printf("b: ano %d\n", b.tm_year + 1900);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra sobrescreve2.c -o sobrescreve2
+$ ./sobrescreve2
+a: ano 2000
+b: ano 2026</pre>
+
+<p>A primeira linha, <code>#define _POSIX_C_SOURCE 200809L</code>, pede ao cabeçalho as funções do POSIX (como na aula <a href="compilacao-condicional.html">Compilação Condicional</a>). O gcc 15 com <code>-std=c23</code> já aceita <code>localtime_r</code> sem ela, mas com <code>-std=c17</code> dá <code>error: implicit declaration of function ‘localtime_r’</code>, e o editor do guia também exige a linha (<code>use of undeclared identifier 'localtime_r'</code>). Com ela, funciona nos dois.</p>
+
+<hr>
+
+<h2>Qual função usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th></tr>
+<tr><td>A hora atual, para guardar ou comparar</td><td><code>time(NULL)</code></td></tr>
+<tr><td>Dia, mês, ano, hora de um instante</td><td><code>localtime_r</code> (ou <code>localtime</code>, copiando a struct)</td></tr>
+<tr><td>O mesmo, no horário de Greenwich (logs, servidores)</td><td><code>gmtime_r</code> / <code>gmtime</code></td></tr>
+<tr><td>Mostrar a data para uma pessoa</td><td><code>strftime</code> (com <code>setlocale</code> para português)</td></tr>
+<tr><td>Uma data que não é hoje, dias da semana, somar dias</td><td><code>struct tm</code> + <code>mktime</code></td></tr>
+<tr><td>A diferença entre dois instantes</td><td><code>difftime</code></td></tr>
+<tr><td>Quanto o código gastou de processador</td><td><code>clock</code> / <code>CLOCKS_PER_SEC</code></td></tr>
+<tr><td>Quanto tempo passou no relógio, com frações de segundo</td><td><code>timespec_get</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>E o <code>ctime</code> e o <code>asctime</code>?</strong> São duas funções antigas que devolvem a data num formato fixo, em inglês: <code>Wed Dec 31 21:00:00 1969</code>. Elas usam um texto guardado dentro da biblioteca (o mesmo problema da seção 7) e não deixam escolher o formato. O <span class="versao">C23</span> as marcou como <strong>obsoletas</strong>: use <code>strftime</code>. Você ainda vai vê-las em código antigo.
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A data sai como <code>17/9/126</code></strong>
+<pre class="file" data-file="cru.c (a linha do printf)">    printf("Hoje: %d/%d/%d\n", t-&gt;tm_mday, t-&gt;tm_mon, t-&gt;tm_year);
+</pre>
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra cru.c -o cru
+$ ./cru
+Hoje: 17/9/126</pre>
+<p><strong>O que significa:</strong> as duas pegadinhas da <code>struct tm</code> ao mesmo tempo. O mês começa em 0 (outubro é 9) e o ano conta desde 1900 (2026 é 126). Nenhum compilador avisa: para ele, são só números.</p>
+<p><strong>Como consertar:</strong> <code>t-&gt;tm_mon + 1</code> e <code>t-&gt;tm_year + 1900</code>, ou, melhor ainda, <code>strftime</code> com <code>"%d/%m/%Y"</code>, que já faz as contas e põe os zeros.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘time_t’</code></strong>
+<pre class="term" data-cwd="~/c/tempo">$ gcc -std=c23 -Wall -Wextra formato.c -o formato
+formato.c: In function ‘main’:
+formato.c:6:21: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘time_t’ {aka ‘long int’} [-Wformat=]
+    6 |     printf("Agora: %d\n", agora);
+      |                    ~^     ~~~~~
+      |                     |     |
+      |                     int   time_t {aka long int}
+      |                    %ld</pre>
+<p><strong>O que significa:</strong> o <code>%d</code> é para <code>int</code>, mas no Linux o <code>time_t</code> é um <code>long</code> (8 bytes). O gcc sugere <code>%ld</code>, que serve no Linux; no editor do guia o <code>time_t</code> é <code>long long</code>, e o Clang sugere <code>%lld</code>. Cada sistema escolhe o seu tipo.</p>
+<p><strong>Como consertar:</strong> converta para um tipo conhecido: <code>printf("%lld\n", (long long) agora);</code>. Funciona em qualquer lugar.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>strftime</code> devolveu 0 e o texto saiu vazio ou estranho</strong>
+<pre class="term" data-cwd="~/c/tempo">$ ./curto                          « texto[10] para "sábado, 17 de outubro de 2026"
+strftime escreveu 0 caracteres
+Não coube!</pre>
+<p><strong>O que significa:</strong> o array era pequeno demais para o texto. O <code>strftime</code> não escreve pela metade: devolve 0, e o conteúdo do array fica indefinido. Repare que, com <code>setlocale</code>, os nomes ficam maiores ("sábado" tem acento, que ocupa 2 bytes em UTF-8; aula <a href="acentos-utf8.html">Acentos e UTF-8</a>).</p>
+<p><strong>Como consertar:</strong> use um array folgado (64 ou 100 bytes) e confira o retorno: <code>if (strftime(…) == 0) { … }</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Duas datas diferentes aparecem iguais</strong>
+<p><strong>O que significa:</strong> você guardou dois ponteiros devolvidos por <code>localtime</code> (ou <code>gmtime</code>), e a segunda chamada escreveu por cima da primeira (o <code>sobrescreve.c</code> da seção 7).</p>
+<p><strong>Como consertar:</strong> <code>localtime_r</code> com uma struct sua para cada data, ou copie com <code>struct tm a = *localtime(&amp;t);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A hora está 3 horas adiantada no editor</strong>
+<p><strong>O que significa:</strong> o editor do guia usa o horário de Greenwich (UTC). No seu computador, com <code>gcc</code>, o <code>localtime</code> usa o fuso do sistema.</p>
+<p><strong>Como consertar:</strong> nada a consertar no código. Para ver a sua hora, compile no seu computador (aula <a href="instalar-linux.html">Instalar no Linux</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>time_t agora = time(NULL);</code></td><td>Segundos desde 01/01/1970 00:00 UTC</td></tr>
+<tr><td><code>struct tm *t = localtime(&amp;agora);</code></td><td>Separa no fuso local (struct da biblioteca, reaproveitada)</td></tr>
+<tr><td><code>gmtime(&amp;agora)</code></td><td>Separa no horário de Greenwich</td></tr>
+<tr><td><code>localtime_r(&amp;agora, &amp;minha)</code></td><td>Separa numa struct sua (<span class="versao">C23</span> e POSIX)</td></tr>
+<tr><td><code>t-&gt;tm_year + 1900</code>, <code>t-&gt;tm_mon + 1</code></td><td>O ano e o mês de verdade</td></tr>
+<tr><td><code>strftime(texto, sizeof texto, "%d/%m/%Y", t)</code></td><td>Escreve a data; devolve 0 se não coube</td></tr>
+<tr><td><code>setlocale(LC_ALL, "")</code></td><td>Nomes de dias e meses em português (<code>&lt;locale.h&gt;</code>)</td></tr>
+<tr><td><code>struct tm d = {0}; … d.tm_isdst = -1; mktime(&amp;d)</code></td><td>Monta uma data, normaliza e preenche <code>tm_wday</code>/<code>tm_yday</code></td></tr>
+<tr><td><code>difftime(fim, inicio)</code></td><td>Diferença em segundos (<code>double</code>)</td></tr>
+<tr><td><code>(double) (clock() - c0) / CLOCKS_PER_SEC</code></td><td>Tempo de processador em segundos</td></tr>
+<tr><td><code>timespec_get(&amp;ts, TIME_UTC)</code></td><td>Instante com nanossegundos (<span class="versao">C11</span>)</td></tr>
+<tr><td><code>ctime</code>, <code>asctime</code></td><td>Formato fixo em inglês; obsoletas no <span class="versao">C23</span></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O ano de verdade</h3>
+<p>Complete para mostrar o ano com 4 dígitos:</p>
+<div class="ex-code">printf("%d\n", t-&gt;tm_year + <input data-answer="1900" aria-label="número">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. O código do mês</h3>
+<p>Complete o molde do <code>strftime</code> para escrever <code>17/10/2026</code>:</p>
+<div class="ex-code">strftime(texto, sizeof texto, "%d/<input data-answer="%m" aria-label="código">/%Y", t);</div>
+</div>
+
+<div class="exercise">
+<h3>3. A diferença</h3>
+<p>Complete o nome da função que dá a diferença em segundos entre dois <code>time_t</code>:</p>
+<div class="ex-code">double s = <input data-answer="difftime" aria-label="função">(fim, inicio);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Em março, quanto vale <code>tm_mon</code>?</p>
+<label><input type="radio" name="q4"> 3</label>
+<label><input type="radio" name="q4"> 4</label>
+<label><input type="radio" name="q4"> 2</label>
+<label><input type="radio" name="q4"> 03</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O programa dorme 5 segundos com <code>sleep(5)</code> e quase não faz contas. No Linux, o que o <code>clock</code> vai medir?</p>
+<label><input type="radio" name="q5"> Quase 0 segundos: o <code>clock</code> mede o tempo de processador, e dormindo o programa não usa o processador</label>
+<label><input type="radio" name="q5"> 5 segundos</label>
+<label><input type="radio" name="q5"> 5 milhões de segundos</label>
+<label><input type="radio" name="q5"> Dá erro: <code>clock</code> não funciona com <code>sleep</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Para que serve o <code>mktime</code>?</p>
+<label><input type="radio" name="q6"> Para mostrar a data em português</label>
+<label><input type="radio" name="q6"> Para transformar uma <code>struct tm</code> em <code>time_t</code>, arrumando datas como "dia 32" e preenchendo o dia da semana</label>
+<label><input type="radio" name="q6"> Para medir o tempo de processador</label>
+<label><input type="radio" name="q6"> Para mudar o relógio do computador</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. Em São Paulo, <code>localtime</code> do instante 0 dá 31/12/1969, 21:00. Quanto dá <code>gmtime</code> do mesmo instante?</p>
+<label><input type="radio" name="q7"> 31/12/1969, 21:00</label>
+<label><input type="radio" name="q7"> 31/12/1969, 18:00</label>
+<label><input type="radio" name="q7"> Depende do fuso do computador</label>
+<label><input type="radio" name="q7"> 01/01/1970, 00:00</label>
+</div>
+
+<h3>Missão final: contagem regressiva para o Natal</h3>
+
+<div class="tryc" data-goal="out:Faltam 69 dias para o Natal.,out:O Natal de 2026 cai num(a) sexta-feira.">
+<p class="try-task"><strong>Missão:</strong> o programa da Ana deveria contar os dias de 17/10/2026 até o Natal e dizer o dia da semana, mas diz que faltam 694060 dias e que o Natal é no ano 3927! A data de hoje está certa; os dois campos errados estão na data do Natal. Conserte-os (lembre as duas pegadinhas) para a saída ser:</p>
+<pre class="out">Faltam 69 dias para o Natal.
+O Natal de 2026 cai num(a) sexta-feira.</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    const char *dias[] = {"domingo", "segunda-feira", "terça-feira", "quarta-feira",
+                          "quinta-feira", "sexta-feira", "sábado"};
+
+    struct tm hoje = {0};
+    hoje.tm_year = 2026 - 1900;
+    hoje.tm_mon = 10 - 1;
+    hoje.tm_mday = 17;
+    hoje.tm_hour = 12;
+    hoje.tm_isdst = -1;
+
+    struct tm natal = hoje;
+    natal.tm_year = 2026;
+    natal.tm_mon = 12;
+    natal.tm_mday = 25;
+
+    time_t t1 = mktime(&amp;hoje);
+    time_t t2 = mktime(&amp;natal);
+
+    printf("Faltam %.0f dias para o Natal.\n", difftime(t2, t1) / 86400);
+    printf("O Natal de %d cai num(a) %s.\n", natal.tm_year + 1900, dias[natal.tm_wday]);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    const char *dias[] = {"domingo", "segunda-feira", "terça-feira", "quarta-feira",
+                          "quinta-feira", "sexta-feira", "sábado"};
+
+    struct tm hoje = {0};
+    hoje.tm_year = 2026 - 1900;
+    hoje.tm_mon = 10 - 1;
+    hoje.tm_mday = 17;
+    hoje.tm_hour = 12;
+    hoje.tm_isdst = -1;
+
+    struct tm natal = hoje;
+    natal.tm_year = 2026 - 1900;
+    natal.tm_mon = 12 - 1;
+    natal.tm_mday = 25;
+
+    time_t t1 = mktime(&amp;hoje);
+    time_t t2 = mktime(&amp;natal);
+
+    printf("Faltam %.0f dias para o Natal.\n", difftime(t2, t1) / 86400);
+    printf("O Natal de %d cai num(a) %s.\n", natal.tm_year + 1900, dias[natal.tm_wday]);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Por que 3927, e não 3926? O <code>tm_year = 2026</code> já dava o ano 1900 + 2026 = 3926, e o mês 12 (que seria o 13º mês) fez o <code>mktime</code> normalizar para janeiro do ano <strong>seguinte</strong>. Um erro em cada campo, e o Natal foi parar 1900 anos no futuro.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>time(NULL)</code> devolve um <code>time_t</code>: os segundos desde 01/01/1970 00:00 UTC (a era Unix). Para imprimir, <code>(long long)</code> e <code>%lld</code>.</li>
+  <li><code>localtime</code> (fuso do computador) e <code>gmtime</code> (Greenwich) separam o instante numa <code>struct tm</code>. O ano conta desde 1900 e o mês começa em 0.</li>
+  <li><code>strftime</code> escreve a data com códigos como <code>%d/%m/%Y</code> e <code>%A</code>; com <code>setlocale(LC_ALL, "")</code>, em português. Confira se não devolveu 0.</li>
+  <li>Para montar uma data: <code>struct tm d = {0}</code>, preencha os campos, <code>tm_isdst = -1</code> e <code>mktime</code>. Ele normaliza (dia 117 de outubro vira 25 de janeiro) e descobre o dia da semana. A diferença sai do <code>difftime</code>.</li>
+  <li><code>clock</code> mede o tempo de processador (sem as esperas); <code>timespec_get</code>, o tempo de relógio com nanossegundos.</li>
+  <li><code>localtime</code> reaproveita a mesma struct a cada chamada; prefira <code>localtime_r</code> (<span class="versao">C23</span>).</li>
+  <li>No editor do guia: fuso sempre UTC, nomes em inglês, e <code>clock</code> conta as esperas.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
