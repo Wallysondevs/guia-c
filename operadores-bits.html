@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Operadores de Bits — &amp;, |, ^, ~, &lt;&lt; e &gt;&gt; | Guia C</title>
+<meta name="description" content="Operadores de bits em C para quem está começando: números em binário, uma função que mostra os bits, o %b do C23 (que funciona no gcc e não no editor), os operadores &amp;, |, ^, ~, &lt;&lt; e &gt;&gt;, a armadilha do ~ com uint8_t, a precedência com ==, a diferença entre &amp; e &amp;&amp;, e os deslocamentos que são comportamento indefinido. Saídas reais do gcc 15 e do editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Operadores de Bits</span></h1>
+
+<p class="intro">Para o computador, todo número é uma fileira de <strong>bits</strong>, zeros e uns. Os operadores que você já conhece (<code>+</code>, <code>*</code>, <code>&lt;</code>) trabalham com o número inteiro. Os <strong>operadores de bits</strong> trabalham com cada bit separado: comparam bit a bit, invertem, empurram a fileira para um lado. O C, que nasceu para escrever sistemas operacionais, tem seis deles: <code>&amp;</code>, <code>|</code>, <code>^</code>, <code>~</code>, <code>&lt;&lt;</code> e <code>&gt;&gt;</code>. Eles são a base das permissões de arquivos, das cores, da compressão, dos protocolos de rede e dos jogos antigos.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ler um número em binário e escrever um em C: <code>0b1101</code> <span class="versao">C23</span>.</li>
+  <li>Escrever uma função que mostra os bits de um número, e o <code>%b</code> do C23 (que funciona no gcc, mas não no editor).</li>
+  <li>Os operadores <code>&amp;</code> (E), <code>|</code> (OU), <code>^</code> (OU exclusivo) e <code>~</code> (NÃO), bit a bit.</li>
+  <li>Os deslocamentos <code>&lt;&lt;</code> e <code>&gt;&gt;</code>, e por que eles multiplicam e dividem por 2.</li>
+  <li>As armadilhas: <code>~</code> num <code>uint8_t</code>, <code>x &amp; 1 == 0</code>, <code>&amp;</code> no lugar de <code>&amp;&amp;</code>.</li>
+  <li>Os deslocamentos proibidos (negativos ou maiores que a largura), que são comportamento indefinido.</li>
+</ul>
+</div>
+
+<p>Os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>, e conferidos no editor do guia. A próxima aula, <a href="mascaras-bits.html">Máscaras e Flags</a>, usa tudo isto para ligar, desligar e testar bits um por um.</p>
+
+<hr>
+
+<h2>A ideia: uma fileira de lâmpadas</h2>
+<p>Imagine 8 lâmpadas numa fileira, cada uma acesa (1) ou apagada (0). A da direita vale 1, a seguinte vale 2, depois 4, 8, 16… cada uma vale o <strong>dobro</strong> da vizinha da direita. O número é a soma das lâmpadas acesas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Posição do bit</th><td>7</td><td>6</td><td>5</td><td>4</td><td>3</td><td>2</td><td>1</td><td>0</td></tr>
+<tr><th>Vale</th><td>128</td><td>64</td><td>32</td><td>16</td><td>8</td><td>4</td><td>2</td><td>1</td></tr>
+<tr><th>13 em binário</th><td>0</td><td>0</td><td>0</td><td>0</td><td><strong>1</strong></td><td><strong>1</strong></td><td>0</td><td><strong>1</strong></td></tr>
+</table>
+</div>
+
+<p>13 = 8 + 4 + 1, então as lâmpadas 3, 2 e 0 estão acesas: <code>00001101</code>. Os bits são numerados <strong>da direita para a esquerda, começando do 0</strong>. O bit 0 é o "menos significativo" (vale menos); o bit 7, o "mais significativo". (A aula <a href="memoria.html">Memória, Bits e Bytes</a> conta essa história com mais calma.)</p>
+
+<p>Em C, você pode escrever o mesmo número de três jeitos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Base</th><th>Observação</th></tr>
+<tr><td><code>13</code></td><td>decimal (10)</td><td>O jeito de sempre.</td></tr>
+<tr><td><code>0x0D</code></td><td>hexadecimal (16)</td><td>Cada dígito hexa são exatamente 4 bits: <code>0</code> = <code>0000</code>, <code>D</code> = <code>1101</code>. Por isso programadores adoram hexa para bits.</td></tr>
+<tr><td><code>0b1101</code></td><td>binário (2)</td><td><span class="versao">C23</span> Oficial no C23; o gcc e o Clang já aceitavam antes, como extensão.</td></tr>
+<tr><td><code>0b1010'0101</code></td><td>binário com separador</td><td><span class="versao">C23</span> O apóstrofo só separa os dígitos para você ler melhor; o compilador ignora.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Ver os bits: a função <code>mostra_bits</code></h2>
+<p>O <code>printf</code> tradicional não tem uma letra para binário. A solução clássica é escrever uma função que mostra os bits um por um. Ela usa dois operadores desta aula (<code>&gt;&gt;</code> e <code>&amp;</code>); por enquanto, confie nela. Na seção 6 você vai entender cada pedaço, e na missão final vai escrevê-la sozinho.</p>
+
+<pre class="file" data-file="binario.c">#include &lt;stdio.h&gt;
+
+void mostra_bits(unsigned char x) {
+    for (int i = 7; i &gt;= 0; i--) {
+        printf("%d", (x &gt;&gt; i) &amp; 1);
+    }
+    printf("\n");
+}
+
+int main(void) {
+    mostra_bits(13);
+    mostra_bits(0b1101);
+    mostra_bits(0x0D);
+    mostra_bits(255);
+    mostra_bits(0b1010'0101);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>unsigned char x</dt><dd>Um byte sem sinal: 8 bits, de 0 a 255. (Um <code>uint8_t</code> da aula <a href="stdint.html">Inteiros de Tamanho Fixo</a> serviria igual.)</dd>
+  <dt>for (int i = 7; i &gt;= 0; i--)</dt><dd>Visita os bits do 7 até o 0, da esquerda para a direita, que é a ordem em que lemos.</dd>
+  <dt>(x &gt;&gt; i) &amp; 1</dt><dd>"Pegue o bit número <code>i</code> de <code>x</code>": dá 0 ou 1. Explicado na seção 6.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra binario.c -o binario
+$ ./binario
+00001101
+00001101                 « 0b1101: o mesmo número
+00001101                 « 0x0D: o mesmo número
+11111111
+10100101</pre>
+
+<p>As três primeiras linhas são iguais: <code>13</code>, <code>0b1101</code> e <code>0x0D</code> são <strong>o mesmo número</strong>, escrito em bases diferentes. A base é só um jeito de escrever; dentro do computador é sempre binário.</p>
+
+<div class="tryc" data-file="binario.c">
+<p class="try-task"><strong>Experimente:</strong> mostre os bits de 1, 2, 4, 8 e 128. Que padrão você vê? Depois tente 100 e confira: 100 = 64 + 32 + 4.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void mostra_bits(unsigned char x) {
+    for (int i = 7; i &gt;= 0; i--) {
+        printf("%d", (x &gt;&gt; i) &amp; 1);
+    }
+    printf("\n");
+}
+
+int main(void) {
+    mostra_bits(13);
+    mostra_bits(255);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>O <code>%b</code> do C23</h3>
+<p>O C23 finalmente criou uma letra para binário no <code>printf</code>: <code>%b</code> <span class="versao">C23</span>. Ela aceita as mesmas opções das outras letras: largura com zeros (<code>%08b</code>) e o prefixo <code>0b</code> com <code>#</code> (<code>%#b</code>):</p>
+
+<pre class="file" data-file="pctb.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("13 em binário: %b\n", 13);
+    printf("Com 8 dígitos: %08b\n", 13);
+    printf("Com prefixo:   %#b\n", 13);
+    printf("Fim\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pctb.c -o pctb
+$ ./pctb
+13 em binário: 1101
+Com 8 dígitos: 00001101
+Com prefixo:   0b1101
+Fim</pre>
+
+<p>Funciona no laboratório: quem faz o trabalho do <code>printf</code> é a <strong>biblioteca</strong> (a glibc), não o compilador, e a glibc já aprendeu o <code>%b</code>. A biblioteca do editor ainda não. Lá, o mesmo programa compila sem aviso, mas as três primeiras linhas <strong>somem</strong>: o <code>printf</code> desiste quando encontra uma letra que não conhece, e só o <code>Fim</code> aparece. Por isso este guia usa a função <code>mostra_bits</code>, que funciona em qualquer lugar.</p>
+
+<hr>
+
+<h2>2. <code>&amp;</code>: E, bit a bit</h2>
+<p>O <code>&amp;</code> (lê-se "E") compara os dois números <strong>coluna por coluna</strong>. Em cada coluna, o resultado é 1 só se os <strong>dois</strong> bits forem 1:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>bit de a</th><th>bit de b</th><th>a &amp; b</th><th>a | b</th><th>a ^ b</th></tr>
+<tr><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>0</td><td>1</td><td>0</td><td>1</td><td>1</td></tr>
+<tr><td>1</td><td>0</td><td>0</td><td>1</td><td>1</td></tr>
+<tr><td>1</td><td>1</td><td><strong>1</strong></td><td>1</td><td><strong>0</strong></td></tr>
+</table>
+</div>
+
+<p>A tabela já mostra os três operadores de duas entradas. Agora com números de verdade:</p>
+
+<pre class="file" data-file="e_ou.c">#include &lt;stdio.h&gt;
+
+void mostra_bits(unsigned char x) {
+    for (int i = 7; i &gt;= 0; i--) {
+        printf("%d", (x &gt;&gt; i) &amp; 1);
+    }
+}
+
+int main(void) {
+    unsigned char a = 12;
+    unsigned char b = 10;
+    printf("a     = "); mostra_bits(a);     printf(" (%d)\n", a);
+    printf("b     = "); mostra_bits(b);     printf(" (%d)\n", b);
+    printf("a &amp; b = "); mostra_bits(a &amp; b); printf(" (%d)\n", a &amp; b);
+    printf("a | b = "); mostra_bits(a | b); printf(" (%d)\n", a | b);
+    printf("a ^ b = "); mostra_bits(a ^ b); printf(" (%d)\n", a ^ b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra e_ou.c -o e_ou
+$ ./e_ou
+a     = 00001100 (12)
+b     = 00001010 (10)
+a &amp; b = 00001000 (8)
+a | b = 00001110 (14)
+a ^ b = 00000110 (6)</pre>
+
+<p>Olhe as colunas dos bits 3 a 0. Em <code>a &amp; b</code>, só o bit 3 está aceso, porque é o único aceso <strong>nos dois</strong> (<code>1100</code> e <code>1010</code> → <code>1000</code>). Pense no <code>&amp;</code> como um <strong>filtro</strong>: ele deixa passar só os bits que estão acesos no outro número. É assim que se testa um bit, como você vai ver na seção 6.</p>
+
+<hr>
+
+<h2>3. <code>|</code>: OU, bit a bit</h2>
+<p>O <code>|</code> (lê-se "OU"; é a barra vertical, que no teclado brasileiro fica perto do Shift esquerdo) dá 1 se <strong>pelo menos um</strong> dos bits for 1. Na saída acima, <code>1100 | 1010 = 1110</code> (14): juntou as lâmpadas acesas dos dois. Pense no <code>|</code> como <strong>somar acessórios</strong>: ele acende bits sem apagar nenhum. É o operador para <strong>ligar</strong> bits e combinar opções, assunto da próxima aula.</p>
+
+<hr>
+
+<h2>4. <code>^</code>: OU exclusivo (XOR)</h2>
+<p>O <code>^</code> (acento circunflexo; em inglês <em>XOR</em>, de <em>exclusive or</em>) dá 1 quando os bits são <strong>diferentes</strong>. <code>1100 ^ 1010 = 0110</code> (6). Pense nele como um <strong>interruptor de escada</strong>: onde o segundo número tem 1, o bit do primeiro <strong>inverte</strong>; onde tem 0, fica como estava.</p>
+
+<p>Duas propriedades curiosas: <code>x ^ x</code> é sempre 0, e aplicar o mesmo <code>^ chave</code> <strong>duas vezes</strong> devolve o número original. Com isso dá para "embaralhar" um recado de brincadeira:</p>
+
+<pre class="file" data-file="segredo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char msg[] = "Oi, Bia!";
+    char chave = 0x2A;
+    for (int i = 0; msg[i] != '\0'; i++) msg[i] = msg[i] ^ chave;
+    printf("Embaralhada: ");
+    for (int i = 0; msg[i] != '\0'; i++) printf("%02X ", (unsigned char)msg[i]);
+    printf("\n");
+    for (int i = 0; msg[i] != '\0'; i++) msg[i] = msg[i] ^ chave;
+    printf("De volta:    %s\n", msg);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra segredo.c -o segredo
+$ ./segredo
+Embaralhada: 65 43 06 0A 68 43 4B 0B
+De volta:    Oi, Bia!</pre>
+
+<p>Cada letra virou outro byte (mostrado em hexa com <code>%02X</code>) e voltou depois do segundo <code>^</code>. Isso <strong>não</strong> é criptografia de verdade: quem souber o truque descobre a chave em segundos. Mas a ideia de "XOR com uma chave" aparece dentro de algoritmos sérios.</p>
+
+<hr>
+
+<h2>5. <code>~</code>: NÃO, bit a bit</h2>
+<p>O <code>~</code> (til) recebe <strong>um</strong> número só e inverte todos os bits: 0 vira 1, 1 vira 0. Mas cuidado com uma surpresa:</p>
+
+<pre class="file" data-file="nao.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+int main(void) {
+    uint8_t x = 0x0F;
+    uint8_t y = ~x;
+    printf("~x direto:       %d\n", ~x);
+    printf("guardado em y:   %d\n", y);
+    printf("~0 = %d, ~5 = %d\n", ~0, ~5);
+    unsigned int u = 0;
+    printf("~0u = %u\n", ~u);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nao.c -o nao
+$ ./nao
+~x direto:       -16     « esperava 240?
+guardado em y:   240
+~0 = -1, ~5 = -6
+~0u = 4294967295</pre>
+
+<p>Por que <code>~x</code> deu <code>-16</code> e não 240 (<code>11110000</code>)? Antes de qualquer conta, o C <strong>promove</strong> os tipos pequenos (<code>char</code>, <code>uint8_t</code>, <code>short</code>) para <code>int</code>, de 32 bits. Então o <code>~</code> inverteu 32 bits, não 8: <code>00000000 00000000 00000000 00001111</code> virou <code>11111111 11111111 11111111 11110000</code>, que num <code>int</code> com sinal é −16. Ao guardar em <code>y</code>, um <code>uint8_t</code>, só os 8 bits da direita ficam: 240.</p>
+
+<div class="warning">
+<strong>Bits combinam com tipos sem sinal</strong>
+<p>Com números com sinal, o bit da esquerda decide se o número é negativo, e os resultados ficam confusos (<code>~0</code> é −1, <code>~5</code> é −6). Para mexer com bits, use <code>unsigned</code>, <code>uint8_t</code>, <code>uint32_t</code>… e guarde o resultado numa variável do tipo certo antes de comparar ou mostrar.</p>
+</div>
+
+<hr>
+
+<h2>6. <code>&lt;&lt;</code> e <code>&gt;&gt;</code>: empurrar os bits</h2>
+<p><code>x &lt;&lt; n</code> (deslocar para a esquerda) empurra todos os bits de <code>x</code> <code>n</code> casas para a esquerda; entram zeros pela direita. <code>x &gt;&gt; n</code> (deslocar para a direita) empurra para a direita, e os bits que saem pela direita são perdidos.</p>
+
+<pre class="file" data-file="desloca.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("3 &lt;&lt; 1 = %d\n", 3 &lt;&lt; 1);
+    printf("3 &lt;&lt; 2 = %d\n", 3 &lt;&lt; 2);
+    printf("3 &lt;&lt; 4 = %d\n", 3 &lt;&lt; 4);
+    printf("1 &lt;&lt; 10 = %d\n", 1 &lt;&lt; 10);
+    printf("200 &gt;&gt; 1 = %d\n", 200 &gt;&gt; 1);
+    printf("200 &gt;&gt; 3 = %d\n", 200 &gt;&gt; 3);
+    printf("7 &gt;&gt; 1 = %d\n", 7 &gt;&gt; 1);
+    printf("-8 &gt;&gt; 1 = %d\n", -8 &gt;&gt; 1);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra desloca.c -o desloca
+$ ./desloca
+3 &lt;&lt; 1 = 6
+3 &lt;&lt; 2 = 12
+3 &lt;&lt; 4 = 48
+1 &lt;&lt; 10 = 1024
+200 &gt;&gt; 1 = 100
+200 &gt;&gt; 3 = 25
+7 &gt;&gt; 1 = 3                « 3,5 arredondado para baixo
+-8 &gt;&gt; 1 = -4</pre>
+
+<ul>
+  <li><code>3</code> é <code>11</code>; <code>3 &lt;&lt; 2</code> é <code>1100</code> = 12. Cada casa para a esquerda <strong>dobra</strong> o valor (como acrescentar um zero no fim de um número decimal multiplica por 10). Então <code>x &lt;&lt; n</code> = <code>x</code> vezes 2<sup>n</sup>.</li>
+  <li><code>1 &lt;&lt; n</code> é um número com <strong>só o bit n aceso</strong>: <code>1 &lt;&lt; 10</code> = 1024. Esse é o truque mais usado da próxima aula.</li>
+  <li>Cada casa para a direita <strong>divide por 2</strong>, jogando fora o resto: <code>7 &gt;&gt; 1</code> = 3.</li>
+  <li>Deslocar um negativo para a direita (<code>-8 &gt;&gt; 1</code>) depende do compilador. O gcc e o Clang copiam o bit de sinal e dão −4, mas o padrão não garante. Mais um motivo para usar sem sinal.</li>
+</ul>
+
+<h3>Agora a <code>mostra_bits</code> faz sentido</h3>
+<p>Veja <code>(x &gt;&gt; i) &amp; 1</code> com <code>x = 13</code> (<code>00001101</code>) e <code>i = 2</code>:</p>
+<ol class="passo">
+  <li><code>x &gt;&gt; 2</code> empurra tudo duas casas para a direita: <code>00000011</code>. O bit que estava na posição 2 agora está na posição 0.</li>
+  <li><code>&amp; 1</code> é um filtro com só o bit 0 aceso (<code>00000001</code>): apaga todos os outros bits. Sobra <code>1</code>.</li>
+  <li>Com <code>i</code> indo de 7 até 0, o laço mostra cada bit, da esquerda para a direita.</li>
+</ol>
+
+<h3>Par ou ímpar com <code>&amp; 1</code></h3>
+<p>O bit 0 é o único que vale um número ímpar (1); todos os outros valem números pares. Então o número é ímpar se, e só se, o bit 0 estiver aceso:</p>
+
+<div class="tryc" data-file="parimpar.c" data-goal="out:6 é par,src:&amp;\s*1">
+<p class="try-task"><strong>Missão:</strong> complete a condição do <code>if</code> usando <code>&amp; 1</code> (e não <code>%</code>) para o programa dizer se cada número de 1 a 6 é par ou ímpar. Atenção aos parênteses: escreva <code>(n &amp; 1) == 0</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int n = 1; n &lt;= 6; n++) {
+        if (0 /* troque por: o bit 0 de n está apagado */) printf("%d é par\n", n);
+        else printf("%d é ímpar\n", n);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int n = 1; n &lt;= 6; n++) {
+        if ((n &amp; 1) == 0) printf("%d é par\n", n);
+        else printf("%d é ímpar\n", n);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<p>No laboratório, a solução mostrou <code>1 é ímpar</code>, <code>2 é par</code> e assim por diante até <code>6 é par</code>. O <code>n % 2 == 0</code> da aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a> faz o mesmo e é mais fácil de ler; o compilador transforma os dois no mesmo código. Prefira o <code>%</code> quando a ideia é "par", e o <code>&amp;</code> quando a ideia é "bit".</p>
+
+<hr>
+
+<h2>7. Deslocamentos proibidos: comportamento indefinido</h2>
+<p>Um <code>int</code> tem 32 bits. Deslocar 32 casas ou mais, ou um número <strong>negativo</strong> de casas, não tem resposta definida em C: é <strong>comportamento indefinido</strong> (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>). Veja o que acontece na prática:</p>
+
+<pre class="file" data-file="ub.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 32;
+    printf("1 &lt;&lt; 32 escrito direto: %d\n", 1 &lt;&lt; 32);
+    printf("1 &lt;&lt; n, com n = 32:     %d\n", 1 &lt;&lt; n);
+    printf("1 &lt;&lt; -1 escrito direto: %d\n", 1 &lt;&lt; -1);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ub.c -o ub
+ub.c: In function ‘main’:
+ub.c:5:46: warning: left shift count &gt;= width of type [-Wshift-count-overflow]
+    5 |     printf("1 &lt;&lt; 32 escrito direto: %d\n", 1 &lt;&lt; 32);
+      |                                              ^~
+ub.c:7:46: warning: left shift count is negative [-Wshift-count-negative]
+    7 |     printf("1 &lt;&lt; -1 escrito direto: %d\n", 1 &lt;&lt; -1);
+      |                                              ^~
+$ ./ub
+1 &lt;&lt; 32 escrito direto: 0
+1 &lt;&lt; n, com n = 32:     1
+1 &lt;&lt; -1 escrito direto: -2147483648</pre>
+
+<dl class="anatomy">
+  <dt>left shift count &gt;= width of type</dt><dd>"Quantidade do deslocamento à esquerda maior ou igual à largura do tipo". Você pediu 32 casas num tipo de 32 bits.</dd>
+  <dt>left shift count is negative</dt><dd>"Quantidade do deslocamento é negativa".</dd>
+  <dt>0 e 1 para a mesma conta</dt><dd><code>1 &lt;&lt; 32</code> escrito direto deu 0 (o compilador fez a conta); com a variável, deu 1 (o processador fez a conta, e o processador do laboratório só olha os 5 bits de baixo do 32, que valem 0). A <strong>mesma</strong> operação deu dois resultados no mesmo programa.</dd>
+</dl>
+
+<p>E no editor? Os avisos são parecidos (<code>shift count &gt;= width of type</code>, <code>shift count is negative</code>), mas os resultados mudam de novo: lá, <code>1 &lt;&lt; 32</code> escrito direto mostrou <code>1792244464</code>, um número sem sentido, e <code>1 &lt;&lt; -1</code> mostrou <code>0</code>. É isso que "indefinido" quer dizer: qualquer resultado vale, e nenhum é confiável.</p>
+
+<h3>O bit 31 de um <code>int</code></h3>
+<p>Também é indefinido deslocar um 1 para dentro do bit de sinal: <code>1 &lt;&lt; 31</code> não cabe num <code>int</code> (o maior é 2<sup>31</sup> − 1). Nem o gcc nem o Clang avisam, e os dois mostram <code>-2147483648</code>. O jeito certo é deslocar um número <strong>sem sinal</strong>: <code>1u &lt;&lt; 31</code> vale 2147483648, sem nada de indefinido. Para 64 bits, use <code>UINT64_C(1) &lt;&lt; 40</code>.</p>
+
+<div class="warning">
+<strong>Regras para deslocar com segurança</strong>
+<ul>
+  <li>Desloque números <strong>sem sinal</strong>: <code>1u &lt;&lt; n</code>, <code>x &gt;&gt; n</code> com <code>x</code> do tipo <code>unsigned</code>/<code>uint32_t</code>.</li>
+  <li>A quantidade <code>n</code> tem que ficar entre 0 e a largura do tipo menos 1 (0 a 31 para 32 bits). Se ela vem de fora do programa, confira antes.</li>
+  <li>Nunca ignore os avisos <code>-Wshift-count-overflow</code> e <code>-Wshift-count-negative</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>8. Armadilhas de escrita</h2>
+
+<h3>A precedência: <code>x &amp; 1 == 0</code></h3>
+<p>Os operadores <code>&amp;</code>, <code>|</code> e <code>^</code> têm precedência <strong>menor</strong> que <code>==</code> (aula <a href="precedencia.html">Precedência</a>). Então <code>x &amp; 1 == 0</code> é lido como <code>x &amp; (1 == 0)</code>:</p>
+
+<pre class="file" data-file="prec.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int x = 6;
+    if (x &amp; 1 == 0) {
+        printf("%d é par\n", x);
+    } else {
+        printf("%d é ímpar\n", x);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra prec.c -o prec
+prec.c: In function ‘main’:
+prec.c:5:11: warning: suggest parentheses around comparison in operand of ‘&amp;’ [-Wparentheses]
+    5 |     if (x &amp; 1 == 0) {
+      |           ^
+$ ./prec
+6 é ímpar                « errado!</pre>
+
+<p><em>Suggest parentheses around comparison in operand of ‘&amp;’</em> = "sugiro parênteses em volta da comparação usada com o <code>&amp;</code>". O <code>1 == 0</code> deu 0, e <code>6 &amp; 0</code> deu 0 (falso), então o programa foi para o <code>else</code>. O Clang explica ainda melhor: <code>&amp; has lower precedence than ==; == will be evaluated first</code> ("o <code>&amp;</code> tem precedência menor que o <code>==</code>; o <code>==</code> será feito primeiro"). Conserto: <code>(x &amp; 1) == 0</code>. Regra: <strong>sempre ponha parênteses</strong> em volta de contas com bits.</p>
+
+<h3><code>&amp;</code> não é <code>&amp;&amp;</code>; <code>|</code> não é <code>||</code></h3>
+<pre class="file" data-file="logico.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 2, b = 1;
+    printf("a &amp;&amp; b = %d\n", a &amp;&amp; b);
+    printf("a &amp; b  = %d\n", a &amp; b);
+    printf("a || b = %d\n", a || b);
+    printf("a | b  = %d\n", a | b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra logico.c -o logico
+$ ./logico
+a &amp;&amp; b = 1
+a &amp; b  = 0                « 10 &amp; 01: nenhum bit em comum
+a || b = 1
+a | b  = 3</pre>
+
+<p>O <code>&amp;&amp;</code> (aula <a href="operadores-logicos.html">Operadores Lógicos</a>) pergunta "os dois são verdadeiros?": 2 e 1 são diferentes de zero, então sim (1). O <code>&amp;</code> compara bit a bit: <code>10 &amp; 01</code> não tem nenhuma coluna com dois 1, então dá 0 (falso!). Trocar um pelo outro num <code>if</code> compila sem aviso e dá resultados errados de vez em quando, o pior tipo de erro. Além disso, <code>&amp;&amp;</code> e <code>||</code> param assim que sabem a resposta; <code>&amp;</code> e <code>|</code> sempre calculam os dois lados.</p>
+
+<h3>Atribuição composta</h3>
+<p>Como <code>+=</code>, cada operador de bits de duas entradas tem sua forma "faça e guarde": <code>&amp;=</code>, <code>|=</code>, <code>^=</code>, <code>&lt;&lt;=</code>, <code>&gt;&gt;=</code>.</p>
+
+<pre class="file" data-file="composto.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    unsigned x = 5;
+    x &lt;&lt;= 2;  printf("x &lt;&lt;= 2  -&gt; %u\n", x);
+    x |= 1;   printf("x |= 1   -&gt; %u\n", x);
+    x &amp;= 6;   printf("x &amp;= 6   -&gt; %u\n", x);
+    x ^= 7;   printf("x ^= 7   -&gt; %u\n", x);
+    x &gt;&gt;= 1;  printf("x &gt;&gt;= 1  -&gt; %u\n", x);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra composto.c -o composto
+$ ./composto
+x &lt;&lt;= 2  -&gt; 20
+x |= 1   -&gt; 21
+x &amp;= 6   -&gt; 4
+x ^= 7   -&gt; 3
+x &gt;&gt;= 1  -&gt; 1</pre>
+
+<p>Siga com os bits: 5 é <code>101</code>; <code>&lt;&lt;= 2</code> → <code>10100</code> (20); <code>|= 1</code> → <code>10101</code> (21); <code>&amp;= 6</code> (<code>00110</code>) → <code>00100</code> (4); <code>^= 7</code> (<code>111</code>) → <code>011</code> (3); <code>&gt;&gt;= 1</code> → <code>1</code>.</p>
+
+<hr>
+
+<h2>9. Formas diferentes e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para…</th><th>Com bits</th><th>Sem bits</th><th>Qual usar</th></tr>
+<tr><td>Multiplicar por 8</td><td><code>x &lt;&lt; 3</code></td><td><code>x * 8</code></td><td><code>x * 8</code>: o compilador já troca por deslocamento sozinho. Escreva a intenção.</td></tr>
+<tr><td>Dividir por 4</td><td><code>x &gt;&gt; 2</code></td><td><code>x / 4</code></td><td><code>x / 4</code> (com negativos, os dois arredondam diferente)</td></tr>
+<tr><td>Par ou ímpar</td><td><code>(x &amp; 1) == 0</code></td><td><code>x % 2 == 0</code></td><td>Tanto faz; o <code>%</code> é mais claro</td></tr>
+<tr><td>Pegar o bit <code>n</code></td><td><code>(x &gt;&gt; n) &amp; 1</code></td><td>—</td><td>Bits</td></tr>
+<tr><td>Guardar várias opções sim/não num número</td><td><code>|</code>, <code>&amp;</code>, <code>~</code></td><td>Vários <code>bool</code> ou <a href="campos-bits.html">campos de bits</a></td><td>Veja <a href="mascaras-bits.html">Máscaras e Flags</a></td></tr>
+<tr><td>Mostrar em binário</td><td>Função <code>mostra_bits</code></td><td><code>printf("%b")</code> <span class="versao">C23</span></td><td>A função (o <code>%b</code> ainda não funciona em todo lugar)</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong><span class="versao">C23</span> <code>&lt;stdbit.h&gt;</code>: funções prontas para bits</strong>
+<p>O C23 também criou o cabeçalho <code>&lt;stdbit.h&gt;</code>, com funções como <code>stdc_count_ones(x)</code> (quantos bits acesos) e <code>stdc_bit_width(x)</code> (quantos bits são necessários). No laboratório, <code>stdc_count_ones(200)</code> deu 3 e <code>stdc_bit_width(200)</code> deu 8. A biblioteca do editor ainda não tem esse cabeçalho (o Clang diz <code>fatal error: 'stdbit.h' file not found</code>).</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: suggest parentheses around comparison in operand of ‘&amp;’</code></strong>
+<p><strong>O que significa:</strong> você escreveu algo como <code>x &amp; 1 == 0</code>, e o <code>==</code> é feito antes do <code>&amp;</code>. O resultado quase nunca é o que você queria. No Clang: <code>&amp; has lower precedence than ==; == will be evaluated first</code>.</p>
+<p><strong>Como consertar:</strong> parênteses em volta da conta de bits: <code>(x &amp; 1) == 0</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: left shift count &gt;= width of type</code> / <code>left shift count is negative</code></strong>
+<p><strong>O que significa:</strong> deslocamento de 32 casas ou mais num tipo de 32 bits, ou de um número negativo de casas. É comportamento indefinido: o resultado muda de compilador para compilador, e até dentro do mesmo programa.</p>
+<p><strong>Como consertar:</strong> use um tipo maior (<code>UINT64_C(1) &lt;&lt; 40</code>) ou confira a quantidade antes (<code>if (n &lt; 32)</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>~x</code> deu um número negativo</strong>
+<p><strong>O que significa:</strong> o <code>x</code> era pequeno (<code>uint8_t</code>, <code>char</code>) e foi promovido para <code>int</code> antes do <code>~</code>. Os 24 bits de cima, que eram 0, viraram 1.</p>
+<p><strong>Como consertar:</strong> guarde o resultado no tipo certo (<code>uint8_t y = ~x;</code>) ou corte com uma máscara (<code>~x &amp; 0xFF</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>printf("%b")</code> não mostra nada no editor</strong>
+<p><strong>O que significa:</strong> o <code>%b</code> é do C23 e depende da biblioteca. A glibc do laboratório tem; a biblioteca do editor não, e o <code>printf</code> para no meio sem mostrar a linha.</p>
+<p><strong>Como consertar:</strong> use uma função como a <code>mostra_bits</code> desta aula.</p>
+</div>
+
+<div class="cenario">
+<strong>Um <code>if (a &amp; b)</code> que falha "às vezes"</strong>
+<p><strong>O que significa:</strong> provavelmente você queria <code>&amp;&amp;</code>. Com <code>&amp;</code>, dois números verdadeiros (como 2 e 1) podem dar 0.</p>
+<p><strong>Como consertar:</strong> para "e" de condições, <code>&amp;&amp;</code>; para "ou", <code>||</code>. Os operadores de um símbolo só são para bits.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Nome</th><th>Bit a bit, dá 1 quando…</th><th>Exemplo (8 bits)</th></tr>
+<tr><td><code>a &amp; b</code></td><td>E (AND)</td><td>os dois bits são 1</td><td><code>1100 &amp; 1010 = 1000</code></td></tr>
+<tr><td><code>a | b</code></td><td>OU (OR)</td><td>pelo menos um é 1</td><td><code>1100 | 1010 = 1110</code></td></tr>
+<tr><td><code>a ^ b</code></td><td>OU exclusivo (XOR)</td><td>os bits são diferentes</td><td><code>1100 ^ 1010 = 0110</code></td></tr>
+<tr><td><code>~a</code></td><td>NÃO (NOT)</td><td>o bit era 0 (inverte todos)</td><td><code>~00001111 = 11110000</code></td></tr>
+<tr><td><code>a &lt;&lt; n</code></td><td>deslocar à esquerda</td><td>empurra n casas; entram zeros (= vezes 2<sup>n</sup>)</td><td><code>0011 &lt;&lt; 2 = 1100</code></td></tr>
+<tr><td><code>a &gt;&gt; n</code></td><td>deslocar à direita</td><td>empurra n casas; os bits da direita somem (= dividido por 2<sup>n</sup>)</td><td><code>1100 &gt;&gt; 2 = 0011</code></td></tr>
+<tr><td><code>&amp;= |= ^= &lt;&lt;= &gt;&gt;=</code></td><td>atribuição composta</td><td>faz a conta e guarda em <code>a</code></td><td><code>x |= 1;</code></td></tr>
+<tr><td><code>(x &gt;&gt; n) &amp; 1</code></td><td>receita</td><td>o bit n de x (0 ou 1)</td><td><code>(13 &gt;&gt; 2) &amp; 1 = 1</code></td></tr>
+<tr><td><code>1u &lt;&lt; n</code></td><td>receita</td><td>número com só o bit n aceso</td><td><code>1u &lt;&lt; 3 = 1000</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. E bit a bit</h3>
+<p>Quanto vale <code>6 &amp; 3</code>? (Dica: 6 é <code>110</code> e 3 é <code>011</code>.)</p>
+<div class="ex-code">6 &amp; 3 = <input data-answer="2" aria-label="resultado"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Deslocamento</h3>
+<p>Quanto vale <code>5 &lt;&lt; 3</code>?</p>
+<div class="ex-code">5 &lt;&lt; 3 = <input data-answer="40" aria-label="resultado"></div>
+</div>
+
+<div class="exercise">
+<h3>3. O operador que inverte</h3>
+<p>Complete com o operador que dá 1 só onde os bits são diferentes:</p>
+<div class="ex-code">unsigned trocado = x <input data-answer="^" aria-label="operador"> 0xFF;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Com <code>int x = 6;</code>, o que <code>if (x &amp; 1 == 0)</code> faz?</p>
+<label><input type="radio" name="q4"> Testa se <code>x</code> é par, corretamente</label>
+<label><input type="radio" name="q4"> Não compila</label>
+<label><input type="radio" name="q4"> Calcula <code>1 == 0</code> primeiro e faz <code>x &amp; 0</code>: sempre falso (e o gcc avisa)</label>
+<label><input type="radio" name="q4"> Testa se <code>x</code> é ímpar</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Com <code>uint8_t x = 0x0F;</code>, o que <code>printf("%d", ~x);</code> mostra?</p>
+<label><input type="radio" name="q5"> 240</label>
+<label><input type="radio" name="q5"> −16, porque <code>x</code> é promovido para <code>int</code> e os 32 bits são invertidos</label>
+<label><input type="radio" name="q5"> 0</label>
+<label><input type="radio" name="q5"> −15</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual destas linhas é comportamento indefinido num <code>int</code> de 32 bits?</p>
+<label><input type="radio" name="q6"> <code>1u &lt;&lt; 31</code></label>
+<label><input type="radio" name="q6"> <code>200 &gt;&gt; 3</code></label>
+<label><input type="radio" name="q6"> <code>1 &lt;&lt; 10</code></label>
+<label><input type="radio" name="q6"> <code>1 &lt;&lt; n</code> com <code>n = 32</code></label>
+</div>
+
+<h3>Missão final: escreva a sua <code>mostra_bits</code></h3>
+
+<div class="tryc" data-file="bits.c" data-goal="out:10100101,out:00000001,out:11111111,src:&gt;&gt;,src:&amp;\s*1">
+<p class="try-task"><strong>Missão:</strong> a função <code>mostra_bits</code> está vazia. Escreva o laço que mostra os 8 bits de <code>x</code>, do bit 7 até o bit 0, usando <code>&gt;&gt;</code> e <code>&amp; 1</code>, e termine com uma quebra de linha. (Não vale <code>%b</code>: aqui no editor ele não funciona.) A saída tem que ser:</p>
+<pre class="out">10100101
+00000001
+11111111</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void mostra_bits(unsigned char x) {
+    // mostre os 8 bits de x, do 7 ao 0, e depois "\n"
+}
+
+int main(void) {
+    mostra_bits(0xA5);
+    mostra_bits(1);
+    mostra_bits(255);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void mostra_bits(unsigned char x) {
+    for (int i = 7; i &gt;= 0; i--) {
+        printf("%d", (x &gt;&gt; i) &amp; 1);
+    }
+    printf("\n");
+}
+
+int main(void) {
+    mostra_bits(0xA5);
+    mostra_bits(1);
+    mostra_bits(255);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare: <code>0xA5</code> é <code>A</code> (<code>1010</code>) seguido de <code>5</code> (<code>0101</code>). Cada dígito hexa vira exatamente 4 bits, e é por isso que o hexa é a "língua" preferida de quem trabalha com bits.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Todo número é uma fileira de bits; o bit <code>n</code> vale 2<sup>n</sup>, contando da direita a partir do 0. Em C23, escreva binário com <code>0b1101</code>.</li>
+  <li>Para ver os bits, use uma função com <code>(x &gt;&gt; i) &amp; 1</code>. O <code>%b</code> do C23 funciona na glibc do laboratório, mas não no editor.</li>
+  <li><code>&amp;</code> (os dois), <code>|</code> (pelo menos um), <code>^</code> (diferentes) comparam coluna por coluna; <code>~</code> inverte todos os bits.</li>
+  <li><code>&lt;&lt; n</code> multiplica por 2<sup>n</sup>, <code>&gt;&gt; n</code> divide; <code>1u &lt;&lt; n</code> acende só o bit n.</li>
+  <li>Use tipos sem sinal: tipos pequenos são promovidos para <code>int</code> (o <code>~</code> de um <code>uint8_t</code> dá negativo), e o bit de sinal confunde tudo.</li>
+  <li>Deslocar um número negativo de casas, ou casas demais, ou um 1 para dentro do bit de sinal, é comportamento indefinido.</li>
+  <li>Ponha parênteses: <code>(x &amp; 1) == 0</code>. E não confunda <code>&amp;</code>/<code>|</code> com <code>&amp;&amp;</code>/<code>||</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
