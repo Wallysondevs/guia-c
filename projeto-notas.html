@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Projeto Boletim de Notas — arrays, structs e tabela com printf | Guia C</title>
+<meta name="description" content="Projeto passo a passo: o boletim da turma da Ana em C. Lê nomes e notas num array de structs, calcula a média, acha a maior e a menor nota, conta os aprovados e imprime uma tabela alinhada com printf (%-10s %5.1f). Quatro versões com saídas reais do gcc 15, o erro do índice fora do array e o problema dos acentos no alinhamento.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto <span class="hl">Boletim de Notas</span></h1>
+
+<p class="intro">A Ana dá aula de reforço para uma turma pequena e quer um programa que faça o boletim: ela digita o nome e a nota de cada aluno, e o programa mostra a média da turma, quem tirou a maior e a menor nota, quantos passaram e uma tabela bem alinhada. É o projeto para treinar <strong>arrays</strong> (muitos valores numa variável só) e <strong>structs</strong> (vários dados juntos de uma pessoa).</p>
+
+<div class="note">
+<strong>Você vai praticar</strong>
+<ul>
+  <li>Guardar várias notas num <a href="arrays.html">array</a> e percorrê-lo com <a href="for.html">for</a>.</li>
+  <li>Somar e tirar a média (e o cuidado com o índice que passa do fim).</li>
+  <li>Juntar nome e nota numa <a href="structs.html">struct</a> e fazer um array de structs.</li>
+  <li>Ler texto com <code>%29s</code> sem estourar o array (<a href="strings.html">Strings</a>).</li>
+  <li>Achar o maior, o menor e contar quem passou, num laço só.</li>
+  <li>Alinhar uma tabela com <code>%-10s</code> e <code>%5.1f</code> (<a href="formatos-printf.html">Formatos do printf</a>) e o problema dos <a href="acentos-utf8.html">acentos</a>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que vamos construir</h2>
+<p>O boletim pronto, na máquina da Ana, com cinco alunos:</p>
+
+<pre class="term" data-cwd="~/c/notas">$ ./boletim
+=== Boletim da Turma ===
+Quantos alunos (1 a 30)? 5
+Aluno 1 (nome e nota): Bruno 7.5
+Aluno 2 (nome e nota): Carla 9
+Aluno 3 (nome e nota): Diego 5.5
+Aluno 4 (nome e nota): Elisa 8
+Aluno 5 (nome e nota): Gabriel 3.5
+
+Aluno       Nota  Situação
+---------- -----  -----------
+Bruno        7.5  Aprovado
+Carla        9.0  Aprovado
+Diego        5.5  Recuperação
+Elisa        8.0  Aprovado
+Gabriel      3.5  Reprovado
+---------- -----  -----------
+Média        6.7
+
+Maior nota: 9.0 (Carla)
+Menor nota: 3.5 (Gabriel)
+Aprovados: 3 de 5</pre>
+
+<ol class="passo">
+  <li><a href="#versao1">As notas num array e a média</a>.</li>
+  <li><a href="#versao2">Nome e nota juntos: um array de structs</a>.</li>
+  <li><a href="#versao3">Maior, menor e aprovados</a>.</li>
+  <li><a href="#versao4">A tabela alinhada</a> (<code>%-10s %5.1f</code>, uma função e a quantidade de alunos).</li>
+</ol>
+
+<h3>Antes de começar</h3>
+<p>Você precisa ter visto <a href="arrays.html">Arrays</a>, <a href="for.html">for</a> e <a href="scanf.html">scanf</a>; para a versão 2, <a href="structs.html">Structs</a>. O arquivo vai se chamar <code>boletim.c</code>:</p>
+
+<pre class="term">$ mkdir -p c/notas
+$ cd c/notas</pre>
+
+<hr>
+
+<h2 id="versao1">Versão 1 · As notas num array e a média</h2>
+<p>Cinco alunos, cinco notas. Daria para criar <code>nota1</code>, <code>nota2</code>… <code>nota5</code>, mas e se a turma tiver 30? Um <a href="arrays.html">array</a> guarda todas numa variável só: <code>notas[0]</code> é a primeira, <code>notas[4]</code> a quinta. E um <code>for</code> passa por todas, sem repetir código.</p>
+
+<pre class="file" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define QTD 5
+
+int main(void) {
+    double notas[QTD] = {0};
+    double soma = 0.0;
+
+    printf("=== Boletim da Turma ===\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("Nota do aluno %d: ", i + 1);
+        if (scanf("%lf", &amp;notas[i]) != 1) {
+            printf("\nNota inválida.\n");
+            return 1;
+        }
+        soma += notas[i];
+    }
+
+    printf("Notas: ");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("%.1f ", notas[i]);
+    }
+    printf("\nMédia da turma: %.2f\n", soma / QTD);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>#define QTD 5</code></td><td>O tamanho da turma, com nome. Usado no array e nos laços: para mudar a turma, você muda um número só.</td></tr>
+<tr><td><code>double notas[QTD] = {0};</code></td><td>Um array de 5 <code>double</code>, todos começando em zero. O <code>{0}</code> zera o array inteiro.</td></tr>
+<tr><td><code>for (int i = 0; i &lt; QTD; i++)</code></td><td><code>i</code> vale 0, 1, 2, 3 e 4: as posições do array. Repare no <code>&lt;</code>: a posição 5 <strong>não existe</strong> (veja o cenário abaixo).</td></tr>
+<tr><td><code>printf("Nota do aluno %d: ", i + 1);</code></td><td>Para a Ana, o primeiro aluno é o 1, não o 0. Por isso mostramos <code>i + 1</code>.</td></tr>
+<tr><td><code>scanf("%lf", &amp;notas[i])</code></td><td>Lê a nota direto na posição <code>i</code> do array. O <code>&amp;</code> pega o endereço daquela posição.</td></tr>
+<tr><td><code>soma += notas[i];</code></td><td>Acumula: <code>soma = soma + notas[i]</code> (veja <a href="operadores-atribuicao.html">Operadores de Atribuição</a>).</td></tr>
+<tr><td><code>printf("%.1f ", notas[i]);</code></td><td>Mostra cada nota com uma casa decimal.</td></tr>
+<tr><td><code>soma / QTD</code></td><td>A média. Como <code>soma</code> é <code>double</code>, a divisão tem casas decimais (com dois <code>int</code>, <code>33 / 5</code> daria <code>6</code>; veja <a href="conversao-tipos.html">Conversão de Tipos</a>).</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/notas">$ gcc -std=c23 -Wall -Wextra boletim.c -o boletim
+$ ./boletim
+=== Boletim da Turma ===
+Nota do aluno 1: 7.5
+Nota do aluno 2: 9
+Nota do aluno 3: 5.5
+Nota do aluno 4: 8
+Nota do aluno 5: 3.5
+Notas: 7.5 9.0 5.5 8.0 3.5 
+Média da turma: 6.70
+</pre>
+
+<div class="cenario">
+<strong><code>i &lt;= QTD</code>: o laço passa do fim do array</strong>
+<p class="warning" style="margin:6px 0">Este código tem um erro de propósito: <code>for (int i = 0; i &lt;= QTD; i++)</code> no laço que lê as notas.</p>
+<pre class="term" data-cwd="~/c/notas">$ gcc -std=c23 -Wall -Wextra boletim.c -o boletim
+$ ./boletim
+=== Boletim da Turma ===
+Nota do aluno 1: 7.5
+Nota do aluno 2: 9
+Nota do aluno 3: 5.5
+Nota do aluno 4: 8
+Nota do aluno 5: 3.5
+Nota do aluno 6: 10                       « pediu uma nota a mais
+Notas: 7.5 9.0 5.5 8.0 3.5
+Média da turma: 8.70                      « e a média ficou errada
+*** stack smashing detected ***: terminated
+Abortado                   (imagem do núcleo gravada) ./boletim</pre>
+<p><strong>O que aconteceu:</strong> com <code>&lt;=</code>, o laço também roda com <code>i</code> igual a 5, e o <code>scanf</code> escreveu a sexta nota em <code>notas[5]</code>, uma posição que <strong>não pertence</strong> ao array. O C não confere: ele escreveu por cima do que estava na memória logo depois. A média ficou errada porque a sexta nota também entrou na soma (43.5 / 5 = 8.70). E a escrita fora do array estragou uma "trava" que o gcc coloca na pilha; no fim do <code>main</code>, o programa viu a trava quebrada ("stack smashing detected", pilha esmagada) e se abortou. Em outro programa, poderia não aparecer nada e só dar um resultado errado.</p>
+<p>Para achar a linha exata, compile com <code>-g -fsanitize=address</code> (veja <a href="sanitizers.html">Sanitizers</a>):</p>
+<pre class="term" data-cwd="~/c/notas">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address boletim.c -o boletim
+$ ./boletim
+=== Boletim da Turma ===
+Nota do aluno 1: 7.5
+Nota do aluno 2: 9
+Nota do aluno 3: 5.5
+Nota do aluno 4: 8
+Nota do aluno 5: 3.5
+Nota do aluno 6: 10
+=================================================================
+==74118==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x79bf1ddf0058 at pc 0x7dbf202b05dc bp 0x7ffdac6bde10 sp 0x7ffdac6bd598
+WRITE of size 8 at 0x79bf1ddf0058 thread T0
+    #0 0x7dbf202b05db in scanf_common ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors_format.inc:346
+    #1 0x7dbf202f0e4e in __isoc23_vscanf ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors.inc:1586
+    #2 0x7dbf202f1634 in __isoc23_scanf ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors.inc:1616
+    #3 0x60d26256341d in main /home/ana/c/notas/boletim.c:12
+…                                         « o relatório continua; cortamos aqui
+  This frame has 1 object(s):
+    [48, 88) 'notas' (line 6) &lt;== Memory access at offset 88 overflows this variable</pre>
+<p>"Estouro de buffer na pilha": uma escrita (<code>WRITE</code>) de 8 bytes (um <code>double</code>) feita pelo <code>scanf</code> chamado em <code>boletim.c:12</code>, logo depois do fim de <code>notas</code> (linha 6).</p>
+<p><strong>Como consertar:</strong> um array de <code>QTD</code> posições vai de <code>0</code> a <code>QTD - 1</code>. O laço é <code>i &lt; QTD</code>. No editor do guia esse erro pode passar calado (a memória do WebAssembly é organizada de outro jeito), por isso o exemplo é do terminal.</p>
+</div>
+
+<div class="tryc" data-stdin="7.5\n9\n5.5\n8\n3.5\n" data-goal="out:Média da turma: 6.70,src:soma\s*\+=">
+<p class="try-task"><strong>Missão (versão 1):</strong> o programa lê as notas, mas a média sai <code>0.00</code>. Dentro do primeiro laço, some cada nota em <code>soma</code> com <code>soma += notas[i];</code>. A entrada da missão é <code>7.5</code>, <code>9</code>, <code>5.5</code>, <code>8</code> e <code>3.5</code>.</p>
+<pre class="script" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define QTD 5
+
+int main(void) {
+    double notas[QTD] = {0};
+    double soma = 0.0;
+
+    printf("=== Boletim da Turma ===\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("Nota do aluno %d: ", i + 1);
+        if (scanf("%lf", &amp;notas[i]) != 1) {
+            printf("\nNota inválida.\n");
+            return 1;
+        }
+        // some a nota em soma
+    }
+
+    printf("Notas: ");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("%.1f ", notas[i]);
+    }
+    printf("\nMédia da turma: %.2f\n", soma / QTD);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define QTD 5
+
+int main(void) {
+    double notas[QTD] = {0};
+    double soma = 0.0;
+
+    printf("=== Boletim da Turma ===\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("Nota do aluno %d: ", i + 1);
+        if (scanf("%lf", &amp;notas[i]) != 1) {
+            printf("\nNota inválida.\n");
+            return 1;
+        }
+        soma += notas[i];
+    }
+
+    printf("Notas: ");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("%.1f ", notas[i]);
+    }
+    printf("\nMédia da turma: %.2f\n", soma / QTD);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao2">Versão 2 · Nome e nota juntos: um array de structs</h2>
+<p>Notas sem nome não servem para um boletim. Poderíamos ter dois arrays, um de nomes e um de notas, e cuidar para a posição 2 de um combinar com a posição 2 do outro. Mais simples: uma <a href="structs.html">struct</a>, uma "ficha" com os dados de <strong>um</strong> aluno, e um array de fichas.</p>
+
+<pre class="file" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define QTD 5
+
+struct Aluno {
+    char nome[30];
+    double nota;
+};
+
+int main(void) {
+    struct Aluno turma[QTD];
+    double soma = 0.0;
+
+    printf("=== Boletim da Turma ===\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("Aluno %d (nome e nota): ", i + 1);
+        if (scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota) != 2) {
+            printf("\nEntrada inválida.\n");
+            return 1;
+        }
+        soma += turma[i].nota;
+    }
+
+    printf("\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("%s: %.1f\n", turma[i].nome, turma[i].nota);
+    }
+    printf("Média da turma: %.2f\n", soma / QTD);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>struct Aluno { char nome[30]; double nota; };</dt><dd>Cria um tipo novo: cada <code>struct Aluno</code> tem um nome (texto de até 29 letras mais o <code>'\0'</code>, veja <a href="strings.html">Strings</a>) e uma nota. O <code>;</code> depois da <code>}</code> é obrigatório.</dd>
+  <dt>struct Aluno turma[QTD];</dt><dd>Um array de 5 fichas. <code>turma[0]</code> é a ficha do primeiro aluno.</dd>
+  <dt>turma[i].nome e turma[i].nota</dt><dd>O ponto entra na ficha: "o nome da ficha <code>i</code>".</dd>
+  <dt>scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota)</dt><dd>Lê uma palavra e um número. <code>%29s</code> lê no máximo 29 caracteres: sobra lugar para o <code>'\0'</code> e o nome nunca passa do fim do array. O <code>nome</code> não leva <code>&amp;</code>: um array já é o endereço do seu começo (veja <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>).</dd>
+  <dt>!= 2</dt><dd>Agora o <code>scanf</code> tem de ler <strong>dois</strong> valores.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/notas">$ gcc -std=c23 -Wall -Wextra boletim.c -o boletim
+$ ./boletim
+=== Boletim da Turma ===
+Aluno 1 (nome e nota): Bruno 7.5
+Aluno 2 (nome e nota): Carla 9
+Aluno 3 (nome e nota): Diego 5.5
+Aluno 4 (nome e nota): Elisa 8
+Aluno 5 (nome e nota): Gabriel 3.5
+
+Bruno: 7.5
+Carla: 9.0
+Diego: 5.5
+Elisa: 8.0
+Gabriel: 3.5
+Média da turma: 6.70
+$ ./boletim
+=== Boletim da Turma ===
+Aluno 1 (nome e nota): Bruno 7.5
+Aluno 2 (nome e nota): Ana Paula 8
+
+Entrada inválida.
+</pre>
+
+<p>O último teste mostra um limite do <code>%s</code>: ele lê <strong>uma palavra</strong>, até o primeiro espaço. Em <code>Ana Paula 8</code>, o nome ficou <code>Ana</code>, e o <code>%lf</code> tentou ler <code>Paula</code> como número e falhou. Para nomes com espaço, seria preciso ler a linha com <a href="fgets.html">fgets</a> e separar nome e nota (é um dos desafios). Por enquanto, um nome por aluno.</p>
+
+<div class="warning">
+<strong>Nunca use <code>%s</code> sem o tamanho</strong>
+<p>Com <code>scanf("%s", nome)</code>, alguém que digite um nome de 100 letras escreve 100 bytes num array de 30, e o programa estraga a memória ao lado (como no cenário da versão 1). É o famoso <em>buffer overflow</em> (veja <a href="seguranca.html">Segurança</a>). Sempre um a menos que o tamanho do array: <code>char nome[30]</code> → <code>%29s</code>.</p>
+</div>
+
+<div class="tryc" data-stdin="Bruno 7.5\nCarla 9\nDiego 5.5\nElisa 8\nGabriel 3.5\n" data-goal="out:Bruno: 7.5,out:Carla: 9.0,out:Gabriel: 3.5,src:turma\[i\]\.nome">
+<p class="try-task"><strong>Missão (versão 2):</strong> o programa lê os cinco alunos, mas só mostra a média. Antes dela, escreva um <code>for</code> que mostra cada aluno no formato <code>Bruno: 7.5</code>, usando <code>turma[i].nome</code> e <code>turma[i].nota</code> com <code>%.1f</code>.</p>
+<pre class="script" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define QTD 5
+
+struct Aluno {
+    char nome[30];
+    double nota;
+};
+
+int main(void) {
+    struct Aluno turma[QTD];
+    double soma = 0.0;
+
+    printf("=== Boletim da Turma ===\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("Aluno %d (nome e nota): ", i + 1);
+        if (scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota) != 2) {
+            printf("\nEntrada inválida.\n");
+            return 1;
+        }
+        soma += turma[i].nota;
+    }
+
+    printf("\n");
+    // mostre cada aluno no formato "Bruno: 7.5"
+    printf("Média da turma: %.2f\n", soma / QTD);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define QTD 5
+
+struct Aluno {
+    char nome[30];
+    double nota;
+};
+
+int main(void) {
+    struct Aluno turma[QTD];
+    double soma = 0.0;
+
+    printf("=== Boletim da Turma ===\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("Aluno %d (nome e nota): ", i + 1);
+        if (scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota) != 2) {
+            printf("\nEntrada inválida.\n");
+            return 1;
+        }
+        soma += turma[i].nota;
+    }
+
+    printf("\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("%s: %.1f\n", turma[i].nome, turma[i].nota);
+    }
+    printf("Média da turma: %.2f\n", soma / QTD);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao3">Versão 3 · Maior, menor e aprovados</h2>
+<p>Agora as estatísticas. Para achar a maior nota, o jeito clássico é: "a maior até agora é a do primeiro aluno; para cada um dos outros, se a nota dele for maior, ele passa a ser o maior". Guardamos a <strong>posição</strong> (não a nota), porque assim sabemos também o <strong>nome</strong>. A menor nota é igual, com <code>&lt;</code>. E os aprovados são um contador que sobe quando a nota é pelo menos 6.</p>
+
+<pre class="file" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define QTD 5
+#define MEDIA_APROVACAO 6.0
+
+struct Aluno {
+    char nome[30];
+    double nota;
+};
+
+int main(void) {
+    struct Aluno turma[QTD];
+    double soma = 0.0;
+
+    printf("=== Boletim da Turma ===\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("Aluno %d (nome e nota): ", i + 1);
+        if (scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota) != 2) {
+            printf("\nEntrada inválida.\n");
+            return 1;
+        }
+        soma += turma[i].nota;
+    }
+
+    int maior = 0;  // posição do aluno com a maior nota
+    int menor = 0;  // posição do aluno com a menor nota
+    int aprovados = 0;
+    for (int i = 0; i &lt; QTD; i++) {
+        if (turma[i].nota &gt; turma[maior].nota) {
+            maior = i;
+        }
+        if (turma[i].nota &lt; turma[menor].nota) {
+            menor = i;
+        }
+        if (turma[i].nota &gt;= MEDIA_APROVACAO) {
+            aprovados++;
+        }
+    }
+
+    printf("\nMédia da turma: %.2f\n", soma / QTD);
+    printf("Maior nota: %.1f (%s)\n", turma[maior].nota, turma[maior].nome);
+    printf("Menor nota: %.1f (%s)\n", turma[menor].nota, turma[menor].nome);
+    printf("Aprovados: %d de %d\n", aprovados, QTD);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#define MEDIA_APROVACAO 6.0</dt><dd>A nota mínima para passar, com nome. Ninguém precisa adivinhar o que é aquele <code>6.0</code> no meio do código.</dd>
+  <dt>int maior = 0;</dt><dd>A posição do aluno com a maior nota. Começa no primeiro (posição 0).</dd>
+  <dt>if (turma[i].nota &gt; turma[maior].nota) maior = i;</dt><dd>Compara com a maior <strong>até agora</strong>; se ganhou, troca a posição.</dd>
+  <dt>if (turma[i].nota &gt;= MEDIA_APROVACAO) aprovados++;</dt><dd>Conta quem passou. <code>&gt;=</code>: quem tirou exatamente 6 também passa.</dd>
+  <dt>turma[maior].nome</dt><dd>Com a posição, pegamos qualquer dado da ficha.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/notas">$ gcc -std=c23 -Wall -Wextra boletim.c -o boletim
+$ ./boletim
+=== Boletim da Turma ===
+Aluno 1 (nome e nota): Bruno 7.5
+Aluno 2 (nome e nota): Carla 9
+Aluno 3 (nome e nota): Diego 5.5
+Aluno 4 (nome e nota): Elisa 8
+Aluno 5 (nome e nota): Gabriel 3.5
+
+Média da turma: 6.70
+Maior nota: 9.0 (Carla)
+Menor nota: 3.5 (Gabriel)
+Aprovados: 3 de 5
+</pre>
+
+<div class="tip">
+<strong>E se houver empate?</strong>
+<p>Com <code>&gt;</code>, o primeiro aluno com a maior nota fica com o título; com <code>&gt;=</code>, ficaria o último. Nenhum dos dois está errado, mas é bom saber qual você escolheu.</p>
+</div>
+
+<div class="tryc" data-stdin="Bruno 7.5\nCarla 9\nDiego 5.5\nElisa 8\nGabriel 3.5\n" data-goal="out:Menor nota: 3.5 (Gabriel),out:Aprovados: 3 de 5">
+<p class="try-task"><strong>Missão (versão 3):</strong> o programa já acha a maior nota, mas a menor sai sempre a do Bruno e os aprovados dão 0. No laço, atualize <code>menor</code> (como foi feito com <code>maior</code>, mas com <code>&lt;</code>) e conte os aprovados (<code>nota &gt;= MEDIA_APROVACAO</code>).</p>
+<pre class="script" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define QTD 5
+#define MEDIA_APROVACAO 6.0
+
+struct Aluno {
+    char nome[30];
+    double nota;
+};
+
+int main(void) {
+    struct Aluno turma[QTD];
+    double soma = 0.0;
+
+    printf("=== Boletim da Turma ===\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("Aluno %d (nome e nota): ", i + 1);
+        if (scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota) != 2) {
+            printf("\nEntrada inválida.\n");
+            return 1;
+        }
+        soma += turma[i].nota;
+    }
+
+    int maior = 0;  // posição do aluno com a maior nota
+    int menor = 0;  // posição do aluno com a menor nota
+    int aprovados = 0;
+    for (int i = 0; i &lt; QTD; i++) {
+        if (turma[i].nota &gt; turma[maior].nota) {
+            maior = i;
+        }
+        // atualize "menor" e conte os aprovados (nota &gt;= MEDIA_APROVACAO)
+    }
+
+    printf("\nMédia da turma: %.2f\n", soma / QTD);
+    printf("Maior nota: %.1f (%s)\n", turma[maior].nota, turma[maior].nome);
+    printf("Menor nota: %.1f (%s)\n", turma[menor].nota, turma[menor].nome);
+    printf("Aprovados: %d de %d\n", aprovados, QTD);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define QTD 5
+#define MEDIA_APROVACAO 6.0
+
+struct Aluno {
+    char nome[30];
+    double nota;
+};
+
+int main(void) {
+    struct Aluno turma[QTD];
+    double soma = 0.0;
+
+    printf("=== Boletim da Turma ===\n");
+    for (int i = 0; i &lt; QTD; i++) {
+        printf("Aluno %d (nome e nota): ", i + 1);
+        if (scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota) != 2) {
+            printf("\nEntrada inválida.\n");
+            return 1;
+        }
+        soma += turma[i].nota;
+    }
+
+    int maior = 0;  // posição do aluno com a maior nota
+    int menor = 0;  // posição do aluno com a menor nota
+    int aprovados = 0;
+    for (int i = 0; i &lt; QTD; i++) {
+        if (turma[i].nota &gt; turma[maior].nota) {
+            maior = i;
+        }
+        if (turma[i].nota &lt; turma[menor].nota) {
+            menor = i;
+        }
+        if (turma[i].nota &gt;= MEDIA_APROVACAO) {
+            aprovados++;
+        }
+    }
+
+    printf("\nMédia da turma: %.2f\n", soma / QTD);
+    printf("Maior nota: %.1f (%s)\n", turma[maior].nota, turma[maior].nome);
+    printf("Menor nota: %.1f (%s)\n", turma[menor].nota, turma[menor].nome);
+    printf("Aprovados: %d de %d\n", aprovados, QTD);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao4">Versão 4 · A tabela alinhada</h2>
+<p>A versão final tem três novidades:</p>
+<ul>
+  <li><strong>A quantidade de alunos</strong> é perguntada no começo (de 1 a 30). O array tem 30 posições, mas o programa só usa as <code>qtd</code> primeiras.</li>
+  <li><strong>Uma função</strong> <code>situacao</code> devolve o texto <code>"Aprovado"</code>, <code>"Recuperação"</code> (de 4 a 5.9) ou <code>"Reprovado"</code>.</li>
+  <li><strong>Uma tabela</strong>, com as colunas alinhadas pela <strong>largura</strong> dos formatos do <code>printf</code>.</li>
+</ul>
+
+<pre class="file" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define MAX_ALUNOS 30
+#define MEDIA_APROVACAO 6.0
+
+struct Aluno {
+    char nome[30];
+    double nota;
+};
+
+const char *situacao(double nota) {
+    if (nota &gt;= MEDIA_APROVACAO) {
+        return "Aprovado";
+    } else if (nota &gt;= 4.0) {
+        return "Recuperação";
+    }
+    return "Reprovado";
+}
+
+int main(void) {
+    struct Aluno turma[MAX_ALUNOS];
+    int qtd = 0;
+
+    printf("=== Boletim da Turma ===\n");
+    printf("Quantos alunos (1 a %d)? ", MAX_ALUNOS);
+    if (scanf("%d", &amp;qtd) != 1 || qtd &lt; 1 || qtd &gt; MAX_ALUNOS) {
+        printf("\nQuantidade inválida.\n");
+        return 1;
+    }
+
+    double soma = 0.0;
+    for (int i = 0; i &lt; qtd; i++) {
+        printf("Aluno %d (nome e nota): ", i + 1);
+        if (scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota) != 2) {
+            printf("\nEntrada inválida.\n");
+            return 1;
+        }
+        soma += turma[i].nota;
+    }
+
+    int maior = 0;
+    int menor = 0;
+    int aprovados = 0;
+    printf("\n%-10s %5s  %s\n", "Aluno", "Nota", "Situação");
+    printf("---------- -----  -----------\n");
+    for (int i = 0; i &lt; qtd; i++) {
+        printf("%-10s %5.1f  %s\n", turma[i].nome, turma[i].nota, situacao(turma[i].nota));
+        if (turma[i].nota &gt; turma[maior].nota) {
+            maior = i;
+        }
+        if (turma[i].nota &lt; turma[menor].nota) {
+            menor = i;
+        }
+        if (turma[i].nota &gt;= MEDIA_APROVACAO) {
+            aprovados++;
+        }
+    }
+    printf("---------- -----  -----------\n");
+    printf("%-11s %5.1f\n", "Média", soma / qtd);  // 11: o "é" ocupa 2 bytes
+    printf("\nMaior nota: %.1f (%s)\n", turma[maior].nota, turma[maior].nome);
+    printf("Menor nota: %.1f (%s)\n", turma[menor].nota, turma[menor].nome);
+    printf("Aprovados: %d de %d\n", aprovados, qtd);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>O que faz</th><th>Exemplo</th></tr>
+<tr><td><code>%-10s</code></td><td>Texto numa coluna de 10 posições, <strong>encostado à esquerda</strong> (o <code>-</code>); o resto é preenchido com espaços.</td><td><code>[Bruno     ]</code></td></tr>
+<tr><td><code>%10s</code></td><td>O mesmo, encostado à direita.</td><td><code>[     Bruno]</code></td></tr>
+<tr><td><code>%5.1f</code></td><td>Número com 1 casa decimal numa coluna de 5 posições, à direita: os pontos decimais ficam um embaixo do outro.</td><td><code>[  7.5]</code></td></tr>
+<tr><td><code>%5s</code></td><td>O título <code>Nota</code> com a mesma largura dos números.</td><td><code>[ Nota]</code></td></tr>
+</table>
+</div>
+
+<dl class="anatomy">
+  <dt>const char *situacao(double nota)</dt><dd>A função devolve um <strong>texto fixo</strong>: um ponteiro para o primeiro caractere de <code>"Aprovado"</code>, por exemplo (veja <a href="ponteiros-strings.html">Ponteiros e Strings</a>). O <code>const</code> avisa que ninguém deve mudar esse texto.</dd>
+  <dt>scanf("%d", &amp;qtd) != 1 || qtd &lt; 1 || qtd &gt; MAX_ALUNOS</dt><dd>Recusa a quantidade se não for número, ou se for menor que 1 ou maior que 30. Sem isso, <code>qtd = 50</code> faria o laço escrever além do array.</dd>
+  <dt>"%-11s %5.1f\n", "Média"</dt><dd>Por que 11 e não 10? Veja o cenário logo abaixo.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/notas">$ gcc -std=c23 -Wall -Wextra boletim.c -o boletim
+$ ./boletim
+=== Boletim da Turma ===
+Quantos alunos (1 a 30)? 5
+Aluno 1 (nome e nota): Bruno 7.5
+Aluno 2 (nome e nota): Carla 9
+Aluno 3 (nome e nota): Diego 5.5
+Aluno 4 (nome e nota): Elisa 8
+Aluno 5 (nome e nota): Gabriel 3.5
+
+Aluno       Nota  Situação
+---------- -----  -----------
+Bruno        7.5  Aprovado
+Carla        9.0  Aprovado
+Diego        5.5  Recuperação
+Elisa        8.0  Aprovado
+Gabriel      3.5  Reprovado
+---------- -----  -----------
+Média        6.7
+
+Maior nota: 9.0 (Carla)
+Menor nota: 3.5 (Gabriel)
+Aprovados: 3 de 5
+</pre>
+
+<div class="cenario">
+<strong>Acentos desalinham a tabela</strong>
+<p>Com <code>%-10s</code> na linha da média, a Ana viu isto:</p>
+<pre class="term" data-cwd="~/c/notas">Gabriel      3.5  Reprovado
+---------- -----  -----------
+Média       6.7</pre>
+<p>E com alunos de nome acentuado, mesmo com a correção da média:</p>
+<pre class="term" data-cwd="~/c/notas">$ ./boletim
+=== Boletim da Turma ===
+Quantos alunos (1 a 30)? 3
+Aluno 1 (nome e nota): Bruno 7.5
+Aluno 2 (nome e nota): Fábio 6
+Aluno 3 (nome e nota): Lúcia 8
+
+Aluno       Nota  Situação
+---------- -----  -----------
+Bruno        7.5  Aprovado
+Fábio       6.0  Aprovado
+Lúcia       8.0  Aprovado
+---------- -----  -----------
+Média        7.2
+
+Maior nota: 8.0 (Lúcia)
+Menor nota: 6.0 (Fábio)
+Aprovados: 3 de 3
+</pre>
+<p><strong>O que aconteceu:</strong> o <code>printf</code> conta <strong>bytes</strong>, não letras. No UTF-8, letras acentuadas como <code>é</code>, <code>á</code> e <code>ú</code> ocupam 2 bytes. <code>"Fábio"</code> tem 5 letras, mas 6 bytes; o <code>%-10s</code> acha que já usou 6 posições e completa com só 4 espaços. Na tela, a coluna fica um passo para a esquerda.</p>
+<p><strong>Como consertar:</strong> para um texto fixo, como <code>"Média"</code>, aumente a largura no número de letras acentuadas: <code>%-11s</code>. Para nomes digitados, conte as letras de verdade e complete com espaços você mesmo (é o desafio 3). A aula <a href="acentos-utf8.html">Acentos e UTF-8</a> explica os bytes.</p>
+</div>
+
+<div class="tryc" data-stdin="5\nBruno 7.5\nCarla 9\nDiego 5.5\nElisa 8\nGabriel 3.5\n" data-goal="out:Bruno        7.5  Aprovado,out:Gabriel      3.5  Reprovado,src:%-10s">
+<p class="try-task"><strong>Missão (versão 4):</strong> a tabela sai toda torta: <code>Bruno 7.5 Aprovado</code>. Use larguras nos dois <code>printf</code> da tabela: <code>"\n%-10s %5s  %s\n"</code> no título e <code>"%-10s %5.1f  %s\n"</code> nas linhas dos alunos (repare nos <strong>dois</strong> espaços antes da situação). A entrada da missão é a turma da Ana.</p>
+<pre class="script" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define MAX_ALUNOS 30
+#define MEDIA_APROVACAO 6.0
+
+struct Aluno {
+    char nome[30];
+    double nota;
+};
+
+const char *situacao(double nota) {
+    if (nota &gt;= MEDIA_APROVACAO) {
+        return "Aprovado";
+    } else if (nota &gt;= 4.0) {
+        return "Recuperação";
+    }
+    return "Reprovado";
+}
+
+int main(void) {
+    struct Aluno turma[MAX_ALUNOS];
+    int qtd = 0;
+
+    printf("=== Boletim da Turma ===\n");
+    printf("Quantos alunos (1 a %d)? ", MAX_ALUNOS);
+    if (scanf("%d", &amp;qtd) != 1 || qtd &lt; 1 || qtd &gt; MAX_ALUNOS) {
+        printf("\nQuantidade inválida.\n");
+        return 1;
+    }
+
+    double soma = 0.0;
+    for (int i = 0; i &lt; qtd; i++) {
+        printf("Aluno %d (nome e nota): ", i + 1);
+        if (scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota) != 2) {
+            printf("\nEntrada inválida.\n");
+            return 1;
+        }
+        soma += turma[i].nota;
+    }
+
+    int maior = 0;
+    int menor = 0;
+    int aprovados = 0;
+    printf("\n%s %s %s\n", "Aluno", "Nota", "Situação");
+    printf("---------- -----  -----------\n");
+    for (int i = 0; i &lt; qtd; i++) {
+        printf("%s %.1f %s\n", turma[i].nome, turma[i].nota, situacao(turma[i].nota));
+        if (turma[i].nota &gt; turma[maior].nota) {
+            maior = i;
+        }
+        if (turma[i].nota &lt; turma[menor].nota) {
+            menor = i;
+        }
+        if (turma[i].nota &gt;= MEDIA_APROVACAO) {
+            aprovados++;
+        }
+    }
+    printf("---------- -----  -----------\n");
+    printf("%-11s %5.1f\n", "Média", soma / qtd);  // 11: o "é" ocupa 2 bytes
+    printf("\nMaior nota: %.1f (%s)\n", turma[maior].nota, turma[maior].nome);
+    printf("Menor nota: %.1f (%s)\n", turma[menor].nota, turma[menor].nome);
+    printf("Aprovados: %d de %d\n", aprovados, qtd);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define MAX_ALUNOS 30
+#define MEDIA_APROVACAO 6.0
+
+struct Aluno {
+    char nome[30];
+    double nota;
+};
+
+const char *situacao(double nota) {
+    if (nota &gt;= MEDIA_APROVACAO) {
+        return "Aprovado";
+    } else if (nota &gt;= 4.0) {
+        return "Recuperação";
+    }
+    return "Reprovado";
+}
+
+int main(void) {
+    struct Aluno turma[MAX_ALUNOS];
+    int qtd = 0;
+
+    printf("=== Boletim da Turma ===\n");
+    printf("Quantos alunos (1 a %d)? ", MAX_ALUNOS);
+    if (scanf("%d", &amp;qtd) != 1 || qtd &lt; 1 || qtd &gt; MAX_ALUNOS) {
+        printf("\nQuantidade inválida.\n");
+        return 1;
+    }
+
+    double soma = 0.0;
+    for (int i = 0; i &lt; qtd; i++) {
+        printf("Aluno %d (nome e nota): ", i + 1);
+        if (scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota) != 2) {
+            printf("\nEntrada inválida.\n");
+            return 1;
+        }
+        soma += turma[i].nota;
+    }
+
+    int maior = 0;
+    int menor = 0;
+    int aprovados = 0;
+    printf("\n%-10s %5s  %s\n", "Aluno", "Nota", "Situação");
+    printf("---------- -----  -----------\n");
+    for (int i = 0; i &lt; qtd; i++) {
+        printf("%-10s %5.1f  %s\n", turma[i].nome, turma[i].nota, situacao(turma[i].nota));
+        if (turma[i].nota &gt; turma[maior].nota) {
+            maior = i;
+        }
+        if (turma[i].nota &lt; turma[menor].nota) {
+            menor = i;
+        }
+        if (turma[i].nota &gt;= MEDIA_APROVACAO) {
+            aprovados++;
+        }
+    }
+    printf("---------- -----  -----------\n");
+    printf("%-11s %5.1f\n", "Média", soma / qtd);  // 11: o "é" ocupa 2 bytes
+    printf("\nMaior nota: %.1f (%s)\n", turma[maior].nota, turma[maior].nome);
+    printf("Menor nota: %.1f (%s)\n", turma[menor].nota, turma[menor].nome);
+    printf("Aprovados: %d de %d\n", aprovados, qtd);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>O programa completo</h2>
+<p>A versão final, igual à versão 4. Compile com <code>gcc -std=c23 -Wall -Wextra boletim.c -o boletim</code>:</p>
+
+<pre class="file" data-file="boletim.c">#include &lt;stdio.h&gt;
+
+#define MAX_ALUNOS 30
+#define MEDIA_APROVACAO 6.0
+
+struct Aluno {
+    char nome[30];
+    double nota;
+};
+
+const char *situacao(double nota) {
+    if (nota &gt;= MEDIA_APROVACAO) {
+        return "Aprovado";
+    } else if (nota &gt;= 4.0) {
+        return "Recuperação";
+    }
+    return "Reprovado";
+}
+
+int main(void) {
+    struct Aluno turma[MAX_ALUNOS];
+    int qtd = 0;
+
+    printf("=== Boletim da Turma ===\n");
+    printf("Quantos alunos (1 a %d)? ", MAX_ALUNOS);
+    if (scanf("%d", &amp;qtd) != 1 || qtd &lt; 1 || qtd &gt; MAX_ALUNOS) {
+        printf("\nQuantidade inválida.\n");
+        return 1;
+    }
+
+    double soma = 0.0;
+    for (int i = 0; i &lt; qtd; i++) {
+        printf("Aluno %d (nome e nota): ", i + 1);
+        if (scanf("%29s %lf", turma[i].nome, &amp;turma[i].nota) != 2) {
+            printf("\nEntrada inválida.\n");
+            return 1;
+        }
+        soma += turma[i].nota;
+    }
+
+    int maior = 0;
+    int menor = 0;
+    int aprovados = 0;
+    printf("\n%-10s %5s  %s\n", "Aluno", "Nota", "Situação");
+    printf("---------- -----  -----------\n");
+    for (int i = 0; i &lt; qtd; i++) {
+        printf("%-10s %5.1f  %s\n", turma[i].nome, turma[i].nota, situacao(turma[i].nota));
+        if (turma[i].nota &gt; turma[maior].nota) {
+            maior = i;
+        }
+        if (turma[i].nota &lt; turma[menor].nota) {
+            menor = i;
+        }
+        if (turma[i].nota &gt;= MEDIA_APROVACAO) {
+            aprovados++;
+        }
+    }
+    printf("---------- -----  -----------\n");
+    printf("%-11s %5.1f\n", "Média", soma / qtd);  // 11: o "é" ocupa 2 bytes
+    printf("\nMaior nota: %.1f (%s)\n", turma[maior].nota, turma[maior].nome);
+    printf("Menor nota: %.1f (%s)\n", turma[menor].nota, turma[menor].nome);
+    printf("Aprovados: %d de %d\n", aprovados, qtd);
+    return 0;
+}
+</pre>
+
+<p>O que o projeto juntou: <a href="arrays.html">arrays</a>, <a href="for.html">for</a>, <a href="structs.html">structs</a>, <a href="scanf.html">scanf</a> com largura, <a href="constantes.html">#define</a>, uma <a href="funcoes.html">função</a> que devolve texto e os <a href="formatos-printf.html">formatos do printf</a>.</p>
+
+<h3>Rodando no laboratório</h3>
+<p>Em vez de digitar os alunos toda vez, a Ana guardou a turma num arquivo de texto e mandou o arquivo para a entrada do programa com <code>&lt;</code> (veja <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>). Como ninguém digitou nada, as respostas não aparecem depois das perguntas:</p>
+
+<pre class="term" data-cwd="~/c/notas">$ cat turma.txt
+4
+Bruno 7.5
+Carla 9
+Diego 5.5
+Elisa 8
+$ ./boletim &lt; turma.txt
+=== Boletim da Turma ===
+Quantos alunos (1 a 30)? Aluno 1 (nome e nota): Aluno 2 (nome e nota): Aluno 3 (nome e nota): Aluno 4 (nome e nota): 
+Aluno       Nota  Situação
+---------- -----  -----------
+Bruno        7.5  Aprovado
+Carla        9.0  Aprovado
+Diego        5.5  Recuperação
+Elisa        8.0  Aprovado
+---------- -----  -----------
+Média        7.5
+
+Maior nota: 9.0 (Carla)
+Menor nota: 5.5 (Diego)
+Aprovados: 3 de 4
+</pre>
+
+<hr>
+
+<h2>Desafios extras</h2>
+<ol>
+  <li><strong>Duas notas por aluno.</strong> Troque <code>double nota</code> por <code>double notas[2]</code> (prova e trabalho) e mostre a média de cada aluno numa coluna nova.</li>
+  <li><strong>Nomes com espaço.</strong> Leia cada aluno com <code>fgets</code>, ache o último espaço da linha com <code>strrchr</code>, converta o que vem depois com <code>strtod</code> e copie o que vem antes como nome (veja <a href="funcoes-string.html">Funções de String</a>).</li>
+  <li><strong>Alinhar com acentos.</strong> Escreva uma função que conta as <strong>letras</strong> de uma string UTF-8 (conte só os bytes em que <code>(c &amp; 0xC0) != 0x80</code>) e use-a para completar a coluna do nome com espaços.</li>
+  <li><strong>Em ordem de nota.</strong> Mostre a tabela da maior para a menor nota com <code>qsort</code> (veja <a href="ordenacao.html">Ordenação</a>).</li>
+  <li><strong>Turma de qualquer tamanho.</strong> Troque o array fixo de 30 por um array criado com <code>malloc</code> do tamanho exato (veja <a href="malloc-free.html">malloc e free</a>).</li>
+</ol>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Um array declarado como <code>double notas[5]</code> tem quais posições válidas?</p>
+<label><input type="radio" name="q1"> De 1 a 5.</label>
+<label><input type="radio" name="q1"> De 0 a 4.</label>
+<label><input type="radio" name="q1"> De 0 a 5.</label>
+<label><input type="radio" name="q1"> Quantas o programa precisar.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Por que o <code>scanf</code> usa <code>%29s</code> para um <code>char nome[30]</code>?</p>
+<label><input type="radio" name="q2"> Porque o <code>%s</code> só lê até 29 letras.</label>
+<label><input type="radio" name="q2"> Para pular os espaços.</label>
+<label><input type="radio" name="q2"> Para nunca escrever além do array: 29 letras mais o <code>'\0'</code> do fim.</label>
+<label><input type="radio" name="q2"> Porque nomes têm no máximo 29 letras.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. O que <code>printf("[%-6s]", "Ana")</code> mostra?</p>
+<label><input type="radio" name="q3"> <code>[Ana   ]</code></label>
+<label><input type="radio" name="q3"> <code>[   Ana]</code></label>
+<label><input type="radio" name="q3"> <code>[-Ana]</code></label>
+<label><input type="radio" name="q3"> <code>[Ana]</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Por que o programa guarda a <strong>posição</strong> da maior nota em vez da nota?</p>
+<label><input type="radio" name="q4"> Porque não dá para guardar <code>double</code> numa variável.</label>
+<label><input type="radio" name="q4"> Porque é mais rápido.</label>
+<label><input type="radio" name="q4"> Porque a nota pode mudar.</label>
+<label><input type="radio" name="q4"> Porque com a posição dá para pegar também o nome do aluno.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete o formato que mostra uma nota com uma casa decimal numa coluna de 5 posições:</p>
+<div class="ex-code">printf("<input data-answer="%5.1f" aria-label="formato" size="6">", 7.5);</div>
+</div>
+
+<div class="exercise">
+<p>6. Complete o acesso à nota do terceiro aluno do array <code>turma</code>:</p>
+<div class="ex-code">turma[<input data-answer="2" aria-label="posição" size="2">].nota</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um array guarda muitos valores do mesmo tipo; as posições vão de <code>0</code> a <code>tamanho - 1</code>, e o laço é <code>i &lt; tamanho</code>.</li>
+  <li>Passar do fim do array não dá erro de compilação: estraga a memória ao lado. O <code>-fsanitize=address</code> mostra a linha.</li>
+  <li>Uma struct junta os dados de uma coisa (nome e nota); um array de structs guarda a turma.</li>
+  <li><code>%29s</code> lê uma palavra sem passar de 29 letras; <code>%s</code> para no primeiro espaço.</li>
+  <li>Maior e menor: comece pelo primeiro e troque quando achar um melhor; guarde a posição.</li>
+  <li><code>%-10s</code> alinha texto à esquerda, <code>%5.1f</code> alinha números; o <code>printf</code> conta bytes, então acentos desalinham.</li>
+</ul>
+<p>Próximo projeto: <a href="projeto-agenda.html">Agenda de Contatos</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
