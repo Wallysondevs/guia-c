@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Arquivos — abrir com fopen e fechar com fclose | Guia C</title>
+<meta name="description" content="Arquivos em C para quem nunca programou: o tipo FILE *, abrir com fopen, conferir o NULL, fechar com fclose, os modos r, w, a, r+, w+, a+ e wx (C11), em que pasta o arquivo é criado (caminho relativo e absoluto, o ~ que não funciona), o limite de arquivos abertos e os erros reais do gcc 15 e do programa, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Arquivos</span> (fopen e fclose)</h1>
+
+<p class="intro">Tudo o que os seus programas guardaram até agora morava em variáveis, e as variáveis somem quando o programa termina. A lista de compras da Ana, as notas da turma, o estoque da lojinha: rodou de novo, começou do zero. Para uma informação <strong>sobreviver</strong>, ela precisa ir para um <strong>arquivo</strong> no disco. Nesta aula você vai aprender os dois gestos que começam e terminam todo trabalho com arquivos em C: <strong>abrir</strong> com <code>fopen</code> e <strong>fechar</strong> com <code>fclose</code>. Ler e escrever de verdade ficam para as próximas aulas, <a href="ler-arquivos.html">Ler Arquivos</a> e <a href="escrever-arquivos.html">Escrever Arquivos</a>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o tipo <code>FILE *</code> e por que você nunca mexe dentro dele.</li>
+  <li>Como abrir um arquivo com <code>fopen</code> e por que <strong>sempre</strong> conferir se voltou <code>NULL</code>.</li>
+  <li>Como fechar com <code>fclose</code>, e o que acontece quando você esquece ou fecha duas vezes.</li>
+  <li>Os modos de abertura: <code>"r"</code>, <code>"w"</code>, <code>"a"</code>, os com <code>+</code>, o <code>b</code> e o <code>"wx"</code> do <span class="versao">C11</span>.</li>
+  <li>Em que pasta o arquivo é criado, e a diferença entre caminho relativo e absoluto.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. A aula usa ponteiros e o <code>NULL</code>; se precisar, reveja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>.</p>
+
+<hr>
+
+<h2>A ideia: pegar um caderno na estante</h2>
+<p>Pense num caderno guardado na estante. Para anotar alguma coisa, a Ana:</p>
+<ol class="passo">
+  <li><strong>pega o caderno</strong> e abre na página certa (para ler do começo, ou na primeira página em branco, para continuar);</li>
+  <li><strong>lê ou escreve</strong>;</li>
+  <li><strong>fecha o caderno</strong> e põe de volta na estante, para não amassar e para o próximo encontrar no lugar.</li>
+</ol>
+<p>Em C é igual. O <code>fopen</code> pega e abre o arquivo; as funções das próximas aulas leem e escrevem; o <code>fclose</code> fecha. E, como na vida real, pode acontecer de o caderno <strong>não estar na estante</strong>: o programa precisa estar preparado para isso.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Com o caderno</th><th>Em C</th></tr>
+<tr><td>Pegar e abrir</td><td><code>FILE *arq = fopen("recado.txt", "w");</code></td></tr>
+<tr><td>Dizer se é para ler, escrever do zero ou continuar</td><td>o <strong>modo</strong>: <code>"r"</code>, <code>"w"</code>, <code>"a"</code></td></tr>
+<tr><td>O dedo marcando a página onde você está</td><td>o <code>FILE *</code>, que guarda a posição</td></tr>
+<tr><td>"O caderno não está na estante"</td><td><code>fopen</code> devolve <code>NULL</code></td></tr>
+<tr><td>Fechar e guardar</td><td><code>fclose(arq);</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro arquivo</h2>
+<p>Este programa cria o arquivo <code>recado.txt</code> e escreve uma linha nele:</p>
+
+<pre class="file" data-file="recado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("recado.txt", "w");
+    if (arq == NULL) {
+        printf("Não consegui criar recado.txt\n");
+        return 1;
+    }
+
+    fputs("Comprar pão e leite.\n", arq);
+    fclose(arq);
+
+    printf("Recado gravado!\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;stdio.h&gt;</dt><dd>O mesmo cabeçalho do <code>printf</code>: <code>stdio</code> quer dizer "standard input/output", entrada e saída padrão. Tudo o que é de arquivo de texto está nele.</dd>
+  <dt>FILE *arq</dt><dd>Uma variável do tipo <strong>ponteiro para <code>FILE</code></strong>. O <code>FILE</code> (assim mesmo, em maiúsculas) é uma struct da biblioteca com tudo o que ela precisa para cuidar do arquivo aberto. Você só guarda o ponteiro e o entrega às funções. O nome <code>arq</code> é escolha sua (muita gente usa <code>f</code> ou <code>fp</code>).</dd>
+  <dt>fopen("recado.txt", "w")</dt><dd>"file open", abrir arquivo. O 1º argumento é o <strong>nome</strong> (ou caminho) do arquivo; o 2º é o <strong>modo</strong>, um texto entre aspas duplas. <code>"w"</code> (de <em>write</em>, escrever) cria o arquivo, ou <strong>apaga</strong> o que havia nele, e deixa pronto para escrita.</dd>
+  <dt>if (arq == NULL)</dt><dd>Se não deu para abrir, o <code>fopen</code> devolve <code>NULL</code>. É <strong>obrigatório</strong> conferir: usar um <code>NULL</code> como arquivo derruba o programa (veja "Quando dá errado").</dd>
+  <dt>return 1;</dt><dd>Termina avisando ao sistema que algo falhou (qualquer número diferente de 0).</dd>
+  <dt>fputs("…", arq)</dt><dd>"file put string", pôr um texto no arquivo. É como o <code>printf</code>, mas vai para o arquivo em vez da tela. A aula <a href="escrever-arquivos.html">Escrever Arquivos</a> mostra todas as formas.</dd>
+  <dt>fclose(arq)</dt><dd>"file close", fechar o arquivo. Termina de gravar o que estava pendente e devolve os recursos ao sistema. Depois dele, <code>arq</code> não pode mais ser usado.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra recado.c -o recado
+$ ./recado
+Recado gravado!
+$ ls -l recado.txt
+-rw-rw-r-- 1 ana ana 22 out 17 11:32 recado.txt
+$ cat recado.txt
+Comprar pão e leite.</pre>
+
+<p>O arquivo apareceu na pasta, com 22 bytes, e o <code>cat</code> mostra o que tem dentro. São 20 letras visíveis, mas o <code>ã</code> ocupa 2 bytes em UTF-8 (aula <a href="acentos-utf8.html">Acentos e UTF-8</a>) e o <code>\n</code> do fim também conta: 22. O programa terminou, mas o recado ficou: rode <code>cat recado.txt</code> amanhã e ele ainda estará lá.</p>
+
+<hr>
+
+<h2>2. Quando o arquivo não abre</h2>
+<p>Agora o contrário: abrir para <strong>ler</strong> (<code>"r"</code>, de <em>read</em>) um arquivo que ainda não existe.</p>
+
+<pre class="file" data-file="abrir.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("diario.txt", "r");
+    if (arq == NULL) {
+        printf("Não consegui abrir diario.txt\n");
+        return 1;
+    }
+    printf("Abri o diário!\n");
+    fclose(arq);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra abrir.c -o abrir
+$ ./abrir
+Não consegui abrir diario.txt
+$ echo $?
+1</pre>
+
+<p>O <code>"r"</code> nunca cria nada: se o arquivo não existe, o <code>fopen</code> devolve <code>NULL</code>, e o nosso <code>if</code> cuidou disso. O <code>echo $?</code> mostra o código com que o programa terminou: o 1 do <code>return 1</code>.</p>
+
+<h3>Dizer o motivo: perror</h3>
+<p>"Não consegui abrir" é pouco. O arquivo não existe? Existe, mas é proibido? Quando o <code>fopen</code> falha, ele deixa o motivo anotado, e a função <code>perror</code> ("print error", mostrar o erro) escreve esse motivo depois do texto que você passar:</p>
+
+<pre class="file" data-file="abrir2.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("diario.txt", "r");
+    if (arq == NULL) {
+        perror("diario.txt");
+        return 1;
+    }
+
+    char linha[100];
+    if (fgets(linha, sizeof linha, arq) != NULL) {
+        printf("Primeira linha: %s", linha);
+    }
+    fclose(arq);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra abrir2.c -o abrir2
+$ ./abrir2
+diario.txt: No such file or directory</pre>
+
+<p><em>No such file or directory</em> = "arquivo ou diretório inexistente". Esse texto vem do sistema, em inglês (a aula <a href="errno.html">errno e perror</a> explica por que, e como saber o motivo dentro do programa). O <code>fgets</code> lê uma linha do arquivo, como você já fez com o teclado na aula <a href="fgets.html">Ler uma Linha</a>: a aula <a href="ler-arquivos.html">Ler Arquivos</a> mostra os detalhes.</p>
+
+<div class="tip">
+<strong>Os motivos mais comuns de um <code>NULL</code></strong>
+<ul>
+  <li><code>No such file or directory</code>: o arquivo (ou a pasta do caminho) não existe, ou o nome está errado. Maiúsculas contam: <code>Diario.txt</code> não é <code>diario.txt</code>.</li>
+  <li><code>Permission denied</code>: o arquivo existe, mas você não tem permissão para o que pediu (por exemplo, escrever num arquivo "só leitura").</li>
+  <li><code>Is a directory</code>: o nome é de uma pasta, e não de um arquivo.</li>
+  <li><code>Too many open files</code>: o programa abriu arquivos demais sem fechar (seção 5).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>3. Os modos de abertura</h2>
+<p>O segundo argumento do <code>fopen</code> diz o que você quer fazer com o arquivo. Os três principais são <code>"r"</code>, <code>"w"</code> e <code>"a"</code>, e a diferença entre <code>"w"</code> e <code>"a"</code> é a que mais pega iniciante. Veja dois programas iguais, que só mudam o modo:</p>
+
+<pre class="file" data-file="modo_w.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("diario.txt", "w");
+    if (arq == NULL) {
+        perror("diario.txt");
+        return 1;
+    }
+    fputs("Abri a loja às 8h.\n", arq);
+    fclose(arq);
+    return 0;
+}
+</pre>
+
+<p>O <code>modo_a.c</code> é a mesma coisa, com <code>"a"</code> (de <em>append</em>, acrescentar) no lugar do <code>"w"</code>. A Ana rodou cada um duas vezes:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra modo_w.c -o modo_w
+$ gcc -std=c23 -Wall -Wextra modo_a.c -o modo_a
+$ ./modo_w
+$ ./modo_w
+$ cat diario.txt
+Abri a loja às 8h.                « duas vezes "w": só uma linha
+$ ./modo_a
+$ ./modo_a
+$ cat diario.txt
+Abri a loja às 8h.
+Abri a loja às 8h.
+Abri a loja às 8h.                « mais duas com "a": acrescentou no fim
+$ ./abrir2
+Primeira linha: Abri a loja às 8h.</pre>
+
+<p>O <code>"w"</code> <strong>apaga</strong> o arquivo inteiro na hora em que abre, antes mesmo de você escrever qualquer coisa. Rodar duas vezes deixou uma linha só. O <code>"a"</code> mantém o que já existia e escreve sempre no <strong>fim</strong>. E agora que o <code>diario.txt</code> existe, o <code>abrir2</code> consegue ler a primeira linha.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Modo</th><th>Para</th><th>Se o arquivo existe</th><th>Se não existe</th></tr>
+<tr><td><code>"r"</code></td><td>Ler</td><td>Lê do começo</td><td>Falha (<code>NULL</code>)</td></tr>
+<tr><td><code>"w"</code></td><td>Escrever</td><td><strong>Apaga tudo</strong> e começa vazio</td><td>Cria</td></tr>
+<tr><td><code>"a"</code></td><td>Acrescentar</td><td>Mantém e escreve no fim</td><td>Cria</td></tr>
+<tr><td><code>"r+"</code></td><td>Ler e escrever</td><td>Mantém; começa no início</td><td>Falha (<code>NULL</code>)</td></tr>
+<tr><td><code>"w+"</code></td><td>Escrever e ler</td><td><strong>Apaga tudo</strong></td><td>Cria</td></tr>
+<tr><td><code>"a+"</code></td><td>Ler e acrescentar</td><td>Mantém; a escrita vai sempre para o fim</td><td>Cria</td></tr>
+<tr><td><code>"wx"</code> <span class="versao">C11</span></td><td>Criar um arquivo novo</td><td>Falha (<code>NULL</code>): não apaga nada</td><td>Cria</td></tr>
+<tr><td>…com <code>b</code>: <code>"rb"</code>, <code>"wb"</code>, <code>"ab"</code>, <code>"r+b"</code></td><td>Arquivo binário</td><td colspan="2">Igual ao modo sem <code>b</code>; veja <a href="arquivos-binarios.html">Arquivos Binários</a></td></tr>
+</table>
+</div>
+
+<p>Os modos com <code>+</code> leem e escrevem no mesmo arquivo; para isso é preciso mudar de posição no meio do caminho, e a aula <a href="fseek.html">fseek e ftell</a> mostra como. No dia a dia, você vai usar quase sempre os três primeiros.</p>
+
+<div class="tryc" data-goal="out:- arroz,out:- leite">
+<p class="try-task"><strong>Missão:</strong> a caixa tem duas abas: o programa <code>lista.c</code> e o arquivo <code>lista.txt</code>, com três itens. O programa deveria <strong>acrescentar</strong> <code>leite</code> e mostrar a lista inteira, mas rode e veja: os três itens antigos sumiram. Troque o modo do primeiro <code>fopen</code> para que a lista mostre <code>arroz</code>, <code>feijão</code>, <code>café</code> e <code>leite</code>.</p>
+<pre class="script" data-file="lista.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    /* 1) acrescenta um item à lista */
+    FILE *arq = fopen("lista.txt", "w");
+    if (arq == NULL) {
+        perror("lista.txt");
+        return 1;
+    }
+    fputs("leite\n", arq);
+    fclose(arq);
+
+    /* 2) mostra a lista inteira */
+    arq = fopen("lista.txt", "r");
+    if (arq == NULL) {
+        perror("lista.txt");
+        return 1;
+    }
+    char linha[100];
+    while (fgets(linha, sizeof linha, arq) != NULL) {
+        printf("- %s", linha);
+    }
+    fclose(arq);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="lista.txt">arroz
+feijão
+café
+
+</pre>
+<pre class="solucao" data-file="lista.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    /* 1) acrescenta um item à lista */
+    FILE *arq = fopen("lista.txt", "a");
+    if (arq == NULL) {
+        perror("lista.txt");
+        return 1;
+    }
+    fputs("leite\n", arq);
+    fclose(arq);
+
+    /* 2) mostra a lista inteira */
+    arq = fopen("lista.txt", "r");
+    if (arq == NULL) {
+        perror("lista.txt");
+        return 1;
+    }
+    char linha[100];
+    while (fgets(linha, sizeof linha, arq) != NULL) {
+        printf("- %s", linha);
+    }
+    fclose(arq);
+    return 0;
+}
+</pre>
+</div>
+
+<p>A linha em branco no fim da aba <code>lista.txt</code> é o <code>\n</code> que termina o <code>café</code>: sem ela, o <code>leite</code> ficaria grudado (<code>caféleite</code>). No editor, a pasta dos arquivos volta ao estado das abas a cada <strong>Rodar</strong>: por isso o <code>leite</code> aparece uma vez só, mesmo se você rodar várias vezes. No seu computador, cada execução acrescentaria mais um.</p>
+
+<h3><span class="versao">C11</span> <code>"wx"</code>: criar sem apagar</h3>
+<p>O <code>"w"</code> apaga sem perguntar. Às vezes é exatamente o que você <strong>não</strong> quer: um programa que cria o arquivo de configuração na primeira vez não deveria destruir a configuração que o usuário já ajustou. O <code>x</code> (de <em>exclusive</em>, exclusivo) junto do <code>w</code> faz o <code>fopen</code> falhar se o arquivo já existe:</p>
+
+<pre class="file" data-file="modo_x.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("config.txt", "wx");
+    if (arq == NULL) {
+        perror("config.txt");
+        return 1;
+    }
+    fputs("volume=5\n", arq);
+    fclose(arq);
+    printf("Criei config.txt\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra modo_x.c -o modo_x
+$ ./modo_x
+Criei config.txt
+$ ./modo_x
+config.txt: File exists           « na segunda vez, não apagou nada
+$ cat config.txt
+volume=5</pre>
+
+<p><em>File exists</em> = "o arquivo existe". O <code>x</code> só vale junto de <code>w</code>: <code>"wx"</code>, <code>"wbx"</code> ou <code>"w+x"</code>. No editor do guia funciona igual.</p>
+
+<hr>
+
+<h2>4. Em que pasta o arquivo fica?</h2>
+<p>Um nome sozinho, como <code>"recado.txt"</code>, é um <strong>caminho relativo</strong>: ele é procurado (ou criado) na <strong>pasta de trabalho</strong>, que é a pasta em que você estava no terminal quando rodou o programa. Não é a pasta do <code>.c</code>, nem a do executável. Veja a Ana rodando o mesmo <code>recado</code> de outra pasta:</p>
+
+<pre class="term" data-cwd="~/c">$ cd ..                      « sobe para /home/ana
+$ c/recado                   « o programa continua em ~/c
+Recado gravado!
+$ ls recado.txt c/recado.txt
+c/recado.txt
+recado.txt                   « um recado novo, criado em /home/ana</pre>
+
+<p>O <code>recado.txt</code> foi criado em <code>/home/ana</code>, onde a Ana estava, e não em <code>/home/ana/c</code>, onde o programa mora. Esse é o motivo número um do "mas o arquivo está ali!": o programa está procurando em outra pasta. Acontece muito em IDEs como VS Code e Code::Blocks, que rodam o programa a partir de uma pasta diferente da do código.</p>
+
+<p>Para não depender da pasta de trabalho, use um <strong>caminho absoluto</strong>, que começa com <code>/</code> e diz o endereço completo. Este programa testa quatro jeitos de chegar ao mesmo arquivo:</p>
+
+<pre class="file" data-file="caminho.c">#include &lt;stdio.h&gt;
+
+void tentar(const char *caminho) {
+    FILE *arq = fopen(caminho, "r");
+    if (arq == NULL) {
+        perror(caminho);
+        return;
+    }
+    printf("%s: abriu!\n", caminho);
+    fclose(arq);
+}
+
+int main(void) {
+    tentar("recado.txt");
+    tentar("/home/ana/c/recado.txt");
+    tentar("~/c/recado.txt");
+    tentar("../c/recado.txt");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra caminho.c -o caminho
+$ ./caminho
+recado.txt: abriu!
+/home/ana/c/recado.txt: abriu!
+~/c/recado.txt: No such file or directory
+../c/recado.txt: abriu!
+$ cd ~
+$ c/caminho
+recado.txt: No such file or directory
+/home/ana/c/recado.txt: abriu!
+~/c/recado.txt: No such file or directory
+../c/recado.txt: No such file or directory</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caminho</th><th>O que significa</th><th>Resultado</th></tr>
+<tr><td><code>"recado.txt"</code></td><td>Relativo: na pasta de trabalho</td><td>Abriu em <code>~/c</code>; de <code>~</code>, não achou.</td></tr>
+<tr><td><code>"/home/ana/c/recado.txt"</code></td><td>Absoluto: o endereço completo</td><td>Abriu das duas pastas.</td></tr>
+<tr><td><code>"~/c/recado.txt"</code></td><td>O <code>~</code> é um atalho do <strong>terminal</strong>, não do C</td><td>Nunca abre: o <code>fopen</code> procura uma pasta chamada <code>~</code>.</td></tr>
+<tr><td><code>"../c/recado.txt"</code></td><td>Relativo: <code>..</code> é a pasta de cima</td><td>De <code>~/c</code>, sobe para <code>~</code> e entra em <code>c</code>: abriu. De <code>~</code>, procurou <code>/home/c</code>.</td></tr>
+</table>
+</div>
+
+<p>No editor do guia, a pasta de trabalho é <code>/home/ana</code>, e é lá que ficam as abas que não são <code>.c</code>.</p>
+
+<div class="note">
+<strong>E no Windows?</strong>
+<p>No Windows, os caminhos usam a barra invertida: <code>C:\Users\ana\notas.txt</code>. Mas dentro de uma string em C, a <code>\</code> começa um escape (como <code>\n</code>), então escreva <code>"C:\\Users\\ana\\notas.txt"</code> ou, mais simples, use a barra normal, que o Windows também aceita: <code>"C:/Users/ana/notas.txt"</code>. O erro de esquecer está em "Quando dá errado".</p>
+</div>
+
+<hr>
+
+<h2>5. Por que fechar: fclose</h2>
+<p>O programa terminou e o arquivo ficou lá: então para que o <code>fclose</code>? Por dois motivos.</p>
+
+<h3>Motivo 1: o que ainda não foi gravado</h3>
+<p>O <code>fputs</code> não escreve no disco a cada chamada. Ele junta o texto numa área de espera na memória, o <strong>buffer</strong>, e só manda para o disco de vez em quando, em blocos (é muito mais rápido assim). O <code>fclose</code> manda o que sobrou no buffer. Quando o programa termina normalmente (com <code>return</code> no <code>main</code> ou <code>exit</code>), o C fecha sozinho os arquivos esquecidos, mas se o programa <strong>morre</strong> no meio (uma falha de segmentação, por exemplo), o que estava no buffer se perde. A aula <a href="escrever-arquivos.html">Escrever Arquivos</a> mostra isso acontecendo e o <code>fflush</code>, que esvazia o buffer sem fechar.</p>
+
+<h3>Motivo 2: o sistema tem um limite de arquivos abertos</h3>
+<p>Cada arquivo aberto ocupa um lugar numa lista do sistema, e essa lista tem tamanho. Este programa abre o mesmo arquivo sem parar, sem nunca fechar:</p>
+
+<pre class="file" data-file="abertos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int abertos = 0;
+    while (1) {
+        FILE *arq = fopen("recado.txt", "r");
+        if (arq == NULL) {
+            perror("fopen");
+            break;
+        }
+        abertos++;          /* abre e nunca fecha */
+    }
+    printf("Consegui abrir %d vezes.\n", abertos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ ulimit -n                       « o limite deste terminal
+1024
+$ gcc -std=c23 -Wall -Wextra abertos.c -o abertos
+$ ./abertos
+fopen: Too many open files
+Consegui abrir 1021 vezes.</pre>
+
+<p><em>Too many open files</em> = "arquivos abertos demais". O limite era 1024, e três lugares já estavam ocupados desde o começo: o teclado e a tela (veja o quadro abaixo). Num programa pequeno, você nunca vai chegar perto. Num programa que roda o dia inteiro e abre um arquivo a cada pedido da lojinha, esquecer o <code>fclose</code> é questão de tempo para tudo parar. No editor do guia não há esse limite: com o <code>recado.txt</code> numa aba, o programa acima ficaria abrindo sem parar até o editor interrompê-lo, depois de 15 segundos.</p>
+
+<div class="tip">
+<strong>Regra prática:</strong> escreveu um <code>fopen</code>, escreva logo o <code>fclose</code> correspondente, e só depois preencha o meio. Em todos os caminhos de saída: se uma função tem um <code>return</code> no meio, o arquivo precisa ser fechado antes dele também.
+</div>
+
+<div class="note">
+<strong>Três arquivos que já nascem abertos</strong>
+<p>Todo programa C começa com três <code>FILE *</code> prontos, declarados no <code>stdio.h</code>: <code>stdin</code> (a entrada, normalmente o teclado), <code>stdout</code> (a saída, a tela) e <code>stderr</code> (a saída de erros, também a tela, que é onde o <code>perror</code> escreve). Por isso <code>fputs("Olá\n", stdout);</code> faz o mesmo que <code>printf("Olá\n");</code>, e o <code>fgets(linha, 100, stdin)</code> lê do teclado. Você não abre nem fecha esses três (aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>).</p>
+</div>
+
+<hr>
+
+<h2>Formas de abrir para escrever: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Modo</th><th>Exemplo</th></tr>
+<tr><td>Ler um arquivo que deve existir</td><td><code>"r"</code></td><td>Carregar a lista de compras.</td></tr>
+<tr><td>Gerar o arquivo do zero a cada vez</td><td><code>"w"</code></td><td>O relatório de vendas do dia, refeito toda noite.</td></tr>
+<tr><td>Ir juntando linhas, sem perder as antigas</td><td><code>"a"</code></td><td>Um diário, um registro (<em>log</em>) de pedidos.</td></tr>
+<tr><td>Criar só se ainda não existir</td><td><code>"wx"</code> <span class="versao">C11</span></td><td>A configuração padrão na primeira vez.</td></tr>
+<tr><td>Mudar um pedaço no meio do arquivo</td><td><code>"r+"</code> (ou <code>"r+b"</code>)</td><td>Corrigir a nota de um aluno (aula <a href="fseek.html">fseek</a>).</td></tr>
+<tr><td>Guardar os bytes da memória</td><td><code>"wb"</code> / <code>"rb"</code></td><td>O "save" de um jogo (aula <a href="arquivos-binarios.html">Arquivos Binários</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code>: não conferiu o <code>NULL</code></strong>
+<pre class="file" data-file="semteste.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("diario.txt", "r");
+    char linha[100];
+    fgets(linha, sizeof linha, arq);
+    printf("%s", linha);
+    fclose(arq);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semteste.c -o semteste
+$ rm diario.txt
+$ ./semteste
+Falha de segmentação     (imagem do núcleo gravada) ./semteste</pre>
+<p><strong>O que aconteceu:</strong> sem o <code>diario.txt</code>, o <code>fopen</code> devolveu <code>NULL</code>, e o <code>fgets</code> tentou ler de um ponteiro nulo. O compilador não avisa nada: o erro só aparece ao rodar, e só no dia em que o arquivo faltar. No editor do guia, a mesma falha termina com o código 139.</p>
+<p><strong>Como resolver:</strong> todo <code>fopen</code> é seguido de <code>if (arq == NULL) { perror(…); return 1; }</code>, sem exceção.</p>
+</div>
+
+<div class="cenario">
+<strong>"No such file or directory" ao criar um arquivo numa pasta</strong>
+<pre class="term" data-cwd="~/c">$ ./pasta
+relatorios/maio.txt: No such file or directory
+$ mkdir relatorios
+$ ./pasta
+Relatório criado.</pre>
+<p><strong>O que aconteceu:</strong> o programa fez <code>fopen("relatorios/maio.txt", "w")</code>. O <code>"w"</code> cria o <strong>arquivo</strong>, mas não cria <strong>pastas</strong>: se <code>relatorios</code> não existe, falha.</p>
+<p><strong>Como resolver:</strong> crie a pasta antes (no terminal, com <code>mkdir</code>), ou grave na pasta de trabalho. O C padrão não tem uma função para criar pastas; no Linux existe a <code>mkdir</code> do <code>&lt;sys/stat.h&gt;</code>, que não é assunto desta aula.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permission denied"</strong>
+<pre class="term" data-cwd="~/c">$ chmod 444 diario.txt           « deixa o arquivo "só leitura"
+$ ./modo_w
+diario.txt: Permission denied
+$ chmod 644 diario.txt           « devolve a permissão de escrita</pre>
+<p><strong>O que aconteceu:</strong> "permissão negada". O arquivo existe, mas está marcado como só leitura, e o <code>"w"</code> pediu para escrever. O mesmo acontece ao tentar criar arquivos em pastas do sistema, como <code>/etc</code>.</p>
+<p><strong>Como resolver:</strong> grave numa pasta sua (dentro de <code>/home/ana</code>), ou confira as permissões com <code>ls -l</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"passing argument 2 of ‘fopen’ makes pointer from integer without a cast": aspas simples no modo</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aspas.c -o aspas
+aspas.c: In function ‘main’:
+aspas.c:4:37: error: passing argument 2 of ‘fopen’ makes pointer from integer without a cast [-Wint-conversion]
+    4 |     FILE *arq = fopen("recado.txt", 'r');
+      |                                     ^~~
+      |                                     |
+      |                                     int
+In file included from aspas.c:1:
+/usr/include/stdio.h:272:44: note: expected ‘const char * restrict’ but argument is of type ‘int’
+  272 |                     const char *__restrict __modes)
+      |                     ~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~</pre>
+<p><strong>O que aconteceu:</strong> <code>'r'</code>, com aspas simples, é <strong>um caractere</strong> (um número, para o C; veja <a href="char.html">Caracteres</a>). O modo precisa ser um <strong>texto</strong>, com aspas duplas. A nota mostra o que o <code>fopen</code> esperava: <code>const char *</code>, um texto. O Clang do editor diz <code>incompatible integer to pointer conversion passing 'int' to parameter of type 'const char *'</code>.</p>
+<p><strong>Como resolver:</strong> <code>fopen("recado.txt", "r")</code>, com aspas duplas.</p>
+</div>
+
+<div class="cenario">
+<strong>"incomplete universal character name \U": caminho do Windows</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra windows.c -o windows
+windows.c: In function ‘main’:
+windows.c:4:47: error: incomplete universal character name \U
+    4 |     FILE *arq = fopen("C:\Users\ana\notas.txt", "r");
+      |                                               ^</pre>
+<p><strong>O que aconteceu:</strong> numa string, <code>\U</code> começa um escape que espera o código de um caractere Unicode, e <code>sers</code> não é um código. O <code>\a</code> e o <code>\n</code> do caminho também seriam escapes (um bipe e uma quebra de linha!). O Clang do editor diz <code>\U used with no following hex digits</code>.</p>
+<p><strong>Como resolver:</strong> dobre as barras (<code>"C:\\Users\\ana\\notas.txt"</code>) ou use a barra normal (<code>"C:/Users/ana/notas.txt"</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"pointer ‘arq’ used after ‘fclose’" e <code>double free</code>: fechou duas vezes</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fecha2.c -o fecha2
+fecha2.c: In function ‘main’:
+fecha2.c:11:5: warning: pointer ‘arq’ used after ‘fclose’ [-Wuse-after-free]
+   11 |     fclose(arq);
+      |     ^~~~~~~~~~~
+fecha2.c:9:5: note: call to ‘fclose’ here
+    9 |     fclose(arq);
+      |     ^~~~~~~~~~~
+$ ./fecha2
+Fechei uma vez.
+free(): double free detected in tcache 2
+Abortado                   (imagem do núcleo gravada) ./fecha2</pre>
+<p><strong>O que aconteceu:</strong> o <code>fclose</code> devolve ao sistema a memória do <code>FILE</code>. O segundo <code>fclose</code> tentou devolver de novo uma memória que já não era do programa (<em>double free</em>, "liberar duas vezes"; veja <a href="malloc-free.html">malloc e free</a>), e a biblioteca do Linux abortou o programa. O gcc até avisou na compilação: "ponteiro usado depois do <code>fclose</code>". No editor do guia, o segundo <code>fclose</code> passa calado e o programa termina normalmente, o que não quer dizer que esteja certo.</p>
+<p><strong>Como resolver:</strong> feche cada arquivo uma única vez. Se o mesmo ponteiro pode ser fechado em lugares diferentes, faça <code>arq = NULL;</code> depois do <code>fclose</code> e confira antes de fechar.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>FILE *arq;</code></td><td>Uma variável para um arquivo aberto.</td></tr>
+<tr><td><code>arq = fopen("nome.txt", "r");</code></td><td>Abre para ler; <code>NULL</code> se não conseguir.</td></tr>
+<tr><td><code>fopen(nome, "w")</code></td><td>Cria, ou apaga e recomeça, para escrever.</td></tr>
+<tr><td><code>fopen(nome, "a")</code></td><td>Abre para acrescentar no fim; cria se não existir.</td></tr>
+<tr><td><code>fopen(nome, "wx")</code></td><td>C11: cria só se não existir.</td></tr>
+<tr><td><code>if (arq == NULL) { perror(nome); return 1; }</code></td><td>A conferência obrigatória depois de todo <code>fopen</code>.</td></tr>
+<tr><td><code>fclose(arq);</code></td><td>Grava o que falta e fecha. Uma vez só por arquivo.</td></tr>
+<tr><td><code>"recado.txt"</code> / <code>"/home/ana/c/recado.txt"</code></td><td>Caminho relativo (pasta de trabalho) / absoluto.</td></tr>
+<tr><td><code>stdin</code>, <code>stdout</code>, <code>stderr</code></td><td>Os três <code>FILE *</code> que já nascem abertos.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O tipo</h3>
+<p>Complete a declaração da variável que guarda um arquivo aberto:</p>
+<div class="ex-code"><input data-answer="FILE" aria-label="tipo"> *arq = fopen("notas.txt", "r");</div>
+</div>
+
+<div class="exercise">
+<h3>2. O modo do diário</h3>
+<p>Complete o modo para <strong>acrescentar</strong> uma linha no fim do diário, sem apagar as anteriores:</p>
+<div class="ex-code">FILE *arq = fopen("diario.txt", "<input data-answer="a" aria-label="modo">");</div>
+</div>
+
+<div class="exercise">
+<h3>3. A conferência</h3>
+<p>Complete a condição que descobre se o <code>fopen</code> falhou:</p>
+<div class="ex-code">if (<input data-answer="arq == NULL|arq==NULL|!arq" aria-label="condição">) { perror("notas.txt"); return 1; }</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O arquivo <code>vendas.txt</code> tem 50 linhas. O que sobra dele depois de <code>fopen("vendas.txt", "w")</code> seguido de <code>fclose</code>, sem escrever nada?</p>
+<label><input type="radio" name="q4"> As 50 linhas, intactas.</label>
+<label><input type="radio" name="q4"> Um arquivo vazio.</label>
+<label><input type="radio" name="q4"> O arquivo deixa de existir.</label>
+<label><input type="radio" name="q4"> O <code>fopen</code> falha, porque o arquivo já existe.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. A Ana está em <code>/home/ana</code> e roda <code>c/recado</code>, que faz <code>fopen("recado.txt", "w")</code>. Onde o arquivo é criado?</p>
+<label><input type="radio" name="q5"> Em <code>/home/ana/c</code>, a pasta do programa.</label>
+<label><input type="radio" name="q5"> Na pasta onde está o <code>recado.c</code>.</label>
+<label><input type="radio" name="q5"> Em <code>/home/ana</code>, a pasta de trabalho.</label>
+<label><input type="radio" name="q5"> Em <code>/tmp</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que <code>fopen("~/notas.txt", "r")</code> devolve <code>NULL</code>, mesmo com o arquivo em <code>/home/ana/notas.txt</code>?</p>
+<label><input type="radio" name="q6"> Porque o <code>~</code> é um atalho do terminal, e o <code>fopen</code> não o entende.</label>
+<label><input type="radio" name="q6"> Porque falta o <code>b</code> no modo.</label>
+<label><input type="radio" name="q6"> Porque o <code>"r"</code> não abre arquivos da pasta pessoal.</label>
+<label><input type="radio" name="q6"> Porque o caminho é absoluto.</label>
+</div>
+
+<h3>Missão final: gravar e ler o recado</h3>
+<div class="tryc" data-goal="out:Li do arquivo: Comprar pão e leite.,src:NULL,src:fclose\s*\(">
+<p class="try-task"><strong>Missão:</strong> escreva os dois <code>fopen</code> que faltam. O primeiro abre <code>recado.txt</code> para <strong>escrever</strong>; o segundo abre o mesmo arquivo para <strong>ler</strong>. Confira o <code>NULL</code> depois de cada um (com <code>perror</code> e <code>return 1</code>) e feche o arquivo depois de cada parte. A saída deve ser <code>Li do arquivo: Comprar pão e leite.</code></p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq;
+
+    /* 1) abra recado.txt para escrever e confira o NULL */
+
+    fputs("Comprar pão e leite.\n", arq);
+    /* feche o arquivo */
+
+    /* 2) abra recado.txt para ler e confira o NULL */
+
+    char linha[100];
+    if (fgets(linha, sizeof linha, arq) != NULL) {
+        printf("Li do arquivo: %s", linha);
+    }
+    /* feche o arquivo */
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq;
+
+    /* 1) abra recado.txt para escrever e confira o NULL */
+    arq = fopen("recado.txt", "w");
+    if (arq == NULL) {
+        perror("recado.txt");
+        return 1;
+    }
+    fputs("Comprar pão e leite.\n", arq);
+    fclose(arq);
+
+    /* 2) abra recado.txt para ler e confira o NULL */
+    arq = fopen("recado.txt", "r");
+    if (arq == NULL) {
+        perror("recado.txt");
+        return 1;
+    }
+    char linha[100];
+    if (fgets(linha, sizeof linha, arq) != NULL) {
+        printf("Li do arquivo: %s", linha);
+    }
+    fclose(arq);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Rode o código inicial antes de mexer: o compilador avisa que <code>arq</code> é usado sem valor, e o programa cai. É o mesmo problema do <code>NULL</code> não conferido, só que pior: ali nem houve um <code>fopen</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Arquivos guardam informação depois que o programa termina. Todo trabalho começa com <code>fopen</code> e termina com <code>fclose</code>.</li>
+  <li><code>FILE *arq = fopen(nome, modo);</code> devolve <code>NULL</code> quando não consegue abrir. Confira <strong>sempre</strong>, e use <code>perror</code> para mostrar o motivo.</li>
+  <li><code>"r"</code> lê (o arquivo precisa existir), <code>"w"</code> <strong>apaga</strong> e escreve, <code>"a"</code> acrescenta no fim, <code>"wx"</code> (C11) só cria se não existir. O <code>+</code> permite ler e escrever; o <code>b</code> é para binário.</li>
+  <li>Um nome sem <code>/</code> no começo é procurado na <strong>pasta de trabalho</strong>, a do terminal. O <code>~</code> não funciona no <code>fopen</code>.</li>
+  <li><code>fclose</code> grava o que ficou no buffer e libera o lugar do arquivo; feche cada arquivo uma vez só.</li>
+  <li><code>stdin</code>, <code>stdout</code> e <code>stderr</code> são arquivos que já nascem abertos.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
