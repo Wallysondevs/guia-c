@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Ponteiros e Arrays — p + 1, *(p + i) e p[i] | Guia C</title>
+<meta name="description" content="Ponteiros e arrays em C para quem nunca programou: o nome do array vira ponteiro para o primeiro item, p + 1 anda um item (não um byte), *(p + i) é o mesmo que p[i], percorrer um array com ponteiro e a armadilha do sizeof quando o array vai para uma função, com saídas reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Ponteiros e Arrays</span></h1>
+
+<p class="intro">Em C, ponteiros e arrays são parentes muito próximos. Tão próximos que, na maior parte do tempo, o nome de um array se comporta como um ponteiro, e um ponteiro pode ser usado com colchetes, como um array. Entender esse parentesco explica várias coisas que pareciam mágica: por que uma função consegue mudar os itens de um array que você passou, por que o <code>sizeof</code> "erra" dentro de uma função e como andar de item em item somando ao ponteiro.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Que o nome do array vira um ponteiro para o primeiro item.</li>
+  <li>Que <code>p + 1</code> anda <strong>um item</strong>, e não um byte (a "aritmética de ponteiros").</li>
+  <li>Que <code>*(p + i)</code> e <code>p[i]</code> são exatamente a mesma coisa.</li>
+  <li>Como percorrer um array com um ponteiro.</li>
+  <li>A diferença entre <code>sizeof</code> de um array e de um ponteiro, e a armadilha que isso cria nas funções.</li>
+</ul>
+</div>
+
+<p>Os programas foram compilados na máquina da Ana, na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Antes de continuar, tenha frescas as aulas <a href="arrays.html">Arrays</a> e <a href="ponteiros.html">Ponteiros</a>.</p>
+
+<hr>
+
+<h2>A ideia: casas numa rua, sem buracos</h2>
+<p>Pense numa rua em que as casas têm todas o mesmo tamanho e ficam coladas, uma depois da outra. Se você sabe onde fica a <strong>primeira</strong> casa, sabe onde ficam todas: "a terceira casa fica duas casas depois da primeira". Você não precisa de um papel com o endereço de cada uma: um papel com o endereço da primeira basta.</p>
+<p>Um array é essa rua. Você viu em <a href="memoria.html">Memória e Endereços</a> que os itens moram em gavetas vizinhas, sem buracos. Um ponteiro para o primeiro item é o papel com o endereço da primeira casa. A partir dele, "andar duas casas" é uma conta.</p>
+
+<hr>
+
+<h2>1. O nome do array vira ponteiro</h2>
+
+<pre class="file" data-file="nome.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    int *p = notas;
+
+    printf("notas     = %p\n", (void *) notas);
+    printf("&amp;notas[0] = %p\n", (void *) &amp;notas[0]);
+    printf("p         = %p\n", (void *) p);
+    printf("*p = %d\n", *p);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nome.c -o nome
+$ ./nome
+notas     = 0x7fff31424a00
+&amp;notas[0] = 0x7fff31424a00      « o mesmo endereço
+p         = 0x7fff31424a00
+*p = 7                          « p aponta para o primeiro item</pre>
+
+<p>Repare na linha <code>int *p = notas;</code>: não tem <code>&amp;</code>. Quando você usa o nome de um array numa expressão, o C o troca automaticamente pelo endereço do primeiro item. Em inglês, isso se chama <em>array decay</em> ("o array decai", vira ponteiro). As duas linhas abaixo fazem a mesma coisa:</p>
+
+<pre class="file">int *p = notas;        // o nome do array vira &amp;notas[0]
+int *p = &amp;notas[0];    // escrito por extenso
+</pre>
+
+<div class="note">
+<strong>"Vira" ponteiro, mas não "é" ponteiro</strong>
+O array continua sendo um array: 4 gavetas de <code>int</code>, em lugar fixo. O que acontece é que, na maior parte das expressões, o <strong>nome</strong> dele é trocado pelo endereço do primeiro item. As exceções importantes são o <code>sizeof</code> (seção 5) e o <code>&amp;notas</code>. E um array não pode receber outro valor: <code>notas = outro;</code> é erro (veja "Quando dá errado").
+</div>
+
+<hr>
+
+<h2>2. <code>p + 1</code> anda um item, não um byte</h2>
+<p>Somar um número a um ponteiro é chamado de <strong>aritmética de ponteiros</strong>. A regra que surpreende: <code>p + 1</code> não é "o endereço seguinte", é "<strong>o item seguinte</strong>". O compilador multiplica o 1 pelo tamanho do tipo apontado:</p>
+
+<pre class="file" data-file="passo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    double precos[3] = {4.5, 3.0, 12.9};
+    int *p = notas;
+    double *q = precos;
+
+    printf("p     = %p   *p     = %d\n", (void *) p, *p);
+    printf("p + 1 = %p   *(p+1) = %d\n", (void *) (p + 1), *(p + 1));
+    printf("p + 2 = %p   *(p+2) = %d\n", (void *) (p + 2), *(p + 2));
+    printf("q     = %p   *q     = %.2f\n", (void *) q, *q);
+    printf("q + 1 = %p   *(q+1) = %.2f\n", (void *) (q + 1), *(q + 1));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra passo.c -o passo
+$ ./passo
+p     = 0x7ffc5828d0e0   *p     = 7
+p + 1 = 0x7ffc5828d0e4   *(p+1) = 8        « +4 bytes: um int
+p + 2 = 0x7ffc5828d0e8   *(p+2) = 6        « +8 bytes: dois ints
+q     = 0x7ffc5828d0f0   *q     = 4.50
+q + 1 = 0x7ffc5828d0f8   *(q+1) = 3.00     « +8 bytes: um double</pre>
+
+<figure>
+<svg viewBox="0 0 638 110" width="638" role="img" aria-label="notas com 4 ints; p aponta para o item 0, p+1 para o item 1, p+2 para o item 2, p+3 para o item 3" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><text x="85" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">…0e0</text><rect x="10" y="22" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="85" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">7</text><text x="241" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">…0e4</text><rect x="166" y="22" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="241" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">8</text><text x="397" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">…0e8</text><rect x="322" y="22" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="397" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">6</text><text x="553" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">…0ec</text><rect x="478" y="22" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="553" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">9</text><path d="M12,76 v6 H158 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="85" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">p   → *p</text><path d="M168,76 v6 H314 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="241" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">p+1 → *(p+1)</text><path d="M324,76 v6 H470 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="397" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">p+2 → *(p+2)</text><path d="M480,76 v6 H626 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="553" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">p+3 → *(p+3)</text></svg>
+<figcaption>Cada caixa é um <code>int</code> (4 gavetas). Para um ponteiro de <code>int</code>, "+1" pula as 4 gavetas de um item inteiro e cai exatamente no começo do próximo.</figcaption>
+</figure>
+
+<p>É por isso que o tipo do ponteiro importa tanto: ele diz o tamanho do passo. Com <code>int *</code>, cada passo é de 4 bytes; com <code>double *</code>, de 8; com <code>char *</code>, de 1. Se <code>p + 1</code> andasse só um byte, cairia no meio do item, o que não teria sentido nenhum.</p>
+
+<div class="tryc" data-goal="out:Terceira nota: 6,src:\*\s*\(\s*p\s*\+\s*2\s*\)">
+<p class="try-task"><strong>Missão:</strong> sem usar colchetes, mostre a terceira nota (o item de índice 2) usando o ponteiro <code>p</code> e a aritmética de ponteiros: <code>*(p + 2)</code>.</p>
+<pre class="out">Primeira nota: 7
+Terceira nota: 6</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    int *p = notas;
+
+    printf("Primeira nota: %d\n", *p);
+    // mostre "Terceira nota: " e o item de índice 2, pelo p
+
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    int *p = notas;
+
+    printf("Primeira nota: %d\n", *p);
+    printf("Terceira nota: %d\n", *(p + 2));
+
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Os parênteses importam</h3>
+<p><code>*(p + 2)</code> e <code>*p + 2</code> são coisas diferentes. O <code>*</code> vem antes do <code>+</code> na <a href="precedencia.html">precedência</a>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Expressão</th><th>Lê-se</th><th>Com <code>notas = {7, 8, 6, 9}</code></th></tr>
+<tr><td><code>*(p + 2)</code></td><td>"anda 2 itens, depois pega o valor"</td><td>6 (o item 2)</td></tr>
+<tr><td><code>*p + 2</code></td><td>"pega o valor, depois soma 2"</td><td>9 (7 + 2)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. <code>p[i]</code> é <code>*(p + i)</code></h2>
+<p>Aqui está o segredo dos colchetes: em C, <code>a[i]</code> é <strong>definido</strong> como <code>*(a + i)</code>. Os colchetes são só um jeito mais bonito de escrever "ande <code>i</code> itens e pegue o valor". Por isso eles funcionam tanto no nome do array quanto num ponteiro:</p>
+
+<pre class="file" data-file="colchete.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    int *p = notas;
+
+    for (int i = 0; i &lt; 4; i++) {
+        printf("i=%d  notas[i]=%d  *(notas+i)=%d  p[i]=%d  *(p+i)=%d\n",
+               i, notas[i], *(notas + i), p[i], *(p + i));
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra colchete.c -o colchete
+$ ./colchete
+i=0  notas[i]=7  *(notas+i)=7  p[i]=7  *(p+i)=7
+i=1  notas[i]=8  *(notas+i)=8  p[i]=8  *(p+i)=8
+i=2  notas[i]=6  *(notas+i)=6  p[i]=6  *(p+i)=6
+i=3  notas[i]=9  *(notas+i)=9  p[i]=9  *(p+i)=9</pre>
+
+<p>As quatro formas dão sempre o mesmo valor. Isso também explica por que os índices começam em <strong>0</strong>: o índice é a <strong>distância</strong> desde o primeiro item. O primeiro está a 0 passos dele mesmo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Com colchetes</th><th>Com ponteiro</th><th>Significado</th></tr>
+<tr><td><code>notas[0]</code></td><td><code>*notas</code></td><td>O primeiro item</td></tr>
+<tr><td><code>notas[i]</code></td><td><code>*(notas + i)</code></td><td>O item de índice <code>i</code></td></tr>
+<tr><td><code>&amp;notas[i]</code></td><td><code>notas + i</code></td><td>O endereço do item de índice <code>i</code></td></tr>
+<tr><td><code>p[i] = 5;</code></td><td><code>*(p + i) = 5;</code></td><td>Escreve no item de índice <code>i</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>4. Percorrer um array com um ponteiro</h2>
+<p>Em vez de um índice <code>i</code> que vai de 0 a 3, dá para usar um ponteiro que começa no primeiro item e vai andando, um item por vez, até passar do último:</p>
+
+<pre class="file" data-file="percorrer.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    int soma = 0;
+
+    for (int *p = notas; p &lt; notas + 4; p++) {
+        printf("p aponta para %p, que guarda %d\n", (void *) p, *p);
+        soma += *p;
+    }
+    printf("Soma: %d\n", soma);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra percorrer.c -o percorrer
+$ ./percorrer
+p aponta para 0x7ffe5748e290, que guarda 7
+p aponta para 0x7ffe5748e294, que guarda 8
+p aponta para 0x7ffe5748e298, que guarda 6
+p aponta para 0x7ffe5748e29c, que guarda 9
+Soma: 30</pre>
+
+<dl class="anatomy">
+  <dt>int *p = notas;</dt><dd>Começo: o ponteiro aponta para o primeiro item.</dd>
+  <dt>p &lt; notas + 4;</dt><dd>Condição: <code>notas + 4</code> é o endereço logo <strong>depois</strong> do último item (o "fim" da rua). Enquanto <code>p</code> estiver antes dele, ainda há item para ler. Ponteiros podem ser comparados com <code>&lt;</code> quando apontam para o mesmo array. Apontar para "um depois do último" é permitido; <strong>ler</strong> ali (<code>*(notas + 4)</code>) não.</dd>
+  <dt>p++</dt><dd>Passo: anda um item (4 bytes, porque é <code>int *</code>).</dd>
+  <dt>*p</dt><dd>O item atual.</dd>
+</dl>
+
+<p>Qual usar, índice ou ponteiro? Para o computador, tanto faz: o gcc gera praticamente o mesmo código. Para quem lê, o <code>for</code> com índice (<code>notas[i]</code>) costuma ser mais claro, e é o que você deve preferir. Percorrer com ponteiro aparece muito em código C de verdade, principalmente com <a href="ponteiros-strings.html">strings</a>, então é importante saber ler.</p>
+
+<h3>A distância entre dois ponteiros</h3>
+<p>Assim como dá para somar um número a um ponteiro, dá para <strong>subtrair</strong> dois ponteiros do mesmo array. O resultado é quantos itens há entre eles (e não quantos bytes):</p>
+
+<pre class="file" data-file="distancia.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    int *inicio = notas;
+    int *maior = &amp;notas[4];
+
+    printf("maior - inicio = %td itens\n", maior - inicio);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra distancia.c -o distancia
+$ ./distancia
+maior - inicio = 4 itens         « 16 bytes ÷ 4 bytes por int</pre>
+
+<p>O resultado da subtração é do tipo <code>ptrdiff_t</code> ("diferença de ponteiros"), e o formato do <code>printf</code> para ele é <code>%td</code>. Somar dois ponteiros, por outro lado, não faz sentido (somar dois endereços de casas não dá endereço nenhum) e é erro.</p>
+
+<hr>
+
+<h2>5. <code>sizeof</code>: array × ponteiro</h2>
+<p>A exceção mais importante à regra "o nome vira ponteiro" é o <code>sizeof</code>. Com o nome do array, ele mede o array <strong>inteiro</strong>. Com um ponteiro, mede só o ponteiro, o "papel com o endereço":</p>
+
+<pre class="file" data-file="tamanho.c">#include &lt;stdio.h&gt;
+
+void mostrar(int notas[]) {
+    printf("Na função: sizeof(notas) = %zu\n", sizeof(notas));
+}
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    int *p = notas;
+
+    printf("No main:   sizeof(notas) = %zu\n", sizeof(notas));
+    printf("No main:   sizeof(p)     = %zu\n", sizeof(p));
+    mostrar(notas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanho.c -o tamanho
+tamanho.c: In function ‘mostrar’:
+tamanho.c:4:54: warning: ‘sizeof’ on array function parameter ‘notas’ will return size of ‘int *’ [-Wsizeof-array-argument]
+    4 |     printf("Na função: sizeof(notas) = %zu\n", sizeof(notas));
+      |                                                      ^
+tamanho.c:3:18: note: declared here
+    3 | void mostrar(int notas[]) {
+      |              ~~~~^~~~~~~
+$ ./tamanho
+No main:   sizeof(notas) = 16        « o array: 4 itens × 4 bytes
+No main:   sizeof(p)     = 8         « o ponteiro: um endereço
+Na função: sizeof(notas) = 8         « na função, notas já é um ponteiro!</pre>
+
+<p>A terceira linha é a surpresa. Quando você passa um array para uma função, o que viaja é só o endereço do primeiro item (o nome "virou ponteiro" na chamada). Dentro da função, <code>int notas[]</code> é só outro jeito de escrever <code>int *notas</code>. O array de verdade ficou no <code>main</code>. O gcc percebe e avisa: "o <code>sizeof</code> num parâmetro de array vai devolver o tamanho de <code>int *</code>". No editor do guia, os números são 16, 4 e 4 (lá um ponteiro ocupa 4 bytes), e o Clang avisa do mesmo jeito.</p>
+
+<figure>
+<svg viewBox="0 0 482 136" width="482" role="img" aria-label="No main, o array notas com 4 itens; na função mostrar, o parâmetro notas é só um ponteiro que aponta para o primeiro item" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><defs><marker id="g9f2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs><rect x="10" y="4" width="72" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="46" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">7</text><rect x="88" y="4" width="72" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="124" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">8</text><rect x="166" y="4" width="72" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="202" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">6</text><rect x="244" y="4" width="72" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="280" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">9</text><rect x="322" y="4" width="150" height="46" rx="5" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="397" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">&amp;notas[0]</text><path d="M12,58 v6 H314 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="163" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">notas do main: 16 bytes</text><path d="M324,58 v6 H470 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="397" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">notas da função: 8 bytes</text><path d="M397,86 C397,124 46,124 46,86" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#g9f2)"/><text x="221.5" y="130" text-anchor="middle" font-size="12" style="fill:var(--accent)">o que viajou</text></svg>
+<figcaption>O array mora no <code>main</code>. A função recebe só o "papel" com o endereço do primeiro item; ela não sabe quantos itens vêm depois.</figcaption>
+</figure>
+
+<h3>A armadilha: contar itens dentro da função</h3>
+<p>A conta <code>sizeof(notas) / sizeof(notas[0])</code>, que descobre quantos itens um array tem, dá resultado errado dentro de uma função:</p>
+
+<pre class="file" data-file="armadilha.c">#include &lt;stdio.h&gt;
+
+double media(int notas[]) {
+    int n = sizeof(notas) / sizeof(notas[0]);
+    int soma = 0;
+    for (int i = 0; i &lt; n; i++) {
+        soma += notas[i];
+    }
+    printf("(a função acha que são %d notas)\n", n);
+    return (double) soma / n;
+}
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    printf("Média: %.2f\n", media(notas));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra armadilha.c -o armadilha
+armadilha.c: In function ‘media’:
+armadilha.c:4:19: warning: ‘sizeof’ on array function parameter ‘notas’ will return size of ‘int *’ [-Wsizeof-array-argument]
+    4 |     int n = sizeof(notas) / sizeof(notas[0]);
+      |                   ^
+armadilha.c:3:18: note: declared here
+    3 | double media(int notas[]) {
+      |              ~~~~^~~~~~~
+$ ./armadilha
+(a função acha que são 2 notas)      « 8 bytes do ponteiro ÷ 4 bytes do int
+Média: 7.50                          « a média só de 7 e 8. A certa é 8.00</pre>
+
+<p>Nenhuma falha, nenhuma mensagem de erro: só um resultado errado, que passaria despercebido se você não conferisse. No editor, a função acha que é <strong>1</strong> nota (4 ÷ 4) e mostra <code>Média: 7.00</code>. O conserto é a regra de ouro das funções que recebem arrays em C: <strong>mande o tamanho junto</strong>, contado no lugar onde o array de verdade existe:</p>
+
+<pre class="file" data-file="media.c">#include &lt;stdio.h&gt;
+
+double media(int *notas, int n) {
+    int soma = 0;
+    for (int i = 0; i &lt; n; i++) {
+        soma += notas[i];
+    }
+    return (double) soma / n;
+}
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    int n = sizeof(notas) / sizeof(notas[0]);
+
+    printf("Média: %.2f\n", media(notas, n));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra media.c -o media
+$ ./media
+Média: 8.00</pre>
+
+<p>Repare que o parâmetro agora está escrito como <code>int *notas</code>, que é o que ele realmente é. <code>int notas[]</code> também funcionaria (é o mesmo tipo), mas engana quem lê. Dentro da função, <code>notas[i]</code> continua funcionando, porque <code>p[i]</code> vale para qualquer ponteiro.</p>
+
+<hr>
+
+<h2>Formas de passar um array para uma função: qual usar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parâmetro</th><th>O que é de verdade</th><th>Use?</th></tr>
+<tr><td><code>int *v, int n</code></td><td>Um ponteiro e o número de itens.</td><td><strong>Sim.</strong> É o padrão em C: claro e honesto.</td></tr>
+<tr><td><code>int v[], int n</code></td><td>O mesmo que <code>int *v</code>.</td><td>Pode; muita gente usa para dizer "aqui vem um array".</td></tr>
+<tr><td><code>int v[5]</code></td><td>Também o mesmo que <code>int *v</code>! O 5 é ignorado pelo compilador.</td><td>Evite: promete um tamanho que ninguém confere.</td></tr>
+<tr><td><code>int v[]</code> sem o tamanho, e <code>sizeof</code> dentro</td><td>O <code>sizeof</code> mede o ponteiro.</td><td><strong>Nunca.</strong></td></tr>
+</table>
+</div>
+
+<p>Como a função recebe um ponteiro para os itens <strong>originais</strong>, ela pode mudá-los (o <code>main</code> vê a mudança). Quando a função só precisa ler, a aula <a href="const-ponteiros.html">const e Ponteiros</a> mostra como prometer isso com <code>const int *v</code>.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"assignment to expression with array type": um array não recebe outro</strong>
+<pre class="file" data-file="atribuir.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    int outras[4] = {1, 2, 3, 4};
+
+    notas = outras;
+    notas++;
+    printf("%d\n", notas[0]);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra atribuir.c -o atribuir
+atribuir.c: In function ‘main’:
+atribuir.c:7:11: error: assignment to expression with array type
+    7 |     notas = outras;
+      |           ^
+atribuir.c:8:10: error: lvalue required as increment operand
+    8 |     notas++;
+      |          ^~</pre>
+<p><strong>O que significa:</strong> "atribuição a uma expressão de tipo array" e "é preciso um <em>lvalue</em> no <code>++</code>". O nome do array se comporta como o endereço do primeiro item, mas esse endereço é fixo: o array mora onde mora, e não dá para "mudá-lo de lugar" nem fazê-lo andar. No editor, o Clang diz <code>array type 'int[4]' is not assignable</code> e <code>cannot increment value of type 'int[4]'</code>.</p>
+<p><strong>Como consertar:</strong> para andar, use um ponteiro (<code>int *p = notas; p++;</code>). Para copiar os itens, copie um por um num <code>for</code>, ou use <code>memcpy</code> (veja <a href="funcoes-string.html">Funções de String</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"‘sizeof’ on array function parameter": contar itens na função</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra armadilha.c -o armadilha
+armadilha.c: In function ‘media’:
+armadilha.c:4:19: warning: ‘sizeof’ on array function parameter ‘notas’ will return size of ‘int *’ [-Wsizeof-array-argument]
+    4 |     int n = sizeof(notas) / sizeof(notas[0]);
+      |                   ^</pre>
+<p><strong>O que significa:</strong> dentro da função, o parâmetro é um ponteiro, e o <code>sizeof</code> mede o ponteiro (8 bytes), não o array.</p>
+<p><strong>Como consertar:</strong> conte os itens no lugar em que o array foi criado e passe o número como outro parâmetro: <code>media(notas, n)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Andou além do fim do array</strong>
+<p><strong>O que acontece:</strong> <code>*(p + 10)</code> num array de 4 itens lê uma gaveta que não é do array. O C <strong>não confere</strong>: não há erro de compilação e, na maioria das vezes, nem falha de segmentação. O programa simplesmente lê (ou, pior, escreve) o que estiver lá. É o mesmo problema do índice fora do array da aula <a href="arrays.html">Arrays</a>, porque <code>p[10]</code> e <code>*(p + 10)</code> são a mesma coisa. No editor do guia, isso também passa calado.</p>
+<p><strong>Como evitar:</strong> todo laço com ponteiro precisa de um fim claro (<code>p &lt; notas + n</code>). Para caçar esse tipo de erro, compile com <code>-fsanitize=address</code> (veja <a href="sanitizers.html">Sanitizers</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que faz</th></tr>
+<tr><td><code>int *p = notas;</code></td><td>O nome do array vira o endereço do primeiro item (<code>&amp;notas[0]</code>).</td></tr>
+<tr><td><code>p + i</code></td><td>O endereço do item <code>i</code> posições à frente (anda <code>i × sizeof(*p)</code> bytes).</td></tr>
+<tr><td><code>*(p + i)</code> ≡ <code>p[i]</code></td><td>O item de índice <code>i</code>. Exatamente a mesma coisa.</td></tr>
+<tr><td><code>p++</code> / <code>p--</code></td><td>Anda um item para frente / para trás.</td></tr>
+<tr><td><code>q - p</code></td><td>Quantos itens há entre dois ponteiros do mesmo array (<code>ptrdiff_t</code>, formato <code>%td</code>).</td></tr>
+<tr><td><code>p &lt; notas + n</code></td><td>Compara ponteiros do mesmo array (condição de fim de laço).</td></tr>
+<tr><td><code>sizeof(notas)</code></td><td>O array inteiro (só onde o array foi criado).</td></tr>
+<tr><td><code>sizeof(p)</code></td><td>Só o ponteiro: 8 no Linux de 64 bits, 4 no editor.</td></tr>
+<tr><td><code>void f(int *v, int n)</code></td><td>O jeito certo de receber um array numa função: ponteiro e tamanho.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O segundo item</h3>
+<p>O ponteiro <code>p</code> aponta para <code>notas[0]</code>. Complete, sem colchetes, para mostrar <code>notas[1]</code>:</p>
+<div class="ex-code">printf("%d\n", <input data-answer="*(p + 1)|*(p+1)|*(1 + p)|*(1+p)" aria-label="expressão">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Quantos bytes?</h3>
+<p>Um <code>double *q</code> vale <code>0x1000</code>. Quanto vale <code>q + 1</code>? (em hexadecimal, com <code>0x</code>)</p>
+<div class="ex-code">q + 1 = <input data-answer="0x1008" aria-label="endereço"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Com colchetes</h3>
+<p>Reescreva <code>*(v + 3)</code> com colchetes:</p>
+<div class="ex-code"><input data-answer="v[3]" aria-label="expressão"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Dentro de <code>void f(int v[])</code>, no Linux de 64 bits, quanto vale <code>sizeof(v)</code>?</p>
+<label><input type="radio" name="q4"> O tamanho do array original</label>
+<label><input type="radio" name="q4"> 4</label>
+<label><input type="radio" name="q4"> 8, porque <code>v</code> é um ponteiro</label>
+<label><input type="radio" name="q4"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Com <code>int notas[4] = {7, 8, 6, 9}; int *p = notas;</code>, quanto vale <code>*p + 2</code>?</p>
+<label><input type="radio" name="q5"> 6</label>
+<label><input type="radio" name="q5"> 9</label>
+<label><input type="radio" name="q5"> 8</label>
+<label><input type="radio" name="q5"> Um endereço</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual linha dá erro de compilação?</p>
+<label><input type="radio" name="q6"> <code>notas++;</code> (com <code>notas</code> um array)</label>
+<label><input type="radio" name="q6"> <code>p++;</code> (com <code>p</code> um ponteiro)</label>
+<label><input type="radio" name="q6"> <code>int *p = notas;</code></label>
+<label><input type="radio" name="q6"> <code>p[2] = 5;</code></label>
+</div>
+
+<h3>Missão final: a média de qualquer turma</h3>
+
+<div class="tryc" data-goal="out:Turma A: 8.00,out:Turma B: 6.50,src:^double\s+media\s*\(">
+<p class="try-task"><strong>Missão:</strong> escreva a função <code>media</code>, que recebe um ponteiro para as notas e a quantidade: <code>double media(int *v, int n)</code>. Ela deve somar as <code>n</code> notas e devolver a média. O <code>main</code> já está pronto e chama a função com duas turmas de tamanhos diferentes.</p>
+<pre class="out">Turma A: 8.00
+Turma B: 6.50</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+// escreva aqui: double media(int *v, int n) { ... }
+
+int main(void) {
+    int turma_a[5] = {7, 8, 6, 9, 10};
+    int turma_b[2] = {5, 8};
+
+    printf("Turma A: %.2f\n", media(turma_a, 5));
+    printf("Turma B: %.2f\n", media(turma_b, 2));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+double media(int *v, int n) {
+    int soma = 0;
+    for (int i = 0; i &lt; n; i++) {
+        soma += v[i];
+    }
+    return (double) soma / n;
+}
+
+int main(void) {
+    int turma_a[5] = {7, 8, 6, 9, 10};
+    int turma_b[2] = {5, 8};
+
+    printf("Turma A: %.2f\n", media(turma_a, 5));
+    printf("Turma B: %.2f\n", media(turma_b, 2));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O nome de um array, numa expressão, vira o endereço do primeiro item: <code>int *p = notas;</code> é o mesmo que <code>int *p = &amp;notas[0];</code>.</li>
+  <li><code>p + 1</code> anda <strong>um item</strong> (4 bytes para <code>int</code>, 8 para <code>double</code>), e não um byte.</li>
+  <li><code>p[i]</code> é, por definição, <code>*(p + i)</code>. Os colchetes funcionam em arrays e em ponteiros.</li>
+  <li>Dá para percorrer um array com <code>for (int *p = v; p &lt; v + n; p++)</code>, mas o índice costuma ser mais claro.</li>
+  <li><code>sizeof</code> do array mede tudo; <code>sizeof</code> do ponteiro mede só o endereço. Numa função, o "array" recebido é um ponteiro: mande o tamanho junto.</li>
+  <li>Um array não pode ser atribuído nem andar (<code>notas++</code> é erro). E o C não confere se você passou do fim.</li>
+  <li>Próxima aula: <a href="passagem-ponteiro.html">Passar por Ponteiro</a>, funções que mudam variáveis de quem as chamou.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
