@@ -341,7 +341,7 @@ com_restrict:
 <p>Com <code>restrict</code>, o gcc confiou na promessa e respondeu 1 direto, sem reler <code>*a</code>. Uma instrução a menos. Num laço que roda milhões de vezes, coisas assim fazem diferença, e é por isso que funções como <code>memcpy</code> usam <code>restrict</code>. Mas, se a promessa é falsa, a resposta sai errada: comportamento indefinido.</p>
 
 <div class="tryc" data-flags="-std=c23 -Wall -Wextra -O2">
-<p class="try-task"><strong>Experimente:</strong> esta caixa compila com <code>-O2</code>, e o Clang do editor faz a mesma otimização do gcc. Rode e veja o <code>2 1</code>. Depois apague as duas palavras <code>restrict</code> e rode de novo.</p>
+<p class="try-task"><strong>Experimente:</strong> esta caixa compila com <code>-O2</code>, e o Clang do editor faz a mesma otimização do gcc. Rode e veja a segunda linha: <code>o mesmo ponteiro:     1</code>, quando a resposta certa seria 2. Depois apague as duas palavras <code>restrict</code> e rode de novo: aparece o 2.</p>
 <pre class="script">#include &lt;stdio.h&gt;
 
 int com_restrict(int *restrict a, int *restrict b) {
