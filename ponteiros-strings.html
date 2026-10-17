@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Ponteiros e Strings — char *, percorrer até o '\0' e char[] × char * | Guia C</title>
+<meta name="description" content="Ponteiros e strings em C para quem nunca programou: o nome da string vira um char * para a primeira letra, percorrer com p++ até o '\0', medir com p - s, funções que recebem e mudam strings, a diferença entre char s[] e char *p = literal (sizeof, mudar letras, trocar o texto), devolver um ponteiro para dentro da string e os erros reais (literal alterado, ponteiro sem valor, array local devolvido), com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Ponteiros e Strings</span></h1>
+
+<p class="intro">Uma string em C é um array de <code>char</code> que termina num <code>'\0'</code> (<a href="strings.html">Strings</a>). E o nome de um array vira um ponteiro para o primeiro item (<a href="ponteiros-arrays.html">Ponteiros e Arrays</a>). Juntando as duas aulas: quase sempre que um programa em C mexe com texto, ele está segurando um <strong><code>char *</code></strong>, o endereço da primeira letra. Nesta aula você vai andar por uma string com um ponteiro, escrever funções que recebem texto, entender de vez a diferença entre <code>char s[]</code> e <code>char *p</code>, e conhecer os erros que derrubam programas que lidam com texto.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que uma string "é" um <code>char *</code> e o que <code>printf("%s", p + 4)</code> mostra.</li>
+  <li>Como percorrer uma string com <code>p++</code> até o <code>'\0'</code>, e medir o tamanho com <code>p - s</code>.</li>
+  <li>Como escrever funções que recebem uma string e até a mudam.</li>
+  <li>A diferença entre <code>char cidade[] = "Recife"</code> e <code>char *apelido = "Recife"</code>.</li>
+  <li>Como uma função devolve um ponteiro para <strong>dentro</strong> de uma string.</li>
+  <li>Os erros: alterar um literal, usar um <code>char *</code> sem valor e devolver um array local.</li>
+</ul>
+</div>
+
+<p>Os programas foram compilados na máquina da Ana, na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o dedo na fila de cadeiras</h2>
+<p>Na aula <a href="strings.html">Strings</a>, uma string era uma fila de cadeiras, uma letra em cada, com a placa "FIM" (o <code>'\0'</code>) na última. Para ler o texto, você não precisa saber quantas cadeiras são: basta pôr o <strong>dedo</strong> na primeira e ir andando, uma cadeira por vez, até encontrar a placa.</p>
+<p>O ponteiro é esse dedo. Um <code>char *</code> aponta para uma cadeira (uma letra). <code>*p</code> é a letra embaixo do dedo; <code>p++</code> anda o dedo uma cadeira. E todas as funções de texto do C (<code>printf</code> com <code>%s</code>, <code>strlen</code>, <code>strcpy</code>…) recebem só o dedo na primeira cadeira e andam sozinhas até a placa.</p>
+
+<hr>
+
+<h2>1. A string vira um ponteiro para a primeira letra</h2>
+
+<pre class="file" data-file="primeira.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[] = "Ana Lima";
+    char *p = nome;
+
+    printf("*p       = %c\n", *p);
+    printf("p[1]     = %c\n", p[1]);
+    printf("*(p + 2) = %c\n", *(p + 2));
+    printf("p        = %s\n", p);
+    printf("p + 4    = %s\n", p + 4);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>char *p = nome;</dt><dd>O nome do array vira o endereço da primeira letra, <code>&amp;nome[0]</code>, e <code>p</code> guarda esse endereço. O tipo é <code>char *</code>: "ponteiro para <code>char</code>".</dd>
+  <dt>*p</dt><dd>A letra para onde <code>p</code> aponta: <code>'A'</code>. Mostrada com <code>%c</code>, um caractere só.</dd>
+  <dt>p[1] e *(p + 2)</dt><dd>As mesmas formas de <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>: <code>p[1]</code> é a segunda letra; <code>*(p + 2)</code> é a terceira.</dd>
+  <dt>printf("%s", p)</dt><dd>O <code>%s</code> recebe um <code>char *</code>: ele mostra a letra apontada e todas as seguintes, até o <code>'\0'</code>.</dd>
+  <dt>printf("%s", p + 4)</dt><dd><code>p + 4</code> aponta para a quinta cadeira, a do <code>L</code>. O <code>%s</code> começa dali: mostra só <code>Lima</code>. Nada foi copiado nem cortado; o texto inteiro continua no array.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra primeira.c -o primeira
+$ ./primeira
+*p       = A
+p[1]     = n
+*(p + 2) = a
+p        = Ana Lima
+p + 4    = Lima</pre>
+
+<figure>
+<svg viewBox="0 0 640 150" width="640" role="img" aria-label="O array nome com as letras A, n, a, espaço, L, i, m, a e o \0; p aponta para o A e p + 4 aponta para o L" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><defs><marker id="ps-seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs><text x="20" y="22" font-size="14" font-weight="bold" style="fill:var(--text)">nome</text><rect x="70" y="40" width="56" height="44" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="98" y="68" text-anchor="middle" font-size="16" style="fill:var(--text)">A</text><rect x="126" y="40" width="56" height="44" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="154" y="68" text-anchor="middle" font-size="16" style="fill:var(--text)">n</text><rect x="182" y="40" width="56" height="44" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="210" y="68" text-anchor="middle" font-size="16" style="fill:var(--text)">a</text><rect x="238" y="40" width="56" height="44" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="266" y="68" text-anchor="middle" font-size="13" style="fill:var(--muted)">' '</text><rect x="294" y="40" width="56" height="44" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="322" y="68" text-anchor="middle" font-size="16" style="fill:var(--text)">L</text><rect x="350" y="40" width="56" height="44" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="378" y="68" text-anchor="middle" font-size="16" style="fill:var(--text)">i</text><rect x="406" y="40" width="56" height="44" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="434" y="68" text-anchor="middle" font-size="16" style="fill:var(--text)">m</text><rect x="462" y="40" width="56" height="44" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="490" y="68" text-anchor="middle" font-size="16" style="fill:var(--text)">a</text><rect x="518" y="40" width="56" height="44" style="fill:var(--sidebar-bg);stroke:var(--border);stroke-width:1.5"/><text x="546" y="68" text-anchor="middle" font-size="15" style="fill:var(--text)">\0</text><text x="98" y="140" text-anchor="middle" font-size="14" style="fill:var(--accent)">p</text><path d="M98,124 L98,90" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#ps-seta)"/><text x="322" y="140" text-anchor="middle" font-size="14" style="fill:var(--accent)">p + 4</text><path d="M322,124 L322,90" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#ps-seta)"/></svg>
+<figcaption>Um texto só, na memória. <code>p</code> aponta para o <code>A</code> e <code>p + 4</code> para o <code>L</code>. O <code>%s</code> lê de onde o ponteiro aponta até o <code>'\0'</code>: por isso <code>p + 4</code> mostra <code>Lima</code>.</figcaption>
+</figure>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> troque o nome pelo seu e mude o <code>p + 4</code> para mostrar só o sobrenome. Depois tente <code>p + 1</code> e <code>p + 7</code>. O que aparece com <code>p + 8</code>, a posição do <code>'\0'</code>?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[] = "Ana Lima";
+    char *p = nome;
+
+    printf("*p       = %c\n", *p);
+    printf("p        = %s\n", p);
+    printf("p + 4    = %s\n", p + 4);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Percorrer a string com um ponteiro</h2>
+<p>Na aula <a href="strings.html">Strings</a>, você percorreu o texto com um índice: <code>for (int i = 0; s[i] != '\0'; i++)</code>. Com um ponteiro, o próprio "dedo" anda:</p>
+
+<pre class="file" data-file="percorrer.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char palavra[] = "gato";
+
+    for (char *p = palavra; *p != '\0'; p++) {
+        printf("[%c] ", *p);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>char *p = palavra;</dt><dd>O dedo começa na primeira letra.</dd>
+  <dt>*p != '\0'</dt><dd>"Enquanto a letra embaixo do dedo não for a placa de fim". Muita gente escreve só <code>*p</code>, que dá no mesmo: o <code>'\0'</code> vale 0, que é falso.</dd>
+  <dt>p++</dt><dd>Anda uma letra (um <code>char</code> é 1 byte, então o endereço sobe 1).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra percorrer.c -o percorrer
+$ ./percorrer
+[g] [a] [t] [o]</pre>
+
+<h3>Medir o tamanho: <code>p - s</code></h3>
+<p>Se o dedo começou na primeira letra e parou no <code>'\0'</code>, a <strong>distância</strong> que ele andou é o número de letras. Subtrair dois ponteiros dá exatamente isso (<a href="ponteiros-arrays.html">Ponteiros e Arrays</a>). É assim que o <code>strlen</code> funciona por dentro:</p>
+
+<pre class="file" data-file="tamanho.c">#include &lt;stdio.h&gt;
+
+int tamanho(char *s) {
+    char *p = s;
+    while (*p != '\0') {
+        p++;
+    }
+    return p - s;
+}
+
+int main(void) {
+    char nome[] = "Ana";
+    char frase[] = "Bom dia, turma!";
+
+    printf("\"%s\" tem %d letras\n", nome, tamanho(nome));
+    printf("\"%s\" tem %d caracteres\n", frase, tamanho(frase));
+    printf("\"\" tem %d\n", tamanho(""));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int tamanho(char *s)</dt><dd>A função recebe a string como <code>char *</code>: o endereço da primeira letra. É a forma comum de passar texto para uma função.</dd>
+  <dt>char *p = s; while (*p != '\0') p++;</dt><dd>Um segundo dedo, <code>p</code>, anda até o <code>'\0'</code>. O <code>s</code> fica parado no começo.</dd>
+  <dt>return p - s;</dt><dd>A distância entre os dois dedos: quantas letras <code>p</code> andou. O <code>'\0'</code> não entra na conta.</dd>
+  <dt>tamanho("")</dt><dd>A string vazia: o primeiro caractere já é o <code>'\0'</code>, o laço não anda nada, e a distância é 0.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanho.c -o tamanho
+$ ./tamanho
+"Ana" tem 3 letras
+"Bom dia, turma!" tem 15 caracteres
+"" tem 0</pre>
+
+<p>A subtração de dois ponteiros tem um tipo próprio, o <code>ptrdiff_t</code> (de <code>&lt;stddef.h&gt;</code>, mostrado com <code>%td</code>). Aqui ele foi convertido para <code>int</code> no <code>return</code>, o que basta para textos de tamanho normal. O <code>strlen</code> de verdade devolve <code>size_t</code> (<a href="funcoes-string.html">Funções de String</a>).</p>
+
+<div class="tryc" data-goal="outre:^a em banana: 3\na em abacaxi: 3\nr em arara: 2\n$,src:\*\s*p\s*==|==\s*\*\s*p">
+<p class="try-task"><strong>Missão:</strong> complete a função <code>contar</code>, que conta quantas vezes uma letra aparece no texto. O laço com o ponteiro <code>p</code> já está pronto; falta, dentro dele, comparar a letra apontada (<code>*p</code>) com <code>letra</code> e somar 1 em <code>total</code>.</p>
+<pre class="out">a em banana: 3
+a em abacaxi: 3
+r em arara: 2</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int contar(char *s, char letra) {
+    int total = 0;
+    for (char *p = s; *p != '\0'; p++) {
+        // se a letra apontada por p for igual a letra, some 1 em total
+    }
+    return total;
+}
+
+int main(void) {
+    char fruta1[] = "banana";
+    char fruta2[] = "abacaxi";
+    char ave[] = "arara";
+
+    printf("a em %s: %d\n", fruta1, contar(fruta1, 'a'));
+    printf("a em %s: %d\n", fruta2, contar(fruta2, 'a'));
+    printf("r em %s: %d\n", ave, contar(ave, 'r'));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int contar(char *s, char letra) {
+    int total = 0;
+    for (char *p = s; *p != '\0'; p++) {
+        if (*p == letra) {
+            total++;
+        }
+    }
+    return total;
+}
+
+int main(void) {
+    char fruta1[] = "banana";
+    char fruta2[] = "abacaxi";
+    char ave[] = "arara";
+
+    printf("a em %s: %d\n", fruta1, contar(fruta1, 'a'));
+    printf("a em %s: %d\n", fruta2, contar(fruta2, 'a'));
+    printf("r em %s: %d\n", ave, contar(ave, 'r'));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Uma função que muda a string</h2>
+<p>Como a função recebe o <strong>endereço</strong> das letras, e não uma cópia, ela pode mudar o texto de quem a chamou (o mesmo motivo de <a href="passagem-ponteiro.html">Passar por Ponteiro</a>). A Ana quer transformar um aviso em letras maiúsculas, para chamar a atenção:</p>
+
+<pre class="file" data-file="gritar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+void gritar(char *s) {
+    for (char *p = s; *p != '\0'; p++) {
+        *p = toupper(*p);
+    }
+}
+
+int main(void) {
+    char aviso[] = "a prova foi adiada";
+
+    gritar(aviso);
+    printf("%s\n", aviso);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;ctype.h&gt;</dt><dd>Traz o <code>toupper</code> ("to upper", para maiúscula), que devolve a versão maiúscula de uma letra; o que não é letra volta igual (<a href="ctype.html">Classificar Caracteres</a>).</dd>
+  <dt>*p = toupper(*p);</dt><dd>Lê a letra apontada, troca pela maiúscula e <strong>escreve de volta na mesma cadeira</strong>. É o array <code>aviso</code> do <code>main</code> que muda.</dd>
+  <dt>gritar(aviso);</dt><dd>Sem <code>&amp;</code>: o nome do array já é o endereço da primeira letra.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra gritar.c -o gritar
+$ ./gritar
+A PROVA FOI ADIADA</pre>
+
+<p>O cabeçalho <code>void gritar(char s[])</code>, com colchetes, quer dizer <strong>exatamente</strong> a mesma coisa que <code>char *s</code>: num parâmetro, o C troca o array por um ponteiro. Muita gente prefere o <code>char *s</code> justamente para deixar claro que a função recebe um endereço.</p>
+
+<div class="note">
+<strong>E quando a função só lê?</strong>
+<p>A <code>tamanho</code> e a <code>contar</code> não mudam nenhuma letra. Para elas, o certo é <code>const char *s</code>: o <code>const</code> promete (e o compilador garante) que a função não vai escrever no texto. Isso é tão importante que tem aula própria, a próxima: <a href="const-ponteiros.html">const e Ponteiros</a>.</p>
+</div>
+
+<hr>
+
+<h2>4. <code>char s[]</code> × <code>char *p</code>: duas coisas diferentes</h2>
+<p>Estas duas linhas parecem iguais, mas criam coisas diferentes:</p>
+
+<pre class="file" data-file="duas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char cidade[] = "Recife";
+    char *apelido = "Recife";
+
+    printf("sizeof cidade  = %zu\n", sizeof cidade);
+    printf("sizeof apelido = %zu\n", sizeof apelido);
+
+    cidade[0] = 'r';
+    printf("cidade  = %s\n", cidade);
+
+    apelido = "Veneza brasileira";
+    printf("apelido = %s\n", apelido);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra duas.c -o duas
+$ ./duas
+sizeof cidade  = 7
+sizeof apelido = 8
+cidade  = recife
+apelido = Veneza brasileira</pre>
+
+<dl class="anatomy">
+  <dt>char cidade[] = "Recife";</dt><dd>Um <strong>array</strong> de 7 bytes (6 letras + <code>'\0'</code>) que é seu. As letras do literal são <strong>copiadas</strong> para ele. Você pode mudar as letras (<code>cidade[0] = 'r'</code>).</dd>
+  <dt>char *apelido = "Recife";</dt><dd>Um <strong>ponteiro</strong> (8 bytes no Linux de 64 bits, 4 no editor) que aponta para o próprio literal <code>"Recife"</code>, guardado numa área <strong>só de leitura</strong> do programa. Nada é copiado.</dd>
+  <dt>sizeof cidade × sizeof apelido</dt><dd>O primeiro mede o array inteiro (7); o segundo mede só o ponteiro (8), não importa o tamanho do texto.</dd>
+  <dt>apelido = "Veneza brasileira";</dt><dd>O ponteiro pode passar a apontar para <strong>outro</strong> texto. O primeiro literal continua lá, intocado.</dd>
+</dl>
+
+<figure>
+<svg viewBox="0 0 640 170" width="640" role="img" aria-label="cidade é um array com as letras copiadas; apelido é um ponteiro que aponta para o literal Recife na área só de leitura" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><defs><marker id="ps-seta2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs><text x="10" y="45" font-size="14" font-weight="bold" style="fill:var(--text)">cidade</text><rect x="110" y="20" width="350" height="40" rx="4" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="285" y="46" text-anchor="middle" font-size="16" style="fill:var(--text)">r  e  c  i  f  e  \0</text><text x="475" y="46" font-size="13" style="fill:var(--muted)">7 bytes, seus</text><text x="10" y="115" font-size="14" font-weight="bold" style="fill:var(--text)">apelido</text><rect x="110" y="90" width="90" height="40" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="155" y="116" text-anchor="middle" font-size="16" style="fill:var(--text)">•</text><path d="M200,110 L290,110" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#ps-seta2)"/><rect x="300" y="90" width="210" height="40" rx="4" style="fill:var(--sidebar-bg);stroke:var(--border);stroke-width:1.5;stroke-dasharray:5 3"/><text x="405" y="116" text-anchor="middle" font-size="16" style="fill:var(--text)">R  e  c  i  f  e  \0</text><text x="300" y="155" font-size="13" style="fill:var(--muted)">literal na área só de leitura</text></svg>
+<figcaption><code>cidade</code> tem as próprias letras (uma cópia, que pode mudar). <code>apelido</code> só guarda um endereço: as letras são as do literal, que não podem ser alteradas.</figcaption>
+</figure>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>char cidade[] = "Recife";</code></th><th><code>char *apelido = "Recife";</code></th></tr>
+<tr><td>O que é</td><td>Um array com uma cópia do texto</td><td>Um ponteiro para o literal</td></tr>
+<tr><td><code>sizeof</code></td><td>7 (o texto inteiro, com o <code>'\0'</code>)</td><td>8 no Linux, 4 no editor (o ponteiro)</td></tr>
+<tr><td>Mudar uma letra</td><td>Pode: <code>cidade[0] = 'r';</code></td><td><strong>Não</strong>: compila, mas o programa morre (<a href="strings.html">Strings</a>, seção 10)</td></tr>
+<tr><td>Trocar o texto inteiro com <code>=</code></td><td><strong>Não compila</strong>: use <code>snprintf</code> ou <code>strcpy</code></td><td>Pode: <code>apelido = "Olinda";</code> aponta para outro literal</td></tr>
+<tr><td>Melhor declaração</td><td><code>char cidade[] = …</code></td><td><code>const char *apelido = …</code> (<a href="const-ponteiros.html">const e Ponteiros</a>)</td></tr>
+</table>
+</div>
+
+<p>Tentar trocar o texto do array com <code>=</code> é erro de compilação:</p>
+
+<pre class="file" data-file="atribuir.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char cidade[20] = "Recife";
+    cidade = "Olinda";
+    printf("%s\n", cidade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra atribuir.c -o atribuir
+atribuir.c: In function ‘main’:
+atribuir.c:5:12: error: assignment to expression with array type
+    5 |     cidade = "Olinda";
+      |            ^</pre>
+
+<p>"Atribuição a uma expressão de tipo array". Um array não pode ser trocado de lugar: ele <strong>é</strong> as suas cadeiras. Para pôr outro texto nelas, copie letra por letra com <code>snprintf(cidade, sizeof cidade, "%s", "Olinda");</code> (<a href="funcoes-string.html">Funções de String</a>). No editor, o Clang diz <code>array type 'char[20]' is not assignable</code> ("o tipo array <code>char[20]</code> não aceita atribuição").</p>
+
+<h3>Alterar o literal pelo ponteiro</h3>
+<p>Juntando as seções 3 e 4: se você passar para <code>gritar</code> um ponteiro para literal, em vez de um array, a função tenta escrever na área só de leitura:</p>
+
+<pre class="file" data-file="gritarlit.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+void gritar(char *s) {
+    for (char *p = s; *p != '\0'; p++) {
+        *p = toupper(*p);
+    }
+}
+
+int main(void) {
+    char *aviso = "a prova foi adiada";
+
+    gritar(aviso);
+    printf("%s\n", aviso);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra gritarlit.c -o gritarlit     « nenhum aviso
+$ ./gritarlit
+Falha de segmentação     (imagem do núcleo gravada) ./gritarlit
+$ echo $?
+139</pre>
+
+<p>Só uma linha mudou (<code>char *aviso</code> em vez de <code>char aviso[]</code>), o gcc não avisou nada, e o programa morreu na primeira letra. No <strong>editor</strong>, o mesmo programa mostra <code>A PROVA FOI ADIADA</code> e termina normalmente, porque no WebAssembly não existe memória só de leitura. Não se engane: num computador de verdade ele cai. A defesa é declarar <code>const char *aviso</code>: aí o compilador recusa passar o texto para uma função que escreve nele (<a href="const-ponteiros.html">const e Ponteiros</a>).</p>
+
+<hr>
+
+<h2>5. Devolver um ponteiro para dentro da string</h2>
+<p>Uma função pode devolver um <code>char *</code> que aponta para <strong>o meio</strong> de um texto que já existe. A Ana quer separar o usuário e o domínio de um e-mail. Primeiro, uma função que acha a primeira vez que um caractere aparece:</p>
+
+<pre class="file" data-file="dominio.c">#include &lt;stdio.h&gt;
+
+char *achar(char *s, char c) {
+    for (char *p = s; *p != '\0'; p++) {
+        if (*p == c) {
+            return p;
+        }
+    }
+    return NULL;
+}
+
+int main(void) {
+    char email[] = "ana.lima@escola.edu.br";
+
+    char *arroba = achar(email, '@');
+    if (arroba == NULL) {
+        printf("e-mail sem @\n");
+        return 1;
+    }
+    printf("O @ está na posição %td\n", arroba - email);
+    printf("Domínio: %s\n", arroba + 1);
+
+    *arroba = '\0';
+    printf("Usuário: %s\n", email);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>char *achar(char *s, char c)</dt><dd>Devolve um <code>char *</code>: o endereço da cadeira onde o <code>c</code> está.</dd>
+  <dt>return p;</dt><dd>Achou: devolve o dedo parado no <code>@</code>. O endereço aponta para dentro do array <code>email</code> do <code>main</code>, que continua existindo depois que a função termina (diferente do erro da seção "Quando dá errado").</dd>
+  <dt>return NULL;</dt><dd>Não achou: devolve o ponteiro nulo, o "não aponta para nada" (<a href="ponteiro-nulo.html">Ponteiro Nulo</a>). Quem chama <strong>tem</strong> de conferir antes de usar.</dd>
+  <dt>arroba - email</dt><dd>A distância desde o começo: a posição do <code>@</code> (contando do 0). O <code>%td</code> é o formato do <code>ptrdiff_t</code>.</dd>
+  <dt>arroba + 1</dt><dd>A cadeira logo depois do <code>@</code>: o <code>%s</code> mostra o domínio.</dd>
+  <dt>*arroba = '\0';</dt><dd>Escreve a placa de fim em cima do <code>@</code>. Agora, para quem lê a partir de <code>email</code>, o texto acaba ali: sobra só o usuário (o truque de <a href="strings.html">Strings</a>, seção 5).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dominio.c -o dominio
+$ ./dominio
+O @ está na posição 8
+Domínio: escola.edu.br
+Usuário: ana.lima</pre>
+
+<p>A biblioteca já tem essa função pronta: <code>strchr(email, '@')</code>, do <code>&lt;string.h&gt;</code>, faz o mesmo que a <code>achar</code> (<a href="funcoes-string.html">Funções de String</a>). Escrevê-la uma vez mostra que não há mágica: é um dedo andando até achar a letra.</p>
+
+<hr>
+
+<h2>6. Uma lista de textos</h2>
+<p>Um array de <code>char *</code> guarda vários textos: cada item é um ponteiro para uma string. É o jeito comum de ter uma tabela de nomes:</p>
+
+<pre class="file" data-file="dias.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    const char *dias[] = {"domingo", "segunda", "terça", "quarta",
+                          "quinta", "sexta", "sábado"};
+
+    int hoje = 5;
+    printf("Hoje é %s.\n", dias[hoje]);
+    printf("Amanhã é %s.\n", dias[(hoje + 1) % 7]);
+    printf("A lista tem %zu itens.\n", sizeof dias / sizeof dias[0]);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>const char *dias[]</dt><dd>Um array de 7 ponteiros. Cada um aponta para um literal; o <code>const</code> diz que não vamos mudar as letras.</dd>
+  <dt>dias[hoje]</dt><dd>O item 5: um <code>const char *</code> que aponta para <code>"sexta"</code>. O <code>%s</code> o mostra.</dd>
+  <dt>(hoje + 1) % 7</dt><dd>O dia seguinte, voltando ao domingo depois do sábado.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dias.c -o dias
+$ ./dias
+Hoje é sexta.
+Amanhã é sábado.
+A lista tem 7 itens.</pre>
+
+<p>Os textos podem ter tamanhos diferentes, porque cada um mora no seu lugar e o array só guarda os endereços. A aula <a href="ponteiro-ponteiro.html">Ponteiro para Ponteiro</a> mostra como passar uma lista assim para uma função (é o caso do <code>argv</code> do <code>main</code>).</p>
+
+<hr>
+
+<h2>Formas diferentes: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th></tr>
+<tr><td>Um texto que vai mudar (ler do teclado, montar, converter)</td><td>Um array: <code>char nome[50];</code> ou <code>char aviso[] = "…";</code></td></tr>
+<tr><td>Um texto fixo, só para ler</td><td><code>const char *msg = "…";</code></td></tr>
+<tr><td>Uma função que lê um texto</td><td>Parâmetro <code>const char *s</code></td></tr>
+<tr><td>Uma função que muda um texto</td><td>Parâmetro <code>char *s</code> (e, se ela escreve mais letras, também o tamanho: <code>char *s, size_t tam</code>)</td></tr>
+<tr><td>Percorrer letra por letra</td><td>Índice (<code>s[i]</code>) ou ponteiro (<code>*p</code>, <code>p++</code>): os dois são C comum; escolha o que achar mais claro</td></tr>
+<tr><td>Uma lista de textos fixos</td><td><code>const char *lista[] = {…};</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> ao mudar uma letra</strong>
+<p><strong>O que significa:</strong> o ponteiro aponta para um literal (<code>char *s = "…";</code>), que fica numa área só de leitura. O gcc não avisa; no editor o programa nem cai.</p>
+<p><strong>Como consertar:</strong> se o texto vai mudar, use um array (<code>char s[] = "…";</code>). Se não vai, declare <code>const char *s</code>, e o compilador barra qualquer tentativa de escrita.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘nome’ is used uninitialized</code>: um <code>char *</code> sem lugar para as letras</strong>
+<pre class="file" data-file="seminicio.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char *nome;
+    printf("Seu nome: ");
+    scanf("%19s", nome);
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra seminicio.c -o seminicio
+seminicio.c: In function ‘main’:
+seminicio.c:6:5: warning: ‘nome’ is used uninitialized [-Wuninitialized]
+    6 |     scanf("%19s", nome);
+      |     ^~~~~~~~~~~~~~~~~~~
+seminicio.c:4:11: note: ‘nome’ was declared here
+    4 |     char *nome;
+      |           ^~~~
+$ echo Ana | ./seminicio
+Seu nome: Olá, (null)!</pre>
+<p><strong>O que significa:</strong> "<code>nome</code> é usado sem valor inicial". Um <code>char *</code> é só o dedo, não as cadeiras: ele não reserva espaço nenhum para as letras. Aqui o lixo dentro de <code>nome</code> calhou de ser 0 (o ponteiro nulo), o <code>scanf</code> não guardou nada e o <code>printf</code> mostrou <code>(null)</code>. Com outro lixo, o <code>scanf</code> escreveria num lugar qualquer da memória, e o programa poderia morrer ou estragar outras variáveis. No editor, o Clang avisa <code>variable 'nome' is uninitialized when used here</code>.</p>
+<p><strong>Como consertar:</strong> reserve as cadeiras com um array: <code>char nome[20];</code> (o <code>%19s</code> deixa um lugar para o <code>'\0'</code>). Ou aponte para memória reservada com <a href="malloc-free.html">malloc</a>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: assignment to expression with array type</code></strong>
+<p><strong>O que significa:</strong> você tentou trocar o texto de um array com <code>=</code>.</p>
+<p><strong>Como consertar:</strong> <code>snprintf(destino, sizeof destino, "%s", "novo texto");</code>, ou, se o texto é fixo, use um <code>const char *</code>, que pode apontar para outro literal.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: function returns address of local variable</code>: devolver um array local</strong>
+<pre class="file" data-file="local.c">#include &lt;stdio.h&gt;
+
+char *saudacao(void) {
+    char texto[] = "Bom dia!";
+    return texto;
+}
+
+int main(void) {
+    char *s = saudacao();
+    printf("%s\n", s);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra local.c -o local
+local.c: In function ‘saudacao’:
+local.c:5:12: warning: function returns address of local variable [-Wreturn-local-addr]
+    5 |     return texto;
+      |            ^~~~~
+$ ./local
+Falha de segmentação     (imagem do núcleo gravada) ./local</pre>
+<p><strong>O que significa:</strong> o array <code>texto</code> é local: some quando a função termina, e o endereço devolvido aponta para cadeiras que não existem mais (<a href="retorno.html">Valor de Retorno</a>). O gcc troca esse endereço por <code>NULL</code> de propósito, e o <code>printf</code> morre. No editor, o Clang avisa <code>address of stack memory associated with local variable 'texto' returned</code> e o programa mostra <code>Bom dia!</code> por sorte. A <code>achar</code> da seção 5 não tem esse problema porque devolve um endereço dentro do array <strong>de quem chamou</strong>.</p>
+<p><strong>Como consertar:</strong> para um texto fixo, devolva o literal: <code>const char *saudacao(void) { return "Bom dia!"; }</code> (literais existem durante o programa todo). Para um texto montado na hora, receba o array de quem chama como parâmetro (<code>void saudacao(char *destino, size_t tam)</code>) ou use <a href="strings-dinamicas.html">Strings Dinâmicas</a>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: comparison with string literal results in unspecified behavior</code></strong>
+<p><strong>O que significa:</strong> você escreveu <code>if (resposta == "sim")</code>. O <code>==</code> compara os <strong>endereços</strong> (onde cada texto mora), não as letras, e dá falso (<a href="strings.html">Strings</a>, seção 8).</p>
+<p><strong>Como consertar:</strong> <code>if (strcmp(resposta, "sim") == 0)</code>, com <code>#include &lt;string.h&gt;</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que faz</th></tr>
+<tr><td><code>char *p = nome;</code></td><td><code>p</code> aponta para a primeira letra de <code>nome</code></td></tr>
+<tr><td><code>*p</code>, <code>p[i]</code>, <code>*(p + i)</code></td><td>A letra apontada; a letra <code>i</code> posições depois</td></tr>
+<tr><td><code>printf("%s", p + 4)</code></td><td>Mostra o texto a partir da quinta letra</td></tr>
+<tr><td><code>for (char *p = s; *p != '\0'; p++)</code></td><td>Percorre a string letra por letra</td></tr>
+<tr><td><code>p - s</code></td><td>Quantas letras há entre <code>s</code> e <code>p</code> (tipo <code>ptrdiff_t</code>, formato <code>%td</code>)</td></tr>
+<tr><td><code>void f(char *s)</code></td><td>Função que recebe (e pode mudar) uma string; igual a <code>char s[]</code></td></tr>
+<tr><td><code>void f(const char *s)</code></td><td>Função que só lê a string</td></tr>
+<tr><td><code>char s[] = "Ana";</code></td><td>Array com uma cópia: as letras podem mudar; <code>s = …</code> não compila</td></tr>
+<tr><td><code>const char *p = "Ana";</code></td><td>Ponteiro para o literal: as letras não podem mudar; <code>p = "Bia";</code> pode</td></tr>
+<tr><td><code>*p = '\0';</code></td><td>Corta o texto no ponto em que <code>p</code> aponta</td></tr>
+<tr><td><code>const char *lista[] = {"a", "b"};</code></td><td>Uma lista de textos</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A letra apontada</h3>
+<p>Com <code>char *p = "gato";</code>, complete para mostrar a letra <code>g</code>:</p>
+<div class="ex-code">printf("%c\n", <input data-answer="*p|p[0]" aria-label="expressão">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Andar uma letra</h3>
+<p>Complete o laço que percorre a string até o fim:</p>
+<div class="ex-code">for (char *p = s; *p != '\0'; <input data-answer="p++|++p|p += 1|p = p + 1" aria-label="passo">)</div>
+</div>
+
+<div class="exercise">
+<h3>3. O resto do texto</h3>
+<p>Com <code>char nome[] = "Ana Lima";</code>, o que <code>printf("%s\n", nome + 4);</code> mostra?</p>
+<div class="ex-code"><input data-answer="Lima" aria-label="saída"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. No Linux de 64 bits, quanto vale <code>sizeof p</code> com <code>char *p = "Recife";</code>?</p>
+<label><input type="radio" name="q4"> 7, o tamanho do texto com o <code>'\0'</code></label>
+<label><input type="radio" name="q4"> 8, o tamanho do ponteiro</label>
+<label><input type="radio" name="q4"> 6, o número de letras</label>
+<label><input type="radio" name="q4"> 1, o tamanho de um <code>char</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Qual destas linhas <strong>não</strong> compila?</p>
+<label><input type="radio" name="q5"> <code>char s[] = "Ana"; s[0] = 'E';</code></label>
+<label><input type="radio" name="q5"> <code>const char *p = "Ana"; p = "Bia";</code></label>
+<label><input type="radio" name="q5"> <code>char s[10] = "Ana"; s = "Bia";</code></label>
+<label><input type="radio" name="q5"> <code>char *p = "Ana"; p = "Bia";</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. <code>char *s = "aviso"; gritar(s);</code>, em que <code>gritar</code> troca as letras por maiúsculas. O que acontece no Linux?</p>
+<label><input type="radio" name="q6"> O programa morre com <code>Falha de segmentação</code>: o literal fica numa área só de leitura</label>
+<label><input type="radio" name="q6"> Mostra <code>AVISO</code></label>
+<label><input type="radio" name="q6"> Erro de compilação</label>
+<label><input type="radio" name="q6"> Mostra <code>aviso</code>, sem mudar nada</label>
+</div>
+
+<h3>Missão final: o espelho de palavras</h3>
+
+<div class="tryc" data-goal="outre:^amor\nmarrocos\nA\n$,src:\*\s*inicio\s*=,semaviso">
+<p class="try-task"><strong>Missão:</strong> complete a função <code>inverter</code>, que vira uma palavra de trás para a frente <strong>no próprio array</strong> ("roma" vira "amor"). Ela já tem dois dedos: <code>inicio</code> na primeira letra e <code>fim</code> na última. Enquanto <code>inicio &lt; fim</code>: troque as letras <code>*inicio</code> e <code>*fim</code> (com uma variável <code>char temp</code>), ande <code>inicio</code> uma letra para a frente e <code>fim</code> uma para trás.</p>
+<pre class="out">amor
+marrocos
+A</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+void inverter(char *s) {
+    char *inicio = s;
+    char *fim = s + strlen(s) - 1;
+    // enquanto inicio &lt; fim: troque *inicio e *fim, avance inicio e recue fim
+}
+
+int main(void) {
+    char a[] = "roma";
+    char b[] = "socorram";
+    char c[] = "A";
+    inverter(a);
+    inverter(b);
+    inverter(c);
+    printf("%s\n%s\n%s\n", a, b, c);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+void inverter(char *s) {
+    char *inicio = s;
+    char *fim = s + strlen(s) - 1;
+    while (inicio &lt; fim) {
+        char temp = *inicio;
+        *inicio = *fim;
+        *fim = temp;
+        inicio++;
+        fim--;
+    }
+}
+
+int main(void) {
+    char a[] = "roma";
+    char b[] = "socorram";
+    char c[] = "A";
+    inverter(a);
+    inverter(b);
+    inverter(c);
+    printf("%s\n%s\n%s\n", a, b, c);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Com <code>"A"</code>, <code>inicio</code> e <code>fim</code> já começam na mesma letra, o laço não roda e nada muda. Repare que os três textos são <strong>arrays</strong>: com <code>char *a = "roma";</code>, a função tentaria escrever num literal (seção 4). E cuidado com a string vazia: com <code>""</code>, <code>fim</code> ficaria uma posição <strong>antes</strong> do começo; uma versão para uso real confere <code>if (*s == '\0') return;</code> no início.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O nome de uma string vira um <code>char *</code> para a primeira letra. Funções de texto recebem esse ponteiro e andam até o <code>'\0'</code>; <code>printf("%s", p + 4)</code> começa na quinta letra.</li>
+  <li>Percorrer: <code>for (char *p = s; *p != '\0'; p++)</code>. A distância <code>p - s</code> é o número de letras.</li>
+  <li>Uma função com parâmetro <code>char *s</code> pode mudar o texto de quem chama; se só lê, use <code>const char *s</code>.</li>
+  <li><code>char s[] = "…"</code> é um array com cópia (letras mudam; <code>s = …</code> não compila). <code>char *p = "…"</code> aponta para um literal só de leitura (mudar letra derruba o programa; <code>p = …</code> pode). Prefira <code>const char *p</code>.</li>
+  <li>Uma função pode devolver um ponteiro para dentro de uma string que já existe (como o <code>strchr</code>), mas nunca o endereço de um array local.</li>
+  <li>Um <code>char *</code> sem valor não tem cadeiras para as letras: reserve um array antes de ler texto.</li>
+  <li>Próxima aula: <a href="const-ponteiros.html">const e Ponteiros</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
