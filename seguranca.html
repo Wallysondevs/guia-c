@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Segurança — Buffer Overflow (gets, strcpy, scanf) | Guia C</title>
+<meta name="description" content="Segurança em C para quem nunca programou: o que é um estouro de buffer e por que ele é o erro mais perigoso da linguagem. gets, strcpy, sprintf e scanf(&quot;%s&quot;) sem limite estourando a memória, um estouro silencioso que libera acesso de administrador, e o que o -fsanitize=address e o -D_FORTIFY_SOURCE=2 -O2 mostram de verdade no laboratório com o gcc 15. Com as versões seguras (fgets, snprintf, %Ns) e saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Segurança (Buffer Overflow)</span></h1>
+
+<p class="intro">O C deixa você escrever direto na memória, byte a byte, e <strong>não confere</strong> se você está dentro dos limites. Se um array tem lugar para 8 letras e o programa escreve 12, o C escreve mesmo: passa por cima do que estava na memória ao lado. Isso é um <strong>estouro de buffer</strong> (<em>buffer overflow</em>), a falha mais famosa — e mais perigosa — da história do C. Ela derruba o programa, estraga dados sem avisar e é a porta por onde muitos ataques entram. Nesta aula você vai ver o estouro acontecer de verdade, entender por que ele passa calado, e aprender as funções e as opções de compilação que o pegam.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um estouro de buffer e por que o C não o impede sozinho.</li>
+  <li>As funções perigosas (<code>gets</code>, <code>strcpy</code>, <code>strcat</code>, <code>sprintf</code>, <code>scanf("%s")</code>) e as versões seguras (<a href="fgets.html">fgets</a>, <code>snprintf</code>, <code>%29s</code>).</li>
+  <li>Um estouro <strong>silencioso</strong> que troca o valor de outra variável e libera um acesso que deveria ser proibido.</li>
+  <li>Como ligar os dois fiscais e o que cada um mostra de verdade no laboratório: o <strong>AddressSanitizer</strong> (<code>-fsanitize=address</code>) e o <strong>FORTIFY_SOURCE</strong> (<code>-D_FORTIFY_SOURCE=2 -O2</code>).</li>
+  <li>Por que um erro que explode no seu Linux pode passar despercebido no editor do guia.</li>
+</ul>
+</div>
+
+<p>Todas as saídas desta aula são reais, feitas com o <strong>gcc 15</strong> na máquina fictícia da Ana, na pasta <code>~/c/seg</code>. Esta é uma aula sobre defender o <strong>seu próprio</strong> programa dos seus próprios enganos: nada aqui serve para atacar o programa de outra pessoa.</p>
+
+<hr>
+
+<h2>A ideia: a prateleira que invade a vizinha</h2>
+<p>Pense num array como uma prateleira com um número fixo de espaços — digamos, 8. Você pode guardar coisas no espaço 0 até o espaço 7. Em quase toda linguagem, se você tentar pôr algo no espaço 8, a linguagem reclama na hora. No C, <strong>não</strong>: ele simplesmente coloca a coisa no lugar onde o espaço 8 <em>estaria</em>, que já é a prateleira do vizinho. O vizinho pode ser outra variável, um valor de controle do programa ou uma peça interna que faz o programa voltar das funções. Escrever ali é o estouro de buffer.</p>
+
+<p>O nome vem do inglês <em>buffer</em> ("pulmão", um espaço reservado de memória) e <em>overflow</em> ("transbordar"): o dado transbordou do espaço reservado. Três coisas podem acontecer:</p>
+<ul>
+  <li><strong>O programa morre</strong> com <code>*** stack smashing detected ***</code> — às vezes. É o melhor caso, porque você percebe.</li>
+  <li><strong>O programa continua e entrega um resultado errado</strong>, porque estragou uma variável ao lado. Pior, porque parece que funcionou.</li>
+  <li><strong>Alguém de fora controla o estrago</strong> e faz o programa rodar o que quiser. É assim que muitos vírus e invasões começam.</li>
+</ul>
+
+<p>A origem do transbordo é quase sempre a mesma: uma função que copia texto <strong>sem saber o tamanho do destino</strong>. Veja a lista das perigosas e o que usar no lugar:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Perigosa (não sabe o limite)</th><th>Por quê</th><th>Versão segura</th></tr>
+<tr><td><code>gets(nome)</code></td><td>Lê uma linha sem limite nenhum. Foi <strong>removida</strong> do C no <span class="versao">C11</span>.</td><td><a href="fgets.html"><code>fgets(nome, sizeof nome, stdin)</code></a></td></tr>
+<tr><td><code>scanf("%s", nome)</code></td><td>Lê uma palavra sem limite.</td><td><code>scanf("%29s", nome)</code> (um a menos que o array)</td></tr>
+<tr><td><code>strcpy(dest, origem)</code></td><td>Copia até o <code>'\0'</code> da origem, caiba ou não no destino.</td><td><code>snprintf(dest, sizeof dest, "%s", origem)</code></td></tr>
+<tr><td><code>strcat(dest, origem)</code></td><td>Gruda no fim, sem olhar o espaço que sobra.</td><td><code>snprintf</code> montando o texto todo de uma vez</td></tr>
+<tr><td><code>sprintf(dest, ...)</code></td><td>Escreve formatado, sem limite de tamanho.</td><td><code>snprintf(dest, sizeof dest, ...)</code></td></tr>
+</table>
+</div>
+
+<p>Repare no padrão: toda versão segura recebe o <strong>tamanho</strong> do destino. A regra de ouro desta aula é uma só: <strong>nunca copie texto para um array sem dizer à função quanto cabe nele</strong>.</p>
+
+<hr>
+
+<h2>1. O clássico: <code>scanf("%s")</code> sem limite</h2>
+<p>A Ana quer ler o nome de uma pessoa. O array tem 8 bytes. Veja o <code>%s</code> "pelado", sem número:</p>
+
+<pre class="file" data-file="nome.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[8];
+    printf("Nome: ");
+    if (scanf("%s", nome) != 1) {
+        return 1;
+    }
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+
+<p>Compila sem um aviso sequer. Com um nome curto, funciona. Com um nome de 11 letras num array de 8:</p>
+
+<pre class="term" data-cwd="~/c/seg">$ gcc -std=c23 -Wall -Wextra nome.c -o nome
+$ echo Ana | ./nome
+Nome: Olá, Ana!
+$ echo Maximiliano | ./nome
+Nome: *** stack smashing detected ***: terminated
+Abortado                   (imagem do núcleo gravada) ./nome
+$ echo $?
+134</pre>
+
+<dl class="anatomy">
+  <dt>nenhum aviso na compilação</dt><dd>O compilador não tem como saber, enquanto compila, que a pessoa vai digitar 11 letras. O tamanho só existe na hora de rodar.</dd>
+  <dt>*** stack smashing detected ***</dt><dd>"Esmagamento da pilha detectado". O <code>scanf</code> escreveu <code>Maximiliano\0</code> (12 bytes) num array de 8 e passou por cima de uma <strong>trava</strong> que o gcc coloca na pilha (o <em>stack protector</em>). No fim do <code>main</code>, o programa viu a trava quebrada e se abortou.</dd>
+  <dt>Abortado … 134</dt><dd>O programa foi encerrado à força. O código 134 é o "abortado" do Linux (veja <a href="exit.html">exit</a>).</dd>
+</dl>
+
+<div class="warning">
+<strong>O <code>stack smashing</code> é sorte, não garantia</strong>
+<p>A trava da pilha só é conferida quando a função termina, e só pega estouros que chegam até ela. Um estouro de 1 ou 2 bytes, ou que atinge só outra variável local, pode não disparar nada — e aí o programa segue com um dado estragado. Nunca conte com o <code>stack smashing</code> para descobrir os seus estouros; use os fiscais da seção 5.</p>
+</div>
+
+<h3>O conserto: diga o tamanho ao <code>scanf</code></h3>
+<p>O <code>%s</code> aceita um número antes do <code>s</code>: a quantidade <strong>máxima</strong> de caracteres que ele pode ler. Para um <code>char nome[8]</code>, use <code>%7s</code>: 7 letras mais o <code>'\0'</code> do fim cabem exatos nos 8 bytes (veja <a href="strings.html">Strings</a>). O que passar disso fica na entrada, sem estourar nada:</p>
+
+<pre class="term" data-cwd="~/c/seg">$ echo Maximiliano | ./nome      « agora com scanf("%7s", nome)
+Nome: Olá, Maximil!</pre>
+
+<p>No <strong>editor do guia</strong>, o mesmo <code>%7s</code> corta o nome igualzinho (o resto, <code>iano</code>, fica na entrada):</p>
+
+<pre class="term" data-title="Editor do guia">$ clang -std=c23 -Wall -Wextra nome.c -o nome
+$ ./nome
+Nome: Maximiliano
+Olá, Maximil!
+[código de saída: 0]</pre>
+
+<div class="tryc" data-stdin="Ana" data-goal="out:Olá\, Ana!,src:%\d+s">
+<p class="try-task"><strong>Missão:</strong> este <code>scanf</code> lê o nome com <code>%s</code> sem limite — um estouro esperando para acontecer. O array <code>nome</code> tem 8 bytes. Troque o <code>%s</code> por <code>%7s</code> (7 letras + o <code>'\0'</code>). A entrada da missão é <code>Ana</code>, que cabe de sobra; a saída continua <code>Olá, Ana!</code>, mas agora o programa está seguro. (A missão confere o seu código: o estouro em si passa calado no editor.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[8];
+    printf("Nome: ");
+    if (scanf("%s", nome) != 1) {
+        return 1;
+    }
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[8];
+    printf("Nome: ");
+    if (scanf("%7s", nome) != 1) {
+        return 1;
+    }
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. O estouro silencioso que vira "administrador"</h2>
+<p>Até aqui o estouro derrubou o programa. Agora o caso que assusta de verdade: um estouro que <strong>não derruba nada</strong> e troca o valor de outra variável. A Ana escreveu um login de brincadeira. A struct guarda o nome (8 bytes) e um campo <code>admin</code>, que vale 0 para uma pessoa comum:</p>
+
+<pre class="file" data-file="login.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+struct Usuario {
+    char nome[8];
+    int admin;
+};
+
+int main(void) {
+    struct Usuario u = {.nome = "", .admin = 0};
+    char entrada[100];
+
+    printf("Nome: ");
+    if (scanf("%99s", entrada) != 1) {
+        return 1;
+    }
+    strcpy(u.nome, entrada);
+
+    printf("Olá, %s!\n", u.nome);
+    if (u.admin) {
+        printf("Acesso de ADMINISTRADOR liberado (admin = %d).\n", u.admin);
+    } else {
+        printf("Acesso comum.\n");
+    }
+    return 0;
+}
+</pre>
+
+<p>O <code>scanf("%99s", entrada)</code> está correto: lê com limite, para um array de 100. O erro está no <code>strcpy(u.nome, entrada)</code>, que copia <strong>sem limite</strong> para o <code>u.nome</code>, que só tem 8 bytes. Veja o que acontece com um nome comprido:</p>
+
+<pre class="term" data-cwd="~/c/seg">$ gcc -std=c23 -Wall -Wextra login.c -o login
+$ echo Ana | ./login
+Nome: Olá, Ana!
+Acesso comum.
+$ echo Maximiliano | ./login
+Nome: Olá, Maximiliano!
+Acesso de ADMINISTRADOR liberado (admin = 7302753).
+$ echo $?
+0</pre>
+
+<p>Ninguém mexeu em <code>admin</code>, e ele virou <code>7302753</code>: deixou de ser zero e o acesso de administrador foi liberado. O que aconteceu? Na memória, o campo <code>admin</code> vem <strong>logo depois</strong> dos 8 bytes de <code>nome</code>. "Maximiliano" tem 11 letras + o <code>'\0'</code> = 12 bytes. Os 8 primeiros encheram <code>nome</code>; os 4 que sobraram (<code>a</code>, <code>n</code>, <code>o</code> e o <code>'\0'</code>) foram escritos bem em cima de <code>admin</code>. O programa não morreu, não avisou, e passou a dar acesso que não devia. É o estouro de buffer na sua forma mais traiçoeira.</p>
+
+<div class="note">
+<strong>Por que exatamente <code>7302753</code>?</strong>
+<p>Os quatro bytes que caíram sobre <code>admin</code> foram <code>'a'</code> (97), <code>'n'</code> (110), <code>'o'</code> (111) e <code>'\0'</code> (0). Lidos como um <code>int</code>, do jeito do processador da Ana, dão <code>97 + 110×256 + 111×65536 = 7302753</code>. Em outra máquina ou com outro nome, sairia outro número — o único certo é que <strong>não é mais zero</strong>.</p>
+</div>
+
+<p>E o <strong>AddressSanitizer</strong>, que pega estouros tão bem? Aqui ele fica <strong>calado</strong>: o estouro ficou <em>dentro</em> da mesma struct (de <code>nome</code> para <code>admin</code>), e para o ASan a struct inteira é uma região válida. Ele vigia as bordas de cada variável, não as fronteiras entre os campos de uma struct. Quem pega este caso é o outro fiscal, o FORTIFY (seção 5). No editor do guia, o estouro também passa calado e imprime o mesmo <code>admin = 7302753</code>.</p>
+
+<div class="tip">
+<strong>A lição</strong>
+<p>Um programa que "roda e dá certo" <strong>não prova</strong> que está livre de estouros. O erro pode estar ali, mudando um valor vizinho, esperando o dia em que o nome é comprido demais. Por isso a defesa não é testar e torcer: é <strong>nunca copiar sem limite</strong> e <strong>rodar os fiscais</strong>.</p>
+</div>
+
+<hr>
+
+<h2>3. <code>strcpy</code> e o "+1" esquecido</h2>
+<p>O <code>strcpy</code> ("string copy", copiar string) copia da origem até o <code>'\0'</code>, caiba ou não no destino. Veja um programa que copia o que veio na <a href="argc-argv.html">linha de comando</a> para um array de 8 bytes:</p>
+
+<pre class="file" data-file="copia.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(int argc, char *argv[]) {
+    char item[8];
+    if (argc &lt; 2) {
+        return 1;
+    }
+    strcpy(item, argv[1]);
+    printf("Item: %s\n", item);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/seg">$ gcc -std=c23 -Wall -Wextra copia.c -o copia
+$ ./copia biscoito
+Item: biscoito
+$ ./copia "biscoito recheado"
+*** stack smashing detected ***: terminated
+Abortado                   (imagem do núcleo gravada) ./copia "biscoito recheado"
+$ echo $?
+134</pre>
+
+<p>Repare numa armadilha fina: <code>./copia biscoito</code> <strong>pareceu</strong> funcionar. Mas "biscoito" tem 8 letras; com o <code>'\0'</code>, são 9 bytes num array de 8. O nono byte foi escrito fora do array, só que caiu num canto que não disparou a trava da pilha. É o pior caso: o programa escreveu onde não devia e tudo <em>parece</em> certo. Esse é o clássico erro do "+1" esquecido — o espaço do <code>'\0'</code> que ninguém somou.</p>
+
+<p>O conserto é o <code>snprintf</code> ("string print, com N"), que escreve no máximo o tamanho do destino e sempre termina a string com <code>'\0'</code>:</p>
+
+<pre class="file" data-file="copia.c">    char item[8];
+    if (argc &lt; 2) {
+        return 1;
+    }
+    snprintf(item, sizeof item, "%s", argv[1]);   // nunca passa de 8 bytes
+    printf("Item: %s\n", item);</pre>
+
+<p>Agora <code>./copia "biscoito recheado"</code> guarda só <code>biscoit</code> (7 letras + o <code>'\0'</code>) e não estoura nada. Perder o fim do texto é chato, mas é muito melhor que estragar a memória. Em um programa de verdade, você daria ao array um tamanho folgado e ainda avisaria quando o texto não coube.</p>
+
+<div class="note">
+<strong>E o <code>strncpy</code>?</strong>
+<p>Existe um <code>strncpy(dest, origem, n)</code>, mas ele é uma cilada: se a origem tem <code>n</code> ou mais letras, ele <strong>não</strong> coloca o <code>'\0'</code> no fim, e você fica com uma string sem terminador — outro problema. O <code>snprintf</code> sempre termina a string, por isso é o que o guia recomenda.</p>
+</div>
+
+<hr>
+
+<h2>4. <code>gets</code>: a função banida</h2>
+<p>A função mais perigosa de todas foi a <code>gets</code> ("get string"), que lia uma linha inteira <strong>sem limite nenhum</strong> — não havia nem como dizer o tamanho. Ela foi tão fonte de desastres que o C a marcou como obsoleta no C99 e a <strong>removeu</strong> da linguagem no <span class="versao">C11</span>: é a única função da biblioteca padrão que já foi apagada. No gcc 15, usá-la nem compila em C23:</p>
+
+<pre class="term" data-cwd="~/c/seg">$ gcc -std=c23 -Wall -Wextra gets.c -o gets
+gets.c: In function ‘main’:
+gets.c:6:5: error: implicit declaration of function ‘gets’; did you mean ‘fgets’? [-Wimplicit-function-declaration]
+    6 |     gets(nome);
+      |     ^~~~
+      |     fgets</pre>
+
+<p>A aula <a href="fgets.html">Ler uma Linha (fgets)</a> conta essa história em detalhe e mostra o <code>fgets</code>, a substituta segura que recebe o tamanho do array. Se você ver <code>gets</code> em um código ou livro antigo, troque por <code>fgets</code> na hora.</p>
+
+<hr>
+
+<h2>5. Os dois fiscais: ASan e FORTIFY</h2>
+<p>Você não vai achar os estouros lendo o código com os olhos — eles passam calados. Precisa de ferramentas que conferem enquanto o programa roda. Duas são fáceis de ligar, e cada uma pega casos diferentes.</p>
+
+<h3>AddressSanitizer: o relatório completo</h3>
+<p>O <code>-fsanitize=address</code> coloca um fiscal em cada acesso à memória (é a mesma ferramenta da aula <a href="sanitizers.html">Sanitizers</a>, vista aqui pelo lado da segurança). Recompile o <code>nome.c</code> da seção 1 com ele e com <code>-g</code> (para ter arquivo e linha):</p>
+
+<pre class="term" data-cwd="~/c/seg">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address nome.c -o nome-asan
+$ echo Maximiliano | ./nome-asan
+Nome: =================================================================
+==415616==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7bed3aaf0028 at pc 0x7fed3d0b05dc bp 0x7fff8af96370 sp 0x7fff8af95af8
+WRITE of size 12 at 0x7bed3aaf0028 thread T0
+    #0 0x7fed3d0b05db in scanf_common ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors_format.inc:346
+    #1 0x7fed3d0f0e4e in __isoc23_vscanf ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors.inc:1586
+    #2 0x7fed3d0f1634 in __isoc23_scanf ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors.inc:1616
+    #3 0x562116b362de in main /home/ana/c/seg/nome.c:6
+«… a pilha da biblioteca e o mapa da memória …»
+  This frame has 1 object(s):
+    [32, 40) 'nome' (line 4) &lt;== Memory access at offset 40 overflows this variable
+SUMMARY: AddressSanitizer: stack-buffer-overflow /home/ana/c/seg/nome.c:6 in main
+==415616==ABORTING</pre>
+
+<dl class="anatomy">
+  <dt>stack-buffer-overflow</dt><dd>"Estouro de buffer na pilha": um array local foi escrito fora dos limites.</dd>
+  <dt>WRITE of size 12</dt><dd>Uma <strong>escrita</strong> de 12 bytes (as 11 letras de "Maximiliano" + o <code>'\0'</code>). Quem escreveu foi o <code>scanf</code>.</dd>
+  <dt>#3 … in main /home/ana/c/seg/nome.c:6</dt><dd>A primeira linha com um arquivo seu: o <code>scanf</code> da linha 6.</dd>
+  <dt>[32, 40) 'nome' (line 4)</dt><dd>Qual variável foi estourada: o array <code>nome</code>, declarado na linha 4, de 8 bytes.</dd>
+  <dt>SUMMARY … nome.c:6</dt><dd>O resumo em uma linha. Se for ler só uma, leia esta.</dd>
+</dl>
+
+<p>Lembre da seção 2: o ASan é ótimo para estourar os limites de uma variável, mas <strong>não pega</strong> o estouro de um campo de struct para o vizinho. Para esse, entra o segundo fiscal.</p>
+
+<h3>FORTIFY_SOURCE: a conferência barata do compilador</h3>
+<p>O <code>-D_FORTIFY_SOURCE=2</code> pede ao compilador que troque funções como <code>strcpy</code>, <code>memcpy</code> e <code>sprintf</code> por versões que, quando sabem o tamanho do destino, conferem antes de copiar. É quase de graça (não deixa o programa mais lento como o ASan), mas só funciona com <strong>otimização ligada</strong> (<code>-O2</code>). Volte ao login da seção 2:</p>
+
+<pre class="term" data-cwd="~/c/seg">$ gcc -std=c23 -Wall -Wextra -O2 -D_FORTIFY_SOURCE=2 login.c -o login-fort
+$ echo Maximiliano | ./login-fort
+Nome: *** buffer overflow detected ***: terminated
+Abortado                   (imagem do núcleo gravada) ./login-fort
+$ echo $?
+134</pre>
+
+<p>O estouro que o ASan deixou passar e que o programa normal nem percebeu foi pego aqui: <code>*** buffer overflow detected ***</code> ("estouro de buffer detectado"), e o programa parou com código 134, <strong>antes</strong> de liberar o acesso de administrador. O FORTIFY conhece o tamanho de <code>u.nome</code> (8 bytes, escrito no código) e sabe que o <code>strcpy</code> de 12 bytes não cabe.</p>
+
+<div class="note">
+<strong>No laboratório, o <code>-O2</code> já liga o FORTIFY sozinho</strong>
+<p>O Ubuntu 26.04 da Ana vem configurado para ativar o FORTIFY (no nível 3) assim que você compila com <code>-O2</code>, mesmo sem escrever <code>-D_FORTIFY_SOURCE</code>. Por isso, no laboratório, <code>gcc -O2 login.c</code> já aborta com <code>buffer overflow detected</code>. Em outras distribuições isso pode não vir ligado; escrever <code>-D_FORTIFY_SOURCE=2</code> garante.</p>
+</div>
+
+<p>Mas o FORTIFY tem um limite: ele só confere as funções que recebem um destino de tamanho conhecido. O <code>scanf("%s")</code> da seção 1 <strong>não</strong> é uma dessas, então nem o FORTIFY o pega na hora da cópia — ali quem avisa é a trava da pilha (o <code>stack smashing</code>) ou o ASan. Por isso os dois fiscais se completam.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caso</th><th>Programa normal</th><th><code>-fsanitize=address</code></th><th><code>-O2 -D_FORTIFY_SOURCE=2</code></th></tr>
+<tr><td><code>scanf("%s")</code> estoura um array local (seção 1)</td><td>Às vezes <code>stack smashing</code>, 134</td><td>Pega: relatório com a linha</td><td>Não pega na cópia (ainda pode dar <code>stack smashing</code>)</td></tr>
+<tr><td><code>strcpy</code> de um campo para o vizinho na struct (seção 2)</td><td>Passa calado: dado estragado</td><td>Passa calado (é dentro da struct)</td><td><strong>Pega</strong>: <code>buffer overflow detected</code>, 134</td></tr>
+<tr><td><code>strcpy</code> estoura um array local (seção 3)</td><td>Às vezes <code>stack smashing</code>, 134</td><td>Pega: relatório com a linha</td><td>Pega: <code>buffer overflow detected</code>, 134</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar:</strong> durante o desenvolvimento e nos <a href="testes.html">testes</a>, compile com <code>-g -fsanitize=address</code>; na versão que vai para os usuários, deixe <code>-O2 -D_FORTIFY_SOURCE=2</code> (rápido e ainda protege). Os dois juntos cobrem quase tudo.</p>
+
+<div class="warning">
+<strong>No editor do guia, nenhum dos dois roda</strong>
+<p>O editor compila o seu programa para WebAssembly, e nem a biblioteca do AddressSanitizer nem o FORTIFY existem lá. Pedir <code>-fsanitize=address</code> dá erro de ligação; <code>-D_FORTIFY_SOURCE=2</code> é aceito mas não faz nada (o login continua imprimindo <code>admin = 7302753</code>). Por isso os estouros desta aula são mostrados no terminal do laboratório, e as missões conferem o seu <strong>código</strong>. Para rodar os fiscais de verdade, use o seu Linux (veja <a href="sanitizers.html">Sanitizers</a>).</p>
+</div>
+
+<div class="tryc" data-stdin="Maximiliano" data-goal="outre:Guardado: Maximil\n,src:snprintf">
+<p class="try-task"><strong>Missão final:</strong> a função <code>guardar</code> usa <code>strcpy</code> para copiar o nome digitado para <code>u.nome</code>, de 8 bytes — o estouro da seção 2. Troque o <code>strcpy</code> por <code>snprintf(destino, tam, "%s", origem)</code>, que respeita o tamanho. A entrada é <code>Maximiliano</code>; com a cópia segura, o programa guarda só <code>Maximil</code> (7 letras + o <code>'\0'</code>) e escreve <code>Guardado: Maximil</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+void guardar(char destino[], size_t tam, const char *origem) {
+    (void) tam;
+    strcpy(destino, origem);
+}
+
+int main(void) {
+    char nome[8];
+    char entrada[100];
+    printf("Nome: ");
+    if (scanf("%99s", entrada) != 1) {
+        return 1;
+    }
+    guardar(nome, sizeof nome, entrada);
+    printf("Guardado: %s\n", nome);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+void guardar(char destino[], size_t tam, const char *origem) {
+    snprintf(destino, tam, "%s", origem);
+}
+
+int main(void) {
+    char nome[8];
+    char entrada[100];
+    printf("Nome: ");
+    if (scanf("%99s", entrada) != 1) {
+        return 1;
+    }
+    guardar(nome, sizeof nome, entrada);
+    printf("Guardado: %s\n", nome);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>*** stack smashing detected ***: terminated</code></strong>
+<p><strong>O que aconteceu:</strong> um array local foi escrito além do fim, e a trava da pilha percebeu no fim da função. Quase sempre é um <code>scanf("%s")</code>, <code>strcpy</code> ou <code>strcat</code> sem limite, ou um laço com <code>&lt;=</code> no lugar de <code>&lt;</code>.</p>
+<p><strong>Como resolver:</strong> recompile com <code>-g -fsanitize=address</code> para ver a linha exata, e troque a função perigosa pela versão com tamanho (<code>%29s</code>, <code>snprintf</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>*** buffer overflow detected ***: terminated</code></strong>
+<p><strong>O que aconteceu:</strong> o FORTIFY (ligado por <code>-O2 -D_FORTIFY_SOURCE=2</code>, ou pelo <code>-O2</code> sozinho no laboratório) pegou uma cópia que não cabia no destino. É uma mensagem diferente do <code>stack smashing</code>: esta vem do fiscal do compilador, não da trava da pilha.</p>
+<p><strong>Como resolver:</strong> veja qual <code>strcpy</code>/<code>memcpy</code>/<code>sprintf</code> copiou demais e passe o tamanho do destino.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa "funciona", mas uma variável muda sozinha</strong>
+<pre class="term" data-cwd="~/c/seg">$ echo Maximiliano | ./login
+Nome: Olá, Maximiliano!
+Acesso de ADMINISTRADOR liberado (admin = 7302753).</pre>
+<p><strong>O que aconteceu:</strong> um estouro silencioso escreveu por cima da variável vizinha (seção 2). O ASan não pega quando é dentro de uma struct.</p>
+<p><strong>Como resolver:</strong> compile com <code>-O2 -D_FORTIFY_SOURCE=2</code>, que pega esse caso, e conserte a cópia sem limite.</p>
+</div>
+
+<div class="cenario">
+<strong><code>gcc: error: implicit declaration of function ‘gets’</code></strong>
+<p><strong>O que aconteceu:</strong> o código usa <code>gets</code>, que foi removida do C no C11 (seção 4).</p>
+<p><strong>Como resolver:</strong> troque por <code>fgets(nome, sizeof nome, stdin)</code> (veja <a href="fgets.html">fgets</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>O que é</th></tr>
+<tr><td><code>scanf("%29s", nome)</code></td><td>Lê uma palavra com limite: um a menos que o tamanho do array.</td></tr>
+<tr><td><code>snprintf(dest, sizeof dest, "%s", origem)</code></td><td>Copia/formata sem estourar e sempre termina com <code>'\0'</code>.</td></tr>
+<tr><td><a href="fgets.html"><code>fgets(linha, sizeof linha, stdin)</code></a></td><td>Lê uma linha inteira com limite; substitui o <code>gets</code>.</td></tr>
+<tr><td><code>gets</code>, <code>strcpy</code>, <code>strcat</code>, <code>sprintf</code>, <code>scanf("%s")</code></td><td>Sem limite: evite ou dê sempre o tamanho do destino.</td></tr>
+<tr><td><code>-g -fsanitize=address</code></td><td>Fiscal que pega estouros de array com a linha exata (no desenvolvimento).</td></tr>
+<tr><td><code>-O2 -D_FORTIFY_SOURCE=2</code></td><td>Conferência barata do compilador; pega até estouro entre campos de struct (na versão final).</td></tr>
+<tr><td><code>*** stack smashing detected ***</code></td><td>A trava da pilha pegou um estouro de array local (134).</td></tr>
+<tr><td><code>*** buffer overflow detected ***</code></td><td>O FORTIFY pegou uma cópia grande demais (134).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Ler uma palavra com segurança</h3>
+<p>O array é <code>char nome[20]</code>. Complete o formato do <code>scanf</code> para nunca passar do fim:</p>
+<div class="ex-code">scanf("%<input data-answer="19" aria-label="limite" size="3">s", nome);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Copiar sem estourar</h3>
+<p>Complete a função que copia <code>origem</code> para <code>destino</code> respeitando o tamanho:</p>
+<div class="ex-code"><input data-answer="snprintf" aria-label="função">(destino, sizeof destino, "%s", origem);</div>
+</div>
+
+<div class="exercise">
+<h3>3. O fiscal da versão final</h3>
+<p>Complete as duas opções que ligam o FORTIFY (uma delas também liga a otimização):</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra -O2 <input data-answer="-D_FORTIFY_SOURCE=2|-D_FORTIFY_SOURCE=3" aria-label="opção"> prog.c -o prog</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Por que <code>strcpy(destino, origem)</code> é perigoso?</p>
+<label><input type="radio" name="q4"> Porque é mais lento que <code>snprintf</code>.</label>
+<label><input type="radio" name="q4"> Porque não existe mais no C23.</label>
+<label><input type="radio" name="q4"> Porque copia até o fim da origem, caiba ou não no destino, e pode estourar o array.</label>
+<label><input type="radio" name="q4"> Porque não coloca o <code>'\0'</code> no fim.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Um programa leu um nome comprido, não deu erro nenhum, mas uma variável vizinha mudou de valor. O que foi?</p>
+<label><input type="radio" name="q5"> Um vazamento de memória.</label>
+<label><input type="radio" name="q5"> Um estouro de buffer silencioso, que escreveu por cima da variável ao lado.</label>
+<label><input type="radio" name="q5"> Uma divisão por zero.</label>
+<label><input type="radio" name="q5"> Um erro de digitação no <code>printf</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual fiscal pega o estouro de um campo de struct para o campo vizinho?</p>
+<label><input type="radio" name="q6"> O <code>-fsanitize=address</code>.</label>
+<label><input type="radio" name="q6"> A trava da pilha (<code>stack smashing</code>).</label>
+<label><input type="radio" name="q6"> Nenhum: esse caso é impossível de pegar.</label>
+<label><input type="radio" name="q6"> O <code>-O2 -D_FORTIFY_SOURCE=2</code> (FORTIFY).</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <strong>estouro de buffer</strong> é escrever além do fim de um array. O C não impede, e o erro pode derrubar o programa, estragar um dado vizinho em silêncio ou abrir a porta para um ataque.</li>
+  <li>A causa é quase sempre copiar texto <strong>sem o tamanho do destino</strong>: <code>gets</code>, <code>strcpy</code>, <code>strcat</code>, <code>sprintf</code>, <code>scanf("%s")</code>.</li>
+  <li>As versões seguras recebem o tamanho: <code>%29s</code>, <code>snprintf(dest, sizeof dest, ...)</code>, <a href="fgets.html"><code>fgets</code></a>. O <code>gets</code> foi removido do C no C11.</li>
+  <li>Um programa que "roda e dá certo" não prova nada: o estouro pode estar lá, calado.</li>
+  <li><code>-g -fsanitize=address</code> pega estouros de array com a linha exata; <code>-O2 -D_FORTIFY_SOURCE=2</code> é barato e pega até estouro entre campos de struct. Use o ASan no desenvolvimento e o FORTIFY na versão final.</li>
+  <li>No editor do guia, os dois fiscais não funcionam; rode-os no seu Linux.</li>
+</ul>
+<p>Próxima aula: <a href="boas-praticas.html">Boas Práticas</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
