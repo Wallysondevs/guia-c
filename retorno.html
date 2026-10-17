@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Valor de Retorno — return e o resultado da função | Guia C</title>
+<meta name="description" content="Valor de retorno em C para quem nunca programou: devolver um resultado com return, usar o valor devolvido, sair cedo de uma função, o tipo de retorno, o aviso real -Wreturn-type quando falta o return, como devolver mais de um valor (struct ou ponteiro) e por que nunca devolver o endereço de uma variável local, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Valor de Retorno</span></h1>
+
+<p class="intro">As funções das aulas anteriores <em>faziam</em> coisas: mostravam uma linha, um recibo, uma média. Mas muitas vezes você não quer que a função mostre o resultado: quer que ela o <strong>entregue de volta</strong>, para você guardar numa variável, usar numa conta ou decidir o que fazer com ele. É para isso que serve o <code>return</code>. Nesta aula você vai escrever funções que devolvem valores, ver o que acontece quando o <code>return</code> é esquecido (o compilador avisa, e o resultado vira lixo), e aprender as duas regras de ouro: o tipo de retorno tem de bater, e nunca se devolve o endereço de uma variável local.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como uma função devolve um valor com <code>return</code> e como usar esse valor.</li>
+  <li>Que o <code>return</code> também <strong>termina</strong> a função na hora (inclusive numa função <code>void</code>).</li>
+  <li>O tipo de retorno, os erros de <code>return</code> com e sem valor e a conversão silenciosa.</li>
+  <li>O aviso <code>-Wreturn-type</code> (<code>control reaches end of non-void function</code>) e por que ele nunca deve ser ignorado.</li>
+  <li>Como "devolver mais de um valor" em C (struct ou ponteiro).</li>
+  <li>Por que devolver o endereço de uma variável local derruba o programa.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana, na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: a máquina de suco</h2>
+<p>Numa máquina de suco você coloca as laranjas (a entrada) e ela <strong>devolve</strong> um copo de suco (a saída). O que você faz com o suco é problema seu: beber, guardar na geladeira, misturar com outra coisa. A máquina não decide isso; ela só entrega.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na máquina de suco</th><th>Em C</th></tr>
+<tr><td>As laranjas que você coloca</td><td>Os <strong>argumentos</strong> (aula <a href="parametros.html">Parâmetros</a>)</td></tr>
+<tr><td>O copo de suco que sai</td><td>O <strong>valor de retorno</strong>, entregue pelo <code>return</code></td></tr>
+<tr><td>A etiqueta "faz suco de laranja"</td><td>O <strong>tipo de retorno</strong>, escrito antes do nome: <code>int</code>, <code>double</code>…</td></tr>
+<tr><td>Uma máquina que só lava as laranjas e não entrega nada</td><td>Uma função <code>void</code></td></tr>
+</table>
+</div>
+
+<p>Você já usou funções que devolvem valores sem perceber: o <code>main</code> devolve um <code>int</code> para o sistema (o <code>return 0;</code>), e funções como <code>strlen</code> devolvem o tamanho de um texto (aula <a href="funcoes-string.html">Funções de String</a>).</p>
+
+<hr>
+
+<h2>1. Devolver um valor com <code>return</code></h2>
+
+<pre class="file" data-file="soma.c">#include &lt;stdio.h&gt;
+
+int somar(int a, int b) {
+    int resultado = a + b;
+    return resultado;
+}
+
+int main(void) {
+    int total = somar(3, 4);
+    printf("3 + 4 = %d\n", total);
+    printf("10 + 20 = %d\n", somar(10, 20));
+    printf("Dobro de 3 + 4 = %d\n", somar(3, 4) * 2);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int somar(…)</dt><dd>O <code>int</code> antes do nome é o <strong>tipo de retorno</strong>: esta função entrega um número inteiro para quem a chamou. Nas aulas anteriores, aqui estava <code>void</code> ("não entrega nada").</dd>
+  <dt>return resultado;</dt><dd>"Devolva o valor de <code>resultado</code> e termine a função." O <code>return</code> pode levar qualquer expressão: <code>return a + b;</code> faria o mesmo numa linha só.</dd>
+  <dt>int total = somar(3, 4);</dt><dd>A chamada <strong>vira</strong> o valor devolvido. Primeiro o C roda a função; o resultado (7) toma o lugar da chamada; então <code>total</code> recebe 7.</dd>
+  <dt>printf(…, somar(10, 20))</dt><dd>O valor devolvido pode ir direto para outra função, sem passar por uma variável.</dd>
+  <dt>somar(3, 4) * 2</dt><dd>E pode entrar numa conta, como qualquer número.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra soma.c -o soma
+$ ./soma
+3 + 4 = 7
+10 + 20 = 30
+Dobro de 3 + 4 = 14</pre>
+
+<p>Repare que <code>somar</code> não tem nenhum <code>printf</code>. Ela só calcula. Quem decide mostrar, guardar ou multiplicar é o <code>main</code>. Separar "calcular" de "mostrar" deixa a função útil em mais lugares: a mesma <code>somar</code> serve para um recibo, um placar ou uma planilha.</p>
+
+<hr>
+
+<h2>2. O <code>return</code> termina a função</h2>
+<p>Assim que o <code>return</code> roda, a função acaba, mesmo que haja mais linhas abaixo dele. Por isso, uma função pode ter <strong>vários</strong> <code>return</code>, um em cada caminho:</p>
+
+<pre class="file" data-file="maior.c">#include &lt;stdio.h&gt;
+
+int maior(int a, int b) {
+    if (a &gt; b) {
+        return a;
+    }
+    return b;
+    printf("Esta linha nunca roda.\n");
+}
+
+int main(void) {
+    printf("Maior entre 8 e 3: %d\n", maior(8, 3));
+    printf("Maior entre 2 e 9: %d\n", maior(2, 9));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra maior.c -o maior
+$ ./maior
+Maior entre 8 e 3: 8
+Maior entre 2 e 9: 9</pre>
+
+<ol class="passo">
+  <li><code>maior(8, 3)</code>: 8 &gt; 3 é verdade, então <code>return a;</code> devolve 8 e a função acaba ali. O <code>return b;</code> nem é visto.</li>
+  <li><code>maior(2, 9)</code>: 2 &gt; 9 é falso, o <code>if</code> é pulado e <code>return b;</code> devolve 9.</li>
+  <li>O <code>printf</code> depois do <code>return b;</code> nunca roda, em nenhum caso. O gcc não avisou; é código morto, e você deve apagá-lo.</li>
+</ol>
+
+<h3><code>return;</code> sem valor numa função <code>void</code></h3>
+<p>Uma função <code>void</code> não devolve nada, mas pode usar <code>return;</code> (sem valor) para <strong>sair mais cedo</strong>:</p>
+
+<pre class="file" data-file="cedo.c">#include &lt;stdio.h&gt;
+
+void vender(int estoque) {
+    if (estoque == 0) {
+        printf("Sem estoque, venda cancelada.\n");
+        return;
+    }
+    printf("Venda feita! Restam %d.\n", estoque - 1);
+}
+
+int main(void) {
+    vender(5);
+    vender(0);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra cedo.c -o cedo
+$ ./cedo
+Venda feita! Restam 4.
+Sem estoque, venda cancelada.</pre>
+
+<p>Com estoque zero, o <code>return;</code> encerra a função antes do "Venda feita!". Esse estilo, de tratar o caso problemático primeiro e sair, deixa o resto da função mais limpo.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> a função <code>maior</code> está pronta. Acrescente uma linha no <code>main</code> que guarde <code>maior(15, 42)</code> numa variável e mostre-a. Depois tente <code>maior(maior(3, 8), 5)</code>: o resultado de uma chamada pode ser argumento de outra.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int maior(int a, int b) {
+    if (a &gt; b) {
+        return a;
+    }
+    return b;
+}
+
+int main(void) {
+    printf("Maior entre 8 e 3: %d\n", maior(8, 3));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. O tipo de retorno tem de bater</h2>
+<p>O tipo antes do nome é uma promessa. O compilador confere se o <code>return</code> cumpre a promessa. Uma função <code>void</code> não pode devolver valor:</p>
+
+<pre class="file" data-file="voidret.c">#include &lt;stdio.h&gt;
+
+void avisar(int estoque) {
+    if (estoque &gt; 0) {
+        return 1;
+    }
+    printf("Acabou o estoque!\n");
+}
+
+int main(void) {
+    avisar(0);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra voidret.c -o voidret
+voidret.c: In function ‘avisar’:
+voidret.c:5:16: error: ‘return’ with a value, in function returning void [-Wreturn-mismatch]
+    5 |         return 1;
+      |                ^
+voidret.c:3:6: note: declared here
+    3 | void avisar(int estoque) {
+      |      ^~~~~~</pre>
+
+<p><em>‘return’ with a value, in function returning void</em> = "<code>return</code> com valor, numa função que devolve <code>void</code>". E o contrário, <code>return;</code> vazio numa função <code>int</code>, também é erro:</p>
+
+<pre class="file" data-file="retvazio.c">#include &lt;stdio.h&gt;
+
+int ler_idade(void) {
+    return;
+}
+
+int main(void) {
+    printf("%d\n", ler_idade());
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra retvazio.c -o retvazio
+retvazio.c: In function ‘ler_idade’:
+retvazio.c:4:5: error: ‘return’ with no value, in function returning non-void [-Wreturn-mismatch]
+    4 |     return;
+      |     ^~~~~~
+retvazio.c:3:5: note: declared here
+    3 | int ler_idade(void) {
+      |     ^~~~~~~~~</pre>
+
+<p><em>‘return’ with no value, in function returning non-void</em> = "<code>return</code> sem valor, numa função que não é <code>void</code>". Os dois viraram <strong>erro</strong> no gcc 14; antes eram só avisos. No editor, o Clang escreve <code>void function 'avisar' should not return a value</code> e <code>non-void function 'ler_idade' should return a value</code>.</p>
+
+<h3>Tipo parecido: conversão em silêncio</h3>
+<p>Se o <code>return</code> devolve um número de outro tipo, o C converte para o tipo prometido, sem avisar:</p>
+
+<pre class="file" data-file="metade.c">#include &lt;stdio.h&gt;
+
+int metade(int n) {
+    return n / 2.0;
+}
+
+int main(void) {
+    printf("Metade de 7: %d\n", metade(7));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra metade.c -o metade
+$ ./metade
+Metade de 7: 3                  « 7 / 2.0 = 3.5, mas a função promete int: o .5 sumiu</pre>
+
+<p>A conta <code>n / 2.0</code> deu 3.5 (um <code>double</code>), mas a função promete devolver <code>int</code>, então o C cortou a parte decimal. Nenhum aviso, nem no gcc nem no Clang. O conserto é escolher o tipo certo: <code>double metade(int n)</code> e <code>%.1f</code> no <code>printf</code>. (A opção <code>-Wconversion</code> do gcc avisaria; veja <a href="avisos.html">Avisos</a>.)</p>
+
+<hr>
+
+<h2>4. Esquecer o <code>return</code>: o aviso <code>-Wreturn-type</code></h2>
+<p>Este é o erro mais perigoso da aula, porque é só um <strong>aviso</strong>, e o programa é gerado mesmo assim. A função promete um <code>int</code>, mas há um caminho em que ela chega ao fim sem <code>return</code>:</p>
+
+<pre class="file" data-file="semreturn.c">#include &lt;stdio.h&gt;
+
+int maior(int a, int b) {
+    if (a &gt; b) {
+        return a;
+    }
+}
+
+int main(void) {
+    printf("Maior entre 8 e 3: %d\n", maior(8, 3));
+    printf("Maior entre 2 e 9: %d\n", maior(2, 9));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semreturn.c -o semreturn
+semreturn.c: In function ‘maior’:
+semreturn.c:7:1: warning: control reaches end of non-void function [-Wreturn-type]
+    7 | }
+      | ^
+$ ./semreturn
+Maior entre 8 e 3: 8
+Maior entre 2 e 9: 2            « errado: o maior é 9
+$ gcc -std=c23 -Wall -Wextra -O2 semreturn.c -o semreturn
+semreturn.c: In function ‘maior’:
+semreturn.c:7:1: warning: control reaches end of non-void function [-Wreturn-type]
+    7 | }
+      | ^
+$ ./semreturn
+Maior entre 8 e 3: 8
+Maior entre 2 e 9: 0            « com otimização (-O2), outro resultado errado</pre>
+
+<dl class="anatomy">
+  <dt>control reaches end of non-void function</dt><dd>"A execução chega ao fim de uma função não-<code>void</code>." Quer dizer: existe um caminho (aqui, quando <code>a</code> não é maior que <code>b</code>) que passa reto pelo <code>if</code> e bate no <code>}</code> sem nenhum <code>return</code>.</dd>
+  <dt>7:1</dt><dd>O gcc aponta a <strong>chave que fecha</strong> a função, onde o valor deveria ter sido devolvido.</dd>
+  <dt>[-Wreturn-type]</dt><dd>A regra de aviso, ligada pelo <code>-Wall</code>.</dd>
+  <dt>2, depois 0</dt><dd>Sem <code>return</code>, quem chamou lê "o que estiver lá" no lugar onde o resultado deveria estar: lixo. Sem otimização, sobrou o 2; com <code>-O2</code>, 0. No editor do guia, a mesma linha mostra <code>8388576</code>. Nenhum deles é 9.</dd>
+</dl>
+
+<p>Usar o valor de uma função que terminou sem <code>return</code> é <strong>comportamento indefinido</strong>: a linguagem não promete nada (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>). Pode dar o número certo nos seus testes e o errado no computador de outra pessoa. O conserto é garantir um <code>return</code> em <strong>todo</strong> caminho; aqui, um <code>return b;</code> antes do <code>}</code>. O Clang do editor avisa do mesmo jeito: <code>non-void function does not return a value in all control paths [-Wreturn-type]</code> ("função não-<code>void</code> não devolve valor em todos os caminhos").</p>
+
+<div class="warning">
+<strong>Trate o <code>-Wreturn-type</code> como erro</strong>
+<p>Muitos projetos compilam com <code>-Werror=return-type</code>, que transforma esse aviso em erro e impede o programa de ser gerado. Um resultado lixo que "parece certo" nos testes é dos erros mais difíceis de achar depois.</p>
+</div>
+
+<div class="note">
+<strong>E o <code>main</code>?</strong>
+<p>O <code>main</code> é a única exceção: desde o <span class="versao">C99</span>, se ele chega ao <code>}</code> sem <code>return</code>, é como se terminasse com <code>return 0;</code> (o gcc não avisa). O guia escreve o <code>return 0;</code> mesmo assim, para ficar claro. Veja <a href="primeiro-programa.html">Olá, Mundo</a> e <a href="exit.html">Encerrar o Programa</a>.</p>
+</div>
+
+<div class="tryc" data-goal="outre:^3 ao quadrado = 9\n12 ao quadrado = 144\n$,src:int\s+quadrado\s*\(\s*int\s+\w+\s*\),semaviso">
+<p class="try-task"><strong>Missão:</strong> escreva a função <code>int quadrado(int n)</code>, que <strong>devolve</strong> (sem mostrar nada) o número vezes ele mesmo. O <code>main</code> já usa o valor devolvido. A saída tem de ser esta, sem avisos:</p>
+<pre class="out">3 ao quadrado = 9
+12 ao quadrado = 144</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+// escreva aqui a função quadrado
+
+int main(void) {
+    printf("3 ao quadrado = %d\n", quadrado(3));
+    int lado = 12;
+    int area = quadrado(lado);
+    printf("%d ao quadrado = %d\n", lado, area);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int quadrado(int n) {
+    return n * n;
+}
+
+int main(void) {
+    printf("3 ao quadrado = %d\n", quadrado(3));
+    int lado = 12;
+    int area = quadrado(lado);
+    printf("%d ao quadrado = %d\n", lado, area);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Ignorar o valor devolvido</h2>
+<p>Você não é obrigado a usar o valor que uma função devolve. Chamar <code>somar(3, 4);</code> sozinho numa linha compila sem aviso; o 7 é simplesmente jogado fora. Isso acontece o tempo todo com o <code>printf</code>, que também devolve um número (quantos caracteres escreveu) e quase ninguém olha:</p>
+
+<pre class="file" data-file="ignora.c">#include &lt;stdio.h&gt;
+
+int somar(int a, int b) {
+    return a + b;
+}
+
+int main(void) {
+    somar(3, 4);
+    int n = printf("Ana\n");
+    printf("O printf anterior escreveu %d caracteres\n", n);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ignora.c -o ignora
+$ ./ignora
+Ana
+O printf anterior escreveu 4 caracteres     « A, n, a e o \n</pre>
+
+<p>Ignorar o resultado de <code>somar</code> é inofensivo (só desperdício). Mas ignorar o retorno de algumas funções é um erro de verdade: o <code>scanf</code> devolve quantos valores conseguiu ler, o <code>fopen</code> devolve <code>NULL</code> quando o arquivo não abre, o <code>malloc</code> devolve <code>NULL</code> quando falta memória. Por isso o guia sempre confere esses retornos (aulas <a href="scanf.html">scanf</a>, <a href="arquivos.html">Arquivos</a> e <a href="malloc-free.html">malloc e free</a>). No <span class="versao">C23</span>, você pode marcar a sua função com <code>[[nodiscard]]</code> para o compilador avisar quem ignorar o valor (aula <a href="atributos.html">Atributos</a>).</p>
+
+<hr>
+
+<h2>6. E para devolver mais de um valor?</h2>
+<p>Um <code>return</code> devolve <strong>um</strong> valor só. <code>return a, b;</code> não devolve dois: a vírgula ali é um operador que joga o <code>a</code> fora e devolve só o <code>b</code>. Para entregar mais de um resultado, o C tem dois caminhos, que você vai aprender no Nível 2:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caminho</th><th>Como funciona</th><th>Aula</th></tr>
+<tr><td>Devolver uma <strong>struct</strong></td><td>Junte os valores numa "ficha" com vários campos e devolva a ficha inteira</td><td><a href="structs.html">Structs</a></td></tr>
+<tr><td>Receber <strong>ponteiros</strong></td><td>Quem chama entrega os endereços de suas variáveis, e a função escreve nelas (como o <code>scanf</code> faz)</td><td><a href="passagem-ponteiro.html">Passar por Ponteiro</a></td></tr>
+</table>
+</div>
+
+<p>Só para você ter uma ideia (não precisa entender cada linha agora), uma divisão que devolve o quociente e o resto numa struct:</p>
+
+<pre class="file" data-file="dois.c">#include &lt;stdio.h&gt;
+
+struct resultado {
+    int quociente;
+    int resto;
+};
+
+struct resultado dividir(int a, int b) {
+    struct resultado r = { a / b, a % b };
+    return r;
+}
+
+int main(void) {
+    struct resultado d = dividir(17, 5);
+    printf("17 / 5 = %d, sobra %d\n", d.quociente, d.resto);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dois.c -o dois
+$ ./dois
+17 / 5 = 3, sobra 2</pre>
+
+<hr>
+
+<h2>7. Nunca devolva o endereço de uma variável local</h2>
+<p>Este aviso aparece mais adiante no curso, quando você já usar ponteiros, mas vale conhecê-lo desde já. As variáveis criadas dentro de uma função (as <strong>locais</strong>) <strong>deixam de existir</strong> quando a função termina (aula <a href="escopo.html">Escopo</a>). Devolver o endereço de uma delas é entregar o endereço de uma casa que acabou de ser demolida:</p>
+
+<pre class="file" data-file="local.c">#include &lt;stdio.h&gt;
+
+int *criar_nota(void) {
+    int nota = 10;
+    return &amp;nota;
+}
+
+int main(void) {
+    int *p = criar_nota();
+    printf("Nota: %d\n", *p);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra local.c -o local
+local.c: In function ‘criar_nota’:
+local.c:5:12: warning: function returns address of local variable [-Wreturn-local-addr]
+    5 |     return &amp;nota;
+      |            ^~~~~
+$ ./local
+Falha de segmentação     (imagem do núcleo gravada) ./local
+$ echo $?
+139</pre>
+
+<dl class="anatomy">
+  <dt>int *criar_nota(void)</dt><dd>O <code>*</code> quer dizer que a função devolve um <strong>endereço</strong> de <code>int</code> (um ponteiro), não um <code>int</code>. Ponteiros têm aula própria: <a href="ponteiros.html">Ponteiros</a>.</dd>
+  <dt>return &amp;nota;</dt><dd>O <code>&amp;</code> pega o endereço de <code>nota</code> (o mesmo <code>&amp;</code> do <code>scanf</code>). Mas <code>nota</code> some quando a função termina.</dd>
+  <dt>function returns address of local variable</dt><dd>"A função devolve o endereço de uma variável local". É um aviso, mas trate como erro.</dd>
+  <dt>Falha de segmentação</dt><dd>O programa morreu ao ler <code>*p</code> (código 139). O gcc sabe que esse endereço não vale nada e, nesse caso, devolve um endereço <strong>nulo</strong> no lugar (conferido no laboratório: um <code>printf("%p")</code> do endereço mostra <code>(nil)</code>). Ler um endereço nulo derruba o programa (aula <a href="ponteiro-nulo.html">Ponteiro Nulo</a>).</dd>
+</dl>
+
+<p>No editor do guia, o mesmo programa mostra <code>Nota: 10</code> e termina normalmente, com o aviso do Clang <code>address of stack memory associated with local variable 'nota' returned [-Wreturn-stack-address]</code>. Parece funcionar, mas é sorte: o valor ainda estava lá porque nada o sobrescreveu. É comportamento indefinido, e cada compilador fez uma coisa. O jeito certo é devolver o <strong>valor</strong> (<code>int criar_nota(void) { return 10; }</code>) ou, quando for preciso devolver um endereço, usar memória que continua existindo depois da função (<a href="malloc-free.html">malloc e free</a>).</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: control reaches end of non-void function [-Wreturn-type]</code></strong>
+<p><strong>O que significa:</strong> algum caminho da função chega ao <code>}</code> sem <code>return</code>. Quem chamou recebe lixo. O Clang diz <code>non-void function does not return a value in all control paths</code>.</p>
+<p><strong>Como consertar:</strong> percorra cada <code>if</code>/<code>else</code> e garanta um <code>return</code> em todos os caminhos. Um <code>return</code> no fim da função, fora dos <code>if</code>, resolve a maioria dos casos.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: ‘return’ with a value, in function returning void</code></strong>
+<p><strong>O que significa:</strong> a função é <code>void</code>, mas tem <code>return 1;</code>.</p>
+<p><strong>Como consertar:</strong> se a função deve devolver o valor, troque <code>void</code> pelo tipo certo (<code>int</code>); se não, use <code>return;</code> sozinho.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: ‘return’ with no value, in function returning non-void</code></strong>
+<p><strong>O que significa:</strong> a função promete um valor (<code>int</code>, <code>double</code>…), mas tem um <code>return;</code> vazio.</p>
+<p><strong>Como consertar:</strong> devolva um valor (<code>return 0;</code>, <code>return idade;</code>) ou, se a função não precisa devolver nada, troque o tipo por <code>void</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: void value not ignored as it ought to be</code></strong>
+<p><strong>O que significa:</strong> você guardou numa variável o "resultado" de uma função <code>void</code>.</p>
+<p><strong>Como consertar:</strong> a função precisa de um tipo de retorno e de um <code>return</code> com valor. Veja <a href="funcoes.html">Funções</a>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: function returns address of local variable [-Wreturn-local-addr]</code></strong>
+<p><strong>O que significa:</strong> a função devolve o endereço de algo que deixa de existir quando ela termina. No gcc, o programa cai com <code>Falha de segmentação</code>; em outros compiladores, pode mostrar lixo ou até o valor "certo", por acaso.</p>
+<p><strong>Como consertar:</strong> devolva o valor em vez do endereço. Se precisa mesmo de um endereço, use <code>malloc</code> ou deixe quem chama fornecer a variável (passagem por ponteiro).</p>
+</div>
+
+<div class="cenario">
+<strong>O resultado veio sem as casas decimais</strong>
+<p><strong>O que significa:</strong> o tipo de retorno é <code>int</code> e o <code>return</code> devolveu uma conta com vírgula: o C cortou a parte decimal, sem aviso.</p>
+<p><strong>Como consertar:</strong> declare a função como <code>double</code> e mostre com <code>%f</code> (ou <code>%.1f</code>, <code>%.2f</code>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>int f(…) { …; return x; }</code></td><td>Devolve o valor de <code>x</code> (convertido para <code>int</code>) e termina</td></tr>
+<tr><td><code>double f(…)</code></td><td>Promete devolver um número com vírgula</td></tr>
+<tr><td><code>int r = f(…);</code></td><td>Guarda o valor devolvido</td></tr>
+<tr><td><code>printf("%d", f(…));</code> / <code>f(…) * 2</code></td><td>Usa o valor direto, sem variável</td></tr>
+<tr><td><code>f(…);</code></td><td>Chama e ignora o valor devolvido</td></tr>
+<tr><td><code>return;</code></td><td>Sai de uma função <code>void</code> antes do fim</td></tr>
+<tr><td>Vários <code>return</code></td><td>Um por caminho; o primeiro que rodar termina a função</td></tr>
+<tr><td><code>struct t f(…)</code></td><td>Devolve vários valores juntos numa struct (<a href="structs.html">Structs</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Devolver</h3>
+<p>Complete a linha que devolve o triplo de <code>n</code>:</p>
+<div class="ex-code">int triplo(int n) { <input data-answer="return n * 3;|return n*3;|return 3 * n;|return 3*n;" aria-label="linha do return"> }</div>
+</div>
+
+<div class="exercise">
+<h3>2. O tipo certo</h3>
+<p>Complete o tipo de retorno de uma função que devolve uma média com casas decimais:</p>
+<div class="ex-code"><input data-answer="double" aria-label="tipo de retorno"> media(int a, int b) {</div>
+</div>
+
+<div class="exercise">
+<h3>3. Sair cedo</h3>
+<p>Complete a linha que encerra uma função <code>void</code> antes do fim:</p>
+<div class="ex-code">if (estoque == 0) { <input data-answer="return;" aria-label="saída"> }</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que <code>int f(int x) { if (x &gt; 0) { return 1; } }</code> devolve com <code>f(-5)</code>?</p>
+<label><input type="radio" name="q4"> 0, sempre</label>
+<label><input type="radio" name="q4"> -1</label>
+<label><input type="radio" name="q4"> Não se sabe: falta <code>return</code> nesse caminho (o gcc avisa <code>control reaches end of non-void function</code>)</label>
+<label><input type="radio" name="q4"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Quantas vezes "fim" aparece? <code>int g(void) { return 5; printf("fim\n"); }</code> chamada duas vezes.</p>
+<label><input type="radio" name="q5"> Duas</label>
+<label><input type="radio" name="q5"> Nenhuma: o <code>return</code> encerra a função antes do <code>printf</code></label>
+<label><input type="radio" name="q5"> Uma</label>
+<label><input type="radio" name="q5"> Cinco</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual é o problema de <code>int *f(void) { int x = 3; return &amp;x; }</code>?</p>
+<label><input type="radio" name="q6"> <code>x</code> deixa de existir quando <code>f</code> termina: o endereço devolvido não vale nada</label>
+<label><input type="radio" name="q6"> Nenhum</label>
+<label><input type="radio" name="q6"> Falta <code>void</code> no tipo de retorno</label>
+<label><input type="radio" name="q6"> <code>return</code> não aceita <code>&amp;</code></label>
+</div>
+
+<h3>Missão final: média e aprovação</h3>
+
+<div class="tryc" data-goal="outre:^Ana: média 7\.5 - aprovada\nBia: média 5\.0 - reprovada\n$,src:double\s+media\s*\(,src:bool\s+aprovada\s*\(,semaviso">
+<p class="try-task"><strong>Missão:</strong> escreva duas funções, acima do <code>main</code>:</p>
+<ul class="try-task">
+  <li><code>double media(double n1, double n2)</code>: devolve a média das duas notas;</li>
+  <li><code>bool aprovada(double m)</code>: devolve <code>true</code> se <code>m</code> for 6 ou mais, e <code>false</code> se não (<code>bool</code>, <code>true</code> e <code>false</code> são palavras do C23; veja <a href="bool.html">Booleanos</a>).</li>
+</ul>
+<p class="try-task">O <code>main</code> já está pronto e usa os valores devolvidos. Nenhuma das funções deve usar <code>printf</code>.</p>
+<pre class="out">Ana: média 7.5 - aprovada
+Bia: média 5.0 - reprovada</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+// escreva aqui as funções media e aprovada
+
+int main(void) {
+    double ana = media(7.0, 8.0);
+    double bia = media(4.0, 6.0);
+    printf("Ana: média %.1f - %s\n", ana, aprovada(ana) ? "aprovada" : "reprovada");
+    printf("Bia: média %.1f - %s\n", bia, aprovada(bia) ? "aprovada" : "reprovada");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+double media(double n1, double n2) {
+    return (n1 + n2) / 2;
+}
+
+bool aprovada(double m) {
+    return m &gt;= 6;
+}
+
+int main(void) {
+    double ana = media(7.0, 8.0);
+    double bia = media(4.0, 6.0);
+    printf("Ana: média %.1f - %s\n", ana, aprovada(ana) ? "aprovada" : "reprovada");
+    printf("Bia: média %.1f - %s\n", bia, aprovada(bia) ? "aprovada" : "reprovada");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Na solução, <code>return m &gt;= 6;</code> devolve direto o resultado da comparação, que já é verdadeiro ou falso: não precisa de <code>if</code>. O <code>? :</code> no <code>main</code> é o operador ternário (aula <a href="ternario.html">Operador Ternário</a>).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O tipo antes do nome (<code>int</code>, <code>double</code>, <code>bool</code>…) diz o que a função devolve; <code>return valor;</code> devolve e <strong>termina</strong> a função.</li>
+  <li>A chamada vira o valor devolvido: guarde numa variável, passe para outra função ou use numa conta. Também pode ignorá-lo (mas confira sempre o retorno de <code>scanf</code>, <code>fopen</code>, <code>malloc</code>).</li>
+  <li>Numa função <code>void</code>, <code>return;</code> sai mais cedo. <code>return</code> com valor em <code>void</code> e <code>return;</code> vazio em <code>int</code> são erros (<code>-Wreturn-mismatch</code>).</li>
+  <li>Valor de outro tipo é convertido em silêncio: um <code>int</code> que recebe 3.5 devolve 3.</li>
+  <li>Faltou <code>return</code> num caminho: aviso <code>control reaches end of non-void function [-Wreturn-type]</code> e resultado lixo. Trate como erro. Só o <code>main</code> tem <code>return 0;</code> automático.</li>
+  <li>Um <code>return</code> devolve um valor só; para vários, use struct ou ponteiros. Nunca devolva o endereço de uma variável local.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
