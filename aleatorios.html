@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Números Aleatórios (rand) — sortear com rand e srand | Guia C</title>
+<meta name="description" content="Números aleatórios em C para quem nunca programou: rand e RAND_MAX, um dado de 1 a 6, a semente com srand(time(NULL)), a semente fixa para testes, sortear entre um mínimo e um máximo, números com vírgula, embaralhar uma lista, o viés do resto e os erros reais (o mesmo número sempre, srand dentro do laço, rand() % 0, RAND_MAX + 1), com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Números Aleatórios (rand)</span></h1>
+
+<p class="intro">Jogos jogam dados, sorteios escolhem um ganhador, quizzes embaralham as perguntas. Em todos eles o programa precisa de números que <strong>não</strong> dá para prever. O C tem duas funções para isso, no <code>&lt;stdlib.h&gt;</code>: <code>rand</code>, que sorteia, e <code>srand</code>, que "embaralha" o sorteio. Nesta aula você vai entender por que o computador, que só sabe fazer contas, consegue parecer sortudo, por que o seu programa sorteia sempre os mesmos números (e como consertar), como sortear dentro de um intervalo e os erros mais comuns.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o <code>rand()</code> devolve e o que é o <code>RAND_MAX</code>.</li>
+  <li>Como transformar o resultado num dado de 1 a 6, ou em qualquer intervalo.</li>
+  <li>O que é a <strong>semente</strong>, por que usar <code>srand(time(NULL))</code> e por que chamá-lo uma vez só.</li>
+  <li>Quando uma semente <strong>fixa</strong> é útil.</li>
+  <li>Como sortear números com vírgula e embaralhar uma lista.</li>
+  <li>Os limites do <code>rand</code>: o viés do resto e por que ele não serve para senhas.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<div class="warning">
+<strong>Os números desta aula mudam de um computador para outro</strong>
+<p>O C diz <strong>o que</strong> o <code>rand</code> faz, mas não <strong>qual conta</strong> ele usa. Cada biblioteca C escolhe a sua. Os terminais da aula mostram a do Linux (glibc). O editor do guia usa outra biblioteca (a wasi-libc), e por isso <strong>sorteia outros números</strong>, mesmo com a mesma semente. Os dois estão certos. As missões desta aula conferem o que vale em qualquer computador (o intervalo, por exemplo), nunca os números sorteados.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: o caderno de números</h2>
+<p>Imagine que a professora da Ana tem um caderno com milhões de números escritos em sequência, sem nenhum padrão que se perceba: 1804289383, 846930886, 1681692777… Quando alguém pede "um número aleatório", ela lê o próximo número do caderno.</p>
+<ul>
+  <li>Para quem recebe, os números parecem sorte.</li>
+  <li>Mas se ela começar sempre da primeira página, a turma de amanhã recebe <strong>os mesmos números</strong>, na mesma ordem.</li>
+  <li>Para cada aula ser diferente, ela precisa abrir o caderno numa página diferente. O número da página é a <strong>semente</strong>.</li>
+</ul>
+<p>O <code>rand</code> funciona assim. Os números não são sorte de verdade: são o resultado de uma <strong>conta</strong>, feita a partir do número anterior. Por isso se chamam <strong>pseudoaleatórios</strong> ("falsos aleatórios"). A conta é escolhida para que eles <em>pareçam</em> aleatórios, e para jogos e sorteios do dia a dia isso basta.</p>
+
+<hr>
+
+<h2>1. <code>rand()</code> e <code>RAND_MAX</code></h2>
+<p><code>rand()</code> ("random", aleatório) não recebe nada e devolve um <code>int</code> entre 0 e <code>RAND_MAX</code>, uma constante que também vem do <code>&lt;stdlib.h&gt;</code>:</p>
+
+<pre class="file" data-file="dado.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    printf("RAND_MAX = %d\n", RAND_MAX);
+    for (int i = 0; i &lt; 5; i++) {
+        printf("%d ", rand());
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;stdlib.h&gt;</dt><dd>A "standard library", biblioteca padrão: traz <code>rand</code>, <code>srand</code> e <code>RAND_MAX</code>.</dd>
+  <dt>RAND_MAX</dt><dd>O maior número que o <code>rand</code> pode devolver. O C só garante que ele vale pelo menos 32767; no Linux (e no editor) é 2147483647, o maior <code>int</code>.</dd>
+  <dt>rand()</dt><dd>Cada chamada devolve o próximo número da sequência.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dado.c -o dado
+$ ./dado
+RAND_MAX = 2147483647
+1804289383 846930886 1681692777 1714636915 1957747793
+$ ./dado
+RAND_MAX = 2147483647
+1804289383 846930886 1681692777 1714636915 1957747793     « os mesmos cinco, de novo</pre>
+
+<p>Rodou duas vezes e saíram exatamente os mesmos números. É o caderno aberto sempre na primeira página: sem você escolher uma semente, o C usa a semente 1. No editor, a sequência é outra (o primeiro número lá é 0), mas também se repete a cada Rodar.</p>
+
+<hr>
+
+<h2>2. Um dado de 1 a 6</h2>
+<p>Números de até 2 bilhões não servem para um jogo de tabuleiro. Para trazer o resultado para um intervalo pequeno, usamos o <strong>resto da divisão</strong> (<code>%</code>, de <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>): o resto de uma divisão por 6 é sempre um número de 0 a 5.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Expressão</th><th>Resultado possível</th><th>Por quê</th></tr>
+<tr><td><code>rand()</code></td><td>de 0 a 2147483647</td><td>Um número grande qualquer.</td></tr>
+<tr><td><code>rand() % 6</code></td><td>de 0 a 5</td><td>O resto da divisão por 6 nunca chega a 6.</td></tr>
+<tr><td><code>rand() % 6 + 1</code></td><td>de 1 a 6</td><td>Soma 1 nos dois extremos: o 0 vira 1 e o 5 vira 6.</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="dado6.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    for (int i = 0; i &lt; 10; i++) {
+        int dado = rand() % 6 + 1;
+        printf("%d ", dado);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dado6.c -o dado6
+$ ./dado6
+2 5 4 2 6 2 5 1 4 2
+$ ./dado6
+2 5 4 2 6 2 5 1 4 2</pre>
+
+<p>Dez jogadas de dado, todas entre 1 e 6. Mas, de novo, a mesma partida toda vez. A seção 3 resolve isso.</p>
+
+<div class="tryc" data-goal="out:Dentro de 1 a 6: 1000 de 1000,src:rand\s*\(\s*\)\s*%\s*6\s*\+\s*1|1\s*\+\s*rand\s*\(\s*\)\s*%\s*6">
+<p class="try-task"><strong>Missão:</strong> o programa joga o dado 1000 vezes e conta quantas jogadas ficaram entre 1 e 6. Rode e veja: algumas ficaram de fora, porque <code>rand() % 6</code> dá de 0 a 5. Conserte a linha do dado para ele dar de 1 a 6.</p>
+<pre class="out">Dentro de 1 a 6: 1000 de 1000</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int dentro = 0;
+    for (int i = 0; i &lt; 1000; i++) {
+        int dado = rand() % 6;      // conserte: tem de dar de 1 a 6
+        if (dado &gt;= 1 &amp;&amp; dado &lt;= 6) {
+            dentro++;
+        }
+    }
+    printf("Dentro de 1 a 6: %d de 1000\n", dentro);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int dentro = 0;
+    for (int i = 0; i &lt; 1000; i++) {
+        int dado = rand() % 6 + 1;
+        if (dado &gt;= 1 &amp;&amp; dado &lt;= 6) {
+            dentro++;
+        }
+    }
+    printf("Dentro de 1 a 6: %d de 1000\n", dentro);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A semente: <code>srand</code></h2>
+<p><code>srand(numero)</code> ("seed random", semear o aleatório) escolhe a página do caderno: a partir dela, o <code>rand</code> segue outra sequência. Para cada execução ser diferente, precisamos de uma semente que <strong>mude sozinha</strong>. O clássico é o relógio: <code>time(NULL)</code>, do <code>&lt;time.h&gt;</code>, devolve quantos segundos se passaram desde 1º de janeiro de 1970, um número que muda a cada segundo.</p>
+
+<pre class="file" data-file="semente.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    srand(time(NULL));
+    for (int i = 0; i &lt; 10; i++) {
+        printf("%d ", rand() % 6 + 1);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;time.h&gt;</dt><dd>Traz a função <code>time</code>.</dd>
+  <dt>time(NULL)</dt><dd>A hora atual, em segundos. O <code>NULL</code> quer dizer "só me devolva o número" (veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>, no Nível 2).</dd>
+  <dt>srand(time(NULL));</dt><dd>Usa a hora como semente. Fica no começo do <code>main</code>, <strong>antes</strong> do primeiro <code>rand()</code>, e roda <strong>uma vez só</strong>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semente.c -o semente
+$ ./semente
+1 2 6 5 6 6 3 4 3 3
+$ sleep 1                     « espera um segundo
+$ ./semente
+2 5 5 1 4 6 3 6 4 4           « outra partida</pre>
+
+<p>Agora cada execução é uma partida diferente. O <code>sleep 1</code> está ali porque a semente só muda de um segundo para o outro: dois programas iniciados <strong>no mesmo segundo</strong> recebem a mesma semente e sorteiam a mesma coisa. Para um jogo, não faz diferença.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> clique em Rodar várias vezes, esperando um pouco entre uma e outra: as jogadas mudam. Depois apague a linha do <code>srand</code> e rode de novo: a partida volta a ser sempre a mesma.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    srand(time(NULL));
+    for (int i = 0; i &lt; 10; i++) {
+        printf("%d ", rand() % 6 + 1);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Semente fixa: repetir o sorteio de propósito</h3>
+<p>Às vezes a repetição é exatamente o que você quer. Se o jogo tem um defeito que só aparece com certos sorteios, você precisa reproduzir aquela partida para encontrá-lo. Para isso, use uma semente fixa, qualquer número:</p>
+
+<pre class="file" data-file="fixa.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    srand(42);
+    for (int i = 0; i &lt; 10; i++) {
+        printf("%d ", rand() % 6 + 1);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fixa.c -o fixa
+$ ./fixa
+1 1 6 4 5 5 2 1 6 6
+$ ./fixa
+1 1 6 4 5 5 2 1 6 6</pre>
+
+<p>Com <code>srand(42)</code>, a sequência é sempre a mesma <strong>neste computador</strong>. No editor do guia, a mesma semente dá <code>3 2 5 1 3 2 5 3 1 3</code>: outra biblioteca, outra conta. Um teste que espera "o primeiro dado é 1" funciona no Linux e falha no editor (ou no Windows, ou no macOS). Use a semente fixa para repetir partidas na mesma máquina, nunca para prometer números exatos.</p>
+
+<hr>
+
+<h2>4. Sortear entre um mínimo e um máximo</h2>
+<p>O dado foi um caso especial. Para sortear de qualquer <code>min</code> a qualquer <code>max</code>, a conta geral é:</p>
+
+<pre class="file" data-file="sortear.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+int sortear(int min, int max) {
+    return rand() % (max - min + 1) + min;
+}
+
+int main(void) {
+    srand(time(NULL));
+    printf("Dado:      %d\n", sortear(1, 6));
+    printf("Moeda:     %s\n", sortear(0, 1) == 0 ? "cara" : "coroa");
+    printf("Mega-Sena: %d\n", sortear(1, 60));
+    printf("Mês:       %d\n", sortear(1, 12));
+    printf("Desconto:  %d%%\n", sortear(5, 15));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>max - min + 1</dt><dd>Quantos números existem no intervalo. De 5 a 15 são <strong>11</strong> números (5, 6, …, 15), e não 10: o <code>+ 1</code> conta os dois extremos.</dd>
+  <dt>rand() % (max - min + 1)</dt><dd>Um número de 0 a 10 (para o desconto).</dd>
+  <dt>… + min</dt><dd>Empurra o intervalo para começar no <code>min</code>: de 0–10 para 5–15.</dd>
+  <dt>sortear(0, 1) == 0 ? "cara" : "coroa"</dt><dd>Uma moeda: sorteia 0 ou 1 e escolhe o texto com o <a href="ternario.html">operador ternário</a>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sortear.c -o sortear
+$ ./sortear
+Dado:      1
+Moeda:     coroa
+Mega-Sena: 10
+Mês:       7
+Desconto:  13%
+$ sleep 1
+$ ./sortear
+Dado:      4
+Moeda:     cara
+Mega-Sena: 60
+Mês:       11
+Desconto:  7%</pre>
+
+<p>Repare no <code>srand</code>: ele fica no <code>main</code>, e não dentro de <code>sortear</code>. A função é chamada cinco vezes; a semente é plantada uma vez só. (A seção "Quando dá errado" mostra o que acontece se o <code>srand</code> for parar dentro de um laço.)</p>
+
+<h3>Todas as faces saem por igual?</h3>
+<p>Um dado honesto dá cada face mais ou menos 1/6 das vezes. Jogando 6000 vezes, cada face deveria sair perto de 1000:</p>
+
+<pre class="file" data-file="frequencia.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    int contagem[7] = {0};
+
+    srand(time(NULL));
+    for (int i = 0; i &lt; 6000; i++) {
+        int dado = rand() % 6 + 1;
+        contagem[dado]++;
+    }
+    for (int face = 1; face &lt;= 6; face++) {
+        printf("face %d: %d vezes\n", face, contagem[face]);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra frequencia.c -o frequencia
+$ ./frequencia
+face 1: 1038 vezes
+face 2: 1016 vezes
+face 3: 980 vezes
+face 4: 934 vezes
+face 5: 1055 vezes
+face 6: 977 vezes</pre>
+
+<p>O array tem 7 posições para usar o próprio número da face como índice (a posição 0 fica sem uso; veja <a href="arrays.html">Arrays</a>). Nenhuma face deu exatamente 1000, e isso é normal: com um dado de verdade também não daria. O importante é que todas ficaram perto.</p>
+
+<hr>
+
+<h2>5. Números com vírgula</h2>
+<p>Para sortear um <code>double</code> entre 0 e 1, divida o <code>rand()</code> por um número um pouco maior que o maior resultado possível:</p>
+
+<pre class="file" data-file="fracao.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    srand(7);
+    for (int i = 0; i &lt; 4; i++) {
+        double x = rand() / (RAND_MAX + 1.0);
+        printf("%.4f\n", x);
+    }
+    double preco = 10.0 + rand() / (RAND_MAX + 1.0) * 5.0;
+    printf("Preço entre 10 e 15: %.2f\n", preco);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>rand() / (RAND_MAX + 1.0)</dt><dd>Um número de 0 até quase 1 (o 1 nunca sai, porque o <code>rand()</code> nunca chega a <code>RAND_MAX + 1</code>). O <code>1.0</code> faz a conta ser com vírgula; com <code>1</code>, seria divisão inteira, e há um problema pior, mostrado logo abaixo.</dd>
+  <dt>10.0 + … * 5.0</dt><dd>Estica o intervalo de 0–1 para 0–5 e empurra para 10–15.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fracao.c -o fracao
+$ ./fracao
+0.4869
+0.8680
+0.5926
+0.2147
+Preço entre 10 e 15: 10.05</pre>
+
+<p>Com <code>RAND_MAX + 1</code> (sem o <code>.0</code>), a soma é feita com <code>int</code>, e <code>RAND_MAX</code> já é o maior <code>int</code>. O gcc avisa:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fracaoerr.c -o fracaoerr
+fracaoerr.c: In function ‘main’:
+fracaoerr.c:5:35: warning: integer overflow in expression of type ‘int’ results in ‘-2147483648’ [-Woverflow]
+    5 |     double x = rand() / (RAND_MAX + 1);
+      |                                   ^
+$ ./fracaoerr
+0.000000</pre>
+
+<p>"Estouro de inteiro na expressão do tipo <code>int</code>, que resulta em −2147483648". O <code>RAND_MAX + 1</code> deu a volta e virou negativo (<a href="inteiros.html">Inteiros</a>), e a divisão inteira de um <code>rand()</code> por esse número dá sempre 0. No editor, o Clang avisa: <code>overflow in expression; result is -2'147'483'648 with type 'int' [-Winteger-overflow]</code>.</p>
+
+<hr>
+
+<h2>6. Embaralhar uma lista</h2>
+<p>A turma da Ana tem 8 alunos, numerados de 1 a 8, e a ordem das apresentações tem de ser sorteada. Sortear 8 números de 1 a 8 não funciona: o mesmo aluno poderia sair duas vezes. O certo é <strong>embaralhar</strong> a lista, como um baralho. O jeito clássico é o embaralhamento de <strong>Fisher-Yates</strong>: de trás para a frente, troque cada item com um item sorteado entre os que ainda não foram fixados.</p>
+
+<pre class="file" data-file="embaralhar.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+void embaralhar(int v[], int n) {
+    for (int i = n - 1; i &gt; 0; i--) {
+        int j = rand() % (i + 1);
+        int temp = v[i];
+        v[i] = v[j];
+        v[j] = temp;
+    }
+}
+
+int main(void) {
+    int alunos[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+
+    srand(time(NULL));
+    embaralhar(alunos, 8);
+
+    printf("Ordem das apresentações:");
+    for (int i = 0; i &lt; 8; i++) {
+        printf(" %d", alunos[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>for (int i = n - 1; i &gt; 0; i--)</dt><dd>Começa pelo último lugar da fila e vai até o segundo.</dd>
+  <dt>int j = rand() % (i + 1);</dt><dd>Sorteia uma posição de 0 a <code>i</code>: qualquer um dos alunos que ainda não ganharam lugar fixo, incluindo o próprio <code>i</code>.</dd>
+  <dt>temp, v[i] = v[j], v[j] = temp</dt><dd>Troca os dois de lugar, com uma variável de apoio. Depois disso, a posição <code>i</code> está decidida e não mexe mais.</dd>
+  <dt>void embaralhar(int v[], int n)</dt><dd>A função recebe o array e muda o array do <code>main</code> (arrays não são copiados; o porquê está em <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra embaralhar.c -o embaralhar
+$ ./embaralhar
+Ordem das apresentações: 5 7 2 1 3 6 8 4
+$ sleep 1
+$ ./embaralhar
+Ordem das apresentações: 2 8 1 6 7 5 3 4</pre>
+
+<p>Cada aluno aparece exatamente uma vez, numa ordem diferente a cada execução. O mesmo código embaralha cartas, perguntas de quiz ou músicas de uma playlist.</p>
+
+<hr>
+
+<h2>Os limites do <code>rand</code>: qual usar</h2>
+
+<h3>O viés do resto</h3>
+<p>O <code>%</code> tem um pequeno defeito. Imagine um <code>rand</code> de brinquedo que só sorteia de 0 a 9 (10 números), e você quer de 0 a 2 com <code>% 3</code>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Resultado de <code>% 3</code></th><th>Vem de quais sorteios</th><th>Chance</th></tr>
+<tr><td>0</td><td>0, 3, 6, 9</td><td>4 em 10</td></tr>
+<tr><td>1</td><td>1, 4, 7</td><td>3 em 10</td></tr>
+<tr><td>2</td><td>2, 5, 8</td><td>3 em 10</td></tr>
+</table>
+</div>
+
+<p>Como 10 não se divide por 3, o 0 sai mais. Com o <code>RAND_MAX</code> de 2 bilhões e um intervalo pequeno (um dado, uma Mega-Sena), a diferença é tão pequena que não se percebe. Ela só importa com intervalos enormes, perto do próprio <code>RAND_MAX</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para…</th><th>Use</th><th>Observação</th></tr>
+<tr><td>Jogos, exercícios, simulações simples</td><td><code>srand(time(NULL))</code> uma vez + <code>rand() % n + min</code></td><td>O que esta aula ensinou</td></tr>
+<tr><td>Repetir a mesma partida na mesma máquina</td><td><code>srand(numero_fixo)</code></td><td>Os números mudam de biblioteca para biblioteca</td></tr>
+<tr><td>Número com vírgula</td><td><code>rand() / (RAND_MAX + 1.0)</code></td><td>Com <code>.0</code>, nunca <code>RAND_MAX + 1</code></td></tr>
+<tr><td>Ordem aleatória sem repetir</td><td>Embaralhar (Fisher-Yates)</td><td>Não sorteie item por item</td></tr>
+<tr><td>Senhas, códigos de acesso, sorteios valendo dinheiro</td><td><strong>Nunca o <code>rand</code></strong>: a fonte segura do sistema (no Linux, <code>getrandom</code>)</td><td>Quem descobre a semente (por exemplo, a hora em que o programa rodou) prevê todos os números</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Sai sempre a mesma sequência</strong>
+<p><strong>O que significa:</strong> faltou o <code>srand</code>. Sem ele, a semente é sempre 1, e o programa repete a mesma "sorte" a cada execução.</p>
+<p><strong>Como consertar:</strong> <code>srand(time(NULL));</code> no começo do <code>main</code>, com <code>#include &lt;time.h&gt;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Sai o mesmo número várias vezes seguidas: <code>srand</code> dentro do laço</strong>
+<pre class="file" data-file="laco.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    for (int i = 0; i &lt; 10; i++) {
+        srand(time(NULL));
+        printf("%d ", rand() % 6 + 1);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra laco.c -o laco
+$ ./laco
+4 4 4 4 4 4 4 4 4 4</pre>
+<p><strong>O que aconteceu:</strong> o laço inteiro roda em menos de um segundo. A cada volta, o <code>srand</code> planta a <strong>mesma</strong> semente (a hora não mudou) e o <code>rand</code> recomeça do mesmo ponto: o primeiro número daquela sequência, de novo e de novo. É como abrir o caderno na mesma página antes de cada leitura. O compilador não avisa.</p>
+<p><strong>Como consertar:</strong> tire o <code>srand</code> do laço (e de dentro de funções chamadas várias vezes). Ele vai uma vez só, no começo do <code>main</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O dado dá 0 e nunca dá 6</strong>
+<pre class="term" data-cwd="~/c">$ ./zeroseis
+1 4 3 1 5 1 4 0 3 1 2 1 2 1 5 4 0 0 4 4</pre>
+<p><strong>O que significa:</strong> o código usa <code>rand() % 6</code>, que dá de 0 a 5.</p>
+<p><strong>Como consertar:</strong> some o mínimo: <code>rand() % 6 + 1</code>. Em geral, <code>rand() % (max - min + 1) + min</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Exceção de ponto flutuante</code> (código 136)</strong>
+<pre class="file" data-file="zero.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int premios = 0;
+    printf("Sorteando...\n");
+    int sorteado = rand() % premios;
+    printf("Prêmio %d\n", sorteado);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra zero.c -o zero
+$ ./zero
+Sorteando...
+Exceção de ponto flutuante (imagem do núcleo gravada) ./zero
+$ echo $?
+136</pre>
+<p><strong>O que significa:</strong> <code>rand() % 0</code> é uma divisão inteira por zero, que derruba o programa (apesar do nome, a "exceção de ponto flutuante" acontece com inteiros). Acontece quando o tamanho do intervalo vem de uma variável que, naquele momento, vale 0: uma lista vazia, por exemplo. No editor, o resultado é o mesmo, com código 136.</p>
+<p><strong>Como consertar:</strong> antes de sortear, confira: <code>if (premios &gt; 0) { … }</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘srand’</code> (e de <code>time</code> e <code>rand</code>)</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra seminclude.c -o seminclude
+seminclude.c: In function ‘main’:
+seminclude.c:4:5: error: implicit declaration of function ‘srand’ [-Wimplicit-function-declaration]
+    4 |     srand(time(NULL));
+      |     ^~~~~
+seminclude.c:4:11: error: implicit declaration of function ‘time’ [-Wimplicit-function-declaration]
+    4 |     srand(time(NULL));
+      |           ^~~~
+seminclude.c:2:1: note: ‘time’ is defined in header ‘&lt;time.h&gt;’; this is probably fixable by adding ‘#include &lt;time.h&gt;’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;time.h&gt;
+    2 |
+seminclude.c:5:20: error: implicit declaration of function ‘rand’ [-Wimplicit-function-declaration]
+    5 |     printf("%d\n", rand() % 6 + 1);
+      |                    ^~~~</pre>
+<p><strong>O que significa:</strong> faltaram os <code>#include</code>. Para o <code>time</code>, o gcc até diz qual: <em>‘time’ is defined in header ‘&lt;time.h&gt;’</em> ("o <code>time</code> está definido no cabeçalho <code>&lt;time.h&gt;</code>"). No editor, o Clang diz <code>use of undeclared identifier 'srand'</code>.</p>
+<p><strong>Como consertar:</strong> <code>#include &lt;stdlib.h&gt;</code> (para <code>rand</code> e <code>srand</code>) e <code>#include &lt;time.h&gt;</code> (para <code>time</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: integer overflow in expression of type ‘int’ results in ‘-2147483648’</code></strong>
+<p><strong>O que significa:</strong> você escreveu <code>RAND_MAX + 1</code>, uma conta de <code>int</code> que estoura.</p>
+<p><strong>Como consertar:</strong> <code>RAND_MAX + 1.0</code>, para a conta ser feita com <code>double</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;stdlib.h&gt;</code></td><td>Traz <code>rand</code>, <code>srand</code> e <code>RAND_MAX</code></td></tr>
+<tr><td><code>rand()</code></td><td>Um <code>int</code> de 0 a <code>RAND_MAX</code>, o próximo da sequência</td></tr>
+<tr><td><code>RAND_MAX</code></td><td>O maior valor do <code>rand()</code> (pelo menos 32767; no Linux, 2147483647)</td></tr>
+<tr><td><code>srand(time(NULL));</code></td><td>Semente pela hora: uma sequência nova a cada execução (precisa de <code>&lt;time.h&gt;</code>). Uma vez só, no começo</td></tr>
+<tr><td><code>srand(42);</code></td><td>Semente fixa: a mesma sequência a cada execução, na mesma biblioteca</td></tr>
+<tr><td><code>rand() % 6 + 1</code></td><td>Um dado: de 1 a 6</td></tr>
+<tr><td><code>rand() % (max - min + 1) + min</code></td><td>De <code>min</code> a <code>max</code>, incluindo os dois</td></tr>
+<tr><td><code>rand() / (RAND_MAX + 1.0)</code></td><td>Um <code>double</code> de 0 até quase 1</td></tr>
+<tr><td><code>j = rand() % (i + 1)</code> + troca</td><td>Um passo do embaralhamento de Fisher-Yates</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A semente pela hora</h3>
+<p>Complete a linha que faz cada execução sortear números diferentes:</p>
+<div class="ex-code"><input data-answer="srand" aria-label="função">(time(NULL));</div>
+</div>
+
+<div class="exercise">
+<h3>2. Uma moeda</h3>
+<p>Complete para sortear 0 ou 1:</p>
+<div class="ex-code">int moeda = rand() % <input data-answer="2" aria-label="número">;</div>
+</div>
+
+<div class="exercise">
+<h3>3. Um dado de 20 faces</h3>
+<p>Complete para sortear de 1 a 20:</p>
+<div class="ex-code">int d20 = rand() % 20 <input data-answer="+ 1|+1" aria-label="ajuste">;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Quantos números diferentes <code>rand() % (15 - 5 + 1) + 5</code> pode dar?</p>
+<label><input type="radio" name="q4"> 10</label>
+<label><input type="radio" name="q4"> 15</label>
+<label><input type="radio" name="q4"> 11, de 5 a 15</label>
+<label><input type="radio" name="q4"> 16</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Um programa chama <code>srand(time(NULL))</code> dentro de um laço de 10 voltas e sorteia um dado em cada volta. O que costuma acontecer?</p>
+<label><input type="radio" name="q5"> Os dez números saem mais aleatórios</label>
+<label><input type="radio" name="q5"> O mesmo número sai dez vezes, porque a semente não mudou dentro do mesmo segundo</label>
+<label><input type="radio" name="q5"> Erro de compilação</label>
+<label><input type="radio" name="q5"> O programa trava</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Para gerar a senha provisória de um site de banco, o <code>rand</code> serve?</p>
+<label><input type="radio" name="q6"> Sim, desde que se use <code>srand(time(NULL))</code></label>
+<label><input type="radio" name="q6"> Sim, com uma semente fixa secreta</label>
+<label><input type="radio" name="q6"> Sim, se o <code>RAND_MAX</code> for grande</label>
+<label><input type="radio" name="q6"> Não: quem descobre a semente prevê os números; use a fonte segura do sistema</label>
+</div>
+
+<h3>Missão final: a rifa da festa junina</h3>
+
+<div class="tryc" data-goal="outre:^Menor sorteado: 10\nMaior sorteado: 20\nFora do intervalo: 0\n$,semaviso">
+<p class="try-task"><strong>Missão:</strong> os bilhetes da rifa vão do 10 ao 20. A função <code>sortear(min, max)</code> deveria devolver um número de <code>min</code> a <code>max</code> (incluindo os dois), mas está errada. O <code>main</code> faz 10 000 sorteios e confere: qual foi o menor, qual foi o maior e quantos ficaram fora do intervalo. Conserte a função. A saída tem de ser exatamente esta, sem avisos:</p>
+<pre class="out">Menor sorteado: 10
+Maior sorteado: 20
+Fora do intervalo: 0</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+int sortear(int min, int max) {
+    return rand() % max;    // conserte: de min a max
+}
+
+int main(void) {
+    srand(time(NULL));
+    int menor = 1000;
+    int maior = -1000;
+    int fora = 0;
+
+    for (int i = 0; i &lt; 10000; i++) {
+        int bilhete = sortear(10, 20);
+        if (bilhete &lt; menor) {
+            menor = bilhete;
+        }
+        if (bilhete &gt; maior) {
+            maior = bilhete;
+        }
+        if (bilhete &lt; 10 || bilhete &gt; 20) {
+            fora++;
+        }
+    }
+    printf("Menor sorteado: %d\n", menor);
+    printf("Maior sorteado: %d\n", maior);
+    printf("Fora do intervalo: %d\n", fora);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+int sortear(int min, int max) {
+    return rand() % (max - min + 1) + min;
+}
+
+int main(void) {
+    srand(time(NULL));
+    int menor = 1000;
+    int maior = -1000;
+    int fora = 0;
+
+    for (int i = 0; i &lt; 10000; i++) {
+        int bilhete = sortear(10, 20);
+        if (bilhete &lt; menor) {
+            menor = bilhete;
+        }
+        if (bilhete &gt; maior) {
+            maior = bilhete;
+        }
+        if (bilhete &lt; 10 || bilhete &gt; 20) {
+            fora++;
+        }
+    }
+    printf("Menor sorteado: %d\n", menor);
+    printf("Maior sorteado: %d\n", maior);
+    printf("Fora do intervalo: %d\n", fora);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Com o código errado, <code>rand() % 20</code> dá de 0 a 19: o menor sorteado é 0, o 20 nunca sai e quase metade dos bilhetes fica fora. (O aviso <code>unused parameter 'min'</code> também denunciava o erro: a função ignorava o mínimo.) Essa conferência funciona com qualquer semente e em qualquer computador: em 10 000 sorteios de 11 números, todos acabam aparecendo.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>rand()</code> (do <code>&lt;stdlib.h&gt;</code>) devolve um <code>int</code> de 0 a <code>RAND_MAX</code>. Os números são <strong>pseudoaleatórios</strong>: saem de uma conta.</li>
+  <li>Sem semente, a sequência é sempre a mesma. <code>srand(time(NULL))</code>, <strong>uma vez</strong>, no começo do <code>main</code>, muda a sequência a cada execução. Dentro de um laço, ele repete o mesmo número.</li>
+  <li>Uma semente fixa (<code>srand(42)</code>) repete a partida, útil para achar defeitos. Cada biblioteca C tem a sua conta: o editor sorteia outros números que o Linux.</li>
+  <li>De <code>min</code> a <code>max</code>: <code>rand() % (max - min + 1) + min</code>. Com vírgula: <code>rand() / (RAND_MAX + 1.0)</code>. Ordem sem repetir: embaralhe (Fisher-Yates).</li>
+  <li><code>rand() % 0</code> derruba o programa (<code>Exceção de ponto flutuante</code>, 136).</li>
+  <li>O <code>rand</code> serve para jogos e simulações, nunca para senhas.</li>
+  <li>Próxima aula, no Nível 2: <a href="memoria.html">Memória e Endereços</a>. Para usar tudo isto num jogo completo, veja o <a href="projeto-adivinhacao.html">Projeto: Jogo de Adivinhação</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
