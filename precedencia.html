@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Precedência — a ordem dos operadores | Guia C</title>
+<meta name="description" content="Precedência e associatividade dos operadores em C para quem nunca programou: a tabela completa, por que 2 + 3 * 4 dá 14, parênteses, a média que sai errada, o cast antes da divisão, a = b = c, e as armadilhas n &amp; 1 == 0, 1 &lt;&lt; 2 + 1 e *p++, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Precedência</span></h1>
+
+<p class="intro">Quanto é <code>2 + 3 * 4</code>? Se você respondeu 14, já conhece a ideia desta aula: alguns operadores são calculados <strong>antes</strong> de outros. Na escola isso se chama "ordem das operações"; em programação, <strong>precedência</strong>. O C tem mais de 40 operadores, e todos têm um lugar nessa fila. Nesta aula você vai ver a tabela completa, aprender a usar parênteses para mandar na ordem e conhecer as armadilhas em que até programadores experientes caem.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é <strong>precedência</strong> (quem vai primeiro) e <strong>associatividade</strong> (empate: da esquerda ou da direita?).</li>
+  <li>A tabela completa dos operadores do C, do mais "forte" ao mais "fraco".</li>
+  <li>Como os parênteses resolvem tudo, e quando usá-los mesmo sem precisar.</li>
+  <li>Os erros clássicos: a média <code>n1 + n2 / 2</code>, o cast <code>(double) (soma / qtd)</code>, <code>n &amp; 1 == 0</code>, <code>1 &lt;&lt; 2 + 1</code> e <code>*p++</code>.</li>
+  <li>Por que precedência <strong>não</strong> é a ordem em que as coisas são calculadas.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: a fila do banco com prioridade</h2>
+<p>Num banco, há uma fila só, mas algumas pessoas têm <strong>prioridade</strong>: são atendidas primeiro, não importa onde estejam. Entre duas pessoas com a mesma prioridade, vale a ordem de chegada.</p>
+<p>Uma expressão em C funciona assim:</p>
+<ul>
+  <li><strong>Precedência</strong> é a prioridade: em <code>2 + 3 * 4</code>, o <code>*</code> tem prioridade maior que o <code>+</code>, então <code>3 * 4</code> é agrupado primeiro.</li>
+  <li><strong>Associatividade</strong> é o desempate entre operadores do mesmo nível: em <code>10 - 4 - 3</code>, os dois <code>-</code> têm a mesma prioridade, e o C agrupa <strong>da esquerda para a direita</strong>: <code>(10 - 4) - 3</code>.</li>
+  <li><strong>Parênteses</strong> são o "fura-fila" oficial: o que está dentro deles é agrupado primeiro, sempre.</li>
+</ul>
+
+<hr>
+
+<h2>1. Contas: como na escola</h2>
+
+<pre class="file" data-file="conta.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%d\n", 2 + 3 * 4);
+    printf("%d\n", (2 + 3) * 4);
+    printf("%d\n", 10 - 4 - 3);
+    printf("%d\n", 100 / 10 / 2);
+    printf("%d\n", 7 + 10 % 3);
+    printf("%d\n", -2 * -3);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra conta.c -o conta
+$ ./conta
+14       « 2 + (3 * 4): a multiplicação vai primeiro
+20       « (2 + 3) * 4: os parênteses mandam
+3        « (10 - 4) - 3: da esquerda para a direita
+5        « (100 / 10) / 2, e não 100 / (10 / 2), que daria 20
+8        « 7 + (10 % 3): o resto (%) tem a prioridade do * e do /
+6        « (-2) * (-3): o sinal de menos "grudado" vai antes de tudo</pre>
+
+<dl class="anatomy">
+  <dt><code>*</code>, <code>/</code> e <code>%</code></dt><dd>Mesmo nível, acima do <code>+</code> e do <code>-</code>. Como na escola, com o <code>%</code> (resto da divisão; aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>) junto da multiplicação.</dd>
+  <dt>esquerda para a direita</dt><dd>Quase todos os operadores de dois lados se agrupam assim. Com <code>+</code> e <code>*</code> tanto faz, mas com <code>-</code> e <code>/</code> faz diferença.</dd>
+  <dt><code>-2</code></dt><dd>O <code>-</code> na frente de um número só (o <strong>menos unário</strong>, "de um operando") tem prioridade maior que qualquer conta de dois lados.</dd>
+</dl>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> antes de rodar, calcule de cabeça o resultado de cada linha. Depois rode e confira. Mude os parênteses de lugar e veja o que muda.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%d\n", 1 + 2 * 3 + 4);
+    printf("%d\n", (1 + 2) * (3 + 4));
+    printf("%d\n", 20 / 2 * 5);
+    printf("%d\n", 20 / (2 * 5));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Dois erros de conta muito comuns</h2>
+
+<h3>A média que sai errada</h3>
+<pre class="file" data-file="media.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n1 = 8;
+    int n2 = 6;
+    printf("Errado: %d\n", n1 + n2 / 2);
+    printf("Certo: %d\n", (n1 + n2) / 2);
+    int soma = 15;
+    int qtd = 2;
+    printf("%.1f\n", (double) soma / qtd);
+    printf("%.1f\n", (double) (soma / qtd));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra media.c -o media
+$ ./media
+Errado: 11       « 8 + (6 / 2) = 8 + 3
+Certo: 7         « (8 + 6) / 2 = 14 / 2
+7.5              « ((double) 15) / 2 = 15.0 / 2
+7.0              « (double) (15 / 2) = (double) 7: a vírgula já tinha sido perdida</pre>
+
+<p>O primeiro erro é de matemática pura: sem parênteses, só o <code>n2</code> é dividido. O gcc não avisa nada, porque <code>n1 + n2 / 2</code> é uma conta válida; só você sabe que queria a média.</p>
+
+<p>O segundo é do C: o <strong>cast</strong> <code>(double)</code> (a conversão de tipo; aula <a href="conversao-tipos.html">Conversão de Tipos</a>) é um operador de um operando só e tem prioridade alta, como o menos unário. Ele pega <strong>só o que vem logo depois</strong>:</p>
+<ul>
+  <li><code>(double) soma / qtd</code> converte <code>soma</code> para 15.0 e então divide: 15.0 / 2 é uma divisão com vírgula, 7.5.</li>
+  <li><code>(double) (soma / qtd)</code> primeiro divide os inteiros (15 / 2 = 7, a parte depois da vírgula é jogada fora) e só depois converte o 7 em 7.0. Tarde demais.</li>
+</ul>
+
+<div class="tryc" data-goal="outre:^Média: 8\n$,src:\(\s*n1\s*\+\s*n2\s*\+\s*n3\s*\)">
+<p class="try-task"><strong>Missão:</strong> a média das três notas da Ana (7, 8 e 9) é 8, mas o programa mostra 18. Coloque os parênteses no lugar certo:</p>
+<pre class="out">Média: 8</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n1 = 7;
+    int n2 = 8;
+    int n3 = 9;
+    int media = n1 + n2 + n3 / 3;
+    printf("Média: %d\n", media);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n1 = 7;
+    int n2 = 8;
+    int n3 = 9;
+    int media = (n1 + n2 + n3) / 3;
+    printf("Média: %d\n", media);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A tabela completa</h2>
+<p>Esta é a tabela de precedência do C23, do nível mais alto (agrupado primeiro) ao mais baixo. Você <strong>não</strong> precisa decorá-la: guarde a ideia geral e consulte quando tiver dúvida. Os operadores que você ainda não conhece têm aula própria.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nível</th><th>Operadores</th><th>O que são</th><th>Associatividade</th></tr>
+<tr><td>1</td><td><code>x++</code> <code>x--</code> <code>f()</code> <code>v[i]</code> <code>s.campo</code> <code>p-&gt;campo</code> <code>(tipo){…}</code></td><td>pós-incremento (<a href="incremento.html">++ e --</a>), chamada de função, índice de <a href="arrays.html">array</a>, campo de <a href="structs.html">struct</a>, literal composto</td><td>esquerda → direita</td></tr>
+<tr><td>2</td><td><code>++x</code> <code>--x</code> <code>+x</code> <code>-x</code> <code>!</code> <code>~</code> <code>(tipo)</code> <code>*p</code> <code>&amp;x</code> <code>sizeof</code> <code>alignof</code></td><td>operadores de <strong>um operando</strong>: pré-incremento, sinal, não lógico, não de bits, cast, conteúdo e endereço (<a href="ponteiros.html">ponteiros</a>), tamanho</td><td><strong>direita → esquerda</strong></td></tr>
+<tr><td>3</td><td><code>*</code> <code>/</code> <code>%</code></td><td>multiplicação, divisão, resto</td><td>esquerda → direita</td></tr>
+<tr><td>4</td><td><code>+</code> <code>-</code></td><td>soma, subtração</td><td>esquerda → direita</td></tr>
+<tr><td>5</td><td><code>&lt;&lt;</code> <code>&gt;&gt;</code></td><td>deslocamento de bits (<a href="operadores-bits.html">Operadores de Bits</a>)</td><td>esquerda → direita</td></tr>
+<tr><td>6</td><td><code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code></td><td>comparações de ordem (<a href="operadores-comparacao.html">Comparação</a>)</td><td>esquerda → direita</td></tr>
+<tr><td>7</td><td><code>==</code> <code>!=</code></td><td>igual, diferente</td><td>esquerda → direita</td></tr>
+<tr><td>8</td><td><code>&amp;</code></td><td>E de bits</td><td>esquerda → direita</td></tr>
+<tr><td>9</td><td><code>^</code></td><td>OU exclusivo de bits</td><td>esquerda → direita</td></tr>
+<tr><td>10</td><td><code>|</code></td><td>OU de bits</td><td>esquerda → direita</td></tr>
+<tr><td>11</td><td><code>&amp;&amp;</code></td><td>E lógico (<a href="operadores-logicos.html">Lógicos</a>)</td><td>esquerda → direita</td></tr>
+<tr><td>12</td><td><code>||</code></td><td>OU lógico</td><td>esquerda → direita</td></tr>
+<tr><td>13</td><td><code>? :</code></td><td>operador ternário (<a href="ternario.html">Ternário</a>)</td><td><strong>direita → esquerda</strong></td></tr>
+<tr><td>14</td><td><code>=</code> <code>+=</code> <code>-=</code> <code>*=</code> <code>/=</code> <code>%=</code> <code>&lt;&lt;=</code> <code>&gt;&gt;=</code> <code>&amp;=</code> <code>^=</code> <code>|=</code></td><td>atribuições (<a href="operadores-atribuicao.html">Atribuição</a>)</td><td><strong>direita → esquerda</strong></td></tr>
+<tr><td>15</td><td><code>,</code></td><td>operador vírgula</td><td>esquerda → direita</td></tr>
+</table>
+</div>
+
+<p>Um resumo para guardar de cabeça, de cima para baixo: <strong>"de um lado só" → contas (<code>* /</code> antes de <code>+ -</code>) → comparações → lógicos (<code>&amp;&amp;</code> antes de <code>||</code>) → ternário → atribuição</strong>. Os operadores de bits (<code>&amp;</code>, <code>^</code>, <code>|</code>) ficam num lugar estranho, <strong>abaixo</strong> das comparações, e é daí que vêm as armadilhas da seção 5.</p>
+
+<p>Sobre o nível 2: <code>alignof</code> virou palavra-chave no C23 <span class="versao">C23</span>; antes era <code>_Alignof</code> (C11). A vírgula do nível 15 é um operador raro; a vírgula que separa os argumentos do <code>printf</code> é outra coisa, só um separador.</p>
+
+<hr>
+
+<h2>4. Os que agrupam da direita para a esquerda</h2>
+<p>Três grupos da tabela se agrupam da <strong>direita</strong> para a esquerda: os de um operando, o ternário e as atribuições. Isso permite escrever:</p>
+
+<pre class="file" data-file="atribs.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a, b, c;
+    a = b = c = 7;
+    printf("%d %d %d\n", a, b, c);
+    int x = 2;
+    x *= 3 + 1;
+    printf("%d\n", x);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra atribs.c -o atribs
+$ ./atribs
+7 7 7    « a = (b = (c = 7)): o 7 "escorre" da direita para a esquerda
+8        « x *= (3 + 1): a atribuição é a última, então x = 2 * 4</pre>
+
+<dl class="anatomy">
+  <dt>a = b = c = 7;</dt><dd>Agrupado como <code>a = (b = (c = 7))</code>. Primeiro <code>c</code> recebe 7; o valor dessa atribuição (7) vai para <code>b</code>; e o de <code>b</code> vai para <code>a</code>. Útil para zerar várias variáveis de uma vez.</dd>
+  <dt>x *= 3 + 1;</dt><dd>As atribuições estão quase no fim da tabela: todo o lado direito é calculado antes. Então é <code>x = x * (3 + 1)</code>, e não <code>(x * 3) + 1</code>.</dd>
+  <dt>-!x, !-x…</dt><dd>Com os de um operando, "da direita para a esquerda" quer dizer: o que está mais perto do valor vai primeiro. Em <code>-!x</code>, primeiro o <code>!</code>, depois o <code>-</code>.</dd>
+</dl>
+
+<hr>
+
+<h2>5. Armadilhas: operadores de bits e comparações</h2>
+<p>Este programa quer saber se <code>n</code> é par. Um número é par quando o último bit dele é 0, e <code>n &amp; 1</code> pega esse último bit (aula <a href="operadores-bits.html">Operadores de Bits</a>; aqui basta saber que <code>n &amp; 1</code> dá 0 para números pares e 1 para ímpares):</p>
+
+<pre class="file" data-file="par.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 4;
+    printf("%d\n", n &amp; 1 == 0);
+    printf("%d\n", (n &amp; 1) == 0);
+    printf("%d\n", 1 &lt;&lt; 2 + 1);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra par.c -o par
+par.c: In function ‘main’:
+par.c:5:22: warning: suggest parentheses around comparison in operand of ‘&amp;’ [-Wparentheses]
+    5 |     printf("%d\n", n &amp; 1 == 0);
+      |                      ^
+par.c:7:22: warning: suggest parentheses around ‘+’ inside ‘&lt;&lt;’ [-Wparentheses]
+    7 |     printf("%d\n", 1 &lt;&lt; 2 + 1);
+      |                      ^~
+$ ./par
+0        « "4 é par?" respondeu NÃO
+1        « com parênteses: sim
+8        « 1 &lt;&lt; (2 + 1) = 1 &lt;&lt; 3, e não (1 &lt;&lt; 2) + 1 = 5</pre>
+
+<ol class="passo">
+  <li>Na tabela, o <code>==</code> (nível 7) está <strong>acima</strong> do <code>&amp;</code> (nível 8). Então <code>n &amp; 1 == 0</code> é agrupado como <code>n &amp; (1 == 0)</code>.</li>
+  <li><code>1 == 0</code> dá 0. Sobra <code>n &amp; 0</code>, que é sempre 0, para qualquer <code>n</code>.</li>
+  <li>Com <code>(n &amp; 1) == 0</code>, o último bit de 4 (que é 0) é comparado com 0: sim, 1.</li>
+</ol>
+<p>Essa posição do <code>&amp;</code> abaixo do <code>==</code> é considerada um erro histórico do C, mantido até hoje para não quebrar programas antigos. O aviso diz "sugiro parênteses em volta da comparação usada no <code>&amp;</code>". O Clang do editor explica melhor: <code>&amp; has lower precedence than ==; == will be evaluated first</code> ("<code>&amp;</code> tem precedência menor que <code>==</code>; o <code>==</code> será calculado primeiro").</p>
+<p>Na linha 7, o deslocamento <code>&lt;&lt;</code> (nível 5) fica <strong>abaixo</strong> do <code>+</code> (nível 4), e muita gente espera o contrário. O gcc avisa: "sugiro parênteses em volta do <code>+</code> dentro do <code>&lt;&lt;</code>". Os dois avisos vêm do <code>-Wparentheses</code>, ligado pelo <code>-Wall</code>.</p>
+
+<hr>
+
+<h2>6. Prévia: <code>*p++</code></h2>
+<p>Esta armadilha só faz sentido de verdade depois da aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>, mas ela é tão famosa que vale ver agora. Um <strong>ponteiro</strong> <code>p</code> é uma variável que guarda a posição de outra (ele "aponta" para ela); <code>*p</code> quer dizer "o valor que está onde <code>p</code> aponta". Aqui, <code>p</code> começa apontando para o primeiro número da lista <code>v</code>:</p>
+
+<pre class="file" data-file="ponteiro.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int v[3] = {10, 20, 30};
+    int *p = v;
+    printf("%d\n", *p++);
+    printf("%d\n", *p);
+    (*p)++;
+    printf("%d\n", *p);
+    printf("%d %d %d\n", v[0], v[1], v[2]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ponteiro.c -o ponteiro
+$ ./ponteiro
+10           « *p++: mostrou o 10 e ANDOU o ponteiro para o próximo número
+20           « agora p aponta para o 20
+21           « (*p)++: somou 1 no NÚMERO apontado
+10 21 30     « a lista mudou: o 20 virou 21</pre>
+
+<ul>
+  <li>O <code>++</code> de depois (nível 1) é mais forte que o <code>*</code> (nível 2). Então <code>*p++</code> é <code>*(p++)</code>: o <code>++</code> anda o <strong>ponteiro</strong>, e o <code>*</code> lê o valor da posição antiga (porque o pós-incremento entrega o valor antigo).</li>
+  <li>Para somar 1 no <strong>valor apontado</strong>, os parênteses são obrigatórios: <code>(*p)++</code>.</li>
+</ul>
+<p>O <code>*p++</code> é muito usado de propósito, para percorrer listas e textos (aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>). O erro é escrever <code>*p++</code> querendo <code>(*p)++</code>, e aí nenhum compilador avisa.</p>
+
+<hr>
+
+<h2>7. Precedência não é ordem de cálculo</h2>
+<p>Precedência decide <strong>como a expressão é agrupada</strong> (quem é operando de quem). Ela <strong>não</strong> decide em que ordem as partes são calculadas. Em <code>a() + b() * c()</code>, a precedência garante que o resultado de <code>b()</code> é multiplicado pelo de <code>c()</code> antes da soma, mas o C não promete chamar <code>a()</code> primeiro: o compilador pode calcular as três partes na ordem que quiser.</p>
+<p>Na maioria das vezes isso não importa. Importa quando as partes <strong>mudam alguma coisa</strong>, como em <code>printf("%d %d\n", n++, n++)</code>. Na aula <a href="incremento.html">++ e --</a> esse mesmo código mostrou <code>2 1</code> no gcc e <code>1 2</code> no Clang. As exceções, que têm ordem garantida (esquerda primeiro), são <code>&amp;&amp;</code>, <code>||</code> (o curto-circuito de <a href="operadores-logicos.html">Operadores Lógicos</a>), <code>? :</code> e o operador vírgula.</p>
+
+<hr>
+
+<h2>Formas diferentes: parênteses que não mudam nada</h2>
+<p>Parênteses "a mais" não deixam o programa mais lento nem mudam o resultado. Eles servem para <strong>quem lê</strong>. Compare:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sem parênteses extras</th><th>Com parênteses extras</th><th>Qual usar</th></tr>
+<tr><td><code>total = preco * qtd + frete;</code></td><td><code>total = (preco * qtd) + frete;</code></td><td>Tanto faz: <code>*</code> antes de <code>+</code> todo mundo sabe.</td></tr>
+<tr><td><code>ok = nota &gt;= 6 &amp;&amp; faltas &lt; 10;</code></td><td><code>ok = (nota &gt;= 6) &amp;&amp; (faltas &lt; 10);</code></td><td>Os dois são comuns; os parênteses ajudam quem está começando.</td></tr>
+<tr><td><code>a || b &amp;&amp; c</code></td><td><code>a || (b &amp;&amp; c)</code></td><td><strong>Com parênteses</strong>: o gcc até avisa sem eles.</td></tr>
+<tr><td><code>n &amp; 1 == 0</code></td><td><code>(n &amp; 1) == 0</code></td><td><strong>Com parênteses</strong>, sempre: sem eles a resposta é outra.</td></tr>
+<tr><td><code>x &lt;&lt; 2 + 1</code></td><td><code>(x &lt;&lt; 2) + 1</code> ou <code>x &lt;&lt; (2 + 1)</code></td><td><strong>Com parênteses</strong>, deixando claro qual você quer.</td></tr>
+</table>
+</div>
+
+<p>A regra prática: se você teve de <strong>pensar</strong> para saber a ordem, ponha parênteses. E sempre compile com <code>-Wall</code>, que avisa nos casos mais perigosos.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: suggest parentheses around comparison in operand of ‘&amp;’</code></strong>
+<p><strong>O que significa:</strong> você escreveu algo como <code>n &amp; 1 == 0</code>. O <code>==</code> é feito antes do <code>&amp;</code>. Também aparece com <code>|</code> e <code>^</code>. No Clang: <code>&amp; has lower precedence than ==; == will be evaluated first</code>.</p>
+<p><strong>Como consertar:</strong> <code>(n &amp; 1) == 0</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: suggest parentheses around ‘+’ inside ‘&lt;&lt;’</code></strong>
+<p><strong>O que significa:</strong> em <code>1 &lt;&lt; 2 + 1</code>, a soma é feita antes do deslocamento. No Clang: <code>operator '&lt;&lt;' has lower precedence than '+'; '+' will be evaluated first [-Wshift-op-parentheses]</code>.</p>
+<p><strong>Como consertar:</strong> parênteses em volta do que você quer primeiro.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: suggest parentheses around ‘&amp;&amp;’ within ‘||’</code></strong>
+<p><strong>O que significa:</strong> mistura de <code>&amp;&amp;</code> e <code>||</code> sem parênteses. O <code>&amp;&amp;</code> vai primeiro (veja <a href="operadores-logicos.html">Operadores Lógicos</a>).</p>
+<p><strong>Como consertar:</strong> escreva os parênteses do jeito que você quer.</p>
+</div>
+
+<div class="cenario">
+<strong>A conta dá um número errado, sem aviso nenhum</strong>
+<p><strong>O que significa:</strong> provavelmente faltaram parênteses numa conta: <code>n1 + n2 / 2</code> no lugar de <code>(n1 + n2) / 2</code>, <code>f - 32 * 5 / 9</code> no lugar de <code>(f - 32) * 5 / 9</code>, ou um cast no lugar errado, <code>(double) (a / b)</code>. Nenhum compilador sabe o que você queria calcular.</p>
+<p><strong>Como consertar:</strong> leia a conta em voz alta e confira com a tabela. Teste com números fáceis, que você consegue calcular de cabeça.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Expressão</th><th>O C lê como</th><th>Cuidado</th></tr>
+<tr><td><code>a + b * c</code></td><td><code>a + (b * c)</code></td><td>Como na escola.</td></tr>
+<tr><td><code>a - b - c</code></td><td><code>(a - b) - c</code></td><td>Esquerda para a direita.</td></tr>
+<tr><td><code>(double) a / b</code></td><td><code>((double) a) / b</code></td><td>O cast pega só o vizinho.</td></tr>
+<tr><td><code>a = b = c</code></td><td><code>a = (b = c)</code></td><td>Direita para a esquerda.</td></tr>
+<tr><td><code>x *= a + b</code></td><td><code>x = x * (a + b)</code></td><td>Atribuição por último.</td></tr>
+<tr><td><code>a &lt; b == c &lt; d</code></td><td><code>(a &lt; b) == (c &lt; d)</code></td><td><code>&lt;</code> antes de <code>==</code>.</td></tr>
+<tr><td><code>a || b &amp;&amp; c</code></td><td><code>a || (b &amp;&amp; c)</code></td><td><code>&amp;&amp;</code> antes de <code>||</code>.</td></tr>
+<tr><td><code>!x == y</code></td><td><code>(!x) == y</code></td><td>Escreva <code>x != y</code>.</td></tr>
+<tr><td><code>n &amp; 1 == 0</code></td><td><code>n &amp; (1 == 0)</code></td><td>Sempre <code>(n &amp; 1) == 0</code>.</td></tr>
+<tr><td><code>1 &lt;&lt; a + b</code></td><td><code>1 &lt;&lt; (a + b)</code></td><td>Contas antes do deslocamento.</td></tr>
+<tr><td><code>*p++</code></td><td><code>*(p++)</code></td><td>Anda o ponteiro; para mudar o valor, <code>(*p)++</code>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. De cabeça</h3>
+<p>Quanto vale <code>10 - 2 * 3</code>?</p>
+<div class="ex-code"><input data-answer="4" aria-label="resultado"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Da esquerda para a direita</h3>
+<p>Quanto vale <code>24 / 4 / 2</code>?</p>
+<div class="ex-code"><input data-answer="3" aria-label="resultado"></div>
+</div>
+
+<div class="exercise">
+<h3>3. O cast no lugar certo</h3>
+<p>Complete para a divisão ter vírgula (o resultado deve ser 2.5 com <code>a = 5</code> e <code>b = 2</code>):</p>
+<div class="ex-code">double r = <input data-answer="(double)" aria-label="cast"> a / b;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com <code>int n = 6;</code>, quanto vale <code>n &amp; 1 == 0</code>?</p>
+<label><input type="radio" name="q4"> 1, porque 6 é par</label>
+<label><input type="radio" name="q4"> 0, porque o C calcula <code>n &amp; (1 == 0)</code>, que é <code>n &amp; 0</code></label>
+<label><input type="radio" name="q4"> 6</label>
+<label><input type="radio" name="q4"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Depois de <code>int a, b; a = b = 3 + 2;</code>, quanto valem <code>a</code> e <code>b</code>?</p>
+<label><input type="radio" name="q5"> <code>a</code> = 3, <code>b</code> = 5</label>
+<label><input type="radio" name="q5"> <code>a</code> = 5, <code>b</code> não tem valor</label>
+<label><input type="radio" name="q5"> Não compila</label>
+<label><input type="radio" name="q5"> Os dois valem 5</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. O que <code>*p++</code> faz?</p>
+<label><input type="radio" name="q6"> Soma 1 no valor para onde <code>p</code> aponta</label>
+<label><input type="radio" name="q6"> Multiplica <code>p</code> por ele mesmo e soma 1</label>
+<label><input type="radio" name="q6"> Lê o valor apontado e anda o ponteiro para a próxima posição</label>
+<label><input type="radio" name="q6"> Dá erro de compilação</label>
+</div>
+
+<h3>Missão final: a temperatura</h3>
+
+<div class="tryc" data-goal="out:212.0 °F = 100.0 °C,src:\(\s*f\s*-\s*32\s*\)">
+<p class="try-task"><strong>Missão:</strong> para converter Fahrenheit em Celsius, a fórmula é: <strong>subtrair 32, depois</strong> multiplicar por 5 e dividir por 9. O programa da Ana diz que a água ferve a 194.2 °C. Conserte a conta com parênteses para a saída ficar assim:</p>
+<pre class="out">212.0 °F = 100.0 °C</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double f = 212.0;
+    double c = f - 32 * 5 / 9.0;
+    printf("%.1f °F = %.1f °C\n", f, c);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double f = 212.0;
+    double c = (f - 32) * 5 / 9.0;
+    printf("%.1f °F = %.1f °C\n", f, c);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare no <code>9.0</code>: com <code>9</code> o resultado seria o mesmo aqui, porque <code>f</code> já é <code>double</code> e contamina a conta toda. Troque <code>f</code> por 32.0 e por 98.6 para conferir outros valores (0 °C e 37 °C).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Precedência</strong>: quem é agrupado primeiro (<code>*</code> antes de <code>+</code>). <strong>Associatividade</strong>: o desempate no mesmo nível (quase sempre da esquerda para a direita).</li>
+  <li>Ordem geral: de um operando (<code>! - ++ (tipo) *p</code>) → <code>* / %</code> → <code>+ -</code> → <code>&lt;&lt; &gt;&gt;</code> → comparações → <code>&amp; ^ |</code> → <code>&amp;&amp;</code> → <code>||</code> → <code>?:</code> → atribuições → vírgula.</li>
+  <li>Da direita para a esquerda: os de um operando, o <code>?:</code> e as atribuições (<code>a = b = c = 0</code>).</li>
+  <li>Parênteses mandam em tudo e não custam nada. Use sempre que precisou pensar.</li>
+  <li>Armadilhas: <code>n1 + n2 / 2</code>, <code>(double) (a / b)</code>, <code>n &amp; 1 == 0</code>, <code>1 &lt;&lt; 2 + 1</code>, <code>*p++</code> × <code>(*p)++</code>. O <code>-Wall</code> avisa as de bits.</li>
+  <li>Precedência não define a ordem de cálculo das partes: só <code>&amp;&amp;</code>, <code>||</code>, <code>?:</code> e a vírgula garantem a esquerda primeiro.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
