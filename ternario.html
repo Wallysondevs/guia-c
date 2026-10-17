@@ -262,7 +262,17 @@ Conceito B</pre>
 <h3>O resultado não pode receber valor</h3>
 <p>Em C, o ternário entrega um <strong>valor</strong>, não uma variável. Então não dá para guardar nada "nele":</p>
 
-<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lvalter.c -o lvalter
+<pre class="term" data-cwd="~/c">$ cat lvalter.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 7;
+    int b = 12;
+    (a &gt; b ? a : b) = 0;
+    printf("%d %d\n", a, b);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra lvalter.c -o lvalter
 lvalter.c: In function ‘main’:
 lvalter.c:6:21: error: lvalue required as left operand of assignment
     6 |     (a &gt; b ? a : b) = 0;
@@ -273,7 +283,18 @@ lvalter.c:6:21: error: lvalue required as left operand of assignment
 <h3>O <code>?:</code> do gcc (não é C padrão)</h3>
 <p>Você pode encontrar <code>x ?: y</code>, sem o valor do meio, em código feito para o gcc. Quer dizer "<code>x</code>, se <code>x</code> não for zero; senão <code>y</code>". É uma <strong>extensão do gcc</strong> (o Clang também aceita), não faz parte do padrão C. O gcc só reclama se você pedir o modo estrito, com <code>-pedantic</code>:</p>
 
-<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -pedantic elvis.c -o elvis
+<pre class="term" data-cwd="~/c">$ cat elvis.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pedidos = 0;
+    printf("%d\n", pedidos ?: 1);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra elvis.c -o elvis
+$ ./elvis
+1                « pedidos é 0, então vale o 1
+$ gcc -std=c23 -Wall -Wextra -pedantic elvis.c -o elvis
 elvis.c: In function ‘main’:
 elvis.c:5:29: warning: ISO C forbids omitting the middle term of a ‘?:’ expression [-Wpedantic]
     5 |     printf("%d\n", pedidos ?: 1);
@@ -327,12 +348,21 @@ elvis.c:5:29: warning: ISO C forbids omitting the middle term of a ‘?:’ expr
 
 <div class="cenario">
 <strong><code>error: expected ‘:’ before …</code></strong>
-<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semdois.c -o semdois
+<pre class="term" data-cwd="~/c">$ cat semdois.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 7, b = 12;
+    int maior = a &gt; b ? a;
+    printf("%d\n", maior);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra semdois.c -o semdois
 semdois.c: In function ‘main’:
-semdois.c:5:27: error: expected ‘:’ before ‘;’ token
+semdois.c:5:26: error: expected ‘:’ before ‘;’ token
     5 |     int maior = a &gt; b ? a;
-      |                           ^
-      |                           :</pre>
+      |                          ^
+      |                          :</pre>
 <p><strong>O que significa:</strong> o ternário precisa das <strong>duas</strong> respostas. Faltou o <code>: valor_se_não</code>.</p>
 <p><strong>Como consertar:</strong> complete: <code>a &gt; b ? a : b</code>. Se não existe "senão", você quer um <code>if</code>, não um ternário.</p>
 </div>
