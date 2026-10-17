@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Laços Aninhados — um laço dentro de outro | Guia C</title>
+<meta name="description" content="Laços aninhados em C para quem nunca programou: linhas e colunas, a tabuada completa, desenhar retângulo e triângulo de asteriscos, sair de dois laços com uma bandeira ou com goto, e os erros clássicos, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Laços Aninhados</span></h1>
+
+<p class="intro">O corpo de um laço pode ter qualquer coisa: <code>printf</code>, <code>if</code>, contas… e também <strong>outro laço</strong>. Um laço dentro de outro se chama <strong>laço aninhado</strong> (como um ninho, um dentro do outro; em inglês, <em>nested loop</em>). É assim que se percorre tudo o que tem <strong>linhas e colunas</strong>: uma tabuada inteira, um tabuleiro, uma planilha de notas, um desenho feito de caracteres.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como um laço dentro de outro roda: o de dentro dá <strong>todas</strong> as voltas a cada volta do de fora.</li>
+  <li>Como montar a <strong>tabuada completa</strong> em forma de tabela.</li>
+  <li>Como <strong>desenhar</strong> um retângulo e um triângulo de <code>*</code>.</li>
+  <li>Como <strong>sair dos dois laços</strong> de uma vez: com uma bandeira ou com <code>goto</code>.</li>
+  <li>Os erros clássicos: o mesmo contador nos dois laços, o passo trocado e o <code>\n</code> no lugar errado.</li>
+</ul>
+</div>
+
+<p>Esta aula usa o <a href="for.html">for</a> e o <code>break</code> (de <a href="break-continue.html">break e continue</a>). Todos os programas foram compilados com o <strong>gcc 15</strong> na máquina fictícia da Ana, na pasta <code>~/c</code>, com o comando padrão: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o relógio</h2>
+<p>Olhe um relógio digital. Os <strong>minutos</strong> vão de 00 a 59; quando completam a volta, a <strong>hora</strong> anda uma vez e os minutos recomeçam do 00. Para a hora avançar de 8 para 9, os minutos precisam dar <strong>todas</strong> as 60 voltas.</p>
+<p>Laços aninhados funcionam do mesmo jeito:</p>
+<ul>
+  <li>o laço <strong>de fora</strong> é a hora: anda devagar;</li>
+  <li>o laço <strong>de dentro</strong> são os minutos: dá todas as voltas dele, recomeça do início e só então o de fora anda um passo.</li>
+</ul>
+<p>Se o de fora dá 3 voltas e o de dentro dá 4, o corpo do de dentro roda <strong>3 × 4 = 12</strong> vezes.</p>
+
+<hr>
+
+<h2>1. Linhas e colunas</h2>
+
+<pre class="file" data-file="grade.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int linha = 1; linha &lt;= 3; linha++) {
+        for (int coluna = 1; coluna &lt;= 4; coluna++) {
+            printf("(%d,%d) ", linha, coluna);
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra grade.c -o grade
+$ ./grade
+(1,1) (1,2) (1,3) (1,4)
+(2,1) (2,2) (2,3) (2,4)
+(3,1) (3,2) (3,3) (3,4) </pre>
+
+<dl class="anatomy">
+  <dt>for (int linha = 1; linha &lt;= 3; linha++)</dt><dd>O laço <strong>de fora</strong>: 3 voltas, uma por linha.</dd>
+  <dt>for (int coluna = 1; coluna &lt;= 4; coluna++)</dt><dd>O laço <strong>de dentro</strong>, que é o corpo do de fora. A cada volta do de fora, ele <strong>recomeça</strong>: <code>int coluna = 1</code> roda de novo, e as 4 colunas são percorridas.</dd>
+  <dt>printf("(%d,%d) ", linha, coluna);</dt><dd>O corpo do de dentro: roda 3 × 4 = 12 vezes. Ele enxerga as duas variáveis.</dd>
+  <dt>printf("\n");</dt><dd>Está <strong>fora</strong> do laço de dentro, mas <strong>dentro</strong> do de fora: roda 3 vezes, uma no fim de cada linha. É ele que faz a quebra de linha.</dd>
+</dl>
+
+<h3>A ordem das voltas</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th><code>linha</code></th><th><code>coluna</code> passa por</th><th>Depois</th></tr>
+<tr><td>1</td><td>1, 2, 3, 4 (e 5 faz <code>coluna &lt;= 4</code> falhar)</td><td><code>\n</code>; <code>linha</code> vira 2</td></tr>
+<tr><td>2</td><td>1, 2, 3, 4 (recomeçou do 1)</td><td><code>\n</code>; <code>linha</code> vira 3</td></tr>
+<tr><td>3</td><td>1, 2, 3, 4</td><td><code>\n</code>; <code>linha</code> vira 4 e o laço de fora termina</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Nomes que ajudam</strong>
+<p>Em laços aninhados, nomes como <code>linha</code> e <code>coluna</code> (ou <code>l</code> e <code>c</code>) evitam confusão. A tradição dos livros é <code>i</code> para o de fora e <code>j</code> para o de dentro; só não use o <strong>mesmo</strong> nome nos dois (veja <a href="#erros">Quando dá errado</a>).</p>
+</div>
+
+<hr>
+
+<h2>2. A tabuada completa</h2>
+<p>Na aula do <a href="for.html">for</a>, um laço mostrava a tabuada de <strong>um</strong> número. Com um laço por fora, saem todas, do 1 ao 10, como uma tabela: a linha é um número, a coluna é o outro, e cada célula é a multiplicação dos dois.</p>
+
+<pre class="file" data-file="tabuada_toda.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 1; i &lt;= 10; i++) {
+        for (int j = 1; j &lt;= 10; j++) {
+            printf("%4d", i * j);
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tabuada_toda.c -o tabuada_toda
+$ ./tabuada_toda
+   1   2   3   4   5   6   7   8   9  10
+   2   4   6   8  10  12  14  16  18  20
+   3   6   9  12  15  18  21  24  27  30
+   4   8  12  16  20  24  28  32  36  40
+   5  10  15  20  25  30  35  40  45  50
+   6  12  18  24  30  36  42  48  54  60
+   7  14  21  28  35  42  49  56  63  70
+   8  16  24  32  40  48  56  64  72  80
+   9  18  27  36  45  54  63  72  81  90
+  10  20  30  40  50  60  70  80  90 100</pre>
+
+<p>O <code>%4d</code> reserva 4 espaços para cada número, alinhado à direita, por isso as colunas ficam retas mesmo com números de 1, 2 ou 3 algarismos (veja <a href="formatos-printf.html">Formatos do printf</a>). Para achar 7 × 8, vá até a linha 7, coluna 8: 56. Foram <strong>100</strong> multiplicações com 7 linhas de código.</p>
+
+<hr>
+
+<h2>3. Desenhar com <code>*</code>: o retângulo</h2>
+<p>Trocando o número por um caractere, os laços viram um "pincel". O de fora desenha as <strong>linhas</strong> (altura); o de dentro, os <strong>caracteres de cada linha</strong> (largura):</p>
+
+<pre class="file" data-file="retangulo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int largura = 8;
+    int altura = 4;
+    for (int l = 1; l &lt;= altura; l++) {
+        for (int c = 1; c &lt;= largura; c++) {
+            printf("*");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra retangulo.c -o retangulo
+$ ./retangulo
+********
+********
+********
+********</pre>
+
+<div class="tryc" data-goal="outre:^\*\*\*\*\*\n\*\*\*\*\*\n\*\*\*\*\*\n$">
+<p class="try-task"><strong>Missão:</strong> desenhe um retângulo de <strong>5</strong> de largura por <strong>3</strong> de altura. Depois, por conta própria, troque o <code>*</code> por <code>#</code> ou por <code>"[]"</code> e veja o desenho mudar.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int largura = 8;
+    int altura = 4;
+    for (int l = 1; l &lt;= altura; l++) {
+        for (int c = 1; c &lt;= largura; c++) {
+            printf("*");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int largura = 5;
+    int altura = 3;
+    for (int l = 1; l &lt;= altura; l++) {
+        for (int c = 1; c &lt;= largura; c++) {
+            printf("*");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. O triângulo: o de dentro depende do de fora</h2>
+<p>No retângulo, toda linha tinha o mesmo tamanho. Num triângulo, a linha 1 tem 1 estrela, a linha 2 tem 2, a linha 3 tem 3… O truque é usar a variável do laço de fora <strong>na condição</strong> do laço de dentro:</p>
+
+<pre class="file" data-file="triangulo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int altura = 5;
+    for (int l = 1; l &lt;= altura; l++) {
+        for (int c = 1; c &lt;= l; c++) {
+            printf("*");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra triangulo.c -o triangulo
+$ ./triangulo
+*
+**
+***
+****
+*****</pre>
+
+<dl class="anatomy">
+  <dt>c &lt;= l</dt><dd>O laço de dentro vai até o número da linha atual. Na linha 1, roda 1 vez; na linha 5, roda 5 vezes. Total: 1 + 2 + 3 + 4 + 5 = 15 estrelas.</dd>
+</dl>
+
+<p>Esse padrão, "o de dentro vai até o de fora", aparece em muitos lugares: comparar cada aluno com os seguintes, ordenar uma lista, imprimir só metade de uma tabela.</p>
+
+<div class="tryc" data-goal="outre:^\*\*\*\*\*\n\*\*\*\*\n\*\*\*\n\*\*\n\*\n$">
+<p class="try-task"><strong>Missão:</strong> vire o triângulo de cabeça para baixo: a primeira linha com 5 estrelas, a última com 1. Dica: faça o laço de fora contar <strong>para trás</strong> (de 5 até 1) e deixe o de dentro como está.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int altura = 5;
+    for (int l = 1; l &lt;= altura; l++) {
+        for (int c = 1; c &lt;= l; c++) {
+            printf("*");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int altura = 5;
+    for (int l = altura; l &gt;= 1; l--) {
+        for (int c = 1; c &lt;= l; c++) {
+            printf("*");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Sair dos dois laços de uma vez</h2>
+<p>Como você viu em <a href="break-continue.html">break e continue</a>, o <code>break</code> só sai do laço <strong>mais de dentro</strong>. Às vezes isso não basta. A Ana procura dois números que multiplicados deem 36 e somados deem 13. Assim que achar o par, não há por que continuar procurando, nem no laço de dentro nem no de fora.</p>
+
+<h3>Jeito 1: uma bandeira</h3>
+
+<pre class="file" data-file="par_flag.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int achou = 0;
+    for (int a = 1; a &lt;= 20 &amp;&amp; !achou; a++) {
+        for (int b = a; b &lt;= 20; b++) {
+            if (a * b == 36 &amp;&amp; a + b == 13) {
+                printf("Achei: %d e %d\n", a, b);
+                achou = 1;
+                break;
+            }
+        }
+    }
+    if (!achou) {
+        printf("Não existe esse par.\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra par_flag.c -o par_flag
+$ ./par_flag
+Achei: 4 e 9</pre>
+
+<dl class="anatomy">
+  <dt>int b = a</dt><dd>O de dentro começa do valor do de fora: assim o par 4 e 9 não é testado de novo como 9 e 4.</dd>
+  <dt>achou = 1; break;</dt><dd>Levanta a bandeira e sai do laço <strong>de dentro</strong>.</dd>
+  <dt>a &lt;= 20 &amp;&amp; !achou</dt><dd>O laço de fora também testa a bandeira (<code>!achou</code> = "não achou"). Com ela levantada, a condição fica falsa e o de fora também termina.</dd>
+</dl>
+
+<h3>Jeito 2: <code>goto</code></h3>
+<p>O C tem um comando que pula para qualquer ponto <strong>marcado</strong> da mesma função: o <code>goto</code> ("vá para"). Para sair de vários laços de uma vez, ele é curto e direto:</p>
+
+<pre class="file" data-file="par_goto.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int a = 1; a &lt;= 20; a++) {
+        for (int b = a; b &lt;= 20; b++) {
+            if (a * b == 36 &amp;&amp; a + b == 13) {
+                printf("Achei: %d e %d\n", a, b);
+                goto fim;
+            }
+        }
+    }
+    printf("Não existe esse par.\n");
+fim:
+    printf("Busca encerrada.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra par_goto.c -o par_goto
+$ ./par_goto
+Achei: 4 e 9
+Busca encerrada.</pre>
+
+<dl class="anatomy">
+  <dt>fim:</dt><dd>Um <strong>rótulo</strong> (em inglês, <em>label</em>): um nome seguido de <code>:</code> que marca uma linha.</dd>
+  <dt>goto fim;</dt><dd>Pula direto para o rótulo, saindo dos dois laços. O <code>Não existe esse par.</code> fica para trás, sem rodar.</dd>
+</dl>
+
+<div class="warning">
+<strong>Use o <code>goto</code> com moderação</strong>
+<p>Um programa cheio de <code>goto</code> pulando para cima e para baixo fica impossível de seguir (o famoso "código espaguete"). Sair de laços aninhados é um dos poucos usos aceitos, junto com a limpeza de recursos no fim de uma função. Os detalhes, e quando evitar, estão na aula <a href="goto.html">goto</a>. Na dúvida, prefira a bandeira, ou coloque os laços numa <a href="funcoes.html">função</a> e use <code>return</code> para sair de tudo.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de escrever</h2>
+
+<h3>Misturar tipos de laço</h3>
+<p>Nada obriga os dois laços a serem <code>for</code>. Um menu (<code>do while</code>) pode ter dentro um <code>for</code> que lista os produtos; um <code>while</code> que lê arquivos pode ter dentro um <code>for</code> que percorre cada linha. A regra é a mesma: o de dentro roda inteiro a cada volta do de fora.</p>
+
+<h3>Mais de dois níveis</h3>
+<p>Dá para aninhar três, quatro laços (por exemplo, dia → hora → minuto). Mas cada nível multiplica o número de voltas: 3 laços de 1000 voltas são 1 bilhão de voltas. E o código fica difícil de ler. Com mais de dois ou três níveis, separe o laço de dentro numa <a href="funcoes.html">função</a> com um nome que explique o que ela faz.</p>
+
+<hr>
+
+<h2 id="erros">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Só aparece uma linha (o mesmo contador nos dois laços)</strong>
+<pre class="file" data-file="mesmo_i.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i;
+    for (i = 1; i &lt;= 3; i++) {
+        for (i = 1; i &lt;= 4; i++) {
+            printf("*");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra mesmo_i.c -o mesmo_i
+$ ./mesmo_i
+****</pre>
+<p><strong>O que aconteceu:</strong> os dois laços usam a <strong>mesma</strong> variável <code>i</code>, declarada fora (no estilo antigo). O de dentro termina com <code>i</code> valendo 5; o de fora faz <code>i++</code> (6), testa <code>6 &lt;= 3</code>, e para. Eram esperadas 3 linhas. Com outros limites, o mesmo erro pode virar um laço infinito. O compilador não avisa.</p>
+<p><strong>Como consertar:</strong> uma variável para cada laço, de preferência criada no próprio <code>for</code>: <code>for (int l = 1; …)</code> e <code>for (int c = 1; …)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A tela enche de estrelas (passo da variável errada)</strong>
+<pre class="file" data-file="troca.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int l = 1; l &lt;= 3; l++) {
+        for (int c = 1; c &lt;= 4; l++) {
+            printf("*");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra troca.c -o troca
+$ ./troca
+****************************************************************************************
+^C                      « a linha de estrelas não acabava; a Ana apertou Ctrl+C</pre>
+<p><strong>O que aconteceu:</strong> o laço de dentro testa <code>c</code>, mas o passo soma em <code>l</code> (um erro de digitação comum quando os nomes são parecidos, como <code>i</code> e <code>j</code>). Como <code>c</code> nunca muda, <code>c &lt;= 4</code> é verdadeiro para sempre. No editor do guia, o programa é interrompido ao passar de 2 MB de saída.</p>
+<p><strong>Como consertar:</strong> confira se as três partes de cada <code>for</code> usam a <strong>mesma</strong> variável: <code>for (int c = 1; c &lt;= 4; c++)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O desenho sai em pé (<code>\n</code> no laço errado)</strong>
+<pre class="file" data-file="vertical.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int l = 1; l &lt;= 2; l++) {
+        for (int c = 1; c &lt;= 3; c++) {
+            printf("*\n");
+        }
+    }
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra vertical.c -o vertical
+$ ./vertical
+*
+*
+*
+*
+*
+*</pre>
+<p><strong>O que aconteceu:</strong> o esperado eram 2 linhas de 3 estrelas. O <code>\n</code> está no laço de dentro, então cada estrela ganha a sua própria linha.</p>
+<p><strong>Como consertar:</strong> o laço de dentro escreve <strong>só</strong> o caractere (<code>printf("*");</code>); a quebra de linha (<code>printf("\n");</code>) vai depois dele, no corpo do de fora.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa fica lento</strong>
+<p><strong>O que aconteceu:</strong> laços aninhados multiplicam as voltas. Dois laços de 100 mil voltas são 10 bilhões de voltas: o programa pode levar minutos, e no editor do guia ele é parado depois de 15 segundos.</p>
+<p><strong>Como investigar:</strong> multiplique os limites dos laços para estimar o total. Se for grande demais, procure um jeito de sair cedo (<code>break</code> quando achar) ou um método que não precise testar todas as combinações.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>O que faz</th></tr>
+<tr><td><code>for (l…) { for (c…) { … } printf("\n"); }</code></td><td>Percorre linhas e colunas. O corpo de dentro roda (voltas de fora) × (voltas de dentro) vezes.</td></tr>
+<tr><td><code>for (int c = 1; c &lt;= l; c++)</code></td><td>O de dentro depende do de fora: triângulo.</td></tr>
+<tr><td><code>printf("%4d", x)</code></td><td>Número em 4 espaços, para alinhar colunas.</td></tr>
+<tr><td><code>for (…; … &amp;&amp; !achou; …)</code> + <code>achou = 1; break;</code></td><td>Sair dos dois laços com bandeira.</td></tr>
+<tr><td><code>goto fim;</code> … <code>fim:</code></td><td>Sair de vários laços de uma vez (use pouco; veja <a href="goto.html">goto</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Quantas vezes?</h3>
+<p>Quantas vezes <code>printf("*")</code> roda em <code>for (int i = 0; i &lt; 4; i++) for (int j = 0; j &lt; 6; j++) printf("*");</code>?</p>
+<div class="ex-code"><input data-answer="24|vinte e quatro" aria-label="quantas vezes"></div>
+</div>
+
+<div class="exercise">
+<h3>2. A condição do triângulo</h3>
+<p>Complete para o laço de dentro desenhar <code>l</code> estrelas na linha <code>l</code>:</p>
+<div class="ex-code">for (int l = 1; l &lt;= 4; l++) { for (int c = 1; <input data-answer="c &lt;= l|c&lt;=l|c &lt; l + 1|c&lt;l+1" aria-label="condição">; c++) printf("*"); printf("\n"); }</div>
+</div>
+
+<div class="exercise">
+<h3>3. Quantas estrelas no total?</h3>
+<p>No triângulo do exercício 2 (4 linhas), quantas estrelas são desenhadas?</p>
+<div class="ex-code"><input data-answer="10|dez" aria-label="total de estrelas"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Num laço aninhado, o que acontece com o laço de dentro a cada volta do de fora?</p>
+<label><input type="radio" name="q4"> Continua de onde parou</label>
+<label><input type="radio" name="q4"> Recomeça do início e dá todas as suas voltas</label>
+<label><input type="radio" name="q4"> Dá uma volta só</label>
+<label><input type="radio" name="q4"> Só roda na primeira volta do de fora</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Um <code>break</code> no laço de dentro…</p>
+<label><input type="radio" name="q5"> encerra os dois laços</label>
+<label><input type="radio" name="q5"> encerra o programa</label>
+<label><input type="radio" name="q5"> pula para a próxima volta do de dentro</label>
+<label><input type="radio" name="q5"> encerra só o laço de dentro; o de fora segue</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Um retângulo de <code>*</code> saiu com uma estrela por linha. Qual é o erro mais provável?</p>
+<label><input type="radio" name="q6"> O <code>\n</code> está dentro do laço de dentro, junto com o <code>*</code></label>
+<label><input type="radio" name="q6"> Faltou o <code>%d</code> no <code>printf</code></label>
+<label><input type="radio" name="q6"> O laço de fora deveria ser <code>while</code></label>
+<label><input type="radio" name="q6"> A largura é maior que a altura</label>
+</div>
+
+<h3>Missão final: as tabuadas do 1 ao 3</h3>
+<div class="tryc" data-goal="out:Tabuada do 1,out:Tabuada do 3,out:2 x 4 = 8,out:3 x 5 = 15,src:for[\s\S]*for">
+<p class="try-task"><strong>Missão:</strong> o programa mostra só a tabuada do 2. Coloque um laço por fora para mostrar as tabuadas do <strong>1 ao 3</strong>, cada uma com o título <code>Tabuada do N</code> e as linhas de <code>N x 1</code> até <code>N x 5</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 2;
+    printf("Tabuada do %d\n", n);
+    for (int i = 1; i &lt;= 5; i++) {
+        printf("%d x %d = %d\n", n, i, n * i);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int n = 1; n &lt;= 3; n++) {
+        printf("Tabuada do %d\n", n);
+        for (int i = 1; i &lt;= 5; i++) {
+            printf("%d x %d = %d\n", n, i, n * i);
+        }
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um laço pode ter outro laço no corpo: é um <strong>laço aninhado</strong>. O de dentro dá todas as voltas a cada volta do de fora.</li>
+  <li>Total de voltas do corpo de dentro = voltas de fora × voltas de dentro.</li>
+  <li>Linhas no de fora, colunas no de dentro, e o <code>\n</code> depois do de dentro.</li>
+  <li>Quando o de dentro usa a variável do de fora (<code>c &lt;= l</code>), sai um triângulo.</li>
+  <li>O <code>break</code> sai só de um laço; para sair de dois, use uma <strong>bandeira</strong> ou, com moderação, <code>goto</code>.</li>
+  <li>Uma variável diferente para cada laço, e as três partes de cada <code>for</code> usando a mesma variável.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
