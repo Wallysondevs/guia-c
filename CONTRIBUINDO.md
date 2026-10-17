@@ -111,38 +111,100 @@ int main(void) {
 No `.exercise`, `data-answer="a|b"` aceita respostas alternativas. Para uma barra vertical dentro da resposta (`||`, `|=`), escreva `\|`.
 
 ## 4. O editor do guia: C real no navegador (`assets/csim.js`)
-É o **Clang oficial (LLVM) compilado para WebAssembly** (pacote `@yowasp/clang`, licença ISC), com a **wasi-libc** (a biblioteca C, baseada na musl). É o mesmo motor do Guia C++, sem a parte de C++. Tudo fica hospedado no próprio site (`assets/c/`) e só é baixado quando o leitor clica em **Rodar**. Detalhes técnicos e como regenerar: `assets/c/LEIA.md`.
+É o **Clang 22.1 oficial (LLVM) compilado para WebAssembly** (pacote `@yowasp/clang`, licença ISC), com a **wasi-libc** (a biblioteca C, baseada na musl). É o mesmo motor do Guia C++, sem a parte de C++. Tudo fica hospedado no próprio site (`assets/c/`) e só é baixado quando o leitor clica em **Rodar**. O programa gerado (WebAssembly) roda no navegador, num Web Worker. Detalhes técnicos e como regenerar: `assets/c/LEIA.md`.
 
-> **Esta seção é mantida pelo agente do simulador.** Enquanto ele não termina, valem as linhas gerais abaixo (herdadas do Guia C++). Antes de escrever uma frase do tipo "no editor…", confira com `node tools/sim.js` no motor **final**. No Guia C++ duas aulas ficaram erradas porque o motor mudou no meio do caminho.
+> **Esta seção é mantida pelo agente do simulador.** Tudo aqui foi conferido no motor final com `node tools/sim.js` e `--nativo` (gcc 15.2 do laboratório). Antes de escrever uma frase do tipo "no editor…" que não esteja aqui, confira com `node tools/sim.js`.
 
 ### O que o leitor vê
-- `$ clang -std=c23 -Wall -Wextra programa.c -o programa` (ou o `data-flags`), os erros e avisos do Clang com cores, `$ ./programa` e a saída.
-- Quando o programa morre: `Falha de segmentação (imagem do núcleo gravada)` (139), `Abortado (imagem do núcleo gravada)` (134), `Exceção de ponto flutuante (imagem do núcleo gravada)` (136); no fim, `[código de saída: N]`.
-- O executável tem o nome do primeiro `.c` sem a extensão. Sem `data-file`, o arquivo é `programa.c`.
+- `$ clang -std=c23 -Wall -Wextra programa.c -o programa` (ou o `data-flags`), os erros e avisos do Clang com cores, `$ ./programa` (mais os argumentos) e a saída.
+- Quando o programa morre: `Falha de segmentação (imagem do núcleo gravada)` (139), `Abortado (imagem do núcleo gravada)` (134), `Exceção de ponto flutuante (imagem do núcleo gravada)` (136), `Terminado` (143, de um `raise(SIGTERM)`); no fim, `[código de saída: N]`.
+- O executável tem o nome do primeiro `.c` sem a extensão: `ola.c` vira `./ola`. Sem `data-file`, o arquivo é `programa.c`.
+- **`data-flags` substitui todas as opções.** Escreva a linha inteira: `data-flags="-std=c17 -Wall -Wextra"`.
+- Debaixo de cada caixa há uma nota: "O editor compila com o Clang; os terminais das aulas mostram o gcc", com link para `simulador.html`.
 
-### O que funciona (previsto; o agente confirma)
-- C23 inteiro: `bool`/`true`/`false` sem include, `nullptr`, `constexpr`, `typeof`, `auto`, `[[nodiscard]]`, separador de dígitos `1'000'000`, `static_assert`. `-std=c17`, `-std=c11`, `-std=c99` pelo `data-flags`.
-- `stdio.h` (printf, scanf, fgets, getchar, fopen…), `string.h`, `stdlib.h` (malloc, free, qsort, bsearch, strtol, rand, exit, atexit, getenv), `ctype.h`, `math.h` (sem precisar de `-lm`), `time.h`, `stdint.h`, `stdarg.h`, `assert.h`, `errno.h`, `setjmp.h`.
-- Entrada interativa, `data-stdin`, arquivos numa pasta em memória (`/home/ana`), `argc/argv`, `exit(N)`.
-- Ponteiro nulo → Falha de segmentação (139); divisão inteira por zero → 136; `abort()`/`assert` → 134; recursão infinita → pilha estourada.
+### Download e tempo
+- **Primeira vez:** cerca de **23 MB** (o compilador tem 22,8 MB; os cabeçalhos e a biblioteca C, 0,6 MB). O navegador guarda tudo (Cache API): nas próximas visitas não há download.
+- **Compilação:** de 0,1 a 0,3 s por programa (Chrome e Node, nesta máquina). Não há cabeçalho pré-compilado: o `<stdio.h>` do C é pequeno.
+
+### O que funciona
+- **C23 inteiro:** `bool`/`true`/`false` sem include, `nullptr`, `constexpr`, `typeof`, `auto`, `[[nodiscard]]`, `static_assert`, `1'000'000`, `0b1010`, `#embed "dados.txt"` (com o arquivo numa aba). `__STDC_VERSION__` vale `202311`.
+  - `-std=c17`, `-std=c11` e `-std=c99` funcionam pelo `data-flags` (`__STDC_VERSION__` = `201710`, `201112`, `199901`). Com `-std=c17`, `bool`, `nullptr` e `constexpr` dão `error: use of undeclared identifier 'bool'` (sem `#include <stdbool.h>`).
+- **Bibliotecas:** `stdio.h` (printf, scanf, fgets, getchar, fopen, perror…), `string.h`, `stdlib.h` (malloc, free, qsort, bsearch, strtol, rand/srand, exit, atexit, getenv), `ctype.h`, `math.h`, `time.h`, `stdint.h`, `inttypes.h`, `stdarg.h`, `assert.h`, `errno.h`, `limits.h`, `float.h`, `stdckdint.h`, `setjmp.h` (`setjmp`/`longjmp` funcionam), `signal.h` (`signal`/`raise`), `unistd.h` (`getpid`, `sleep`, `getcwd`), `strdup`.
+  - `getline` (POSIX, não é do C padrão) só existe com `#define _POSIX_C_SOURCE 200809L` antes dos `#include`, **nos dois**: sem isso, o Clang dá `use of undeclared identifier 'getline'` e o gcc `implicit declaration of function ‘getline’` (com `-std=c23`).
+  - **`math.h` não precisa de `-lm` no editor**, e `-lm` no `data-flags` é aceito. No gcc **precisa**: `sqrt(x)` com variável e sem `-lm` dá `referência não definida para "sqrt"`.
+- **Entrada:** `scanf`, `fgets`, `getchar`.
+  - Com `data-stdin`, cada linha aparece no terminal **no ponto em que o programa a lê**, como se o leitor tivesse digitado ali. Várias linhas: `data-stdin="Ana\n29"`.
+  - **Sem `data-stdin`, o programa pausa e o leitor digita** no terminal da caixa: Enter envia, Ctrl+D encerra a entrada (fim de arquivo) e Ctrl+C para o programa. Funciona em qualquer navegador; nos que não têm JSPI, o editor roda o programa de novo desde o começo com as linhas já digitadas e esconde a saída repetida (um programa com `rand()` semeado pelo relógio pode mudar).
+  - Um `printf("Nome: ")` sem `\n` aparece **antes** de o programa esperar a digitação, como no terminal do Linux.
+- **stdout e stderr** saem intercalados na ordem, como no terminal; stdout tem buffer de linha (como num terminal).
+- **Arquivos:** as abas que não são `.c` (`.h`, `.txt`, `.csv`) ficam na pasta do programa, `/home/ana`. `fopen`/`fprintf`/`fscanf`/`remove`/`rename` funcionam numa pasta em memória, que começa limpa a cada Rodar. `getcwd` dá `/home/ana` e `getenv("HOME")` dá `/home/ana`.
+- `argc`/`argv` (`data-args`; `argv[0]` é `./programa`), `return N` e `exit(N)` (de 0 a 255, como no Linux: `exit(300)` dá 44), `atexit`.
+- `time()`, `clock()`, `sleep()`, `getpid()`, `rand()`/`srand()`, VLAs.
+- **Erros de execução, como no Linux:**
+  - ponteiro nulo (`*p` com `p == NULL`) dá `Falha de segmentação`, 139;
+  - divisão inteira por zero dá `Exceção de ponto flutuante`, 136;
+  - recursão infinita estoura a pilha (8 MB) e dá `Falha de segmentação`, 139;
+  - `abort()` e `assert` falho dão `Abortado`, 134;
+  - `raise(SIGTERM)` sem tratador dá `Terminado`, 143; com `signal(SIGTERM, tratador)`, o tratador roda.
+  - O que estava no `printf` **sem `\n`** quando o programa morre (segfault, divisão por zero) **não aparece**, nos dois (no terminal do Linux também se perde).
 
 ### O que não funciona (deixe só no `pre.term`)
-- `fork`, `exec`, `system()`, `pthread`, sockets, sinais vindos de fora, `gdb`, `valgrind` e sanitizers.
-- Erros de memória que não são ponteiro nulo (índice fora do array, `free` duplo, usar memória já liberada) **podem passar calados** no editor: no WebAssembly a memória é organizada de outro jeito. Mostre o efeito real no `pre.term` do laboratório (com `-fsanitize=address` ou `valgrind`).
+- `fork`, `exec`, `pthread`, sockets, sinais vindos de fora, `gdb`, `valgrind`.
+- **`system("ls")`** compila, mas imprime `sh: 1: ls: not found` e devolve 32512 (não há shell).
+- **Sanitizers:** `-fsanitize=address` no `data-flags` dá erro do ligador (`undefined symbol: __asan_…`).
+- **Erros de memória que não são ponteiro nulo passam calados no editor** (no WebAssembly a memória é organizada de outro jeito):
+  - índice fora do array (`v[5]` num `int v[3]`) lê um valor qualquer, sem erro;
+  - usar memória já liberada lê o valor antigo (`7`), sem erro;
+  - **`free` duplo passa sem erro**, enquanto no gcc dá `free(): double free detected in tcache 2` + `Abortado` (134).
+  - Mostre o efeito real no `pre.term` do laboratório (com `-fsanitize=address` ou `valgrind`).
+- `printf("%s", 30)` (formato errado) no gcc dá `Falha de segmentação`; no editor imprime uma linha vazia. Os dois avisam na compilação.
+- **`setlocale(LC_ALL, "")`** não muda nada no editor; no gcc do laboratório (pt_BR) ele faz o `printf("%.2f")` usar **vírgula** (`3,14`).
+- **Limites:** 15 s rodando (sem contar a espera pela digitação); 2 MB de saída; **256 MB de memória** (um `malloc` maior devolve `NULL`); 8 MB de pilha.
 
-### Editor (Clang + wasi-libc, WebAssembly de 32 bits) × gcc (glibc, Linux de 64 bits)
-| Assunto | Editor | gcc 15 do laboratório |
+### Editor (Clang + wasi-libc, WebAssembly de 32 bits) × gcc 15 (glibc, Linux de 64 bits)
+Conferido com `tools/sim.js --nativo`. **Nas metas, use o que é igual nos dois**, ou uma regex com as duas formas.
+
+| Assunto | Editor (Clang 22 + wasi-libc) | gcc 15.2 do laboratório (glibc) |
 | --- | --- | --- |
-| `sizeof(long)`, ponteiro, `size_t` | 4, 4, 4 | 8, 8, 8 |
+| `sizeof(long)`, ponteiro, `size_t` | 4, 4, 4 (`long double` 16, `long long` 8) | 8, 8, 8 (`long double` 16, `long long` 8) |
 | `LONG_MAX` | 2147483647 | 9223372036854775807 |
-| `%p` | endereços pequenos (`0x1fff0`) | `0x7ffd…` (muda a cada execução) |
-| `rand()` com `srand(42)` | sequência da musl | sequência da glibc (outra) |
-| Mensagens do compilador | `error: use of undeclared identifier 'x'` (aspas retas) | `error: ‘x’ undeclared (first use in this function)` (aspas curvas) |
-| Fuso horário | UTC | `-03` (America/Sao_Paulo) |
+| `%p` | `0x7fffec` (pilha), `0x801640` (malloc); `NULL` sai `0` | `0x7ffd012f7710` (muda a cada execução); `NULL` sai `(nil)` |
+| `srand(42)` e três `rand()` | `311430560 131117839 1110653038` | `1483128881 708592740 71876166` |
+| Variável não declarada | `error: use of undeclared identifier 'idad'; did you mean 'idade'?` | `error: ‘idad’ undeclared (first use in this function); did you mean ‘idade’?` |
+| Falta de `;` | `error: expected ';' after expression` | `error: expected ‘;’ before ‘return’` |
+| Função sem declaração (C23) | `error: use of undeclared identifier 'dobro'` (com `-std=c17`: `error: call to undeclared function 'dobro'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]`) | `error: implicit declaration of function ‘dobro’ [-Wimplicit-function-declaration]` |
+| `printf("%s\n", idade)` com `int` | `warning: format specifies type 'char *' but the argument has type 'int' [-Wformat]` | `warning: format ‘%s’ expects argument of type ‘char *’, but argument 2 has type ‘int’ [-Wformat=]` |
+| Variável sem valor inicial | `warning: variable 'x' is uninitialized when used here [-Wuninitialized]` | `warning: ‘x’ is used uninitialized [-Wuninitialized]` |
+| Variável não usada | `warning: unused variable 'x' [-Wunused-variable]` (igual, com aspas retas) | `warning: unused variable ‘x’ [-Wunused-variable]` |
+| Função sem corpo (ligador) | `wasm-ld: error: /tmp/lig-62bf3f.o: undefined symbol: soma` + `clang: error: linker command failed with exit code 1` | `referência não definida para "soma"` + `collect2: error: ld returned 1 exit status` |
+| Avisos que só um dá | Clang: índice constante fora do array (`array index 5 is past the end of the array`), recursão infinita (`all paths through this function will call itself`) | gcc: usar ponteiro depois do `free` (`pointer ‘p’ used after ‘free’ [-Wuse-after-free]`) |
+| `assert(x > 0)` falho | `Assertion failed: x > 0 (programa.c: main: 3)` | ``programa: programa.c:3: main: Assertion `x > 0' failed.`` |
+| `errno` de arquivo que não existe | `perror`: `No such file or directory` (igual); o número `ENOENT` vale 44 | mesma mensagem; `ENOENT` vale 2 |
+| `free` duplo | passa calado | `free(): double free detected in tcache 2`, 134 |
+| `math.h` | não precisa de `-lm` | `sqrt(x)` sem `-lm`: `referência não definida para "sqrt"` |
+| Fuso horário | UTC (`localtime(0)` = `1970-01-01 00:00 UTC`) | `-03` (`1969-12-31 21:00 -03`) |
+| `malloc` de 300 MB | `NULL` (limite de 256 MB) | funciona |
+| `system("ls")` | `sh: 1: ls: not found`, 32512 | roda o `ls` |
+| Ordem de avaliação dos argumentos (não especificada pelo C) | `printf("%d %d\n", remove("b.txt"), remove("b.txt"))` dá `0 -1` (da esquerda para a direita) | dá `-1 0` (da direita para a esquerda) |
 
-### Ferramentas (Node 24)
-- `node tools/sim.js arquivo.c [--stdin "Ana\n29"] [--com outro.c] [--flags "…"] [--nativo] [-- args]`: compila e roda como o editor; `--nativo` mostra também o gcc do laboratório e as diferenças.
-- `node tools/testar-missoes.js suas-paginas.html [-v] [--nativo]`: confere as missões (inicial não cumpre, solução cumpre), os `&lt;`/`&amp;` dentro dos `<pre>`, as metas e as regex.
+Iguais nos dois: `int` com 4 bytes, `long long` com 8, `0.1 + 0.2` (`0.30000000000000004` com `%.17g`), a formatação do `printf` (`%5.2f`, `%-5d`, `%05d`, `%x`, `%o`, `%e`), `strtol`, `qsort`, as mensagens do `perror`, os códigos de saída (134, 136, 139), o estouro de `int` (`2147483647 + 1` = `-2147483648`) e a saída perdida do `printf` sem `\n` antes de um segfault.
+
+**Para metas `erro:`**, use uma regex com as duas formas, por exemplo:
+- variável não declarada: `erro:/undeclared identifier|undeclared \(first use/`;
+- falta de `;`: `erro:expected ';'` só pega o Clang; use `erro:/expected ['‘];['’]/`;
+- função sem declaração: `erro:/undeclared identifier 'dobro'|undeclared function 'dobro'|implicit declaration of function/`;
+- ligador: `erro:/undefined symbol|undefined reference|referência não definida/`.
+
+### Ferramentas (Node 24; não precisam de `npm install`)
+- `node tools/sim.js arquivo.c`: compila e roda como o editor (mesmo Clang, mesma wasi-libc, mesmo terminal). É assim que você confere o comportamento do editor.
+  - Opções: `--stdin "Ana\n29"`, `--com outro.c` (ou `.h`, `.txt`: uma aba), `--flags "…"`, `-- args` e `--nativo` (mostra também o gcc 15 do laboratório e as diferenças; `--clang-lab` usa o clang 21 do laboratório).
+  - Sem `--stdin`, quem lê a entrada recebe fim de arquivo (no navegador o leitor digitaria).
+- `node tools/testar-missoes.js suas-paginas.html`:
+  - o código inicial **não** pode cumprir a meta, e a solução **tem** de cumprir;
+  - confere também `&lt;`/`&amp;` em **todos** os `<pre>` da página (também `pre.file` e `pre.term`), as metas e as regex, e avisa se a caixa usa `trycpp` em vez de `tryc`;
+  - guarda o resultado em cache; `-v` mostra as saídas.
+- `node tools/testar-missoes.js --nativo página.html`: roda também no gcc 15 do laboratório e mostra as diferenças, sem contar como falha. As conhecidas, da tabela acima, saem marcadas como "esperado". Ele avisa quando, no gcc, a meta **não** seria cumprida.
+- `tools/demo.html`: página de teste com caixas de todos os tipos (sirva a raiz do site e abra `/tools/demo.html`).
 
 ## 5. Fidelidade: o laboratório (`~/guia-c-lab/lab`)
 É a máquina da Ana do Guia Bash: usuária `ana`, computador `notebook`, `/home/ana`, pt_BR. Ferramentas do Ubuntu 26.04: **gcc 15.2**, **clang 21.1**, **make 4.4**, **cmake 4.2**, **gdb 17.1**, **ninja** e **valgrind 3.26** (`valgrind --leak-check=full ./programa` funciona; compile com `-g` para ver `arquivo.c:linha`).
