@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Memória e Endereços — bytes, sizeof e o operador &amp; | Guia C</title>
+<meta name="description" content="Memória e endereços em C para quem nunca programou: a memória como uma fileira de gavetas numeradas, bytes, sizeof, o operador &amp; que mostra onde a variável mora, %p com (void *), por que o endereço muda a cada execução (ASLR) e o &amp; do scanf, com saídas reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Memória e Endereços (&amp;)</span></h1>
+
+<p class="intro">Bem-vindo ao Nível 2. As próximas aulas são sobre <strong>ponteiros</strong>, o assunto que tem fama de ser o mais difícil do C. A fama existe porque muita gente começa pelos ponteiros sem antes entender a coisa que eles apontam: a <strong>memória</strong>. Esta aula não tem ponteiro nenhum. Ela só mostra como a memória é organizada, quanto espaço cada variável ocupa e como descobrir <strong>onde</strong> uma variável mora. Com isso bem entendido, ponteiro vira uma ideia simples.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Que a memória é uma fileira enorme de <strong>gavetas numeradas</strong> (os bytes), e que o número de cada gaveta é o seu <strong>endereço</strong>.</li>
+  <li>Quantas gavetas cada tipo ocupa, com <code>sizeof</code>.</li>
+  <li>Como ver o endereço de uma variável com <code>&amp;x</code> e mostrá-lo com <code>%p</code> e <code>(void *)</code>.</li>
+  <li>Por que o endereço muda a cada execução (ASLR) e por que, no editor do guia, ele é um número bem menor.</li>
+  <li>O que é, afinal, aquele <code>&amp;</code> do <code>scanf</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados na máquina da Ana (usuária <code>ana</code>, computador <code>notebook</code>, um Linux de 64 bits), na pasta <code>~/c</code>, com o comando padrão do guia, <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> (veja <a href="compilar.html">Compilar com gcc</a>).</p>
+
+<hr>
+
+<h2>A ideia: uma fileira de gavetas numeradas</h2>
+<p>Pense num arquivo de aço de escritório, só que com <strong>bilhões</strong> de gavetas pequenas, todas numa fileira só. Cada gaveta tem uma plaquinha com um número, e não existem duas gavetas com o mesmo número. Dentro de cada gaveta cabe um único valor pequeno, de 0 a 255. A memória do computador (a RAM) funciona assim:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No arquivo de gavetas</th><th>Na memória</th></tr>
+<tr><td>Uma gaveta</td><td>Um <strong>byte</strong>: o menor pedaço da memória que tem número próprio. Guarda um valor de 0 a 255 (8 <em>bits</em>, oito "zeros ou uns").</td></tr>
+<tr><td>A plaquinha com o número</td><td>O <strong>endereço</strong> do byte.</td></tr>
+<tr><td>Uma pasta grossa que precisa de 4 gavetas vizinhas</td><td>Uma variável <code>int</code>, que ocupa 4 bytes seguidos.</td></tr>
+<tr><td>"A pasta está a partir da gaveta 1000"</td><td>O endereço de uma variável é o número da <strong>primeira</strong> gaveta que ela ocupa.</td></tr>
+</table>
+</div>
+
+<figure>
+<svg viewBox="0 0 638 110" width="638" role="img" aria-label="Gavetas 1000 a 1007: idade ocupa de 1000 a 1003, inicial ocupa 1004, as outras estão livres" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><text x="46" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">1000</text><rect x="10" y="22" width="72" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="46" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)"></text><text x="124" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">1001</text><rect x="88" y="22" width="72" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="124" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)"></text><text x="202" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">1002</text><rect x="166" y="22" width="72" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="202" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)"></text><text x="280" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">1003</text><rect x="244" y="22" width="72" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="280" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)"></text><text x="358" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">1004</text><rect x="322" y="22" width="72" height="46" rx="5" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="358" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">'A'</text><text x="436" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">1005</text><rect x="400" y="22" width="72" height="46" rx="5" style="fill:var(--sidebar-bg);stroke:var(--border);stroke-width:1.5"/><text x="436" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">?</text><text x="514" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">1006</text><rect x="478" y="22" width="72" height="46" rx="5" style="fill:var(--sidebar-bg);stroke:var(--border);stroke-width:1.5"/><text x="514" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">?</text><text x="592" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">1007</text><rect x="556" y="22" width="72" height="46" rx="5" style="fill:var(--sidebar-bg);stroke:var(--border);stroke-width:1.5"/><text x="592" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">?</text><path d="M12,76 v6 H314 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="163" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">idade (int) = 29</text><path d="M324,76 v6 H392 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="358" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">inicial</text><path d="M402,76 v6 H626 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="514" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">outras coisas</text></svg>
+<figcaption>Um pedaço da fileira, com números de gaveta inventados para ficar fácil de ler. A variável <code>idade</code> (um <code>int</code>) ocupa 4 gavetas, da 1000 à 1003; o endereço dela é <strong>1000</strong>. A variável <code>inicial</code> (um <code>char</code>) cabe numa gaveta só, a 1004.</figcaption>
+</figure>
+
+<p>Quando você escreve <code>int idade = 29;</code>, o compilador escolhe 4 gavetas livres e vizinhas, guarda o 29 nelas e anota para si: "<code>idade</code> fica a partir da gaveta tal". O nome <code>idade</code> só existe no seu código-fonte. Lá dentro do programa, só existem os números das gavetas.</p>
+
+<hr>
+
+<h2>1. Quantas gavetas cada tipo ocupa: <code>sizeof</code></h2>
+<p>O operador <code>sizeof</code> ("size of", tamanho de) responde quantos bytes um tipo ocupa. Você já o viu em <a href="sizeof.html">Tamanho dos Tipos</a>; aqui vamos usá-lo para pensar em gavetas:</p>
+
+<pre class="file" data-file="tamanhos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("char:      %zu byte\n", sizeof(char));
+    printf("int:       %zu bytes\n", sizeof(int));
+    printf("float:     %zu bytes\n", sizeof(float));
+    printf("double:    %zu bytes\n", sizeof(double));
+    printf("long:      %zu bytes\n", sizeof(long));
+    printf("long long: %zu bytes\n", sizeof(long long));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanhos.c -o tamanhos
+$ ./tamanhos
+char:      1 byte
+int:       4 bytes
+float:     4 bytes
+double:    8 bytes
+long:      8 bytes
+long long: 8 bytes</pre>
+
+<dl class="anatomy">
+  <dt>sizeof(int)</dt><dd>Quantos bytes (gavetas) um <code>int</code> ocupa. Não é uma função: é um <strong>operador</strong> da linguagem, como o <code>+</code>. O compilador já sabe a resposta antes de o programa rodar.</dd>
+  <dt>%zu</dt><dd>O formato do <code>printf</code> para o resultado do <code>sizeof</code>, que é do tipo <code>size_t</code> (um inteiro sem sinal próprio para tamanhos). O <code>z</code> quer dizer "do tamanho de <code>size_t</code>" e o <code>u</code>, "<em>unsigned</em>", sem sinal.</dd>
+</dl>
+
+<p>O <code>char</code> sempre ocupa 1 byte, por definição. Os outros tamanhos dependem da máquina e do compilador. Os números acima são os de um Linux de 64 bits com o gcc, o caso mais comum hoje. No editor do guia, o <code>long</code> ocupa <strong>4</strong> bytes, porque o programa roda em WebAssembly de 32 bits (veja <a href="simulador.html">O Editor do Guia</a>). A tabela completa está em <a href="ref-tipos.html">Tipos e Limites</a>.</p>
+
+<h3><code>sizeof</code> de uma variável</h3>
+<p>Também dá para perguntar o tamanho de uma variável. Com variável, os parênteses são opcionais (<code>sizeof altura</code>); com um tipo, são obrigatórios (<code>sizeof(int)</code>). Num array, a resposta é o tamanho de <strong>todos</strong> os itens juntos:</p>
+
+<pre class="file" data-file="sizeof-var.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double altura = 1.65;
+    int notas[5] = {7, 8, 6, 9, 10};
+
+    printf("idade:  %zu bytes\n", sizeof(idade));
+    printf("altura: %zu bytes\n", sizeof altura);
+    printf("notas:  %zu bytes\n", sizeof(notas));
+    printf("itens:  %zu\n", sizeof(notas) / sizeof(notas[0]));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sizeof-var.c -o sizeof-var
+$ ./sizeof-var
+idade:  4 bytes
+altura: 8 bytes
+notas:  20 bytes             « 5 itens × 4 bytes = 20 gavetas
+itens:  5                    « 20 bytes ÷ 4 bytes por item</pre>
+
+<p>A conta <code>sizeof(notas) / sizeof(notas[0])</code> (o tamanho total dividido pelo tamanho de um item) é o jeito clássico de descobrir quantos itens um array tem. Guarde bem: ela tem uma armadilha, que aparece em <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>.</p>
+
+<div class="tryc" data-goal="out:inicial ocupa 1 byte,src:sizeof\s*\(?\s*inicial">
+<p class="try-task"><strong>Missão:</strong> o programa já mostra o tamanho de <code>idade</code>. Crie uma variável <code>char inicial = 'A';</code> e mostre <code>inicial ocupa 1 byte</code>, usando <code>sizeof(inicial)</code> (não vale escrever o 1 direto no texto).</p>
+<pre class="out">idade ocupa 4 bytes
+inicial ocupa 1 byte</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+
+    printf("idade ocupa %zu bytes\n", sizeof(idade));
+    // crie a variável inicial e mostre o tamanho dela
+
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    char inicial = 'A';
+
+    printf("idade ocupa %zu bytes\n", sizeof(idade));
+    printf("inicial ocupa %zu byte\n", sizeof(inicial));
+
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Onde a variável mora: o endereço <code>&amp;x</code></h2>
+<p>Colocar <code>&amp;</code> <strong>antes</strong> do nome de uma variável pergunta: "qual é o número da sua gaveta?". O resultado é o <strong>endereço</strong> da variável. Para mostrá-lo com o <code>printf</code>, use o formato <code>%p</code>:</p>
+
+<pre class="file" data-file="endereco.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double altura = 1.65;
+
+    printf("idade  vale %d e mora em %p\n", idade, (void *) &amp;idade);
+    printf("altura vale %.2f e mora em %p\n", altura, (void *) &amp;altura);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra endereco.c -o endereco
+$ ./endereco
+idade  vale 29 e mora em 0x7ffe6741f06c
+altura vale 1.65 e mora em 0x7ffe6741f070</pre>
+
+<p>Vamos por partes, porque cada pedacinho de <code>(void *) &amp;idade</code> tem um trabalho:</p>
+
+<dl class="anatomy">
+  <dt>&amp;idade</dt><dd>O <strong>operador de endereço</strong>: "o endereço de <code>idade</code>". Lê-se "e comercial idade" ou "endereço de idade". O <code>&amp;</code> grudado no nome de uma variável sempre quer dizer isso. (No meio de uma conta, como <code>a &amp;&amp; b</code> ou <code>a &amp; b</code>, é outra coisa: são os operadores <a href="operadores-logicos.html">lógicos</a> e <a href="operadores-bits.html">de bits</a>.)</dd>
+  <dt>%p</dt><dd>O formato do <code>printf</code> para endereços ("<em>pointer</em>", ponteiro). Ele mostra o número em hexadecimal, com <code>0x</code> na frente.</dd>
+  <dt>(void *)</dt><dd>Uma <a href="conversao-tipos.html">conversão</a> para "endereço genérico". A regra do C diz que o <code>%p</code> espera exatamente esse tipo. Na prática, quase sempre funciona sem ela, mas escrever <code>(void *)</code> é o jeito correto e evita um aviso (veja "Quando dá errado"). Por enquanto, leia como uma fórmula: <strong>para mostrar um endereço, <code>%p</code> com <code>(void *)</code> na frente</strong>. A aula <a href="void-ponteiro.html">Ponteiro void*</a> explica o porquê.</dd>
+  <dt>0x7ffe6741f06c</dt><dd>O número da gaveta. O <code>0x</code> avisa que ele está em <strong>hexadecimal</strong> (base 16): os "algarismos" vão de <code>0</code> a <code>9</code> e depois de <code>a</code> (10) a <code>f</code> (15). Endereços são números enormes (este, em decimal, passa de 140 trilhões), e o hexadecimal os escreve mais curto. Você não precisa converter: endereços servem para <strong>comparar</strong>, não para fazer contas de cabeça.</dd>
+</dl>
+
+<figure>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Endereço (gaveta)</th><th>…06c</th><th>…06d</th><th>…06e</th><th>…06f</th><th>…070</th><th>…071</th><th>…</th><th>…077</th></tr>
+<tr><td>Quem mora</td><td colspan="4"><code>idade</code> (4 bytes) = <strong>29</strong></td><td colspan="4"><code>altura</code> (8 bytes) = <strong>1.65</strong></td></tr>
+</table>
+</div>
+<figcaption>As gavetas da execução acima. <code>&amp;idade</code> é <code>…06c</code>, a <strong>primeira</strong> das 4 gavetas de <code>idade</code>. Contando em hexadecimal, depois de <code>06c</code> vêm <code>06d</code>, <code>06e</code>, <code>06f</code> e <code>070</code>: a <code>altura</code> começa exatamente 4 gavetas depois.</figcaption>
+</figure>
+
+<h3>Rode de novo: o endereço muda</h3>
+<p>Rode o mesmo programa outra vez, sem mudar nada:</p>
+
+<pre class="term" data-cwd="~/c">$ ./endereco
+idade  vale 29 e mora em 0x7fff1480758c
+altura vale 1.65 e mora em 0x7fff14807590</pre>
+
+<p>Os valores são os mesmos, mas as gavetas são outras. Isso é <strong>normal e proposital</strong>. A cada execução, o Linux sorteia em que parte da memória as regiões do programa começam. Essa proteção se chama <strong>ASLR</strong> (<em>Address Space Layout Randomization</em>, "embaralhamento do mapa da memória") e atrapalha quem tenta invadir um programa adivinhando onde estão as coisas. Repare que a distância entre as duas variáveis continua a mesma (de <code>…58c</code> para <code>…590</code> são 4 gavetas): o sorteio muda o ponto de partida, não a arrumação.</p>
+
+<div class="tip">
+<strong>Consequência prática</strong>
+Quando você rodar os exemplos desta aula, vai ver <strong>outros</strong> números. Está certo. Nunca escreva um endereço fixo no seu código, e nunca espere que o mesmo endereço apareça duas vezes.
+</div>
+
+<h3>E no editor do guia?</h3>
+<p>O editor roda o programa em WebAssembly, dentro do navegador, que organiza a memória do seu próprio jeito. Este mesmo <code>endereco.c</code>, no editor, mostra:</p>
+
+<pre class="out">idade  vale 29 e mora em 0x7ffff8
+altura vale 1.65 e mora em 0x7ffff0</pre>
+
+<p>Três diferenças: os números são bem menores (o WebAssembly do editor é de 32 bits); eles <strong>não mudam</strong> de uma execução para outra (lá não existe ASLR); e desta vez a <code>altura</code> ficou <strong>antes</strong> da <code>idade</code>. O compilador escolhe a ordem e a posição das variáveis como achar melhor. A ideia é a mesma: cada variável tem a sua gaveta, e <code>&amp;</code> mostra qual é.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e veja onde as variáveis moram. Clique em Rodar de novo e compare. Depois crie uma variável <code>char inicial = 'A';</code> e mostre o endereço dela também, com <code>%p</code> e <code>(void *) &amp;inicial</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double altura = 1.65;
+
+    printf("idade:  %zu bytes, mora em %p\n", sizeof(idade), (void *) &amp;idade);
+    printf("altura: %zu bytes, mora em %p\n", sizeof(altura), (void *) &amp;altura);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Num array, as gavetas são vizinhas</h2>
+<p>Com variáveis soltas, o compilador pode deixar espaço entre elas ou inverter a ordem. Com um <strong>array</strong>, a regra é fixa: os itens moram sempre colados, um depois do outro, na ordem dos índices:</p>
+
+<pre class="file" data-file="vizinhos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[3] = {7, 8, 6};
+
+    printf("notas[0] mora em %p\n", (void *) &amp;notas[0]);
+    printf("notas[1] mora em %p\n", (void *) &amp;notas[1]);
+    printf("notas[2] mora em %p\n", (void *) &amp;notas[2]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra vizinhos.c -o vizinhos
+$ ./vizinhos
+notas[0] mora em 0x7fff83bc1eec
+notas[1] mora em 0x7fff83bc1ef0     « 4 gavetas depois (eec → ef0)
+notas[2] mora em 0x7fff83bc1ef4     « mais 4 gavetas</pre>
+
+<p><code>&amp;notas[1]</code> quer dizer "o endereço do item 1". Os colchetes são resolvidos primeiro: pega-se o item, e o <code>&amp;</code> pergunta onde ele mora.</p>
+
+<figure>
+<svg viewBox="0 0 482 110" width="482" role="img" aria-label="Array notas com 3 itens de 4 bytes em gavetas vizinhas" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><text x="85" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">…eec</text><rect x="10" y="22" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="85" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">7</text><text x="241" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">…ef0</text><rect x="166" y="22" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="241" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">8</text><text x="397" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">…ef4</text><rect x="322" y="22" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="397" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">6</text><path d="M12,76 v6 H158 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="85" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">notas[0]</text><path d="M168,76 v6 H314 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="241" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">notas[1]</text><path d="M324,76 v6 H470 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="397" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">notas[2]</text></svg>
+<figcaption>Os três itens do array, colados. Cada caixa representa as 4 gavetas de um <code>int</code>; acima dela está o endereço da primeira. Sempre 4 a mais que o anterior.</figcaption>
+</figure>
+
+<p>Essa "fileira sem buracos" é o que vai permitir andar de item em item com ponteiros, na aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>.</p>
+
+<hr>
+
+<h2>4. O <code>&amp;</code> que você já conhecia: o do <code>scanf</code></h2>
+<p>Desde a aula <a href="scanf.html">Entrada com scanf</a> você escreve <code>scanf("%d", &amp;idade)</code>, com um <code>&amp;</code> que parecia um enfeite obrigatório. Agora dá para entender: o <code>scanf</code> precisa saber <strong>em que gaveta</strong> guardar o número que a pessoa digitou. Você entrega o endereço, e ele coloca o valor lá dentro:</p>
+
+<pre class="file" data-file="idade.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 0;
+
+    printf("idade mora em %p\n", (void *) &amp;idade);
+    printf("Quantos anos você tem? ");
+    scanf("%d", &amp;idade);
+    printf("Guardei %d na gaveta %p\n", idade, (void *) &amp;idade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra idade.c -o idade
+$ ./idade
+idade mora em 0x7ffe577a5224
+Quantos anos você tem? 29          « a Ana digitou 29 e Enter
+Guardei 29 na gaveta 0x7ffe577a5224</pre>
+
+<p>A gaveta é a mesma antes e depois: o <code>scanf</code> não criou variável nenhuma, só escreveu dentro da gaveta que você indicou. É como pedir a um entregador: "deixe o pacote na caixa postal 5224". Sem o número da caixa, ele não tem onde deixar. A aula <a href="passagem-ponteiro.html">Passar por Ponteiro</a> mostra como escrever as suas próprias funções que funcionam assim.</p>
+
+<hr>
+
+<h2>5. Um endereço também ocupa gavetas</h2>
+<p>O endereço é um número, e números precisam de espaço para ser guardados. Quantos bytes ocupa um endereço?</p>
+
+<pre class="file" data-file="tamanho-endereco.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char inicial = 'A';
+    int idade = 29;
+    double altura = 1.65;
+
+    printf("&amp;inicial ocupa %zu bytes\n", sizeof(&amp;inicial));
+    printf("&amp;idade   ocupa %zu bytes\n", sizeof(&amp;idade));
+    printf("&amp;altura  ocupa %zu bytes\n", sizeof(&amp;altura));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanho-endereco.c -o tamanho-endereco
+$ ./tamanho-endereco
+&amp;inicial ocupa 8 bytes
+&amp;idade   ocupa 8 bytes
+&amp;altura  ocupa 8 bytes</pre>
+
+<p>Não importa se a variável tem 1, 4 ou 8 bytes: o <strong>número da gaveta</strong> dela sempre ocupa 8 bytes num Linux de 64 bits. (É por isso que se fala em "64 bits": 8 bytes × 8 bits.) No editor do guia, que é de 32 bits, a resposta é 4. Guardar esse número numa variável é exatamente o que um <strong>ponteiro</strong> faz, e é o assunto da próxima aula.</p>
+
+<hr>
+
+<h2>Formas de mostrar um endereço: qual usar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>O que acontece</th><th>Use?</th></tr>
+<tr><td><code>printf("%p", (void *) &amp;x)</code></td><td>Mostra o endereço em hexadecimal. É o jeito que o padrão do C garante.</td><td><strong>Sim</strong>, sempre.</td></tr>
+<tr><td><code>printf("%p", &amp;x)</code></td><td>Funciona no gcc e no Clang, mas não segue a regra à risca. Com <code>-Wpedantic</code>, o gcc avisa.</td><td>Evite.</td></tr>
+<tr><td><code>printf("%d", &amp;x)</code></td><td>Errado: <code>%d</code> é para <code>int</code>. O número sai cortado ou sem sentido, e o <code>-Wall</code> avisa.</td><td>Nunca.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Endereço com <code>%d</code>: "format ‘%d’ expects argument of type ‘int’"</strong>
+<pre class="file" data-file="semcast.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("Com %%p sem (void *): %p\n", &amp;idade);
+    printf("Com %%d: %d\n", &amp;idade);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semcast.c -o semcast
+semcast.c: In function ‘main’:
+semcast.c:6:23: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘int *’ [-Wformat=]
+    6 |     printf("Com %%d: %d\n", &amp;idade);
+      |                      ~^     ~~~~~~
+      |                       |     |
+      |                       int   int *
+      |                      %ls
+$ ./semcast
+Com %p sem (void *): 0x7ffd7fd607a4
+Com %d: 2144733092</pre>
+<p><strong>O que significa:</strong> "o formato <code>%d</code> espera um argumento do tipo <code>int</code>, mas o argumento 2 é do tipo <code>int *</code>". O <code>int *</code> é o nome do tipo de <code>&amp;idade</code>: "endereço de um <code>int</code>" (você vai conhecê-lo na próxima aula). O programa até roda, mas o <code>%d</code> pega só um pedaço do endereço de 8 bytes: o <code>2144733092</code> é a parte final, <code>7fd607a4</code>, escrita em decimal. A sugestão <code>%ls</code> do gcc não ajuda aqui; ignore. (O <code>%%</code> dentro do texto é só o jeito de escrever um <code>%</code> de verdade, veja <a href="formatos-printf.html">Formatos do printf</a>.)</p>
+<p><strong>Como consertar:</strong> para endereços, use <code>%p</code> com <code>(void *)</code>. Repare que a primeira linha, <code>%p</code> sem <code>(void *)</code>, não deu aviso com <code>-Wall -Wextra</code>. Com <code>-Wpedantic</code> (a opção que cobra o padrão à risca), dá:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -Wpedantic semcast.c -o semcast
+semcast.c: In function ‘main’:
+semcast.c:5:36: warning: format ‘%p’ expects argument of type ‘void *’, but argument 2 has type ‘int *’ [-Wformat=]
+    5 |     printf("Com %%p sem (void *): %p\n", &amp;idade);
+      |                                   ~^     ~~~~~~
+      |                                    |     |
+      |                                    |     int *
+      |                                    void *
+      |                                   %ls
+semcast.c:6:23: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘int *’ [-Wformat=]
+    6 |     printf("Com %%d: %d\n", &amp;idade);
+      |                      ~^     ~~~~~~
+      |                       |     |
+      |                       int   int *
+      |                      %ls</pre>
+<p>No editor do guia, o Clang avisa do <code>%d</code> com outras palavras: <code>format specifies type 'int' but the argument has type 'int *'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"lvalue required as unary ‘&amp;’ operand": endereço de uma conta</strong>
+<pre class="file" data-file="lvalue.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("%p\n", (void *) &amp;(idade + 1));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lvalue.c -o lvalue
+lvalue.c: In function ‘main’:
+lvalue.c:5:29: error: lvalue required as unary ‘&amp;’ operand
+    5 |     printf("%p\n", (void *) &amp;(idade + 1));
+      |                             ^</pre>
+<p><strong>O que significa:</strong> "é preciso um <em>lvalue</em> como operando do <code>&amp;</code>". Um <strong>lvalue</strong> é algo que tem gaveta própria e pode ficar do lado esquerdo de um <code>=</code>: uma variável, um item de array. O resultado de <code>idade + 1</code> (o número 30) é só um valor de passagem, que não mora em gaveta nenhuma; não tem endereço para mostrar. O mesmo vale para <code>&amp;29</code>. No editor, o Clang diz: <code>cannot take the address of an rvalue of type 'int'</code> ("não dá para pegar o endereço de um valor de passagem do tipo <code>int</code>").</p>
+<p><strong>Como consertar:</strong> guarde o resultado numa variável (<code>int depois = idade + 1;</code>) e pegue o endereço dela: <code>&amp;depois</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Os meus endereços são diferentes dos da aula"</strong>
+<p><strong>O que aconteceu:</strong> nada de errado. Por causa do ASLR, os endereços mudam a cada execução, em qualquer computador. No editor do guia, eles têm outro formato e não mudam, porque o programa roda em WebAssembly.</p>
+<p><strong>Como resolver:</strong> não há o que resolver. Compare endereços <strong>do mesmo programa, na mesma execução</strong> (a distância entre eles), nunca o número em si.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código ou termo</th><th>O que é</th></tr>
+<tr><td>byte</td><td>A menor "gaveta" da memória com número próprio (8 bits, valores de 0 a 255).</td></tr>
+<tr><td>endereço</td><td>O número de um byte. O endereço de uma variável é o da primeira gaveta que ela ocupa.</td></tr>
+<tr><td><code>sizeof(tipo)</code></td><td>Quantos bytes o tipo ocupa. <code>sizeof(int)</code> → 4.</td></tr>
+<tr><td><code>sizeof variavel</code></td><td>Quantos bytes a variável ocupa. Num array, o total de todos os itens.</td></tr>
+<tr><td><code>%zu</code></td><td>Formato do <code>printf</code> para o resultado do <code>sizeof</code> (<code>size_t</code>).</td></tr>
+<tr><td><code>&amp;x</code></td><td>O endereço de <code>x</code>. Só funciona com o que tem gaveta própria (variável, item de array).</td></tr>
+<tr><td><code>printf("%p", (void *) &amp;x)</code></td><td>Mostra o endereço de <code>x</code> em hexadecimal (<code>0x…</code>).</td></tr>
+<tr><td><code>scanf("%d", &amp;x)</code></td><td>Entrega ao <code>scanf</code> o endereço de <code>x</code>, para ele guardar o número lá.</td></tr>
+<tr><td>ASLR</td><td>Proteção do sistema que sorteia os endereços a cada execução.</td></tr>
+<tr><td>Tamanho de um endereço</td><td>8 bytes no Linux de 64 bits (laboratório); 4 bytes no editor do guia.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Tamanho de um tipo</h3>
+<p>Complete para mostrar quantos bytes um <code>double</code> ocupa:</p>
+<div class="ex-code">printf("%zu\n", <input data-answer="sizeof" aria-label="operador">(double));</div>
+</div>
+
+<div class="exercise">
+<h3>2. O endereço</h3>
+<p>Complete para mostrar o endereço da variável <code>preco</code>, do jeito correto:</p>
+<div class="ex-code">printf("%p\n", (void *) <input data-answer="&amp;preco|&amp; preco" aria-label="expressão">);</div>
+</div>
+
+<div class="exercise">
+<h3>3. O formato</h3>
+<p>Qual formato do <code>printf</code> mostra um endereço?</p>
+<div class="ex-code">printf("<input data-answer="%p" aria-label="formato">\n", (void *) &amp;idade);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Você rodou o mesmo programa duas vezes no Linux e o endereço de <code>idade</code> mudou. Por quê?</p>
+<label><input type="radio" name="q4"> O programa tem um bug</label>
+<label><input type="radio" name="q4"> A variável mudou de valor</label>
+<label><input type="radio" name="q4"> O sistema sorteia onde as regiões da memória começam (ASLR)</label>
+<label><input type="radio" name="q4"> Faltou compilar com <code>-Wall</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. <code>notas[0]</code> é um <code>int</code> e mora em <code>0x1000</code>. Onde mora <code>notas[1]</code>?</p>
+<label><input type="radio" name="q5"> <code>0x1001</code></label>
+<label><input type="radio" name="q5"> <code>0x1004</code>, porque cada <code>int</code> ocupa 4 gavetas e os itens são vizinhos</label>
+<label><input type="radio" name="q5"> Em qualquer lugar: o compilador escolhe</label>
+<label><input type="radio" name="q5"> <code>0x1008</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que o <code>scanf("%d", &amp;idade)</code> precisa do <code>&amp;</code>?</p>
+<label><input type="radio" name="q6"> Para o <code>scanf</code> saber em que gaveta guardar o número digitado</label>
+<label><input type="radio" name="q6"> Para converter o texto em número</label>
+<label><input type="radio" name="q6"> Porque <code>idade</code> é um <code>int</code>, e todo <code>int</code> leva <code>&amp;</code></label>
+<label><input type="radio" name="q6"> Não precisa; é só costume</label>
+</div>
+
+<h3>Missão final: quantos preços?</h3>
+
+<div class="tryc" data-goal="out:Bytes: 48,out:Itens: 6,src:sizeof">
+<p class="try-task"><strong>Missão:</strong> a lojinha da Ana guarda 6 preços num array de <code>double</code>. Sem escrever os números 48 e 6 no <code>printf</code>, use <code>sizeof</code> para mostrar quantos bytes o array ocupa e quantos itens ele tem:</p>
+<pre class="out">Bytes: 48
+Itens: 6</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double precos[6] = {4.5, 3.0, 12.9, 7.25, 1.99, 5.0};
+
+    // mostre "Bytes: " e o tamanho total do array
+    // mostre "Itens: " e o total dividido pelo tamanho de um item
+
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double precos[6] = {4.5, 3.0, 12.9, 7.25, 1.99, 5.0};
+
+    printf("Bytes: %zu\n", sizeof(precos));
+    printf("Itens: %zu\n", sizeof(precos) / sizeof(precos[0]));
+
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>A memória é uma fileira de <strong>bytes</strong> (gavetas); cada byte tem um <strong>endereço</strong> (o número da gaveta).</li>
+  <li><code>sizeof</code> diz quantos bytes um tipo ou variável ocupa: <code>char</code> 1, <code>int</code> 4, <code>double</code> 8. Num array, é o total.</li>
+  <li><code>&amp;x</code> é o endereço de <code>x</code>: o número da primeira gaveta que ela ocupa. Mostre com <code>printf("%p", (void *) &amp;x)</code>.</li>
+  <li>No Linux, o endereço muda a cada execução (ASLR). No editor do guia, é um número pequeno que não muda. Compare distâncias, nunca o número.</li>
+  <li>Os itens de um array moram em gavetas vizinhas, na ordem.</li>
+  <li>O <code>&amp;</code> do <code>scanf</code> entrega o endereço da variável, para ele saber onde guardar.</li>
+  <li>Um endereço ocupa 8 bytes no Linux de 64 bits (4 no editor). Próxima aula: <a href="ponteiros.html">Ponteiros</a>, variáveis que <strong>guardam</strong> um endereço.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
