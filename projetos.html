@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Projetos — como usar os sete projetos do guia | Guia C</title>
+<meta name="description" content="Como usar os projetos do Guia C: sete programas completos construídos em etapas (calculadora, jogo de adivinhação, boletim de notas, agenda, estoque, contador de palavras e lista de tarefas), as aulas que cada um pratica, em que ordem fazê-los e como rodar cada etapa no editor do guia ou no terminal com gcc.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Sobre os Projetos</span></h1>
+
+<p class="intro">Nas aulas, cada página ensina <strong>um</strong> assunto. Nos projetos, você junta vários para construir um programa de verdade, do arquivo vazio até a versão final. É aqui que o que você estudou se encaixa: o <code>scanf</code> da aula de entrada conversa com um <code>switch</code>, que chama uma <a href="funcoes.html">função</a>, que guarda os dados numa <a href="structs.html">struct</a> e grava tudo num <a href="arquivos.html">arquivo</a>. Esta página explica como os sete projetos do guia estão organizados e como fazê-los.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como os sete projetos estão montados (em etapas pequenas, cada uma com um <em>Experimente</em>).</li>
+  <li>Que aulas cada projeto pratica e em que ordem fazê-los.</li>
+  <li>Como rodar cada etapa: no editor do guia ou no terminal com o <code>gcc</code>.</li>
+  <li>Como o editor "digita" a entrada dos programas que leem o teclado.</li>
+  <li>O que fazer quando o seu código não bate com o da etapa.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: construir como um pedreiro, não como um mágico</h2>
+<p>Ninguém escreve um programa inteiro de uma vez. Um pedreiro não levanta a casa num dia: primeiro a fundação, depois uma parede, confere o prumo, depois a outra. Programar é igual. Cada projeto é dividido em <strong>etapas</strong>, e cada etapa acrescenta <strong>uma</strong> coisa nova à anterior. No fim de toda etapa, o programa <strong>compila e roda</strong>. Você nunca fica com um monte de código "que ainda não funciona".</p>
+
+<p>Toda página de projeto segue o mesmo roteiro:</p>
+<ol class="passo">
+  <li><strong>O que vamos construir.</strong> Uma sessão real do programa pronto, para você ver aonde vai chegar.</li>
+  <li><strong>Antes de começar.</strong> As aulas que você precisa ter visto (com links) e a pasta do projeto.</li>
+  <li><strong>As versões.</strong> Cada uma mostra o código novo, explica o que mudou, mostra a compilação e a saída reais (com o gcc 15 na máquina da Ana) e termina com um <em>Experimente</em> em que <strong>você</strong> faz a etapa.</li>
+  <li><strong>Quando dá errado.</strong> Os erros que aparecem de verdade naquele projeto, com a mensagem completa e a correção.</li>
+  <li><strong>O código completo e os desafios.</strong> A versão final, inteira, e ideias para continuar sozinho.</li>
+</ol>
+
+<hr>
+
+<h2>Os sete projetos</h2>
+<p>Estão em ordem de dificuldade. Os três primeiros usam o Nível 1 e o começo dos arrays, structs e funções; os três do meio leem e gravam <a href="arquivos.html">arquivos</a>; o último usa <a href="malloc-free.html">memória dinâmica</a> e uma <a href="listas-ligadas.html">lista ligada</a>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Projeto</th><th>O que é</th><th>Aulas que ele pratica</th><th>Faça depois de</th></tr>
+<tr><td><a href="projeto-calculadora.html">Calculadora</a></td><td>Calculadora de terminal: lê dois números e a operação, recusa a divisão por zero e o texto no lugar de número, repete até você sair.</td><td><a href="scanf.html">scanf</a>, <a href="switch.html">switch</a>, <a href="ponto-flutuante.html">double</a>, <a href="do-while.html">do while</a>, <a href="validar-entrada.html">Validar a Entrada</a>, <a href="funcoes.html">Funções</a></td><td>Nível 1 + <a href="funcoes.html">Funções</a></td></tr>
+<tr><td><a href="projeto-adivinhacao.html">Jogo de Adivinhação</a></td><td>O computador sorteia um número de 1 a 100 e você tenta adivinhar, com dicas, contagem de tentativas, "jogar de novo" e recorde.</td><td><a href="if-else.html">if</a>/<a href="else-if.html">else if</a>, <a href="while.html">while</a>, <a href="incremento.html">++</a>, <a href="aleatorios.html">Números Aleatórios</a>, <a href="funcoes.html">Funções</a>, <a href="passagem-ponteiro.html">Passar por Ponteiro</a></td><td>Nível 1 + <a href="aleatorios.html">Aleatórios</a></td></tr>
+<tr><td><a href="projeto-notas.html">Boletim de Notas</a></td><td>Lê os nomes e as notas da turma num array de structs, calcula a média, acha a maior e a menor nota, conta os aprovados e imprime uma tabela alinhada.</td><td><a href="arrays.html">Arrays</a>, <a href="for.html">for</a>, <a href="structs.html">Structs</a>, <a href="scanf.html">scanf</a>, <a href="formatos-printf.html">Formatos do printf</a>, <a href="funcoes.html">Funções</a></td><td><a href="structs.html">Structs</a></td></tr>
+<tr><td><a href="projeto-agenda.html">Agenda de Contatos (arquivo)</a></td><td>Adiciona, lista, busca (sem diferenciar maiúsculas) e remove contatos, e guarda tudo num arquivo de texto que sobrevive ao fechar o programa.</td><td><a href="structs.html">Structs</a>, <a href="fgets.html">fgets</a>, <a href="funcoes-string.html">Funções de String</a>, <a href="passagem-ponteiro.html">Passar por Ponteiro</a>, <a href="arquivos.html">Arquivos</a>, <a href="ler-arquivos.html">Ler</a> e <a href="escrever-arquivos.html">Escrever Arquivos</a></td><td><a href="structs.html">Structs</a> e <a href="arquivos.html">Arquivos</a></td></tr>
+<tr><td><a href="projeto-estoque.html">Estoque da Lojinha (binário)</a></td><td>Os produtos da lojinha da Ana: entradas e saídas, alerta de estoque baixo, relatório ordenado por valor e um arquivo <strong>binário</strong> (<code>fread</code>/<code>fwrite</code>).</td><td><a href="structs.html">Structs</a>, <a href="arquivos-binarios.html">Arquivos Binários</a>, <a href="fseek.html">fseek</a>, <a href="ordenacao.html">Ordenação (qsort)</a>, <a href="funcoes.html">Funções</a></td><td><a href="arquivos-binarios.html">Arquivos Binários</a></td></tr>
+<tr><td><a href="projeto-texto.html">Contador de Palavras</a></td><td>Lê um arquivo e conta linhas, palavras e caracteres (com acentos!), a palavra mais longa e as mais frequentes, comparando com o <code>wc</code> do Linux.</td><td><a href="ler-arquivos.html">Ler Arquivos</a>, <a href="ctype.html">ctype.h</a>, <a href="acentos-utf8.html">Acentos e UTF-8</a>, <a href="argc-argv.html">Argumentos da Linha de Comando</a>, <a href="funcoes.html">Funções</a></td><td><a href="ler-arquivos.html">Ler Arquivos</a> e <a href="acentos-utf8.html">Acentos</a></td></tr>
+<tr><td><a href="projeto-tarefas.html">Lista de Tarefas (lista ligada)</a></td><td>Adiciona, marca como feita e remove tarefas de uma lista que cresce e encolhe na <a href="pilha-heap.html">heap</a>, com <code>malloc</code> e <code>free</code> para cada tarefa.</td><td><a href="structs-ponteiros.html">Structs e Ponteiros</a>, <a href="malloc-free.html">malloc e free</a>, <a href="listas-ligadas.html">Listas Ligadas</a>, <a href="ponteiro-ponteiro.html">Ponteiro para Ponteiro</a></td><td><a href="listas-ligadas.html">Listas Ligadas</a></td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Não precisa ter terminado o nível inteiro</strong>
+<p>A coluna "Faça depois de" é o mínimo. Se alguma etapa usar algo que você ainda não viu, o texto tem o link para a aula. Abra numa aba nova, leia e volte. E não é preciso seguir a ordem da tabela: se você gosta de jogos, comece pela adivinhação.</p>
+</div>
+
+<hr>
+
+<h2>Onde rodar: duas formas</h2>
+
+<h3>1. No editor do guia (mais fácil)</h3>
+<p>Toda etapa tem um <strong>Experimente</strong> com o código da etapa anterior. Você edita, clica em <strong>Rodar</strong> e vê os avisos do compilador e a saída. Se travar, o botão de solução mostra a resposta. Veja como o editor funciona em <a href="simulador.html">O Editor do Guia</a>.</p>
+
+<p>Quase todos os projetos <strong>leem o teclado</strong>. Nas missões, o guia já preenche o que "a pessoa digitaria": é a <strong>entrada da missão</strong>, descrita no enunciado (por exemplo, "a entrada é <code>10</code>, <code>/</code>, <code>4</code>"). Há uma diferença em relação ao terminal: lá, o que você digita aparece na tela depois de cada pergunta. No editor, a entrada já vem pronta e <strong>aparece no ponto em que o programa a lê</strong>, como se você tivesse digitado ali.</p>
+
+<p>Projetos que usam arquivos (<a href="projeto-agenda.html">Agenda</a>, <a href="projeto-estoque.html">Estoque</a>, <a href="projeto-texto.html">Contador de Palavras</a>) funcionam no editor também: os arquivos de dados (<code>.txt</code>, <code>.csv</code>) entram como <strong>abas</strong> na caixa e ficam na pasta do programa, que começa limpa a cada Rodar.</p>
+
+<p>Experimente agora. Este programa lê um nome, como os projetos fazem o tempo todo. A entrada <code>Ana</code> já vem preenchida:</p>
+
+<div class="tryc" data-stdin="Ana" data-goal="out:Olá\, Ana! Vamos programar.,src:%s">
+<p class="try-task"><strong>Missão:</strong> depois de ler o nome, mostre <code>Olá, Ana! Vamos programar.</code> usando a variável <code>nome</code> (não escreva "Ana" no código). Use <code>printf</code> com <code>%s</code>. Se precisar, revise <a href="scanf.html">scanf</a> e <a href="printf.html">printf</a>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[50];
+    printf("Seu nome: ");
+    if (scanf("%49s", nome) != 1) {
+        return 1;
+    }
+    // escreva aqui a saudação, usando a variável nome
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[50];
+    printf("Seu nome: ");
+    if (scanf("%49s", nome) != 1) {
+        return 1;
+    }
+    printf("Olá, %s! Vamos programar.\n", nome);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare no <code>%49s</code>: lê o nome com limite, nunca estourando o array (veja <a href="seguranca.html">Segurança</a>). Esse cuidado vai aparecer em todos os projetos.</p>
+
+<h3>2. No terminal do seu computador (o jeito "de verdade")</h3>
+<p>Para guardar o seu trabalho, crie uma pasta para cada projeto dentro de <code>~/c</code>, escreva o arquivo num editor (<a href="editores.html">Editores e IDEs</a> mostra as opções) e compile com o comando padrão do guia (veja <a href="compilar.html">Compilar com gcc</a>). Esta é a máquina da Ana fazendo a primeira etapa da calculadora:</p>
+
+<pre class="term">$ mkdir -p c/calculadora           « cria a pasta do projeto (e a c, se não existir)
+$ cd c/calculadora
+$ ls                                  « vazia, por enquanto
+$ ls                                  « a Ana escreveu o arquivo no editor
+calculadora.c
+$ gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora
+$ ls
+calculadora  calculadora.c            « o gcc criou o programa "calculadora"
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 7                    « 7 e 3 foram digitados pela Ana
+Segundo número: 3
+7 + 3 = 10</pre>
+
+<dl class="anatomy">
+  <dt>gcc -std=c23 -Wall -Wextra</dt><dd>Compila em C23, com os avisos ligados (veja <a href="avisos.html">Avisos</a>). É o comando padrão do guia, do começo ao fim.</dd>
+  <dt>calculadora.c</dt><dd>O código-fonte.</dd>
+  <dt>-o calculadora</dt><dd>O nome do programa a criar (<code>-o</code> de <em>output</em>, "saída").</dd>
+  <dt>./calculadora</dt><dd>Roda o programa que está nesta pasta (<code>./</code> = "aqui").</dd>
+</dl>
+
+<p>Toda vez que mudar o código, compile de novo antes de rodar: o programa <code>calculadora</code> é uma "foto" do código no momento da compilação. Para não esquecer, junte os dois comandos com <code>&amp;&amp;</code> ("e, se deu certo, então"): <code>gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora &amp;&amp; ./calculadora</code>.</p>
+
+<p>Os projetos de arquivo gravam no seu disco: a <a href="projeto-agenda.html">Agenda</a> cria um <code>agenda.txt</code>, o <a href="projeto-estoque.html">Estoque</a> um arquivo binário, e o <a href="projeto-texto.html">Contador de Palavras</a> lê um arquivo que você passa como <a href="argc-argv.html">argumento</a>. Projetos maiores costumam usar <a href="make.html">Makefile</a> para automatizar a compilação.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Como</th><th>Quando usar</th></tr>
+<tr><td>Editor do guia</td><td>botão Rodar</td><td>Para fazer as etapas rapidamente, em qualquer computador ou celular. A entrada vem pronta.</td></tr>
+<tr><td>Terminal</td><td><code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> e <code>./programa</code></td><td>Para guardar o projeto, digitar a entrada de verdade e usar arquivos que ficam no seu disco (agenda, estoque, texto).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Como estudar um projeto</h2>
+<ol class="passo">
+  <li><strong>Leia a etapa inteira antes de digitar.</strong> Entenda o que muda e por quê.</li>
+  <li><strong>Digite o código, não copie e cole.</strong> Parece mais lento, mas é digitando que você erra, lê a mensagem do compilador e aprende a consertar. Os erros mais comuns estão em <a href="ref-erros.html">Erros Comuns</a>.</li>
+  <li><strong>Compile com os avisos ligados e rode depois de cada etapa.</strong> Compare com a saída mostrada. Se for diferente, procure a diferença antes de seguir.</li>
+  <li><strong>Mude alguma coisa.</strong> Troque uma mensagem, um número, uma condição. Rode de novo. Prever o que vai acontecer e conferir é o melhor exercício que existe.</li>
+  <li><strong>Só então vá para a próxima etapa.</strong> No fim, tente os desafios sem olhar a solução.</li>
+</ol>
+
+<div class="cenario">
+<strong>"O meu não funciona e o da página funciona"</strong>
+<p>Quase sempre é um destes: um <code>;</code> esquecido, uma chave <code>}</code> a mais ou a menos, um <code>#include</code> que faltou, aspas duplas onde deviam ser simples (<code>"+"</code> em vez de <code>'+'</code>), ou o programa antigo rodando porque você não compilou de novo. Leia a <strong>primeira</strong> linha com <code>error</code>: ela diz o arquivo, a linha e a coluna (<code>calculadora.c:12:5: error: …</code>). Veja como ler essas mensagens em <a href="erros-compilacao.html">Lendo Erros do Compilador</a>. E não ignore os <code>warning</code>: em vários projetos, o aviso é a única pista de um erro de lógica (veja <a href="boas-praticas.html">Boas Práticas</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>O programa ficou repetindo a mesma linha sem parar</strong>
+<p>Um laço que lê do teclado e não confere se a leitura deu certo vira um laço infinito quando alguém digita texto no lugar de número (o <code>scanf</code> não consome o texto e tenta de novo). Aperte <kbd>Ctrl</kbd>+<kbd>C</kbd> para parar o programa, e confira o retorno do <code>scanf</code> (veja <a href="validar-entrada.html">Validar a Entrada</a>).</p>
+</div>
+
+<hr>
+
+<h2>Missão: o esqueleto de todo menu</h2>
+<p>A calculadora, a agenda, o estoque e a lista de tarefas têm a mesma estrutura: um menu que se repete até a pessoa escolher sair. Monte esse esqueleto agora, e você vai reconhecê-lo em todos eles.</p>
+
+<div class="tryc" data-stdin="1\n2\n7\n0\n" data-goal="out:Oi!,out:Tchau!,out:Opção inválida.,out:Fim do programa.,src:while\s*\(">
+<p class="try-task"><strong>Missão:</strong> o menu funciona, mas só uma vez. Coloque o trecho que mostra o menu, lê a opção e executa o <code>switch</code> dentro de um <code>while (opcao != 0)</code>. A entrada escolhe <code>1</code>, <code>2</code>, <code>7</code> (inválida) e <code>0</code>. Veja <a href="while.html">while</a> e <a href="switch.html">switch</a> se precisar.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = -1;
+
+    printf("\n1. Dizer oi  2. Dizer tchau  0. Sair\n");
+    printf("Opção: ");
+    if (scanf("%d", &amp;opcao) != 1) {
+        opcao = 0;  // a entrada acabou ou não era número: sai
+    }
+    switch (opcao) {
+        case 1: printf("Oi!\n"); break;
+        case 2: printf("Tchau!\n"); break;
+        case 0: break;
+        default: printf("Opção inválida.\n");
+    }
+
+    printf("Fim do programa.\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = -1;
+
+    while (opcao != 0) {
+        printf("\n1. Dizer oi  2. Dizer tchau  0. Sair\n");
+        printf("Opção: ");
+        if (scanf("%d", &amp;opcao) != 1) {
+            opcao = 0;  // a entrada acabou ou não era número: sai
+        }
+        switch (opcao) {
+            case 1: printf("Oi!\n"); break;
+            case 2: printf("Tchau!\n"); break;
+            case 0: break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+
+    printf("Fim do programa.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>No terminal da Ana, a solução fica assim:</p>
+
+<pre class="term" data-cwd="~/c/projetos">$ gcc -std=c23 -Wall -Wextra menu.c -o menu
+$ ./menu
+
+1. Dizer oi  2. Dizer tchau  0. Sair
+Opção: 1
+Oi!
+
+1. Dizer oi  2. Dizer tchau  0. Sair
+Opção: 2
+Tchau!
+
+1. Dizer oi  2. Dizer tchau  0. Sair
+Opção: 7
+Opção inválida.
+
+1. Dizer oi  2. Dizer tchau  0. Sair
+Opção: 0
+Fim do programa.</pre>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. A Ana terminou uma etapa, mas o programa não compila. O que ela deve fazer?</p>
+<label><input type="radio" name="q1"> Pular para a próxima etapa, que talvez conserte.</label>
+<label><input type="radio" name="q1"> Copiar o código completo do fim da página.</label>
+<label><input type="radio" name="q1"> Ler a primeira linha com <code>error</code>, achar a linha indicada e consertar antes de seguir.</label>
+<label><input type="radio" name="q1"> Apagar tudo e começar de novo.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">2. Qual projeto pratica listas ligadas, <code>malloc</code> e <code>free</code>?</p>
+<label><input type="radio" name="q2"> Calculadora</label>
+<label><input type="radio" name="q2"> Boletim de Notas</label>
+<label><input type="radio" name="q2"> Contador de Palavras</label>
+<label><input type="radio" name="q2"> Lista de Tarefas</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. A Ana mudou o código, rodou <code>./agenda</code> e nada mudou. Qual a causa mais provável?</p>
+<label><input type="radio" name="q3"> Ela não compilou de novo depois de mudar o código.</label>
+<label><input type="radio" name="q3"> O <code>./</code> está errado.</label>
+<label><input type="radio" name="q3"> O arquivo <code>agenda.txt</code> está vazio.</label>
+<label><input type="radio" name="q3"> O gcc guarda o código antigo para sempre.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual é o primeiro projeto recomendado para quem acabou o Nível 1?</p>
+<label><input type="radio" name="q4"> Estoque da Lojinha</label>
+<label><input type="radio" name="q4"> Calculadora</label>
+<label><input type="radio" name="q4"> Lista de Tarefas</label>
+<label><input type="radio" name="q4"> Agenda de Contatos</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete o comando que compila <code>agenda.c</code> no padrão do guia e, se deu certo, roda o programa:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra agenda.c -o agenda <input data-answer="&amp;&amp; ./agenda|&amp;&amp;./agenda" aria-label="continuação"></div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Cada projeto é construído em etapas; no fim de cada etapa, o programa compila e roda.</li>
+  <li>Sete projetos, em ordem de dificuldade: <a href="projeto-calculadora.html">Calculadora</a>, <a href="projeto-adivinhacao.html">Adivinhação</a>, <a href="projeto-notas.html">Boletim de Notas</a>, <a href="projeto-agenda.html">Agenda</a>, <a href="projeto-estoque.html">Estoque</a>, <a href="projeto-texto.html">Contador de Palavras</a> e <a href="projeto-tarefas.html">Lista de Tarefas</a>.</li>
+  <li>No editor do guia, a entrada da missão vem pronta e aparece no ponto em que o programa a lê; no terminal, você digita.</li>
+  <li>No terminal: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa &amp;&amp; ./programa</code>, e compile de novo a cada mudança.</li>
+  <li>Leia a etapa, digite, compile, compare a saída, mude algo, e só então siga.</li>
+</ul>
+<p>Comece pelo primeiro: <a href="projeto-calculadora.html">Calculadora</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
