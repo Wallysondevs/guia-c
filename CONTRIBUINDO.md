@@ -189,7 +189,7 @@ Conferido com `tools/sim.js --nativo`. **Nas metas, use o que é igual nos dois*
 | Sem `main` (ex.: `int Main(void)`) | compila e cai com `Falha de segmentação`, 139 | `referência não definida para "main"` (ligador) |
 | `printf("%b", 5)` (C23) | linha vazia, sem aviso | `101` |
 | `%` solto (`printf("Juros: 2%\n")`) | a linha some | `Juros: 2%` (e `"50% hoje"` imprime lixo) |
-| Função da biblioteca sem `#include` | `error: call to undeclared library function 'printf' with type …` | `error: implicit declaration of function ‘printf’` + `note: include ‘<stdio.h>’` |
+| Função da biblioteca sem `#include` | `error: call to undeclared library function 'printf' with type …` | `error: implicit declaration of function ‘printf’` + `note: include ‘<stdio.h>’ or provide a declaration of ‘printf’` |
 | `scanf("%d", &b)` com `bool b` | roda sem erro | `*** stack smashing detected ***`, 134 |
 | Ordem de avaliação dos argumentos (não especificada pelo C) | `printf("%d %d\n", remove("b.txt"), remove("b.txt"))` dá `0 -1` (da esquerda para a direita) | dá `-1 0` (da direita para a esquerda) |
 
