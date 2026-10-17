@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Threads — pthread_create, mutex e condição de corrida | Guia C</title>
+<meta name="description" content="Threads em C para iniciantes com pthreads: pthread_create e pthread_join, compilar com -pthread, passar argumentos por void *, condição de corrida em vendas++, pthread_mutex_lock, contadores _Atomic (stdatomic.h), achar corridas com -fsanitize=thread, impasse (deadlock) e threads.h do C11. Saídas reais do gcc 15 no Linux e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Threads</span> (pthreads)</h1>
+
+<p class="intro">O computador da Ana tem vários núcleos: vários processadores dentro de um só. Um programa comum usa um núcleo por vez; os outros ficam parados. Com <strong>threads</strong> (em inglês, "fios", como os fios de uma corda), um mesmo programa faz várias coisas <strong>ao mesmo tempo</strong>, cada uma num núcleo, todas dividindo as mesmas variáveis. Isso deixa programas muito mais rápidos e é também a fonte de alguns dos erros mais traiçoeiros da programação. Nesta aula você vai criar threads com a biblioteca <strong>pthreads</strong>, ver duas threads estragarem uma conta simples, e consertar com um <em>mutex</em> e com variáveis atômicas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma thread, e a diferença para um processo.</li>
+  <li>Como criar uma thread com <code>pthread_create</code>, esperar com <code>pthread_join</code> e compilar com <code>-pthread</code>.</li>
+  <li>Como mandar dados para a thread (e receber de volta) por um ponteiro <code>void *</code>.</li>
+  <li>O que é uma <strong>condição de corrida</strong>, e por que <code>vendas++</code> em duas threads perde vendas.</li>
+  <li>Como proteger os dados com <code>pthread_mutex_lock</code> e com <code>_Atomic</code>.</li>
+  <li>Como achar corridas com <code>-fsanitize=thread</code>, e o que é um impasse (<em>deadlock</em>).</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/threads</code>, com <code>gcc -std=c23 -Wall -Wextra -pthread arquivo.c -o programa</code>. A ordem das linhas e os números das corridas mudam a cada execução: no seu computador, eles vão ser outros.</p>
+
+<div class="warning">
+<strong>As pthreads são do POSIX</strong> (Linux, macOS e WSL; aula <a href="instalar-windows-mac.html">Instalar no Windows e no Mac</a>). O editor do guia roda o programa numa única linha de execução: o <code>&lt;pthread.h&gt;</code> existe e compila, mas o <code>pthread_create</code> sempre falha. As caixas "Experimente" desta aula praticam as partes que rodam em qualquer lugar.
+</div>
+
+<hr>
+
+<h2>A ideia: várias cozinheiras na mesma cozinha</h2>
+<p>Na aula <a href="processos.html">Processos</a>, o <code>fork</code> clonava a cozinheira <strong>e a cozinha inteira</strong>: cada uma com a sua bancada, os seus ingredientes. Uma não atrapalha a outra, mas também não vê o que a outra fez.</p>
+<p>Threads são várias cozinheiras na <strong>mesma</strong> cozinha:</p>
+<ul>
+  <li>dividem a bancada, a geladeira e o caderno de anotações (as variáveis globais, a memória do <code>malloc</code>);</li>
+  <li>cada uma tem a sua própria tábua (as variáveis locais: cada thread tem a sua <a href="pilha-heap.html">pilha</a>);</li>
+  <li>trabalham ao mesmo tempo, então o jantar sai mais rápido;</li>
+  <li>e, se duas forem escrever no mesmo caderno ao mesmo tempo sem combinar, a anotação sai errada. Esse é o assunto da seção 3.</li>
+</ul>
+
+<hr>
+
+<h2>1. A primeira thread</h2>
+
+<pre class="file" data-file="ola.c">#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+void *cozinhar(void *arg) {
+    (void) arg;
+    printf("Thread: estou cozinhando o arroz.\n");
+    return NULL;
+}
+
+int main(void) {
+    pthread_t ajudante;
+    if (pthread_create(&amp;ajudante, NULL, cozinhar, NULL) != 0) {
+        fprintf(stderr, "Não consegui criar a thread.\n");
+        return 1;
+    }
+    printf("main: enquanto isso, eu corto a salada.\n");
+    pthread_join(ajudante, NULL);
+    printf("main: o arroz ficou pronto. Hora de comer!\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;pthread.h&gt;</dt><dd>"POSIX threads", a biblioteca de threads do Linux e do macOS. Todos os nomes dela começam com <code>pthread_</code>.</dd>
+  <dt>void *cozinhar(void *arg)</dt><dd>A função que a thread vai rodar. O formato é obrigatório: recebe um <code>void *</code> e devolve um <code>void *</code> (ponteiros "para qualquer coisa": aula <a href="void-ponteiro.html">Ponteiro void</a>). Com eles, dá para mandar e receber qualquer tipo de dado (seção 2).</dd>
+  <dt>pthread_t ajudante;</dt><dd>A "identidade" da thread, como o <code>pid_t</code> de um processo.</dd>
+  <dt>pthread_create(&amp;ajudante, NULL, cozinhar, NULL)</dt><dd>Cria a thread e ela começa a rodar <code>cozinhar</code> <strong>na hora</strong>, ao mesmo tempo que o <code>main</code>. Os quatro argumentos: onde guardar a identidade, as opções (<code>NULL</code> = as normais), a função e o argumento que a função vai receber. Devolve 0 se deu certo, ou um código de erro.</dd>
+  <dt>pthread_join(ajudante, NULL)</dt><dd>"Juntar": o <code>main</code> espera a thread terminar, como o <code>waitpid</code> espera um processo. O <code>NULL</code> é onde guardar o que a função devolveu (não precisamos).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/threads">$ gcc -std=c23 -Wall -Wextra -pthread ola.c -o ola
+$ ./ola
+main: enquanto isso, eu corto a salada.
+Thread: estou cozinhando o arroz.
+main: o arroz ficou pronto. Hora de comer!</pre>
+
+<p>Enquanto a thread cozinhava, o <code>main</code> seguiu sozinho: cortou a salada e parou no <code>pthread_join</code> até o arroz ficar pronto. Desta vez o <code>main</code> escreveu primeiro, mas isso não é garantido: as duas rodam ao mesmo tempo, e quem chega primeiro ao <code>printf</code> varia.</p>
+
+<p>O <code>-pthread</code> na linha do gcc prepara a compilação <strong>e</strong> a ligação para threads. Desde 2021 (glibc 2.34), as funções das pthreads moram dentro da biblioteca C principal, e o programa liga mesmo sem a opção; em sistemas mais antigos, sem ela (ou sem o <code>-lpthread</code>), aparece <code>undefined reference to `pthread_create'</code>. Use sempre o <code>-pthread</code>: funciona em todo lugar.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> o mesmo programa no editor do guia, agora mostrando o código de erro do <code>pthread_create</code> com <code>strerror</code>. Aqui ele falha: o editor roda o programa numa linha de execução só. Repare como o teste do retorno (aula <a href="errno.html">errno e perror</a>) evitou que o programa seguisse como se a thread existisse.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;pthread.h&gt;
+
+void *cozinhar(void *arg) {
+    (void) arg;
+    return NULL;
+}
+
+int main(void) {
+    pthread_t ajudante;
+    int erro = pthread_create(&amp;ajudante, NULL, cozinhar, NULL);
+    if (erro != 0) {
+        fprintf(stderr, "pthread_create: %s (código %d)\n", strerror(erro), erro);
+        return 1;
+    }
+    pthread_join(ajudante, NULL);
+    printf("Deu certo.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Atenção a um detalhe do <code>pthread_create</code>: ele <strong>devolve</strong> o código do erro, em vez de pôr em <code>errno</code> como as funções das aulas anteriores. Por isso o programa usa <code>strerror(erro)</code>, e não <code>perror</code>. No Linux, o mesmo programa mostra <code>Deu certo.</code></p>
+
+<hr>
+
+<h2>2. Mandar dados para a thread</h2>
+<p>O último argumento do <code>pthread_create</code> chega na função como o <code>void *arg</code>. Para mandar várias informações, junte tudo numa <a href="structs.html">struct</a> e mande o endereço. A thread também pode escrever o resultado na mesma struct:</p>
+
+<pre class="file" data-file="argumento.c">#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+struct pedido {
+    const char *prato;
+    int quantidade;
+    int minutos;          // a thread preenche
+};
+
+void *preparar(void *arg) {
+    struct pedido *p = arg;
+    p-&gt;minutos = p-&gt;quantidade * 5;
+    printf("Preparando %d x %s\n", p-&gt;quantidade, p-&gt;prato);
+    return NULL;
+}
+
+int main(void) {
+    struct pedido pedidos[3] = {
+        {"pastel", 4, 0},
+        {"suco", 2, 0},
+        {"bolo", 1, 0},
+    };
+    pthread_t cozinheiras[3];
+
+    for (int i = 0; i &lt; 3; i++) {
+        pthread_create(&amp;cozinheiras[i], NULL, preparar, &amp;pedidos[i]);
+    }
+    for (int i = 0; i &lt; 3; i++) {
+        pthread_join(cozinheiras[i], NULL);
+    }
+    for (int i = 0; i &lt; 3; i++) {
+        printf("%s: %d minutos\n", pedidos[i].prato, pedidos[i].minutos);
+    }
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>struct pedido *p = arg;</code></td><td>Converte o <code>void *</code> de volta para o tipo verdadeiro. Em C, essa conversão é automática (não precisa de <code>(struct pedido *)</code>).</td></tr>
+<tr><td><code>p-&gt;minutos = …</code></td><td>Escreve o resultado direto na struct do <code>main</code> (aula <a href="structs-ponteiros.html">Structs e Ponteiros</a>).</td></tr>
+<tr><td><code>pthread_t cozinheiras[3];</code></td><td>Um array de identidades, uma por thread.</td></tr>
+<tr><td><code>&amp;pedidos[i]</code></td><td>Cada thread recebe o endereço do <strong>seu</strong> pedido. Nenhuma mexe no pedido da outra.</td></tr>
+<tr><td>O segundo <code>for</code></td><td>Espera as três terminarem. Só depois o <code>main</code> pode ler os <code>minutos</code> com segurança.</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/threads">$ gcc -std=c23 -Wall -Wextra -pthread argumento.c -o argumento
+$ ./argumento
+Preparando 4 x pastel
+Preparando 1 x bolo
+Preparando 2 x suco
+pastel: 20 minutos
+suco: 10 minutos
+bolo: 5 minutos
+$ ./argumento
+Preparando 4 x pastel
+Preparando 2 x suco
+Preparando 1 x bolo
+pastel: 20 minutos
+suco: 10 minutos
+bolo: 5 minutos</pre>
+
+<p>As três threads rodaram ao mesmo tempo, e a ordem do "Preparando" mudou de uma execução para a outra (o bolo passou na frente do suco na primeira). Já o resultado final é sempre o mesmo: cada thread escreveu só no seu pedido, e o <code>main</code> só leu depois dos <code>pthread_join</code>.</p>
+
+<div class="tryc" data-goal="out:pastel: 20 minutos,src:struct\s+pedido\s*\*\s*\w+\s*=\s*arg">
+<p class="try-task"><strong>Missão:</strong> a parte mais delicada de uma thread é a conversão do <code>void *</code>. Ela não depende de threads, então dá para praticar aqui: o <code>main</code> chama <code>preparar</code> direto, do jeito que o <code>pthread_create</code> chamaria. Complete <code>preparar</code>: converta <code>arg</code> para <code>struct pedido *</code> numa variável (<code>struct pedido *p = arg;</code>) e calcule <code>minutos = quantidade * 5</code>. A saída deve ser <code>pastel: 20 minutos</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+struct pedido {
+    const char *prato;
+    int quantidade;
+    int minutos;
+};
+
+void *preparar(void *arg) {
+    // converta arg para struct pedido * e calcule minutos = quantidade * 5
+    (void) arg;
+    return NULL;
+}
+
+int main(void) {
+    struct pedido p = {"pastel", 4, 0};
+    preparar(&amp;p);       // no Linux: pthread_create(&amp;t, NULL, preparar, &amp;p);
+    printf("%s: %d minutos\n", p.prato, p.minutos);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+struct pedido {
+    const char *prato;
+    int quantidade;
+    int minutos;
+};
+
+void *preparar(void *arg) {
+    // converta arg para struct pedido * e calcule minutos = quantidade * 5
+    struct pedido *p = arg;
+    p-&gt;minutos = p-&gt;quantidade * 5;
+    return NULL;
+}
+
+int main(void) {
+    struct pedido p = {"pastel", 4, 0};
+    preparar(&amp;p);       // no Linux: pthread_create(&amp;t, NULL, preparar, &amp;p);
+    printf("%s: %d minutos\n", p.prato, p.minutos);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Condição de corrida: as vendas que somem</h2>
+<p>Agora as duas threads mexem na <strong>mesma</strong> variável. A lojinha tem dois caixas, e cada um registra um milhão de vendas no mesmo contador:</p>
+
+<pre class="file" data-file="corrida.c">#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+long vendas = 0;
+
+void *registrar(void *arg) {
+    (void) arg;
+    for (int i = 0; i &lt; 1000000; i++) {
+        vendas++;
+    }
+    return NULL;
+}
+
+int main(void) {
+    pthread_t caixa1, caixa2;
+    pthread_create(&amp;caixa1, NULL, registrar, NULL);
+    pthread_create(&amp;caixa2, NULL, registrar, NULL);
+    pthread_join(caixa1, NULL);
+    pthread_join(caixa2, NULL);
+    printf("Vendas: %ld (esperado: 2000000)\n", vendas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/threads">$ gcc -std=c23 -Wall -Wextra -pthread corrida.c -o corrida
+$ ./corrida
+Vendas: 1367943 (esperado: 2000000)
+$ ./corrida
+Vendas: 913709 (esperado: 2000000)
+$ ./corrida
+Vendas: 1173979 (esperado: 2000000)</pre>
+
+<p>Nenhum aviso do compilador, e uma resposta errada e diferente a cada vez. Mais de um milhão de vendas sumiram! O motivo é que <code>vendas++</code> parece uma coisa só, mas para o processador são <strong>três passos</strong>:</p>
+
+<ol class="passo">
+  <li><strong>ler</strong> o valor de <code>vendas</code> da memória para um registrador;</li>
+  <li><strong>somar</strong> 1 no registrador;</li>
+  <li><strong>gravar</strong> o registrador de volta na memória.</li>
+</ol>
+
+<p>Se os dois caixas leem o mesmo valor (digamos, 500) antes de qualquer um gravar, os dois somam 1 e os dois gravam 501. Duas vendas, mas o contador só andou uma. Quando o resultado depende de quem chega primeiro, o nome é <strong>condição de corrida</strong> (<em>race condition</em>). Para o padrão C, duas threads escrevendo na mesma variável sem proteção é <a href="comportamento-indefinido.html">comportamento indefinido</a>. A missão final desta aula simula os três passos, um por linha, no editor.</p>
+
+<hr>
+
+<h2>4. Mutex: um de cada vez</h2>
+<p>A solução clássica é um <strong>mutex</strong> ("mutual exclusion", exclusão mútua): uma trava que só uma thread segura por vez. É como a chave do banheiro do posto de gasolina: quem quer entrar pega a chave; se ela não está no gancho, espera; quem sai devolve.</p>
+
+<pre class="file" data-file="mutex.c">#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+long vendas = 0;
+pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
+
+void *registrar(void *arg) {
+    (void) arg;
+    for (int i = 0; i &lt; 1000000; i++) {
+        pthread_mutex_lock(&amp;trava);
+        vendas++;
+        pthread_mutex_unlock(&amp;trava);
+    }
+    return NULL;
+}
+
+int main(void) {
+    pthread_t caixa1, caixa2;
+    pthread_create(&amp;caixa1, NULL, registrar, NULL);
+    pthread_create(&amp;caixa2, NULL, registrar, NULL);
+    pthread_join(caixa1, NULL);
+    pthread_join(caixa2, NULL);
+    printf("Vendas: %ld (esperado: 2000000)\n", vendas);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;</dt><dd>Cria a trava, já pronta para usar (aberta). Fica global, para todas as threads usarem <strong>a mesma</strong>.</dd>
+  <dt>pthread_mutex_lock(&amp;trava)</dt><dd>"Trancar": pega a trava. Se outra thread estiver com ela, esta espera, parada, até ela ser devolvida.</dd>
+  <dt>vendas++;</dt><dd>A <strong>região crítica</strong>: o pedaço que só uma thread pode fazer por vez. Os três passos agora acontecem sem ninguém no meio.</dd>
+  <dt>pthread_mutex_unlock(&amp;trava)</dt><dd>"Destrancar": devolve a trava. Esquecer o <code>unlock</code> deixa todas as outras threads esperando para sempre.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/threads">$ gcc -std=c23 -Wall -Wextra -pthread mutex.c -o mutex
+$ time ./mutex
+Vendas: 2000000 (esperado: 2000000)
+
+real	0m0,077s
+user	0m0,094s
+sys	0m0,049s
+$ time ./corrida
+Vendas: 1253101 (esperado: 2000000)
+
+real	0m0,005s
+user	0m0,009s
+sys	0m0,000s</pre>
+
+<p>Certo, sempre. O preço: pegar e devolver a trava dois milhões de vezes deixou o programa umas 15 vezes mais lento que a versão errada (o comando <code>time</code> do Bash mostra o tempo; <code>real</code> é o do relógio). Na prática, a região crítica é maior que um <code>++</code> e o custo da trava pesa menos. A regra é deixar dentro do <code>lock</code>/<code>unlock</code> só o que mexe nos dados divididos.</p>
+
+<hr>
+
+<h2>5. _Atomic: o contador indivisível <span class="versao">C11</span></h2>
+<p>Para um contador simples, o C11 tem uma solução mais leve: as variáveis <strong>atômicas</strong> (de <code>&lt;stdatomic.h&gt;</code>). Numa variável atômica, o <code>++</code> vira uma única instrução especial do processador, que ninguém consegue interromper no meio:</p>
+
+<pre class="file" data-file="atomico.c">#include &lt;stdio.h&gt;
+#include &lt;stdatomic.h&gt;
+#include &lt;pthread.h&gt;
+
+atomic_long vendas = 0;
+
+void *registrar(void *arg) {
+    (void) arg;
+    for (int i = 0; i &lt; 1000000; i++) {
+        vendas++;
+    }
+    return NULL;
+}
+
+int main(void) {
+    pthread_t caixa1, caixa2;
+    pthread_create(&amp;caixa1, NULL, registrar, NULL);
+    pthread_create(&amp;caixa2, NULL, registrar, NULL);
+    pthread_join(caixa1, NULL);
+    pthread_join(caixa2, NULL);
+    printf("Vendas: %ld (esperado: 2000000)\n", (long) vendas);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>atomic_long vendas = 0;</dt><dd>Um <code>long</code> atômico. É o mesmo que <code>_Atomic long</code> (a palavra-chave do C11); o <code>stdatomic.h</code> dá nomes prontos: <code>atomic_int</code>, <code>atomic_bool</code>…</dd>
+  <dt>vendas++</dt><dd>O mesmo código de antes, mas agora os três passos acontecem de uma vez só. Também existem funções explícitas, como <code>atomic_fetch_add(&amp;vendas, 1)</code>.</dd>
+  <dt>(long) vendas</dt><dd>Lê o valor atômico como um <code>long</code> comum para o <code>printf</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/threads">$ gcc -std=c23 -Wall -Wextra -pthread atomico.c -o atomico
+$ time ./atomico
+Vendas: 2000000 (esperado: 2000000)
+
+real	0m0,024s
+user	0m0,046s
+sys	0m0,000s</pre>
+
+<p>Certo e três vezes mais rápido que o mutex. Mas só serve para operações simples numa variável só. Para "tirar do estoque <strong>e</strong> somar no caixa" como uma coisa só, com duas variáveis, use um mutex.</p>
+
+<div class="note">
+<strong>E o <code>volatile</code>?</strong> Ele não resolve corridas. O <code>volatile</code> só obriga o compilador a ler e escrever na memória toda vez; os três passos do <code>++</code> continuam separados, e duas threads continuam podendo se intrometer no meio. Para threads, use <code>_Atomic</code> ou um mutex (aula <a href="volatile-restrict.html">volatile e restrict</a>).
+</div>
+
+<hr>
+
+<h2>6. O fiscal das threads: -fsanitize=thread</h2>
+<p>Corridas são difíceis de achar: o programa pode dar a resposta certa 99 vezes e errar na centésima. O gcc e o Clang têm um fiscal que vigia cada acesso à memória e avisa quando duas threads mexem na mesma variável sem proteção: o <strong>ThreadSanitizer</strong> (aula <a href="sanitizers.html">Sanitizers</a>).</p>
+
+<pre class="term" data-cwd="~/c/threads">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=thread corrida.c -o corrida-tsan
+$ ./corrida-tsan 2&gt;&amp;1 | head -21
+==================
+WARNING: ThreadSanitizer: data race (pid=3)
+  Read of size 8 at 0x559adca94018 by thread T2:
+    #0 registrar /home/ana/c/threads/corrida.c:9 (corrida-tsan+0x127d) (BuildId: 8d4b677db1f7512da80073296a1c335c21a0c819)
+
+  Previous write of size 8 at 0x559adca94018 by thread T1:
+    #0 registrar /home/ana/c/threads/corrida.c:9 (corrida-tsan+0x1297) (BuildId: 8d4b677db1f7512da80073296a1c335c21a0c819)
+
+  Location is global 'vendas' of size 8 at 0x559adca94018 (corrida-tsan+0x4018)
+
+  Thread T2 (tid=7, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1078 (libtsan.so.2+0x5cb02) (BuildId: 66d37dc704b813df6c813b77217284deb43a0042)
+    #1 main /home/ana/c/threads/corrida.c:17 (corrida-tsan+0x1320) (BuildId: 8d4b677db1f7512da80073296a1c335c21a0c819)
+
+  Thread T1 (tid=6, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1078 (libtsan.so.2+0x5cb02) (BuildId: 66d37dc704b813df6c813b77217284deb43a0042)
+    #1 main /home/ana/c/threads/corrida.c:16 (corrida-tsan+0x1303) (BuildId: 8d4b677db1f7512da80073296a1c335c21a0c819)
+
+SUMMARY: ThreadSanitizer: data race /home/ana/c/threads/corrida.c:9 in registrar
+==================
+==================</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha do relatório</th><th>O que diz</th></tr>
+<tr><td><code>WARNING: ThreadSanitizer: data race</code></td><td>"Corrida de dados": duas threads, a mesma memória, sem proteção.</td></tr>
+<tr><td><code>Read of size 8 … by thread T2</code> / <code>Previous write … by thread T1</code></td><td>A thread 2 leu 8 bytes (o <code>long</code>) que a thread 1 tinha escrito, os dois na linha 9 (o <code>vendas++</code>).</td></tr>
+<tr><td><code>Location is global 'vendas'</code></td><td>O nome da variável disputada.</td></tr>
+<tr><td><code>Thread T2 … created by main thread at: … corrida.c:17</code></td><td>Onde cada thread nasceu (os <code>pthread_create</code> das linhas 16 e 17).</td></tr>
+</table>
+</div>
+
+<p>O <code>head -21</code> mostrou só o primeiro aviso; no fim, o programa diz <code>ThreadSanitizer: reported 2 warnings</code> (dois avisos). Compilado com o mesmo fiscal, o <code>mutex.c</code> roda sem nenhum aviso. Use o <code>-fsanitize=thread</code> sempre que testar um programa com threads (ele não combina com o <code>-fsanitize=address</code>: um de cada vez).</p>
+
+<hr>
+
+<h2>7. Impasse: cada uma esperando a outra</h2>
+<p>Com mais de uma trava aparece outro perigo. A Ana e a Bia vão preparar uma salada, e há uma faca e uma tábua (dois mutex). A Ana pega a faca e depois a tábua; a Bia pega a tábua e depois a faca:</p>
+
+<pre class="file" data-file="impasse.c">#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;pthread.h&gt;
+
+pthread_mutex_t faca = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t tabua = PTHREAD_MUTEX_INITIALIZER;
+
+void *ana(void *arg) {
+    (void) arg;
+    pthread_mutex_lock(&amp;faca);
+    printf("Ana pegou a faca e espera a tábua...\n");
+    sleep(1);
+    pthread_mutex_lock(&amp;tabua);
+    printf("Ana cortou o tomate.\n");
+    pthread_mutex_unlock(&amp;tabua);
+    pthread_mutex_unlock(&amp;faca);
+    return NULL;
+}
+
+void *bia(void *arg) {
+    (void) arg;
+    pthread_mutex_lock(&amp;tabua);
+    printf("Bia pegou a tábua e espera a faca...\n");
+    sleep(1);
+    pthread_mutex_lock(&amp;faca);
+    printf("Bia cortou a cebola.\n");
+    pthread_mutex_unlock(&amp;faca);
+    pthread_mutex_unlock(&amp;tabua);
+    return NULL;
+}
+
+int main(void) {
+    pthread_t t1, t2;
+    pthread_create(&amp;t1, NULL, ana, NULL);
+    pthread_create(&amp;t2, NULL, bia, NULL);
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+    printf("Salada pronta!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/threads">$ gcc -std=c23 -Wall -Wextra -pthread impasse.c -o impasse
+$ timeout 3 ./impasse; echo "código: $?"
+Ana pegou a faca e espera a tábua...
+Bia pegou a tábua e espera a faca...
+código: 124</pre>
+
+<p>A Ana segura a faca esperando a tábua; a Bia segura a tábua esperando a faca. Nenhuma solta o que tem, e as duas esperam para sempre. Isso é um <strong>impasse</strong> (<em>deadlock</em>). O programa não dá erro nem gasta processador: só para. O <code>timeout 3</code> o matou depois de 3 segundos (código 124). O <code>sleep(1)</code> está ali só para o impasse acontecer sempre; sem ele, aconteceria de vez em quando, o que é ainda pior.</p>
+<p><strong>O conserto:</strong> todas as threads pegam as travas <strong>na mesma ordem</strong>. Se a Bia também pegar primeiro a faca, quem chegar segundo espera de mãos vazias, e ninguém fica preso.</p>
+
+<hr>
+
+<h2>Qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Cada thread trabalha só nos seus dados (como os pedidos da seção 2)</td><td>Nada: só <code>pthread_join</code> antes de ler os resultados</td></tr>
+<tr><td>Um contador ou uma bandeira dividida</td><td><code>_Atomic</code> / <code>atomic_int</code></td></tr>
+<tr><td>Várias variáveis que mudam juntas, listas, arquivos</td><td><code>pthread_mutex_t</code></td></tr>
+<tr><td>Tarefas que não precisam dividir memória, e em que uma não pode derrubar a outra</td><td>Processos (<code>fork</code>, aula <a href="processos.html">Processos</a>)</td></tr>
+<tr><td>Código em C puro, sem POSIX</td><td><code>&lt;threads.h&gt;</code> do <span class="versao">C11</span> (<code>thrd_create</code>, <code>mtx_lock</code>): mesma ideia, outros nomes; é opcional no padrão, e o gcc com glibc tem</td></tr>
+</table>
+</div>
+
+<p>Para comparar, a primeira thread com o <code>&lt;threads.h&gt;</code> do C11 (no editor do guia, ele não existe: dá erro do ligador, <code>undefined symbol: thrd_create</code>):</p>
+
+<pre class="file" data-file="c11.c">#include &lt;stdio.h&gt;
+#include &lt;threads.h&gt;
+
+int cozinhar(void *arg) {
+    (void) arg;
+    printf("Thread C11: estou cozinhando o arroz.\n");
+    return 0;
+}
+
+int main(void) {
+    thrd_t ajudante;
+    if (thrd_create(&amp;ajudante, cozinhar, NULL) != thrd_success) {
+        fprintf(stderr, "Não consegui criar a thread.\n");
+        return 1;
+    }
+    thrd_join(ajudante, NULL);
+    printf("main: pronto.\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/threads">$ gcc -std=c23 -Wall -Wextra -pthread c11.c -o c11
+$ ./c11
+Thread C11: estou cozinhando o arroz.
+main: pronto.</pre>
+
+<p>As pthreads são muito mais usadas (livros, bibliotecas, exemplos na internet) e têm mais recursos; por isso a aula usa elas.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: passing argument 3 of ‘pthread_create’ from incompatible pointer type</code></strong>
+<p>A função da thread foi escrita como <code>void cozinhar(void)</code>:</p>
+<pre class="term" data-cwd="~/c/threads">$ gcc -std=c23 -Wall -Wextra -pthread assinatura.c -o assinatura
+assinatura.c: In function ‘main’:
+assinatura.c:10:37: error: passing argument 3 of ‘pthread_create’ from incompatible pointer type [-Wincompatible-pointer-types]
+   10 |     pthread_create(&amp;ajudante, NULL, cozinhar, NULL);
+      |                                     ^~~~~~~~
+      |                                     |
+      |                                     void (*)(void)
+In file included from assinatura.c:2:
+/usr/include/pthread.h:204:36: note: expected ‘void * (*)(void *)’ but argument is of type ‘void (*)(void)’
+  204 |                            void *(*__start_routine) (void *),
+      |                            ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~
+assinatura.c:4:6: note: ‘cozinhar’ declared here
+    4 | void cozinhar(void) {
+      |      ^~~~~~~~</pre>
+<p><strong>O que significa:</strong> o <code>pthread_create</code> espera <code>void * (*)(void *)</code>, "uma função que recebe <code>void *</code> e devolve <code>void *</code>" (aula <a href="ponteiros-funcao.html">Ponteiros para Funções</a>).</p>
+<p><strong>Como consertar:</strong> <code>void *cozinhar(void *arg)</code>, com <code>(void) arg;</code> se não usar o argumento e <code>return NULL;</code> no fim.</p>
+</div>
+
+<div class="cenario">
+<strong>A thread não escreveu nada</strong>
+<p>O <code>main</code> criou uma thread que dorme 1 segundo e depois escreve "o arroz está pronto", mas esqueceu o <code>pthread_join</code>:</p>
+<pre class="term" data-cwd="~/c/threads">$ gcc -std=c23 -Wall -Wextra -pthread semjoin.c -o semjoin
+$ ./semjoin
+main: terminei.</pre>
+<p><strong>O que significa:</strong> quando o <code>main</code> termina, o processo inteiro termina, com todas as threads dentro, prontas ou não.</p>
+<p><strong>Como consertar:</strong> um <code>pthread_join</code> para cada <code>pthread_create</code>, antes do <code>return</code> do <code>main</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O resultado muda a cada execução</strong>
+<p><strong>O que significa:</strong> uma condição de corrida (seção 3). Duas threads mexem na mesma variável, e pelo menos uma escreve, sem mutex nem <code>_Atomic</code>.</p>
+<p><strong>Como consertar:</strong> compile com <code>-g -fsanitize=thread</code> para achar a variável e a linha, e proteja-a com um mutex ou torne-a atômica.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa para e não termina nunca, sem usar o processador</strong>
+<p><strong>O que significa:</strong> um impasse (seção 7), ou um <code>pthread_mutex_lock</code> sem o <code>unlock</code> correspondente (por exemplo, um <code>return</code> no meio da região crítica).</p>
+<p><strong>Como consertar:</strong> pegue as travas sempre na mesma ordem, e confira que todo caminho que sai da região crítica passa pelo <code>unlock</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Funções que "misturam" resultados entre threads</strong>
+<p><strong>O que significa:</strong> algumas funções antigas guardam dados num lugar só, dentro da biblioteca: <code>localtime</code>, <code>gmtime</code> e <code>strtok</code>. Duas threads chamando ao mesmo tempo escrevem uma por cima da outra (aula <a href="tempo.html">Data e Hora</a>, seção 7).</p>
+<p><strong>Como consertar:</strong> use as versões <code>_r</code> ("reentrant"): <code>localtime_r</code>, <code>gmtime_r</code>, <code>strtok_r</code>. O <code>errno</code>, por sua vez, é seguro: cada thread tem o seu (aula <a href="errno.html">errno e perror</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>gcc … -pthread</code></td><td>Compila e liga com suporte a threads</td></tr>
+<tr><td><code>void *f(void *arg) { … return NULL; }</code></td><td>O formato da função de uma thread</td></tr>
+<tr><td><code>pthread_create(&amp;t, NULL, f, &amp;dados)</code></td><td>Cria a thread <code>t</code> rodando <code>f(&amp;dados)</code>; devolve 0 ou o código do erro</td></tr>
+<tr><td><code>pthread_join(t, NULL)</code></td><td>Espera <code>t</code> terminar (o segundo argumento recebe o <code>void *</code> devolvido)</td></tr>
+<tr><td><code>pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;</code></td><td>Cria uma trava</td></tr>
+<tr><td><code>pthread_mutex_lock(&amp;m)</code> / <code>pthread_mutex_unlock(&amp;m)</code></td><td>Pega / devolve a trava</td></tr>
+<tr><td><code>atomic_int x = 0;</code> (<code>&lt;stdatomic.h&gt;</code>)</td><td>Inteiro com <code>++</code>, <code>--</code>, <code>+=</code> indivisíveis (<span class="versao">C11</span>)</td></tr>
+<tr><td><code>-g -fsanitize=thread</code></td><td>Liga o ThreadSanitizer, que acha corridas</td></tr>
+<tr><td><code>thrd_create</code>, <code>thrd_join</code>, <code>mtx_lock</code> (<code>&lt;threads.h&gt;</code>)</td><td>As threads do C11 padrão</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Esperar a thread</h3>
+<p>Complete a função que faz o <code>main</code> esperar a thread <code>t</code>:</p>
+<div class="ex-code"><input data-answer="pthread_join" aria-label="função">(t, NULL);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Pegar a trava</h3>
+<p>Complete a linha que vem antes de <code>vendas++;</code> num programa com o mutex <code>trava</code>:</p>
+<div class="ex-code"><input data-answer="pthread_mutex_lock(&amp;trava);|pthread_mutex_lock(&amp;trava)" aria-label="linha"></div>
+</div>
+
+<div class="exercise">
+<h3>3. A opção do gcc</h3>
+<p>Complete a opção de compilação para threads:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra <input data-answer="-pthread" aria-label="opção"> programa.c -o programa</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Qual é a principal diferença entre duas threads e dois processos criados com <code>fork</code>?</p>
+<label><input type="radio" name="q4"> Threads não podem rodar ao mesmo tempo</label>
+<label><input type="radio" name="q4"> Processos dividem as variáveis globais; threads não</label>
+<label><input type="radio" name="q4"> Threads dividem a mesma memória (as variáveis globais); processos têm cada um a sua cópia</label>
+<label><input type="radio" name="q4"> Não há diferença</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Duas threads fazem <code>contador++</code> um milhão de vezes cada, sem proteção. O que acontece?</p>
+<label><input type="radio" name="q5"> O compilador dá erro</label>
+<label><input type="radio" name="q5"> O resultado costuma ser menor que 2 milhões e muda a cada execução</label>
+<label><input type="radio" name="q5"> O resultado é sempre exatamente 2 milhões</label>
+<label><input type="radio" name="q5"> O programa sempre trava</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Como evitar o impasse entre duas threads que usam as travas <code>faca</code> e <code>tabua</code>?</p>
+<label><input type="radio" name="q6"> Declarar as travas como <code>volatile</code></label>
+<label><input type="radio" name="q6"> Usar <code>sleep</code> entre os dois <code>lock</code></label>
+<label><input type="radio" name="q6"> Tirar o <code>pthread_join</code></label>
+<label><input type="radio" name="q6"> Fazer todas as threads pegarem as travas na mesma ordem</label>
+</div>
+
+<h3>Missão final: a venda perdida, passo a passo</h3>
+
+<div class="tryc" data-goal="out:Vendas: 2,src:vendas\s*=\s*a;[\s\S]*b\s*=\s*vendas;">
+<p class="try-task"><strong>Missão:</strong> este programa não tem threads: cada linha é um dos três passos do <code>vendas++</code> (ler, somar, gravar) de um dos dois caixas, na ordem em que o processador os misturou. O resultado é a corrida da seção 3 em câmera lenta: duas vendas, contador 1. <strong>Reordene as linhas</strong> do jeito que o mutex obriga: o caixa 1 faz os seus três passos, e só depois o caixa 2 começa. A saída deve ser <code>Vendas: 2</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int vendas = 0;
+    int a, b;               // a "memória de rascunho" de cada caixa
+
+    a = vendas;             // caixa 1 lê
+    b = vendas;             // caixa 2 lê
+    a = a + 1;              // caixa 1 soma
+    b = b + 1;              // caixa 2 soma
+    vendas = a;             // caixa 1 grava
+    vendas = b;             // caixa 2 grava
+
+    printf("Vendas: %d\n", vendas);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int vendas = 0;
+    int a, b;               // a "memória de rascunho" de cada caixa
+
+    a = vendas;             // caixa 1 lê
+    a = a + 1;              // caixa 1 soma
+    vendas = a;             // caixa 1 grava
+    b = vendas;             // caixa 2 lê
+    b = b + 1;              // caixa 2 soma
+    vendas = b;             // caixa 2 grava
+
+    printf("Vendas: %d\n", vendas);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Os <code>a</code> e <code>b</code> fazem o papel dos registradores de cada núcleo. No programa de verdade, quem garante esta ordem é o <code>pthread_mutex_lock</code>: enquanto o caixa 1 segura a trava, o caixa 2 espera antes do "ler".</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>thread</strong> é uma linha de execução dentro do processo. As threads de um programa rodam ao mesmo tempo e dividem as variáveis globais e a memória do <code>malloc</code>; cada uma tem as suas variáveis locais.</li>
+  <li><code>pthread_create(&amp;t, NULL, f, arg)</code> cria; <code>pthread_join(t, NULL)</code> espera. A função tem o formato <code>void *f(void *arg)</code>. Compile com <code>-pthread</code>.</li>
+  <li>Dados vão para a thread pelo <code>void *</code>: o endereço de uma struct, convertido de volta dentro da função.</li>
+  <li>Duas threads escrevendo na mesma variável sem proteção é uma <strong>condição de corrida</strong>: resultados errados, diferentes a cada vez, e comportamento indefinido.</li>
+  <li>Proteja com um <strong>mutex</strong> (<code>pthread_mutex_lock</code>/<code>unlock</code>) ou, para contadores, com <code>_Atomic</code>. <code>volatile</code> não basta.</li>
+  <li>Ache corridas com <code>-g -fsanitize=thread</code>. Evite impasses pegando as travas sempre na mesma ordem.</li>
+  <li>O editor do guia não tem threads: lá, <code>pthread_create</code> devolve "Not supported".</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
