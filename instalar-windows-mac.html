@@ -39,6 +39,12 @@
 
 <hr>
 
+<h2>A ideia: um tradutor para cada país</h2>
+<p>Imagine que a Ana escreveu uma receita em português e quer que cozinheiros de três países a sigam. Ela precisa de um <strong>tradutor</strong> para cada país: a receita é a mesma, mas cada cozinheiro só entende a própria língua.</p>
+<p>Com o C é igual. O seu <code>ola.c</code> é a receita. O <strong>compilador</strong> é o tradutor, que transforma o texto em instruções que um sistema entende. Windows, macOS e Linux "falam" de jeitos diferentes, e por isso cada um precisa do seu compilador. Nesta aula você instala o tradutor do seu sistema; a receita (o código das aulas) continua a mesma.</p>
+
+<hr>
+
 <h2>Antes de tudo: o terminal</h2>
 <p>O guia compila os programas pelo <strong>terminal</strong> (a janela de texto onde você digita comandos), porque assim você vê exatamente o que acontece. Cada sistema tem o seu:</p>
 
@@ -234,7 +240,7 @@ Olá, mundo!</pre></li>
 
 <div class="tryc">
 <p class="try-task"><strong>Experimente:</strong> rode e veja o que o editor do guia responde. Ele não é Windows, nem Mac, nem Linux: o programa roda dentro do navegador, num formato chamado WebAssembly (WASI). Compile o mesmo arquivo no seu computador depois e compare.</p>
-<pre class="script">#include &lt;stdio.h&gt;
+<pre class="script" data-file="sistema.c">#include &lt;stdio.h&gt;
 
 int main(void) {
 #if defined(_WIN32)
