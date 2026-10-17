@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Funções de String — string.h: strlen, strcpy, snprintf, strcmp | Guia C</title>
+<meta name="description" content="As funções de string.h em C para quem nunca programou: strlen, strcpy × strncpy × snprintf (o jeito seguro), strcat e strncat, strcmp e o retorno menor, igual ou maior que zero, strchr, strstr e strtok com cuidado, o estouro de buffer do strcpy mostrado com -fsanitize=address, saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Funções de String</span></h1>
+
+<p class="intro">Na aula <a href="strings.html">Strings</a> você viu que um texto em C é um array de <code>char</code> com um <code>'\0'</code> no fim, e que não dá para comparar com <code>==</code> nem trocar com <code>=</code>. Para essas tarefas existe uma caixa de ferramentas pronta, o arquivo <code>string.h</code>: funções para medir, copiar, juntar, comparar e procurar dentro de textos. Nesta aula você vai conhecer as principais, e principalmente <strong>quais são perigosas</strong>: algumas delas escrevem além do fim do array sem perguntar nada, e esse é um dos erros de segurança mais famosos da história da computação.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>strlen</code>: contar os caracteres (sem o <code>'\0'</code>), e a diferença para <code>sizeof</code>.</li>
+  <li>Copiar texto: <code>strcpy</code> (perigoso), <code>strncpy</code> (traiçoeiro) e <code>snprintf</code> (o jeito seguro).</li>
+  <li>O <strong>estouro de buffer</strong> do <code>strcpy</code>, visto de verdade com <code>-fsanitize=address</code>.</li>
+  <li>Juntar textos com <code>strcat</code> e <code>strncat</code>.</li>
+  <li>Comparar com <code>strcmp</code>: o que quer dizer o retorno menor que zero, zero ou maior que zero.</li>
+  <li>Procurar com <code>strchr</code> e <code>strstr</code>, e quebrar um texto em pedaços com <code>strtok</code> (com cuidado).</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: uma caixa de ferramentas para texto</h2>
+<p>Pense na caixa de ferramentas da casa da Ana: trena para medir, cola para juntar, lupa para procurar. O <code>string.h</code> é isso para strings. Para usar qualquer ferramenta dele, a primeira linha do programa (depois do <code>stdio.h</code>) é:</p>
+
+<pre class="file">#include &lt;string.h&gt;
+</pre>
+
+<p>Todas as funções desta aula seguem duas regras, herdadas da aula anterior:</p>
+<ol class="passo">
+  <li>Elas trabalham <strong>até o <code>'\0'</code></strong>. Se ele faltar, elas continuam pela memória afora.</li>
+  <li>Elas <strong>não sabem o tamanho dos seus arrays</strong>. Quando uma função escreve num array, cabe a você garantir que há espaço, ou escolher uma função que receba o tamanho.</li>
+</ol>
+<p>Os nomes parecem siglas porque são: o C antigo limitava os nomes a poucas letras. Quase todos começam com <code>str</code> ("string"), e o resto é uma abreviação em inglês que a aula traduz.</p>
+
+<hr>
+
+<h2>1. <code>strlen</code>: quantos caracteres?</h2>
+<p><code>strlen</code> = "string length", comprimento da string. Ela anda pelo array contando até achar o <code>'\0'</code>, exatamente o laço que você escreveu na aula <a href="strings.html">Strings</a>.</p>
+
+<pre class="file" data-file="tamanho.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char item[20] = "arroz";
+    printf("strlen: %zu\n", strlen(item));
+    printf("sizeof: %zu\n", sizeof item);
+    printf("strlen(\"\"): %zu\n", strlen(""));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanho.c -o tamanho
+$ ./tamanho
+strlen: 5               « a-r-r-o-z: o '\0' não entra na conta
+sizeof: 20              « o tamanho do array, cheio ou não
+strlen(""): 0           « string vazia</pre>
+
+<dl class="anatomy">
+  <dt>strlen(item)</dt><dd>Devolve o número de caracteres <strong>antes</strong> do <code>'\0'</code>. O texto "arroz" usa 6 bytes do array (5 letras + <code>'\0'</code>), mas o <code>strlen</code> diz 5.</dd>
+  <dt>%zu</dt><dd>O resultado de <code>strlen</code> é do tipo <code>size_t</code> (um inteiro sem sinal próprio para tamanhos, aula <a href="sizeof.html">Tamanho dos Tipos</a>). O formato certo é <code>%zu</code>; com <code>%d</code> o gcc avisa (veja "Quando dá errado").</dd>
+  <dt>sizeof item</dt><dd>Mede a fileira inteira: 20 bytes, por mais curto que seja o texto.</dd>
+</dl>
+
+<div class="tip">
+<strong>Guarde as duas perguntas</strong>
+<p><code>strlen(s)</code> responde "quantas letras tem o texto agora?". <code>sizeof s</code> responde "quantos bytes cabem no array?". Para saber se um texto de <code>n</code> letras cabe, a conta é <code>n + 1 &lt;= sizeof s</code>: o <code>+ 1</code> é o <code>'\0'</code>, que o <code>strlen</code> não conta. Esse "+ 1" esquecido é a causa de muitos estouros.</p>
+</div>
+
+<hr>
+
+<h2>2. Copiar: <code>strcpy</code>, <code>strncpy</code> e <code>snprintf</code></h2>
+<p>Você viu que <code>nome = "Bia";</code> não compila. Para colocar um texto dentro de um array já criado, é preciso <strong>copiar</strong> as letras, uma por uma, e o <code>'\0'</code>. Há três ferramentas, e elas não são igualmente seguras.</p>
+
+<h3><code>strcpy</code>: copia tudo, sem perguntar</h3>
+<p><code>strcpy</code> = "string copy". A ordem dos argumentos é a mesma de uma atribuição: <strong>destino primeiro</strong>, origem depois (como em <code>destino = origem</code>).</p>
+
+<pre class="file" data-file="copia.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char destino[10];
+    strcpy(destino, "feijão");
+    printf("%s\n", destino);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra copia.c -o copia
+$ ./copia
+feijão</pre>
+
+<p>Funcionou porque "feijão" cabe em 10 bytes (são 7 bytes mais o <code>'\0'</code>: o <code>ã</code> ocupa dois, como explica <a href="acentos-utf8.html">Acentos e UTF-8</a>). O problema é que o <code>strcpy</code> <strong>não sabe</strong> que o destino tem 10 bytes. Se a origem for maior, ele escreve além do fim. Veja com um texto que vem de fora do programa, como acontece de verdade.</p>
+
+<h3>O estouro de buffer</h3>
+<p>Neste programa, o item vem da <strong>linha de comando</strong>: o que a Ana digita depois do nome do programa chega em <code>argv[1]</code> (aula <a href="argc-argv.html">Argumentos da Linha de Comando</a>). O programador reservou 8 bytes, achando que nenhum item teria nome comprido:</p>
+
+<pre class="file" data-file="estouro.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(int argc, char *argv[]) {
+    char destino[8];
+    if (argc &lt; 2) {
+        return 1;
+    }
+    strcpy(destino, argv[1]);
+    printf("Item: %s\n", destino);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estouro.c -o estouro     « nenhum aviso
+$ ./estouro arroz
+Item: arroz
+$ ./estouro "biscoito recheado"
+*** stack smashing detected ***: terminated
+Abortado                   (imagem do núcleo gravada) ./estouro "biscoito recheado"
+$ echo $?
+134</pre>
+
+<dl class="anatomy">
+  <dt>nenhum aviso</dt><dd>O compilador não tem como saber o tamanho do que a Ana vai digitar. (Quando a origem é um texto fixo no código, o gcc às vezes percebe e avisa com <code>-Wstringop-overflow</code>; não conte com isso.)</dd>
+  <dt>*** stack smashing detected ***</dt><dd>"Esmagamento da pilha detectado". O <code>strcpy</code> escreveu 18 bytes (17 letras + <code>'\0'</code>) num array de 8 e passou por cima de memória vizinha. O Ubuntu compila os programas com uma proteção (o <em>stack protector</em>, "protetor da pilha") que percebeu o estrago na hora de o <code>main</code> terminar e abortou o programa.</dd>
+  <dt>Abortado … 134</dt><dd>O programa foi encerrado à força (código 134 = abortado).</dd>
+</dl>
+
+<p>E com um texto só <strong>um byte</strong> maior que o array? "biscoito" tem 8 letras: com o <code>'\0'</code>, são 9 bytes num array de 8. A proteção não pegou nada:</p>
+
+<pre class="term" data-cwd="~/c">$ ./estouro biscoito
+Item: biscoito           « o '\0' foi escrito fora do array, e "funcionou"</pre>
+
+<p>Esse é o pior caso: o programa escreveu em memória que não era dele, e tudo <em>parece</em> certo. É o erro clássico do "+ 1" esquecido. Para ver o erro de verdade, compile com o <strong>AddressSanitizer</strong> (aula <a href="sanitizers.html">Sanitizers</a>):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address estouro.c -o estouro
+$ ./estouro biscoito
+=================================================================
+==60068==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7b4e79cf0028 at pc 0x7f4e7c2bd2a9 bp 0x7ffe37812400 sp 0x7ffe37811bb8
+WRITE of size 9 at 0x7b4e79cf0028 thread T0
+    #0 0x7f4e7c2bd2a8 in strcpy ../../../../src/libsanitizer/asan/asan_interceptors.cpp:575
+    #1 0x61832ae8c329 in main /home/ana/c/estouro.c:9
+…
+  This frame has 1 object(s):
+    [32, 40) 'destino' (line 5) &lt;== Memory access at offset 40 overflows this variable
+…
+SUMMARY: AddressSanitizer: stack-buffer-overflow /home/ana/c/estouro.c:9 in main
+…                                     « mais linhas com o mapa da memória</pre>
+
+<dl class="anatomy">
+  <dt>WRITE of size 9</dt><dd>Uma <strong>escrita</strong> de 9 bytes: as 8 letras de "biscoito" mais o <code>'\0'</code>.</dd>
+  <dt>#0 … in strcpy</dt><dd>Quem escreveu foi o <code>strcpy</code>…</dd>
+  <dt>#1 … in main /home/ana/c/estouro.c:9</dt><dd>…chamado na linha 9 do seu programa.</dd>
+  <dt>[32, 40) 'destino' … overflows this variable</dt><dd><code>destino</code> ocupa 8 bytes (do 32 ao 39); a escrita chegou ao byte 40, um depois do fim.</dd>
+</dl>
+
+<div class="warning">
+<strong>Por que isso é grave</strong>
+<p>Escrever além do fim de um array se chama <strong>estouro de buffer</strong> (<em>buffer overflow</em>). Um atacante que controla o texto consegue escolher <em>o que</em> vai parar na memória vizinha, e em muitos casos isso basta para tomar o controle do programa. Grande parte das falhas de segurança famosas em programas escritos em C começou com um <code>strcpy</code>, <code>strcat</code>, <code>sprintf</code> ou <code>gets</code> sem limite. Regra do guia: <strong>só use <code>strcpy</code> quando você tiver certeza de que a origem cabe</strong> (um texto fixo e curto, num destino que você mesmo dimensionou). Para todo o resto, use <code>snprintf</code>.</p>
+</div>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>No editor, um <code>strcpy</code> que estoura costuma passar <strong>calado</strong>: o programa mostra o texto inteiro e termina normalmente. A memória do WebAssembly é organizada de outro jeito, e o editor não tem stack protector nem AddressSanitizer. Por isso a missão abaixo cobra o jeito seguro, e não "fazer o programa cair".</p>
+</div>
+
+<h3><code>strncpy</code>: tem limite, mas é traiçoeiro</h3>
+<p><code>strncpy</code> ("string n copy", copiar no máximo <em>n</em>) recebe um limite. Parece a solução, mas tem uma armadilha: se a origem não couber, ele copia <code>n</code> bytes e <strong>não coloca o <code>'\0'</code></strong>.</p>
+
+<pre class="file" data-file="strncpy.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char a[6];
+    char b[6];
+    strncpy(a, "pão", sizeof a);
+    strncpy(b, "biscoito", sizeof b);
+    printf("a = %s\n", a);
+    printf("b tem %zu bytes; o último vale %d\n", sizeof b, b[5]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra strncpy.c -o strncpy
+strncpy.c: In function ‘main’:
+strncpy.c:8:5: warning: ‘strncpy’ output truncated copying 6 bytes from a string of length 8 [-Wstringop-truncation]
+    8 |     strncpy(b, "biscoito", sizeof b);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+$ ./strncpy
+a = pão
+b tem 6 bytes; o último vale 105     « 105 é o 'i': não há '\0' em b</pre>
+
+<p>O aviso diz "a saída do <code>strncpy</code> foi cortada: copiou 6 bytes de uma string de tamanho 8". O <code>b</code> ficou com <code>b i s c o i</code> e nenhuma placa de fim: um <code>printf("%s", b)</code> leria além do array, como na seção 7 da aula <a href="strings.html">Strings</a>. Quem usa <code>strncpy</code> precisa sempre completar à mão: <code>b[sizeof b - 1] = '\0';</code>. É fácil esquecer.</p>
+
+<h3><code>snprintf</code>: o jeito seguro</h3>
+<p>O <code>snprintf</code> ("string n print formatted") é o <code>printf</code> que, em vez de mostrar na tela, <strong>escreve num array</strong>, com limite. Ele <strong>sempre</strong> coloca o <code>'\0'</code> e nunca passa do tamanho que você informa:</p>
+
+<pre class="file" data-file="snprintf.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char item[9];
+    int precisa = snprintf(item, sizeof item, "%s", "biscoito recheado");
+    printf("Guardou: [%s]\n", item);
+    printf("O texto completo tinha %d caracteres.\n", precisa);
+    if (precisa &gt;= (int)sizeof item) {
+        printf("Aviso: não coube, foi cortado.\n");
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;stdio.h&gt;</dt><dd>O <code>snprintf</code> mora no <code>stdio.h</code>, junto com o <code>printf</code>, e não no <code>string.h</code>.</dd>
+  <dt>item</dt><dd>1º argumento: o destino.</dd>
+  <dt>sizeof item</dt><dd>2º argumento: o tamanho do destino, <strong>com</strong> o lugar do <code>'\0'</code>. Use sempre <code>sizeof</code> do próprio array, para não errar a conta.</dd>
+  <dt>"%s", "biscoito recheado"</dt><dd>O resto é igual ao <code>printf</code>: um formato e os valores. Para copiar um texto, o formato é <code>"%s"</code>.</dd>
+  <dt>int precisa = …</dt><dd>O <code>snprintf</code> devolve quantos caracteres o texto <strong>completo</strong> teria. Se esse número for maior ou igual ao tamanho do array, o texto foi cortado. O <code>(int)</code> converte o <code>sizeof</code> para <code>int</code> e evita um aviso de comparação entre tipos com e sem sinal.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra snprintf.c -o snprintf
+snprintf.c: In function ‘main’:
+snprintf.c:5:48: warning: ‘%s’ directive output truncated writing 17 bytes into a region of size 9 [-Wformat-truncation=]
+    5 |     int precisa = snprintf(item, sizeof item, "%s", "biscoito recheado");
+      |                                                ^~   ~~~~~~~~~~~~~~~~~~~
+snprintf.c:5:19: note: ‘snprintf’ output 18 bytes into a destination of size 9
+    5 |     int precisa = snprintf(item, sizeof item, "%s", "biscoito recheado");
+      |                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+$ ./snprintf
+Guardou: [biscoito]
+O texto completo tinha 17 caracteres.
+Aviso: não coube, foi cortado.</pre>
+
+<p>O gcc percebeu que o texto fixo não cabe e avisou ("a saída de <code>%s</code> foi cortada: 17 bytes numa região de 9"). Repare na diferença: com <code>snprintf</code> o corte é <strong>seguro</strong> (8 letras + <code>'\0'</code>, nada escrito fora do array); o aviso só pergunta se você quis mesmo cortar. O conserto, se não quis, é aumentar o array.</p>
+
+<p>E como ele é um <code>printf</code>, também monta textos com números, o que nenhuma função do <code>string.h</code> faz:</p>
+
+<pre class="term" data-cwd="~/c">$ cat snprintf2.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[] = "Ana";
+    int idade = 29;
+    char ficha[40];
+    snprintf(ficha, sizeof ficha, "%s (%d anos)", nome, idade);
+    printf("Ficha: %s\n", ficha);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra snprintf2.c -o snprintf2
+$ ./snprintf2
+Ficha: Ana (29 anos)</pre>
+
+<div class="tryc" data-goal="out:[biscoito],src:snprintf">
+<p class="try-task"><strong>Missão:</strong> este programa copia <code>pedido</code> para um array de 9 bytes com <code>strcpy</code>, e estoura. No editor ele parece funcionar (mostra o texto inteiro), mas está escrevendo fora do array. Troque o <code>strcpy</code> por <code>snprintf</code>, com o tamanho do destino, para guardar com segurança só o que cabe: <code>[biscoito]</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char pedido[] = "biscoito recheado";
+    char item[9];
+    strcpy(item, pedido);
+    printf("[%s]\n", item);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char pedido[] = "biscoito recheado";
+    char item[9];
+    snprintf(item, sizeof item, "%s", pedido);
+    printf("[%s]\n", item);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Qual usar para copiar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Sabe o tamanho do destino?</th><th>Sempre põe o <code>'\0'</code>?</th><th>Quando usar</th></tr>
+<tr><td><code>strcpy(dest, orig)</code></td><td>Não</td><td>Sim (se couber)</td><td>Só quando a origem é fixa e você sabe que cabe.</td></tr>
+<tr><td><code>strncpy(dest, orig, n)</code></td><td>Sim</td><td><strong>Não</strong>, se a origem for grande</td><td>Evite. Se usar, termine com <code>dest[n - 1] = '\0';</code>.</td></tr>
+<tr><td><code>snprintf(dest, sizeof dest, "%s", orig)</code></td><td>Sim</td><td>Sim</td><td><strong>Padrão do guia.</strong> Também monta textos com números.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. Juntar: <code>strcat</code> e <code>strncat</code></h2>
+<p><code>strcat</code> = "string concatenate", concatenar (encadear, juntar no fim). Ela acha o <code>'\0'</code> do destino e copia a origem a partir dali:</p>
+
+<pre class="file" data-file="juntar.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char frase[30] = "Lista: ";
+    strcat(frase, "arroz");
+    strcat(frase, ", feijão");
+    printf("%s\n", frase);
+    printf("%zu de %zu bytes usados\n", strlen(frase) + 1, sizeof frase);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra juntar.c -o juntar
+$ ./juntar
+Lista: arroz, feijão
+22 de 30 bytes usados</pre>
+
+<dl class="anatomy">
+  <dt>char frase[30] = "Lista: ";</dt><dd>O destino precisa ter <strong>espaço sobrando</strong> desde o começo: o <code>strcat</code> não aumenta o array.</dd>
+  <dt>strcat(frase, "arroz");</dt><dd>Gruda "arroz" depois de "Lista: ", passando por cima do <code>'\0'</code> antigo e pondo um novo no fim.</dd>
+  <dt>strlen(frase) + 1</dt><dd>Letras + <code>'\0'</code>: os bytes realmente ocupados.</dd>
+</dl>
+
+<p>O <code>strcat</code> tem o mesmo defeito do <code>strcpy</code>: não sabe o tamanho do destino. O <code>strncat</code> recebe um limite, mas o limite é o número de letras que ainda <strong>cabem</strong>, e a conta é sua:</p>
+
+<pre class="file" data-file="strncat.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char frase[16] = "Lista: ";
+    size_t sobra = sizeof frase - strlen(frase) - 1;
+    strncat(frase, "arroz, feijão, café", sobra);
+    printf("[%s]\n", frase);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra strncat.c -o strncat
+$ ./strncat
+[Lista: arroz, f]       « 15 letras + '\0' = os 16 bytes do array</pre>
+
+<p>A conta <code>sizeof frase - strlen(frase) - 1</code> é "o tamanho do array, menos o que já está ocupado, menos o lugar do <code>'\0'</code>" (o <code>strncat</code>, diferente do <code>strncpy</code>, sempre põe o <code>'\0'</code>). Errar essa conta por 1 é muito comum. Uma alternativa sem conta é montar a frase inteira de uma vez com <code>snprintf(frase, sizeof frase, "Lista: %s, %s", a, b);</code>.</p>
+
+<hr>
+
+<h2>4. Comparar: <code>strcmp</code></h2>
+<p><code>strcmp</code> = "string compare". Ela compara letra por letra, do começo, e devolve um número:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Resultado de <code>strcmp(a, b)</code></th><th>Significa</th></tr>
+<tr><td><strong>0</strong></td><td>As duas strings são <strong>iguais</strong></td></tr>
+<tr><td>menor que 0 (negativo)</td><td><code>a</code> vem <strong>antes</strong> de <code>b</code> (na ordem dos códigos dos caracteres)</td></tr>
+<tr><td>maior que 0 (positivo)</td><td><code>a</code> vem <strong>depois</strong> de <code>b</code></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="comparar.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char a[] = "ana", b[] = "bia", c[] = "Bia", d[] = "anas", e[] = "carlos";
+    printf("ana  x ana    = %d\n", strcmp(a, a));
+    printf("ana  x bia    = %d\n", strcmp(a, b));
+    printf("bia  x ana    = %d\n", strcmp(b, a));
+    printf("Bia  x ana    = %d\n", strcmp(c, a));
+    printf("ana  x anas   = %d\n", strcmp(a, d));
+    printf("ana  x carlos = %d\n", strcmp(a, e));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra comparar.c -o comparar
+$ ./comparar
+ana  x ana    = 0         « iguais
+ana  x bia    = -1        « 'a' (97) vem antes de 'b' (98)
+bia  x ana    = 1
+Bia  x ana    = -31       « 'B' (66) vem antes de 'a' (97): maiúsculas vêm antes!
+ana  x anas   = -115      « "ana" acabou antes: o '\0' (0) vem antes do 's' (115)
+ana  x carlos = -2</pre>
+
+<p>Lendo a saída:</p>
+<ul>
+  <li>A comparação para na <strong>primeira letra diferente</strong> e compara os códigos das duas. Aqui o resultado foi justamente a diferença entre eles (66 − 97 = −31).</li>
+  <li><strong>Não confie no número exato</strong>, só no sinal. A regra do C só garante "negativo, zero ou positivo". Quando os dois textos estão escritos direto no código (<code>strcmp("Bia", "ana")</code>), o gcc calcula a resposta na compilação e o programa mostra <code>-1</code>, e não <code>-31</code>. Outras bibliotecas devolvem outros números.</li>
+  <li>A ordem é a dos códigos, não a do dicionário: todas as maiúsculas (65 a 90) vêm antes de todas as minúsculas (97 a 122). Por isso "Bia" vem antes de "ana". Letras acentuadas ficam depois de tudo (veja <a href="acentos-utf8.html">Acentos e UTF-8</a>).</li>
+</ul>
+
+<h3>O uso mais comum: igual ou não?</h3>
+<p>Na prática, quase sempre a pergunta é "são iguais?", e a resposta é <code>strcmp(a, b) == 0</code>:</p>
+
+<pre class="file" data-file="senha.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char digitada[20];
+    printf("Senha: ");
+    if (scanf("%19s", digitada) != 1) {
+        return 1;
+    }
+    if (strcmp(digitada, "lojinha") == 0) {
+        printf("Bem-vinda, Ana!\n");
+    } else {
+        printf("Senha errada.\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra senha.c -o senha
+$ echo lojinha | ./senha
+Senha: Bem-vinda, Ana!
+$ echo Lojinha | ./senha
+Senha: Senha errada.      « maiúscula conta: 'L' não é 'l'</pre>
+
+<div class="warning">
+<strong>Cuidado: <code>if (strcmp(a, b))</code> é "se forem diferentes"</strong>
+<p>Como iguais dão <strong>0</strong>, e 0 é "falso" em C, escrever <code>if (strcmp(nome, "Ana"))</code> entra no <code>if</code> quando os textos são <strong>diferentes</strong>. É o contrário do que parece. Escreva sempre a comparação inteira: <code>== 0</code> para iguais, <code>!= 0</code> para diferentes.</p>
+</div>
+
+<p>Existe também o <code>strncmp(a, b, n)</code>, que compara só os <code>n</code> primeiros caracteres: <code>strncmp(email, "ana", 3) == 0</code> pergunta "começa com ana?".</p>
+
+<div class="tryc" data-goal="out:Bem-vinda\, Ana!,src:strcmp" data-stdin="lojinha">
+<p class="try-task"><strong>Missão:</strong> a senha digitada (o editor já envia <code>lojinha</code>) está certa, mas o programa responde "Senha errada.". Leia o aviso do compilador e troque o <code>==</code> por uma comparação com <code>strcmp</code>, para mostrar <code>Bem-vinda, Ana!</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char digitada[20];
+    printf("Senha: ");
+    if (scanf("%19s", digitada) != 1) {
+        return 1;
+    }
+    if (digitada == "lojinha") {
+        printf("Bem-vinda, Ana!\n");
+    } else {
+        printf("Senha errada.\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char digitada[20];
+    printf("Senha: ");
+    if (scanf("%19s", digitada) != 1) {
+        return 1;
+    }
+    if (strcmp(digitada, "lojinha") == 0) {
+        printf("Bem-vinda, Ana!\n");
+    } else {
+        printf("Senha errada.\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Procurar: <code>strchr</code> e <code>strstr</code></h2>
+<p><code>strchr</code> = "string character": procura um <strong>caractere</strong>. <code>strstr</code> = "string string": procura um <strong>texto</strong> dentro de outro. As duas devolvem o <strong>lugar</strong> onde acharam (um ponteiro, assunto de <a href="ponteiros-strings.html">Ponteiros e Strings</a>), ou <code>NULL</code> ("nulo", nenhum lugar) se não acharam.</p>
+
+<pre class="file" data-file="procurar.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char email[] = "ana@lojinha.com";
+
+    char *arroba = strchr(email, '@');
+    if (arroba != NULL) {
+        printf("Achou '@' na posição %d\n", (int)(arroba - email));
+        printf("Domínio: %s\n", arroba + 1);
+    }
+
+    if (strchr(email, '#') == NULL) {
+        printf("Não tem '#'\n");
+    }
+
+    char *fim = strstr(email, ".com");
+    if (fim != NULL) {
+        printf("\".com\" começa na posição %d\n", (int)(fim - email));
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>char *arroba = strchr(email, '@');</dt><dd>Procura o caractere <code>'@'</code> (aspas simples: é um <code>char</code>). O <code>char *</code> é uma variável que guarda um <strong>lugar</strong> dentro do texto. Por enquanto, leia como "marcador de página".</dd>
+  <dt>if (arroba != NULL)</dt><dd><strong>Sempre</strong> confira antes de usar: se não achou, o resultado é <code>NULL</code>, e usar um <code>NULL</code> derruba o programa (aula <a href="ponteiro-nulo.html">Ponteiro Nulo</a>).</dd>
+  <dt>arroba - email</dt><dd>A distância entre o lugar achado e o começo do texto: a <strong>posição</strong> (índice). O <code>(int)</code> converte para usar com <code>%d</code>.</dd>
+  <dt>arroba + 1</dt><dd>O lugar logo depois do <code>@</code>. Um <code>%s</code> a partir dali mostra o resto do texto até o <code>'\0'</code>.</dd>
+  <dt>strstr(email, ".com")</dt><dd>Mesma ideia, procurando um pedaço de texto inteiro (aspas duplas).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra procurar.c -o procurar
+$ ./procurar
+Achou '@' na posição 3
+Domínio: lojinha.com
+Não tem '#'
+".com" começa na posição 11</pre>
+
+<p>Se só interessa saber <strong>se tem</strong>, basta a comparação: <code>if (strchr(email, '@') != NULL)</code>. Para achar a <strong>última</strong> ocorrência de um caractere, existe <code>strrchr</code> (o <code>r</code> é de <em>reverse</em>, "do fim para o começo"): útil para achar a extensão em <code>"foto.final.png"</code>.</p>
+
+<hr>
+
+<h2>6. Quebrar em pedaços: <code>strtok</code> (com cuidado)</h2>
+<p><code>strtok</code> = "string token", e <em>token</em> é cada pedaço de um texto separado por algum caractere. Serve para ler uma lista como <code>"arroz,feijão,café"</code>:</p>
+
+<pre class="file" data-file="tokens.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char lista[] = "arroz,feijão,,café";
+    char *item = strtok(lista, ",");
+    while (item != NULL) {
+        printf("[%s]\n", item);
+        item = strtok(NULL, ",");
+    }
+    printf("Depois, lista = \"%s\"\n", lista);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>strtok(lista, ",")</dt><dd>A <strong>primeira</strong> chamada recebe o texto e os separadores (aqui, só a vírgula; <code>" ,"</code> aceitaria espaço ou vírgula). Devolve o primeiro pedaço.</dd>
+  <dt>strtok(NULL, ",")</dt><dd>As chamadas <strong>seguintes</strong> recebem <code>NULL</code> no lugar do texto: quer dizer "continue de onde parou". O <code>strtok</code> guarda escondido onde parou.</dd>
+  <dt>while (item != NULL)</dt><dd>Quando não há mais pedaços, ele devolve <code>NULL</code> e o laço termina.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tokens.c -o tokens
+$ ./tokens
+[arroz]
+[feijão]
+[café]                   « o pedaço vazio entre ",," sumiu
+Depois, lista = "arroz"  « a lista original foi alterada</pre>
+
+<p>Funciona, mas repare nos quatro cuidados:</p>
+<ol class="passo">
+  <li><strong>Ele altera o texto.</strong> Para separar os pedaços, o <code>strtok</code> troca cada vírgula por um <code>'\0'</code>. Por isso, depois, <code>lista</code> mostra só "arroz". Se você ainda precisar do original, faça uma cópia antes.</li>
+  <li><strong>Separadores seguidos viram um só.</strong> O campo vazio entre <code>,,</code> desapareceu. Numa planilha, isso desalinha as colunas.</li>
+  <li><strong>Não funciona num literal.</strong> Com <code>char *lista = "arroz,feijão";</code>, ele tenta escrever o <code>'\0'</code> na memória só de leitura: no laboratório, <code>Falha de segmentação     (imagem do núcleo gravada) ./tokliteral</code>. Use um array (<code>char lista[] = …</code>).</li>
+  <li><strong>Um texto por vez.</strong> Como ele guarda escondido onde parou, não dá para quebrar duas strings ao mesmo tempo (por exemplo, linhas e, dentro de cada linha, colunas). No Linux existe o <code>strtok_r</code>, que guarda essa posição numa variável sua.</li>
+</ol>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘strlen’ [-Wimplicit-function-declaration]</code></strong>
+<p><strong>O que significa:</strong> faltou o <code>#include &lt;string.h&gt;</code>. O compilador não conhece a função. No gcc 15 isso é um <strong>erro</strong>, e ele mesmo mostra a linha que falta:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semh.c -o semh
+semh.c: In function ‘main’:
+semh.c:5:21: error: implicit declaration of function ‘strlen’ [-Wimplicit-function-declaration]
+    5 |     printf("%zu\n", strlen(item));
+      |                     ^~~~~~
+semh.c:2:1: note: include ‘&lt;string.h&gt;’ or provide a declaration of ‘strlen’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;string.h&gt;
+    2 | </pre>
+<p><strong>Como consertar:</strong> o <code>+++ |+</code> é a sugestão do gcc: acrescente <code>#include &lt;string.h&gt;</code> no topo. (O <code>snprintf</code> é do <code>stdio.h</code>.)</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘size_t’ {aka ‘long unsigned int’}</code></strong>
+<p><strong>O que significa:</strong> você mostrou o resultado de <code>strlen</code> (ou de <code>sizeof</code>) com <code>%d</code>. O gcc até sugere <code>%ld</code>, mas o formato próprio de <code>size_t</code> é <code>%zu</code>.</p>
+<p><strong>Como consertar:</strong> <code>printf("%zu letras\n", strlen(item));</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>*** stack smashing detected ***: terminated</code> ou texto estranho depois de um <code>strcpy</code>/<code>strcat</code></strong>
+<p><strong>O que significa:</strong> estouro de buffer: a origem não cabia no destino.</p>
+<p><strong>Como consertar:</strong> troque por <code>snprintf(dest, sizeof dest, "%s", orig)</code> e confira o retorno se cortar for um problema. Para achar a linha, compile com <code>-g -fsanitize=address</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘strncpy’ output truncated … [-Wstringop-truncation]</code></strong>
+<p><strong>O que significa:</strong> o <code>strncpy</code> cortou a origem e o destino ficou <strong>sem <code>'\0'</code></strong>.</p>
+<p><strong>Como consertar:</strong> use <code>snprintf</code>. Se precisar manter o <code>strncpy</code>, termine com <code>dest[sizeof dest - 1] = '\0';</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>if</code> com <code>strcmp</code> faz o contrário do esperado</strong>
+<p><strong>O que significa:</strong> você escreveu <code>if (strcmp(a, b))</code>, que é verdadeiro quando as strings são <strong>diferentes</strong>. No laboratório, <code>if (strcmp(nome, "Ana"))</code> com <code>nome</code> valendo "Ana" mostrou "Não é a Ana.".</p>
+<p><strong>Como consertar:</strong> <code>if (strcmp(a, b) == 0)</code> para iguais.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> com <code>strchr</code>, <code>strstr</code> ou <code>strtok</code></strong>
+<p><strong>O que significa:</strong> ou o resultado <code>NULL</code> (não achou) foi usado sem conferir, ou o <code>strtok</code> recebeu um literal (<code>char *s = "…"</code>), que não pode ser alterado.</p>
+<p><strong>Como consertar:</strong> confira <code>!= NULL</code> antes de usar o resultado; para o <code>strtok</code>, use um array <code>char s[] = "…"</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Nome em inglês</th><th>O que faz</th><th>Devolve</th></tr>
+<tr><td><code>strlen(s)</code></td><td>string length</td><td>Conta os caracteres até o <code>'\0'</code> (sem ele)</td><td><code>size_t</code> (use <code>%zu</code>)</td></tr>
+<tr><td><code>strcpy(d, o)</code></td><td>string copy</td><td>Copia <code>o</code> para <code>d</code>, com <code>'\0'</code>. <strong>Sem limite</strong></td><td><code>d</code></td></tr>
+<tr><td><code>strncpy(d, o, n)</code></td><td>string n copy</td><td>Copia até <code>n</code> bytes; <strong>pode deixar sem <code>'\0'</code></strong></td><td><code>d</code></td></tr>
+<tr><td><code>snprintf(d, sizeof d, "%s", o)</code></td><td>string n print formatted</td><td>Copia/monta com limite; <strong>sempre</strong> põe <code>'\0'</code> (<code>stdio.h</code>)</td><td>Tamanho que o texto completo teria</td></tr>
+<tr><td><code>strcat(d, o)</code></td><td>string concatenate</td><td>Junta <code>o</code> no fim de <code>d</code>. <strong>Sem limite</strong></td><td><code>d</code></td></tr>
+<tr><td><code>strncat(d, o, n)</code></td><td>string n concatenate</td><td>Junta até <code>n</code> letras e põe <code>'\0'</code>; <code>n</code> = espaço que sobra − 1</td><td><code>d</code></td></tr>
+<tr><td><code>strcmp(a, b)</code></td><td>string compare</td><td>Compara letra por letra</td><td>&lt; 0, 0 (iguais) ou &gt; 0</td></tr>
+<tr><td><code>strncmp(a, b, n)</code></td><td>string n compare</td><td>Compara só os <code>n</code> primeiros</td><td>&lt; 0, 0 ou &gt; 0</td></tr>
+<tr><td><code>strchr(s, c)</code></td><td>string character</td><td>Procura a primeira ocorrência do caractere <code>c</code></td><td>O lugar, ou <code>NULL</code></td></tr>
+<tr><td><code>strrchr(s, c)</code></td><td>string reverse character</td><td>Procura a última ocorrência de <code>c</code></td><td>O lugar, ou <code>NULL</code></td></tr>
+<tr><td><code>strstr(s, t)</code></td><td>string string</td><td>Procura o texto <code>t</code> dentro de <code>s</code></td><td>O lugar, ou <code>NULL</code></td></tr>
+<tr><td><code>strtok(s, sep)</code></td><td>string token</td><td>Quebra em pedaços; <strong>altera <code>s</code></strong>; depois, <code>strtok(NULL, sep)</code></td><td>O próximo pedaço, ou <code>NULL</code></td></tr>
+</table>
+</div>
+<p>A lista completa, com as funções de memória (<code>memcpy</code>, <code>memset</code>…), está na <a href="ref-string.html">Referência do string.h</a>.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O cabeçalho</h3>
+<p>Complete a linha que traz as funções desta aula:</p>
+<div class="ex-code">#include <input data-answer="&lt;string.h&gt;" aria-label="cabeçalho"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Contar</h3>
+<p>Quanto vale <code>strlen("café")</code>? Dica: o <code>é</code> ocupa 2 bytes. Escreva só o número.</p>
+<div class="ex-code">strlen("café") == <input data-answer="5" aria-label="tamanho"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Copiar com segurança</h3>
+<p>Complete a cópia segura de <code>origem</code> para <code>destino</code>:</p>
+<div class="ex-code">snprintf(destino, <input data-answer="sizeof destino|sizeof(destino)" aria-label="tamanho">, "%s", origem);</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que <code>strcmp("casa", "casa")</code> devolve?</p>
+<label><input type="radio" name="q4"> 1</label>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> -1</label>
+<label><input type="radio" name="q4"> 4</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Qual é o problema de <code>char b[4]; strncpy(b, "banana", sizeof b);</code>?</p>
+<label><input type="radio" name="q5"> Escreve além do fim de <code>b</code></label>
+<label><input type="radio" name="q5"> Não compila</label>
+<label><input type="radio" name="q5"> <code>b</code> fica com "bana" e sem <code>'\0'</code></label>
+<label><input type="radio" name="q5"> Nenhum: <code>b</code> fica com "ban" e <code>'\0'</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. <code>strchr(email, '@')</code> devolve <code>NULL</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q6"> O texto não tem nenhum <code>@</code></label>
+<label><input type="radio" name="q6"> O <code>@</code> está na posição 0</label>
+<label><input type="radio" name="q6"> O <code>email</code> está vazio</label>
+<label><input type="radio" name="q6"> Faltou o <code>'\0'</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. Depois de quebrar <code>char s[] = "a;b;c";</code> com <code>strtok(s, ";")</code> até o fim, o que <code>printf("%s", s)</code> mostra?</p>
+<label><input type="radio" name="q7"> <code>a;b;c</code></label>
+<label><input type="radio" name="q7"> <code>c</code></label>
+<label><input type="radio" name="q7"> Nada: <code>s</code> ficou vazia</label>
+<label><input type="radio" name="q7"> <code>a</code>, porque os <code>;</code> viraram <code>'\0'</code></label>
+</div>
+
+<h3>Missão final: a etiqueta do cliente</h3>
+
+<div class="tryc" data-goal="out:Etiqueta: Souza\, Ana (10 letras),out:E-mail válido? sim,src:snprintf,src:strlen,src:strchr,semaviso">
+<p class="try-task"><strong>Missão:</strong> a lojinha imprime etiquetas no formato <em>sobrenome, nome</em>. Monte <code>etiqueta</code> com <code>snprintf</code> (formato <code>"%s, %s"</code>), conte as letras com <code>strlen</code> e use <code>strchr</code> para conferir se o e-mail tem <code>@</code>. Sem avisos.</p>
+<pre class="out">Etiqueta: Souza, Ana (10 letras)
+E-mail válido? sim</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char nome[] = "Ana";
+    char sobrenome[] = "Souza";
+    char email[] = "ana@lojinha.com";
+    char etiqueta[30] = "";
+
+    // 1. monte "Souza, Ana" em etiqueta
+
+    // 2. mostre a etiqueta e o número de letras
+    printf("Etiqueta: %s (? letras)\n", etiqueta);
+
+    // 3. o e-mail tem '@'?
+    printf("E-mail válido? ?\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char nome[] = "Ana";
+    char sobrenome[] = "Souza";
+    char email[] = "ana@lojinha.com";
+    char etiqueta[30] = "";
+
+    snprintf(etiqueta, sizeof etiqueta, "%s, %s", sobrenome, nome);
+
+    printf("Etiqueta: %s (%zu letras)\n", etiqueta, strlen(etiqueta));
+
+    if (strchr(email, '@') != NULL) {
+        printf("E-mail válido? sim\n");
+    } else {
+        printf("E-mail válido? não\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<p>A vírgula e o espaço contam como caracteres: "Souza, Ana" tem 10. Ter um <code>@</code> está longe de garantir que um e-mail é válido, mas é a primeira conferência que todo formulário faz (mais em <a href="validar-entrada.html">Validar a Entrada</a>).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>#include &lt;string.h&gt;</code> traz as funções de texto. Todas trabalham até o <code>'\0'</code> e nenhuma sabe o tamanho dos seus arrays.</li>
+  <li><code>strlen</code> conta as letras <strong>sem</strong> o <code>'\0'</code> (resultado <code>size_t</code>, formato <code>%zu</code>); para caber, é preciso <code>strlen + 1</code> bytes.</li>
+  <li><code>strcpy</code> e <code>strcat</code> não têm limite: com origem grande, causam <strong>estouro de buffer</strong> (stack smashing, ou pior, nada aparente). <code>-fsanitize=address</code> mostra a linha.</li>
+  <li><code>strncpy</code> pode deixar o destino sem <code>'\0'</code>; <code>strncat</code> exige a conta do espaço que sobra. O jeito seguro de copiar e montar textos é <code>snprintf(dest, sizeof dest, "…", …)</code>.</li>
+  <li><code>strcmp</code> devolve 0 para iguais, negativo se o primeiro vem antes, positivo se vem depois; confie só no sinal. Escreva sempre <code>== 0</code>.</li>
+  <li><code>strchr</code>/<code>strstr</code> devolvem o lugar achado ou <code>NULL</code> (confira antes de usar). <code>strtok</code> altera o texto, junta separadores seguidos e não funciona em literais.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
