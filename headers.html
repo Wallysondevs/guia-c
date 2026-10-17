@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Arquivos .h e .c — cabeçalho e implementação | Guia C</title>
+<meta name="description" content="Arquivos .h e .c em C para iniciantes: declarar × definir, o que vai no cabeçalho (protótipos, structs, macros) e o que vai no .c (as definições), por que o .c inclui o próprio .h, include guard, e os erros reais de implicit declaration, conflicting types e múltiplas definições, com um projeto em abas no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Arquivos .h e .c</span></h1>
+
+<p class="intro">Até aqui, cada programa coube num arquivo só. Programas de verdade têm dezenas ou centenas de arquivos, e cada um cuida de um assunto: um calcula as notas, outro lê o arquivo de alunos, outro mostra o menu. Em C, cada assunto costuma ter <strong>dois</strong> arquivos: um <code>.h</code>, que diz <strong>o que existe</strong>, e um <code>.c</code>, que diz <strong>como funciona</strong>. Nesta aula você vai separar um programa assim, entender o que vai em cada arquivo e conhecer os erros que aparecem quando alguma coisa vai para o lugar errado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre <strong>declarar</strong> e <strong>definir</strong> uma função.</li>
+  <li>Como dividir um programa em <code>matematica.h</code>, <code>matematica.c</code> e <code>main.c</code>, e compilar tudo junto.</li>
+  <li>O que vai no <code>.h</code> (protótipos, structs, macros) e o que vai no <code>.c</code> (as definições).</li>
+  <li>Por que o <code>matematica.c</code> inclui o próprio <code>matematica.h</code>.</li>
+  <li>Por que todo <code>.h</code> tem um include guard.</li>
+  <li>Os erros <code>implicit declaration</code>, <code>conflicting types</code>, <code>referência não definida</code> e <code>múltiplas definições</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/notas</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra</code>. Você vai precisar de <a href="funcoes.html">Funções</a>, <a href="prototipos.html">Protótipos</a> e <a href="preprocessador.html">Pré-processador</a> (o <code>#include</code>).</p>
+
+<hr>
+
+<h2>A ideia: o cardápio e a cozinha</h2>
+<p>Num restaurante, o cliente recebe o <strong>cardápio</strong>: o nome de cada prato, o que vem nele e o preço. Ele não precisa saber a receita. A receita fica na <strong>cozinha</strong>, e só o cozinheiro a conhece. Se a receita mudar (menos sal, outro tempero), o cardápio continua igual.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Restaurante</th><th>Programa em C</th><th>Conteúdo</th></tr>
+<tr><td>Cardápio</td><td><code>matematica.h</code> (cabeçalho, <em>header</em>)</td><td>"Existe uma função <code>media</code>, que recebe as notas e devolve um <code>double</code>."</td></tr>
+<tr><td>Cozinha</td><td><code>matematica.c</code> (implementação)</td><td>O código que calcula a média, passo a passo.</td></tr>
+<tr><td>Cliente</td><td><code>main.c</code></td><td>Lê o cardápio (<code>#include "matematica.h"</code>) e pede o prato (<code>media(notas, n)</code>).</td></tr>
+</table>
+</div>
+
+<p>Você já usa esse esquema desde o primeiro programa: o <code>stdio.h</code> é o cardápio do <code>printf</code>, e a cozinha (o código do <code>printf</code>) está pronta na biblioteca C do sistema.</p>
+
+<hr>
+
+<h2>1. Declarar × definir</h2>
+<p>Duas palavras que vão aparecer o tempo todo:</p>
+
+<pre class="file" data-file="trecho">double media(const int valores[], int n);          // declaração (protótipo)
+
+double media(const int valores[], int n) {         // definição
+    return (double) soma(valores, n) / n;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>declaração</dt><dd>Só a primeira linha da função, terminada em <code>;</code>. Diz o nome, o tipo do resultado e os parâmetros. É a promessa "esta função existe em algum lugar". Também se chama <strong>protótipo</strong> (aula <a href="prototipos.html">Protótipos</a>).</dd>
+  <dt>definição</dt><dd>A função completa, com o corpo entre <code>{ }</code>. É o código de verdade. Cada função tem <strong>uma</strong> definição no programa inteiro.</dd>
+</dl>
+
+<p>A regra que organiza tudo: <strong>declarações vão no <code>.h</code>; definições vão no <code>.c</code></strong>. Uma declaração pode aparecer quantas vezes for preciso; uma definição, uma vez só.</p>
+
+<hr>
+
+<h2>2. Um projeto em três arquivos</h2>
+<p>A Ana dá aulas de reforço e quer calcular a soma, a média e a maior nota de uma turma. Ela separa as contas num "módulo" <code>matematica</code>, que outros programas dela também vão usar.</p>
+
+<h3>O cabeçalho: <code>matematica.h</code></h3>
+<pre class="file" data-file="matematica.h">#ifndef MATEMATICA_H
+#define MATEMATICA_H
+
+#define NOTA_MAXIMA 10
+
+int soma(const int valores[], int n);
+double media(const int valores[], int n);
+int maior(const int valores[], int n);
+
+#endif
+</pre>
+
+<dl class="anatomy">
+  <dt>#ifndef MATEMATICA_H</dt><dd>O <strong>include guard</strong>, com o <code>#define</code> da linha de baixo e o <code>#endif</code> do fim: garante que o conteúdo entra uma vez só, mesmo que o arquivo seja incluído duas vezes. A aula <a href="compilacao-condicional.html">Compilação Condicional</a> mostra o erro que ele evita.</dd>
+  <dt>#define NOTA_MAXIMA 10</dt><dd>Uma macro que quem usa o módulo precisa conhecer.</dd>
+  <dt>int soma(…);</dt><dd>Os três protótipos. Só a "linha do cardápio", com <code>;</code> no fim. O <code>const</code> promete que a função não muda o array (aula <a href="const-ponteiros.html">const e Ponteiros</a>).</dd>
+</dl>
+
+<h3>A implementação: <code>matematica.c</code></h3>
+<pre class="file" data-file="matematica.c">#include "matematica.h"
+
+int soma(const int valores[], int n) {
+    int total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += valores[i];
+    }
+    return total;
+}
+
+double media(const int valores[], int n) {
+    if (n == 0) {
+        return 0.0;
+    }
+    return (double) soma(valores, n) / n;
+}
+
+int maior(const int valores[], int n) {
+    int m = valores[0];
+    for (int i = 1; i &lt; n; i++) {
+        if (valores[i] &gt; m) {
+            m = valores[i];
+        }
+    }
+    return m;
+}
+</pre>
+
+<p>As três definições. Repare na primeira linha: o <code>matematica.c</code> inclui o <strong>próprio</strong> <code>matematica.h</code>. Parece desnecessário, mas é uma proteção importante (seção 4). Ele não inclui <code>stdio.h</code> porque não usa nada de lá: cada arquivo inclui só o que usa.</p>
+
+<h3>Quem usa: <code>main.c</code></h3>
+<pre class="file" data-file="main.c">#include &lt;stdio.h&gt;
+#include "matematica.h"
+
+int main(void) {
+    int notas[] = {7, 9, 6, 10};
+    int n = 4;
+
+    printf("Soma das notas: %d\n", soma(notas, n));
+    printf("Média: %.2f (de 0 a %d)\n", media(notas, n), NOTA_MAXIMA);
+    printf("Maior nota: %d\n", maior(notas, n));
+    return 0;
+}
+</pre>
+
+<p>O <code>main.c</code> não sabe <strong>como</strong> a média é calculada. Ele só sabe, pelo cabeçalho, que <code>media</code> existe e devolve um <code>double</code>. Para compilar, passe os <strong>dois</strong> arquivos <code>.c</code> ao gcc. O <code>.h</code> não vai no comando: ele entra pelo <code>#include</code>.</p>
+
+<pre class="term" data-cwd="~/c/notas">$ ls
+main.c
+matematica.c
+matematica.h
+$ gcc -std=c23 -Wall -Wextra main.c matematica.c -o notas
+$ ./notas
+Soma das notas: 32
+Média: 8.00 (de 0 a 10)
+Maior nota: 10</pre>
+
+<p>O gcc compilou cada <code>.c</code> separadamente e depois juntou os dois num programa só, o <code>notas</code>. Os detalhes dessa junção (e como compilar cada arquivo numa etapa própria) estão na próxima aula, <a href="multiplos-arquivos.html">Vários Arquivos</a>.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> as abas são os três arquivos, e o editor compila todos os <code>.c</code> juntos (como o comando acima). Rode. Depois crie uma função <code>int menor(const int valores[], int n);</code>: o protótipo no <code>matematica.h</code>, a definição no <code>matematica.c</code> e um <code>printf</code> no <code>main.c</code>.</p>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "matematica.h"
+
+int main(void) {
+    int notas[] = {7, 9, 6, 10};
+    int n = 4;
+
+    printf("Soma das notas: %d\n", soma(notas, n));
+    printf("Média: %.2f (de 0 a %d)\n", media(notas, n), NOTA_MAXIMA);
+    printf("Maior nota: %d\n", maior(notas, n));
+    return 0;
+}
+</pre>
+<pre class="script" data-file="matematica.h">#ifndef MATEMATICA_H
+#define MATEMATICA_H
+
+#define NOTA_MAXIMA 10
+
+int soma(const int valores[], int n);
+double media(const int valores[], int n);
+int maior(const int valores[], int n);
+
+#endif
+</pre>
+<pre class="script" data-file="matematica.c">#include "matematica.h"
+
+int soma(const int valores[], int n) {
+    int total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += valores[i];
+    }
+    return total;
+}
+
+double media(const int valores[], int n) {
+    if (n == 0) {
+        return 0.0;
+    }
+    return (double) soma(valores, n) / n;
+}
+
+int maior(const int valores[], int n) {
+    int m = valores[0];
+    for (int i = 1; i &lt; n; i++) {
+        if (valores[i] &gt; m) {
+            m = valores[i];
+        }
+    }
+    return m;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. O que o compilador vê no <code>main.c</code></h2>
+<p>Lembre: o <code>#include</code> cola o arquivo inteiro no lugar dele. O <code>gcc -E -P</code> mostra o <code>main.c</code> como o compilador o recebe (aqui, só as últimas 12 linhas, porque antes vem todo o <code>stdio.h</code>):</p>
+
+<pre class="term" data-cwd="~/c/notas">$ gcc -E -P main.c | tail -12
+
+int soma(const int valores[], int n);
+double media(const int valores[], int n);
+int maior(const int valores[], int n);
+int main(void) {
+    int notas[] = {7, 9, 6, 10};
+    int n = 4;
+    printf("Soma das notas: %d\n", soma(notas, n));
+    printf("Média: %.2f (de 0 a %d)\n", media(notas, n), 10);
+    printf("Maior nota: %d\n", maior(notas, n));
+    return 0;
+}</pre>
+
+<p>Os três protótipos chegaram ao <code>main.c</code>, e o <code>NOTA_MAXIMA</code> virou <code>10</code>. Para o compilador, é como se você tivesse escrito os protótipos à mão no topo do <code>main.c</code>. O <code>.h</code> só evita que você copie essas linhas em cada arquivo que usa o módulo (e esqueça de atualizar uma das cópias).</p>
+
+<p>Sem o <code>#include "matematica.h"</code>, o <code>main.c</code> não conhece nada disso:</p>
+
+<pre class="term" data-cwd="~/c/notas">$ gcc -std=c23 -Wall -Wextra sem_include.c matematica.c -o notas
+sem_include.c: In function ‘main’:
+sem_include.c:7:36: error: implicit declaration of function ‘soma’ [-Wimplicit-function-declaration]
+    7 |     printf("Soma das notas: %d\n", soma(notas, n));
+      |                                    ^~~~
+sem_include.c:8:41: error: implicit declaration of function ‘media’ [-Wimplicit-function-declaration]
+    8 |     printf("Média: %.2f (de 0 a %d)\n", media(notas, n), NOTA_MAXIMA);
+      |                                         ^~~~~
+sem_include.c:8:58: error: ‘NOTA_MAXIMA’ undeclared (first use in this function)
+    8 |     printf("Média: %.2f (de 0 a %d)\n", media(notas, n), NOTA_MAXIMA);
+      |                                                          ^~~~~~~~~~~
+   «  … e o mesmo para maior …</pre>
+
+<p>"Declaração implícita da função <code>soma</code>": você usou uma função que nunca foi declarada. Em C muito antigo (C89), o compilador "adivinhava" que ela devolvia <code>int</code>. Desde o C99 isso é proibido, e o gcc 14 em diante trata como <strong>erro</strong> (antes era só um aviso). Ainda bem: a adivinhação daria errado justamente na <code>media</code>, que devolve <code>double</code>.</p>
+
+<hr>
+
+<h2>4. Por que o <code>.c</code> inclui o próprio <code>.h</code></h2>
+<p>Imagine que a Ana, distraída, escreveu a <code>media</code> no <code>matematica.c</code> devolvendo <code>float</code>, enquanto o <code>matematica.h</code> promete <code>double</code>. Como o <code>matematica.c</code> inclui o <code>matematica.h</code>, o compilador vê as duas coisas no mesmo arquivo e compara:</p>
+
+<pre class="term" data-cwd="~/c/notas/conflito">$ gcc -std=c23 -Wall -Wextra main.c matematica.c -o notas
+matematica.c:11:7: error: conflicting types for ‘media’; have ‘float(const int *, int)’
+   11 | float media(const int valores[], int n) {
+      |       ^~~~~
+In file included from matematica.c:1:
+matematica.h:7:8: note: previous declaration of ‘media’ with type ‘double(const int *, int)’
+    7 | double media(const int valores[], int n);
+      |        ^~~~~</pre>
+
+<p>"Tipos conflitantes para <code>media</code>": a definição tem <code>float</code>, e a declaração anterior (no <code>matematica.h</code>, incluído pela linha 1 do <code>matematica.c</code>) tem <code>double</code>. Repare que o <code>const int valores[]</code> aparece como <code>const int *</code>: um array como parâmetro é, na verdade, um ponteiro (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>).</p>
+
+<p>Agora o mesmo engano, num <code>matematica.c</code> que <strong>não</strong> inclui o próprio <code>.h</code> (o arquivo <code>sem_h.c</code>):</p>
+
+<pre class="term" data-cwd="~/c/notas/conflito">$ gcc -std=c23 -Wall -Wextra main.c sem_h.c -o notas &amp;&amp; ./notas
+Soma das notas: 32
+Média: 0.00 (de 0 a 10)          « deveria ser 8.00
+Maior nota: 10</pre>
+
+<p>Nenhum erro, nenhum aviso, e uma média errada. Cada <code>.c</code> é compilado sozinho: o <code>main.c</code> acredita no <code>.h</code> e espera um <code>double</code>; o <code>sem_h.c</code> entrega um <code>float</code>, em outro formato. Ninguém compara os dois. O resultado é lixo (aqui, 0.00; em outra máquina, outro valor). É um bug difícil de achar, e a linha <code>#include "matematica.h"</code> no topo do <code>matematica.c</code> o transforma num erro de compilação claro.</p>
+
+<div class="tip">
+<strong>Regra:</strong> todo <code>x.c</code> começa com <code>#include "x.h"</code>. Muitos programadores põem essa linha como a <strong>primeira</strong> do arquivo, antes até dos cabeçalhos do sistema: assim, se o <code>x.h</code> esquecer de incluir algo de que precisa, o erro aparece logo.
+</div>
+
+<div class="tryc" data-goal="erro:conflicting types">
+<p class="try-task"><strong>Missão:</strong> provoque o erro. Na aba <code>matematica.c</code>, troque o <code>double</code> da definição de <code>media</code> por <code>float</code> e rode: o compilador deve reclamar de tipos conflitantes.</p>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "matematica.h"
+
+int main(void) {
+    int notas[] = {7, 9, 6, 10};
+    printf("Média: %.2f\n", media(notas, 4));
+    return 0;
+}
+</pre>
+<pre class="script" data-file="matematica.h">#ifndef MATEMATICA_H
+#define MATEMATICA_H
+
+double media(const int valores[], int n);
+
+#endif
+</pre>
+<pre class="script" data-file="matematica.c">#include "matematica.h"
+
+double media(const int valores[], int n) {
+    int total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += valores[i];
+    }
+    return (double) total / n;
+}
+</pre>
+<pre class="solucao" data-file="matematica.c">#include "matematica.h"
+
+float media(const int valores[], int n) {
+    int total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += valores[i];
+    }
+    return (double) total / n;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. O que <strong>não</strong> vai no <code>.h</code></h2>
+<p>Se o <code>.h</code> é colado em vários <code>.c</code>, tudo o que estiver nele aparece em vários <code>.c</code>. Declarações podem se repetir; definições, não. Veja o que acontece quando a Ana põe o <strong>corpo</strong> de <code>soma</code> no cabeçalho, e dois arquivos (<code>main.c</code> e <code>relatorio.c</code>) o incluem:</p>
+
+<pre class="file" data-file="matematica.h">#ifndef MATEMATICA_H
+#define MATEMATICA_H
+
+int soma(const int valores[], int n) {
+    int total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += valores[i];
+    }
+    return total;
+}
+
+#endif
+</pre>
+
+<pre class="term" data-cwd="~/c/notas/corpo">$ gcc -std=c23 -Wall -Wextra main.c relatorio.c -o notas
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccm4i2ba.o: na função "soma":
+relatorio.c:(.text+0x0): múltiplas definições de "soma"; /tmp/ccW5XBzu.o:main.c:(.text+0x0): definido primeiro aqui
+collect2: error: ld returned 1 exit status</pre>
+
+<p>Desta vez quem reclama não é o compilador, é o <strong>ligador</strong> (<code>ld</code>), o programa que junta os pedaços. Cada <code>.c</code> compilou sem problemas, mas os dois trouxeram uma <code>soma</code> completa, e o programa não pode ter duas. A mensagem do ligador sai em português no sistema da Ana: "múltiplas definições de soma ... definido primeiro aqui" (em inglês: <code>multiple definition of `soma'</code>; no editor do guia: <code>duplicate symbol: soma</code>).</p>
+
+<div class="warning">
+<strong>"Mas eu pus o include guard!"</strong> O include guard impede que o <code>.h</code> entre duas vezes no <strong>mesmo</strong> <code>.c</code>. Aqui ele entrou uma vez no <code>main.c</code> e uma vez no <code>relatorio.c</code>: são compilações separadas, e cada uma começa do zero. O guard não ajuda nesse caso; o conserto é tirar a definição do <code>.h</code>.
+</div>
+
+<p>O conserto: deixe no <code>.h</code> só o protótipo <code>int soma(const int valores[], int n);</code> e ponha o corpo num <code>.c</code>. Há uma exceção: funções pequenas marcadas como <code>static inline</code> podem ficar no <code>.h</code>, porque o <code>static</code> faz cada <code>.c</code> ter a sua cópia particular (aulas <a href="static-extern.html">static e extern</a> e <a href="inline.html">Funções inline</a>).</p>
+
+<p>O mesmo vale para variáveis globais: <code>int total_alunos = 0;</code> no <code>.h</code> dá o mesmo erro. O jeito certo (com <code>extern</code>) está em <a href="static-extern.html">static e extern</a>.</p>
+
+<h3>E <code>#include "matematica.c"</code>?</h3>
+<p>Funciona num programa pequeno, e você vai ver isso em códigos de iniciante. Mas é um mau hábito: o <code>.c</code> inteiro é colado, e no dia em que dois arquivos fizerem isso, vêm as múltiplas definições. Inclua só <code>.h</code>, e passe os <code>.c</code> ao gcc.</p>
+
+<hr>
+
+<h2>O que vai em cada arquivo</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No <code>.h</code> (o cardápio)</th><th>No <code>.c</code> (a cozinha)</th></tr>
+<tr><td>Include guard (ou <code>#pragma once</code>)</td><td><code>#include "proprio.h"</code> na primeira linha</td></tr>
+<tr><td>Protótipos das funções que outros arquivos usam</td><td>As definições dessas funções</td></tr>
+<tr><td>Definições de <code>struct</code>, <code>enum</code>, <code>typedef</code> que aparecem nos protótipos</td><td>Funções auxiliares que só este arquivo usa (marcadas <code>static</code>)</td></tr>
+<tr><td>Macros que quem usa precisa (<code>#define NOTA_MAXIMA 10</code>)</td><td>Variáveis globais (a definição, uma vez só)</td></tr>
+<tr><td><code>extern int x;</code> (declaração de uma variável global)</td><td>Os <code>#include</code> que só a implementação usa</td></tr>
+<tr><td><code>#include</code> só do que o próprio <code>.h</code> precisa</td><td></td></tr>
+<tr><td><strong>Nunca:</strong> corpo de função (exceto <code>static inline</code>), variável com valor</td><td><strong>Nunca:</strong> <code>#include</code> de outro <code>.c</code></td></tr>
+</table>
+</div>
+
+<h3>Boas práticas</h3>
+<ul>
+  <li><strong>Um par por assunto:</strong> <code>notas.h</code> + <code>notas.c</code>, <code>arquivo.h</code> + <code>arquivo.c</code>. O nome do <code>.h</code> e do <code>.c</code> é o mesmo.</li>
+  <li><strong>O <code>.h</code> se basta:</strong> se um protótipo usa <code>size_t</code> ou <code>FILE</code>, o <code>.h</code> inclui <code>&lt;stddef.h&gt;</code> ou <code>&lt;stdio.h&gt;</code>. Quem inclui o seu <code>.h</code> não deve precisar adivinhar o que incluir antes.</li>
+  <li><strong>Mostre só o necessário:</strong> o <code>.h</code> é a "vitrine" do módulo. Funções auxiliares ficam fora dele, e <code>static</code> no <code>.c</code>.</li>
+  <li><strong>Nomes com prefixo</strong> em projetos maiores: <code>mat_soma</code>, <code>mat_media</code>. O C não tem "sobrenome" para funções, e duas bibliotecas com uma função <code>soma</code> não podem ser usadas juntas.</li>
+</ul>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘soma’</code></strong>
+<p><strong>O que significa:</strong> a função foi usada sem declaração antes. Quase sempre falta o <code>#include</code> do <code>.h</code>, ou o protótipo não está no <code>.h</code>. No editor do guia, o Clang (no modo C23) diz <code>use of undeclared identifier 'soma'</code>, "uso de um nome não declarado".</p>
+<p><strong>Como consertar:</strong> confira se o <code>.c</code> tem <code>#include "matematica.h"</code> e se o protótipo está lá, com o nome escrito igual.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: conflicting types for ‘media’</code></strong>
+<p><strong>O que significa:</strong> a definição no <code>.c</code> não bate com a declaração no <code>.h</code>: tipo de retorno ou parâmetros diferentes. A <code>note: previous declaration</code> mostra a linha do <code>.h</code>.</p>
+<p><strong>Como consertar:</strong> decida qual está certo e deixe os dois iguais. Copie a primeira linha da definição para o <code>.h</code> e troque o <code>{</code> por <code>;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>fatal error: matematica.h: Arquivo ou diretório inexistente</code></strong>
+<p><strong>O que significa:</strong> o <code>.h</code> não está na pasta do <code>.c</code>, o nome está diferente, ou você usou <code>&lt;matematica.h&gt;</code> em vez de aspas.</p>
+<p><strong>Como consertar:</strong> veja com <code>ls</code>, use aspas, e se o <code>.h</code> está numa subpasta, use <code>-I pasta</code> (aula <a href="preprocessador.html">Pré-processador</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>referência não definida para "soma"</code> (<code>undefined reference to `soma'</code>)</strong>
+<pre class="term" data-cwd="~/c/notas">$ gcc -std=c23 -Wall -Wextra main.c -o notas
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccPkJjYs.o: na função "main":
+main.c:(.text+0x4b): referência não definida para "soma"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x74): referência não definida para "media"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0xa8): referência não definida para "maior"
+collect2: error: ld returned 1 exit status</pre>
+<p><strong>O que significa:</strong> o <code>main.c</code> compilou (o <code>.h</code> prometeu as funções), mas, na hora de juntar, o ligador não achou as definições. Aqui o <code>matematica.c</code> ficou de fora do comando. No editor: <code>undefined symbol: soma</code>.</p>
+<p><strong>Como consertar:</strong> passe todos os <code>.c</code> ao gcc: <code>gcc … main.c matematica.c -o notas</code>. Se o arquivo está no comando, confira se a função foi mesmo definida lá, com o mesmo nome. Mais em <a href="multiplos-arquivos.html">Vários Arquivos</a>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>múltiplas definições de "soma"</code> (<code>multiple definition of `soma'</code>)</strong>
+<p><strong>O que significa:</strong> o corpo de uma função (ou uma variável com valor) está num <code>.h</code> incluído por mais de um <code>.c</code>, ou a mesma função foi escrita em dois <code>.c</code>.</p>
+<p><strong>Como consertar:</strong> deixe só o protótipo no <code>.h</code> e a definição em <strong>um</strong> <code>.c</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>int soma(int a, int b);</code></td><td>Declaração (protótipo): vai no <code>.h</code></td></tr>
+<tr><td><code>int soma(int a, int b) { … }</code></td><td>Definição: vai no <code>.c</code>, uma vez só</td></tr>
+<tr><td><code>#include "matematica.h"</code></td><td>Cola o cabeçalho (no <code>main.c</code> e no próprio <code>matematica.c</code>)</td></tr>
+<tr><td><code>#ifndef X_H</code> / <code>#define X_H</code> / <code>#endif</code></td><td>Include guard em todo <code>.h</code></td></tr>
+<tr><td><code>gcc main.c matematica.c -o notas</code></td><td>Compila os <code>.c</code> e junta tudo (o <code>.h</code> não vai no comando)</td></tr>
+<tr><td><code>gcc -E -P main.c</code></td><td>Mostra o <code>main.c</code> com os <code>.h</code> já colados</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O protótipo</h3>
+<p>No <code>.c</code> está a definição <code>int dobro(int x) { return 2 * x; }</code>. Complete a linha que vai no <code>.h</code>:</p>
+<div class="ex-code"><input data-answer="int dobro(int x);|int dobro(int);" aria-label="protótipo"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Compilar</h3>
+<p>O projeto tem <code>main.c</code>, <code>loja.c</code> e <code>loja.h</code>. Complete o comando:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra <input data-answer="main.c loja.c|loja.c main.c" aria-label="arquivos"> -o loja</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual destas linhas <strong>não</strong> deve ficar num <code>.h</code> incluído por vários <code>.c</code>?</p>
+<label><input type="radio" name="q3"> <code>double media(const int v[], int n);</code></label>
+<label><input type="radio" name="q3"> <code>int contador = 0;</code></label>
+<label><input type="radio" name="q3"> <code>#define NOTA_MAXIMA 10</code></label>
+<label><input type="radio" name="q3"> <code>struct aluno { char nome[40]; int nota; };</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Por que o <code>matematica.c</code> inclui o <code>matematica.h</code>?</p>
+<label><input type="radio" name="q4"> Sem isso, o <code>matematica.c</code> não compila</label>
+<label><input type="radio" name="q4"> Para o programa ficar mais rápido</label>
+<label><input type="radio" name="q4"> Para o compilador comparar as definições com os protótipos e acusar diferenças (<code>conflicting types</code>)</label>
+<label><input type="radio" name="q4"> Para o ligador achar as funções</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O <code>main.c</code> compila, mas o comando termina com <code>referência não definida para "maior"</code>. O que é mais provável?</p>
+<label><input type="radio" name="q5"> O <code>.c</code> com a definição de <code>maior</code> não foi passado ao gcc (ou a função não foi definida)</label>
+<label><input type="radio" name="q5"> Faltou o <code>#include</code> do <code>.h</code> no <code>main.c</code></label>
+<label><input type="radio" name="q5"> Faltou o include guard</label>
+<label><input type="radio" name="q5"> O <code>.h</code> foi incluído duas vezes</label>
+</div>
+
+<h3>Missão final: escreva o cabeçalho da lojinha</h3>
+
+<div class="tryc" data-goal="out:3 cadernos: R$ 36,out:Com desconto: R$ 33,semaviso,src:#ifndef\s+LOJA_H">
+<p class="try-task"><strong>Missão:</strong> o <code>loja.c</code> e o <code>main.c</code> estão prontos, mas o <code>loja.h</code> está vazio, e nada compila. Escreva o <code>loja.h</code>: um include guard com o nome <code>LOJA_H</code>, a macro <code>PRECO_CADERNO</code> valendo 12 e os protótipos das duas funções do <code>loja.c</code>. Sem avisos.</p>
+<pre class="out">3 cadernos: R$ 36
+Com desconto: R$ 33</pre>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "loja.h"
+
+int main(void) {
+    int total = total_compra(PRECO_CADERNO, 3);
+    printf("3 cadernos: R$ %d\n", total);
+    printf("Com desconto: R$ %d\n", aplicar_desconto(total, 10));
+    return 0;
+}
+</pre>
+<pre class="script" data-file="loja.h">// escreva aqui o cabeçalho da lojinha
+</pre>
+<pre class="script" data-file="loja.c">#include "loja.h"
+
+int total_compra(int preco, int quantidade) {
+    return preco * quantidade;
+}
+
+int aplicar_desconto(int valor, int porcento) {
+    return valor - valor * porcento / 100;
+}
+</pre>
+<pre class="solucao" data-file="loja.h">#ifndef LOJA_H
+#define LOJA_H
+
+#define PRECO_CADERNO 12
+
+int total_compra(int preco, int quantidade);
+int aplicar_desconto(int valor, int porcento);
+
+#endif
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Declarar</strong> (protótipo, com <code>;</code>) diz que a função existe; <strong>definir</strong> (com o corpo) diz como ela funciona. Declarações podem se repetir; definições, não.</li>
+  <li>O <code>.h</code> é o cardápio: include guard, protótipos, <code>struct</code>s, macros. O <code>.c</code> é a cozinha: as definições.</li>
+  <li>Compile passando todos os <code>.c</code>: <code>gcc main.c matematica.c -o notas</code>. O <code>.h</code> entra pelo <code>#include</code>, nunca no comando.</li>
+  <li>Todo <code>x.c</code> inclui o próprio <code>x.h</code>: o compilador confere se a definição bate com o protótipo (<code>conflicting types</code>). Sem isso, um tipo errado vira lixo em silêncio.</li>
+  <li>Nada de corpo de função (exceto <code>static inline</code>) nem variável com valor no <code>.h</code>: dá <code>múltiplas definições</code> no ligador, e o include guard não ajuda.</li>
+  <li>Sem o <code>#include</code>: <code>implicit declaration</code> (erro no gcc 14+). Sem o <code>.c</code> no comando: <code>referência não definida</code>. A seguir: <a href="multiplos-arquivos.html">Vários Arquivos</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
