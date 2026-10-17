@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Unions — vários tipos no mesmo pedaço de memória | Guia C</title>
+<meta name="description" content="Unions em C para quem nunca programou: union × struct (o tamanho da maior peça), todos os membros no mesmo endereço, só o último gravado vale, inicializar com {.real = 2.5}, a union marcada com enum (pagamento em dinheiro, cartão ou Pix), union anônima do C11 e espiar os bytes de um float, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Unions</span></h1>
+
+<p class="intro">Uma <a href="structs.html">struct</a> guarda <strong>todos</strong> os seus campos ao mesmo tempo: nome <em>e</em> idade <em>e</em> nota. A <strong>union</strong> é parecida no jeito de escrever, mas guarda <strong>um campo de cada vez</strong>: todos eles moram no mesmo pedaço da memória, e gravar um apaga o outro. Parece estranho, mas resolve um problema comum: uma informação que pode ser de <strong>tipos diferentes</strong>, conforme o caso. Na lojinha da Ana, um pagamento em dinheiro tem o valor recebido (para calcular o troco), um pagamento no cartão tem o número de parcelas, e um Pix tem a chave. Nunca os três juntos. Nesta aula você vai ver a union por dentro, aprender a usá-la com segurança (junto com um <a href="enums.html">enum</a>) e espiar os bytes de um número.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre struct e union, vista no <code>sizeof</code> e nos endereços.</li>
+  <li>Por que só o <strong>último</strong> membro gravado vale, e o que sai quando você lê outro.</li>
+  <li>Como criar uma union já com valor: <code>{7}</code>, <code>{.real = 2.5}</code>, <code>{0}</code>.</li>
+  <li>A <strong>union marcada</strong>: uma struct com um enum que diz qual membro da union está valendo.</li>
+  <li>A union anônima do <span class="versao">C11</span>, que dispensa um nome no meio do caminho.</li>
+  <li>Como usar uma union para ver os bytes de um <code>float</code> e de um inteiro.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. A aula usa structs, enums e o operador <code>-&gt;</code> (aula <a href="structs-ponteiros.html">Structs e Ponteiros</a>).</p>
+
+<hr>
+
+<h2>A ideia: uma vaga de garagem</h2>
+<p>O prédio da Ana tem um depósito com várias prateleiras, uma para cada coisa: bicicleta, caixa de ferramentas, cadeira de praia. Tudo cabe ao mesmo tempo, e o depósito precisa ter o tamanho de <strong>todas</strong> as prateleiras somadas. Isso é a struct.</p>
+<p>Já a <strong>vaga de garagem</strong> recebe um carro <em>ou</em> uma moto <em>ou</em> uma bicicleta. Uma coisa por vez. Ela precisa ter só o tamanho da <strong>maior</strong> delas, o carro. Se a Ana estaciona a moto, o carro não está mais lá. E se alguém chega procurando o carro numa vaga onde está a moto, vai encontrar… uma moto. Isso é a union.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>struct (o depósito)</th><th>union (a vaga)</th></tr>
+<tr><td>Quantos membros guardam valor ao mesmo tempo</td><td>Todos</td><td>Um só: o último gravado</td></tr>
+<tr><td>Tamanho</td><td>A soma de todos (mais o enchimento)</td><td>O do maior membro (mais o enchimento)</td></tr>
+<tr><td>Endereço de cada membro</td><td>Um diferente para cada</td><td>O mesmo para todos</td></tr>
+<tr><td>Para que serve</td><td>Juntar informações que andam juntas</td><td>Uma informação que pode ter tipos diferentes</td></tr>
+</table>
+</div>
+
+<p>O nome vem do inglês <em>union</em>, "união": vários tipos unidos no mesmo lugar.</p>
+
+<hr>
+
+<h2>1. struct × union: o tamanho</h2>
+<p>A melhor forma de entender a union é colocá-la ao lado de uma struct com os mesmos membros. A escrita é idêntica; só muda a palavra do começo:</p>
+
+<pre class="file" data-file="tamanho.c">#include &lt;stdio.h&gt;
+
+struct Caixa {
+    int inteiro;
+    double real;
+    char letra;
+};
+
+union Gaveta {
+    int inteiro;
+    double real;
+    char letra;
+};
+
+int main(void) {
+    printf("sizeof(int)          = %zu\n", sizeof(int));
+    printf("sizeof(double)       = %zu\n", sizeof(double));
+    printf("sizeof(char)         = %zu\n", sizeof(char));
+    printf("sizeof(struct Caixa) = %zu\n", sizeof(struct Caixa));
+    printf("sizeof(union Gaveta) = %zu\n", sizeof(union Gaveta));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>union Gaveta { … };</dt><dd>Declara um tipo novo, como a struct: <code>union</code> + etiqueta + membros entre chaves + <code>;</code>. Cada membro é tipo + nome.</dd>
+  <dt>int inteiro; double real; char letra;</dt><dd>Os <strong>membros</strong> (o nome usado na union, já que "campo" lembra algo que existe ao lado dos outros). A union pode guardar um <code>int</code> <strong>ou</strong> um <code>double</code> <strong>ou</strong> um <code>char</code>.</dd>
+  <dt>sizeof(union Gaveta)</dt><dd>O tamanho da union inteira, em bytes (aula <a href="sizeof.html">sizeof</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanho.c -o tamanho
+$ ./tamanho
+sizeof(int)          = 4
+sizeof(double)       = 8
+sizeof(char)         = 1
+sizeof(struct Caixa) = 24
+sizeof(union Gaveta) = 8</pre>
+
+<p>A union tem <strong>8 bytes</strong>: o tamanho do maior membro, o <code>double</code>. Nela cabe um <code>double</code> inteiro, ou um <code>int</code> (usando 4 dos 8 bytes), ou um <code>char</code> (usando 1). A struct tem 24: os 4 + 8 + 1 = 13 bytes dos campos e mais 11 de <strong>enchimento</strong> (<em>padding</em>), que o compilador põe para cada <code>double</code> começar num endereço múltiplo de 8 (veja <a href="structs.html">Structs</a>). O editor do guia mostra os mesmos números.</p>
+
+<hr>
+
+<h2>2. Todos os membros no mesmo endereço</h2>
+<p>Para ver que os membros da union moram no mesmo lugar, imprima o endereço de cada um com <code>%p</code> (aula <a href="memoria.html">Memória e Endereços</a>):</p>
+
+<pre class="file" data-file="endereco.c">#include &lt;stdio.h&gt;
+
+union Valor {
+    int inteiro;
+    double real;
+    char letra;
+};
+
+struct Ficha {
+    int inteiro;
+    double real;
+    char letra;
+};
+
+int main(void) {
+    union Valor v;
+    struct Ficha f;
+    printf("union:  %p %p %p\n", (void *)&amp;v.inteiro, (void *)&amp;v.real, (void *)&amp;v.letra);
+    printf("struct: %p %p %p\n", (void *)&amp;f.inteiro, (void *)&amp;f.real, (void *)&amp;f.letra);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra endereco.c -o endereco
+$ ./endereco
+union:  0x7fff99a00558 0x7fff99a00558 0x7fff99a00558      « o mesmo endereço, três vezes
+struct: 0x7fff99a00560 0x7fff99a00568 0x7fff99a00570      « um endereço para cada campo</pre>
+
+<p>Na union, os três membros começam no <strong>mesmo byte</strong>. Na struct, cada campo tem o seu lugar, um depois do outro. Os números mudam a cada execução e no editor do guia saem bem menores (<code>0x7ffff0</code>), porque lá a memória é organizada de outro jeito; o que importa é a comparação entre eles.</p>
+
+<hr>
+
+<h2>3. Só o último gravado vale</h2>
+<p>Se todos os membros ocupam o mesmo lugar, gravar um <strong>escreve por cima</strong> dos outros:</p>
+
+<pre class="file" data-file="primeira.c">#include &lt;stdio.h&gt;
+
+union Valor {
+    int inteiro;
+    double real;
+};
+
+int main(void) {
+    union Valor v;
+
+    v.inteiro = 42;
+    printf("inteiro = %d\n", v.inteiro);
+
+    v.real = 3.75;
+    printf("real    = %.2f\n", v.real);
+    printf("inteiro = %d\n", v.inteiro);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>union Valor v;</dt><dd>Cria uma variável do tipo <code>union Valor</code> (as duas palavras, como em <code>struct Aluno</code>). Por enquanto, 8 bytes com lixo.</dd>
+  <dt>v.inteiro = 42;</dt><dd>O acesso é com o <strong>ponto</strong>, igual à struct. Grava 42 nos 4 primeiros bytes.</dd>
+  <dt>v.real = 3.75;</dt><dd>Grava o <code>double</code> 3.75 nos 8 bytes, <strong>por cima</strong> do 42.</dd>
+  <dt>printf(…, v.inteiro)</dt><dd>Lê os 4 primeiros bytes como se fossem um <code>int</code>. Mas eles agora são um pedaço do 3.75.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra primeira.c -o primeira
+$ ./primeira
+inteiro = 42
+real    = 3.75
+inteiro = 0              « o 42 sumiu: ali estão bytes do 3.75</pre>
+
+<p>O 42 não existe mais. O <code>0</code> que apareceu não é "zerado": são os 4 primeiros bytes do <code>double</code> 3.75, que por acaso são todos zero. Com outro número, sairia outra coisa. Repare que <strong>nem o gcc nem o Clang avisam</strong>: a union não guarda qual membro foi gravado por último. Lembrar disso é trabalho seu, e a seção 5 mostra como fazer o programa lembrar.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e confira o <code>inteiro = 0</code>. Depois troque o <code>3.75</code> por <code>3.1</code> e veja o "inteiro" virar um número negativo enorme, sem sentido. Por último, mude a ordem: grave o <code>real</code> primeiro e o <code>inteiro</code> depois. Quem sobrevive agora?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+union Valor {
+    int inteiro;
+    double real;
+};
+
+int main(void) {
+    union Valor v;
+
+    v.inteiro = 42;
+    printf("inteiro = %d\n", v.inteiro);
+
+    v.real = 3.75;
+    printf("real    = %.2f\n", v.real);
+    printf("inteiro = %d\n", v.inteiro);
+    printf("sizeof(v) = %zu\n", sizeof v);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Criar a union já com valor</h2>
+<p>Como na struct, você pode dar valor na criação, com chaves. Mas só <strong>um</strong> valor, já que só um membro vale por vez:</p>
+
+<pre class="file" data-file="iniciar.c">#include &lt;stdio.h&gt;
+
+union Valor {
+    int inteiro;
+    double real;
+};
+
+int main(void) {
+    union Valor a = {7};
+    union Valor b = {.real = 2.5};
+    union Valor c = {0};
+    union Valor d = {2.5};
+    printf("a.inteiro = %d\n", a.inteiro);
+    printf("b.real    = %.1f\n", b.real);
+    printf("c.inteiro = %d, c.real = %.1f\n", c.inteiro, c.real);
+    printf("d.inteiro = %d\n", d.inteiro);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra iniciar.c -o iniciar
+$ ./iniciar
+a.inteiro = 7
+b.real    = 2.5
+c.inteiro = 0, c.real = 0.0
+d.inteiro = 2              « o 2.5 foi para o inteiro e perdeu o .5</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>{7}</code></td><td>Sem nome, o valor vai para o <strong>primeiro</strong> membro da lista (<code>inteiro</code>).</td></tr>
+<tr><td><code>{.real = 2.5}</code></td><td>Com o designador <span class="versao">C99</span>, você escolhe o membro. É a forma mais clara.</td></tr>
+<tr><td><code>{0}</code> e <code>{}</code></td><td>Tudo zerado (<code>{}</code> a partir do <span class="versao">C23</span>).</td></tr>
+<tr><td><code>{2.5}</code></td><td>A armadilha: sem designador, o 2.5 vai para o primeiro membro, que é <code>int</code>, e vira 2. O gcc não avisa nada. O Clang do editor avisa: <code>implicit conversion from 'double' to 'int' changes value from 2.5 to 2 [-Wliteral-conversion]</code>.</td></tr>
+</table>
+</div>
+
+<p>Regra prática: numa union, use <strong>sempre</strong> o designador (<code>.membro = valor</code>). Assim ninguém precisa lembrar qual membro é o primeiro.</p>
+
+<hr>
+
+<h2>5. A union marcada: o enum diz qual membro vale</h2>
+<p>Sozinha, a union é perigosa: o programa não sabe qual membro está valendo. Por isso, quase sempre ela anda dentro de uma struct, ao lado de um <strong>enum</strong> que serve de etiqueta: "aqui dentro está um cartão". Esse par se chama <strong>union marcada</strong> (<em>tagged union</em>). É o uso mais importante da union. Veja o caixa da lojinha:</p>
+
+<pre class="file" data-file="pagamento.c">#include &lt;stdio.h&gt;
+
+enum Forma { DINHEIRO, CARTAO, PIX };
+
+struct Pagamento {
+    enum Forma forma;
+    double valor;
+    union {
+        double recebido;      /* DINHEIRO: quanto o cliente deu */
+        int parcelas;         /* CARTAO: em quantas vezes */
+        char chave[40];       /* PIX: a chave usada */
+    } info;
+};
+
+void mostrar(const struct Pagamento *p) {
+    printf("R$ %6.2f ", p-&gt;valor);
+    switch (p-&gt;forma) {
+    case DINHEIRO:
+        printf("em dinheiro, troco de R$ %.2f\n", p-&gt;info.recebido - p-&gt;valor);
+        break;
+    case CARTAO:
+        printf("no cartão, em %dx de R$ %.2f\n", p-&gt;info.parcelas, p-&gt;valor / p-&gt;info.parcelas);
+        break;
+    case PIX:
+        printf("por Pix, chave %s\n", p-&gt;info.chave);
+        break;
+    }
+}
+
+int main(void) {
+    struct Pagamento vendas[3] = {
+        {.forma = DINHEIRO, .valor = 37.50, .info.recebido = 50.00},
+        {.forma = CARTAO, .valor = 120.00, .info.parcelas = 3},
+        {.forma = PIX, .valor = 15.90, .info.chave = "ana@lojinha.com"},
+    };
+    for (int i = 0; i &lt; 3; i++) {
+        mostrar(&amp;vendas[i]);
+    }
+    printf("sizeof(struct Pagamento) = %zu\n", sizeof(struct Pagamento));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>enum Forma { DINHEIRO, CARTAO, PIX };</dt><dd>As três formas de pagamento (aula <a href="enums.html">Enums</a>). Cada uma diz qual membro da union está valendo.</dd>
+  <dt>enum Forma forma;</dt><dd>A <strong>etiqueta</strong> (a "marca"). Ela fica <em>fora</em> da union, para nunca ser apagada.</dd>
+  <dt>double valor;</dt><dd>O que todo pagamento tem, qualquer que seja a forma, também fica fora da union.</dd>
+  <dt>union { … } info;</dt><dd>Uma union sem etiqueta, declarada ali mesmo, como membro <code>info</code> da struct. Só um dos três vale em cada pagamento.</dd>
+  <dt>.info.recebido = 50.00</dt><dd>Designador em dois níveis: o membro <code>info</code> da struct, e dentro dele o <code>recebido</code>.</dd>
+  <dt>switch (p-&gt;forma)</dt><dd>Antes de ler a union, olha a etiqueta. Cada <code>case</code> lê <strong>só</strong> o membro que combina com ela. Como <code>forma</code> é um enum, o <code>-Wall</code> avisa se faltar uma forma no <code>switch</code>.</dd>
+  <dt>p-&gt;info.parcelas</dt><dd>A seta entra na struct pelo ponteiro, e o ponto entra na union.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pagamento.c -o pagamento
+$ ./pagamento
+R$  37.50 em dinheiro, troco de R$ 12.50
+R$ 120.00 no cartão, em 3x de R$ 40.00
+R$  15.90 por Pix, chave ana@lojinha.com
+sizeof(struct Pagamento) = 56</pre>
+
+<p>56 bytes: 4 do enum, 4 de enchimento, 8 do <code>valor</code> e 40 da union (o tamanho da <code>chave</code>, o maior membro). Com os três campos separados numa struct (<code>recebido</code>, <code>parcelas</code> e <code>chave</code> lado a lado), o mesmo pagamento ocuparia 72 bytes. A economia é pequena aqui, mas o ganho maior é outro: o tipo <code>struct Pagamento</code> diz, com clareza, que cada pagamento tem <strong>uma</strong> dessas informações, e nunca as três.</p>
+
+<div class="tip">
+<strong>A regra de ouro da union marcada</strong>
+<p>Sempre que gravar um membro da union, atualize a etiqueta na mesma hora; sempre que for ler, olhe a etiqueta primeiro. Uma forma de não esquecer é criar funções que fazem as duas coisas juntas, como <code>struct Pagamento pagar_pix(double valor, const char *chave)</code>.</p>
+</div>
+
+<hr>
+
+<h2>6. <span class="versao">C11</span> Union anônima: sem o nome do meio</h2>
+<p>Escrever <code>p.info.parcelas</code> toda hora é comprido. A partir do C11, a union dentro da struct pode não ter nome nenhum. Os membros dela passam a ser usados como se fossem da struct:</p>
+
+<pre class="file" data-file="anonima.c">#include &lt;stdio.h&gt;
+
+enum Forma { DINHEIRO, CARTAO, PIX };
+
+struct Pagamento {
+    enum Forma forma;
+    double valor;
+    union {
+        double recebido;
+        int parcelas;
+        char chave[40];
+    };
+};
+
+int main(void) {
+    struct Pagamento p = {.forma = CARTAO, .valor = 120.00, .parcelas = 4};
+    printf("%dx de R$ %.2f\n", p.parcelas, p.valor / p.parcelas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra anonima.c -o anonima
+$ ./anonima
+4x de R$ 30.00</pre>
+
+<p>Repare: <code>union { … };</code> sem nome antes do <code>;</code>, e o acesso é <code>p.parcelas</code>, direto. Por dentro, nada mudou: <code>recebido</code>, <code>parcelas</code> e <code>chave</code> continuam dividindo o mesmo lugar. A missão final usa essa forma.</p>
+
+<hr>
+
+<h2>7. Espiar os bytes de um número</h2>
+<p>A union tem um segundo uso, mais técnico: gravar por um membro e ler por outro <strong>de propósito</strong>, para ver como o computador guarda um valor. Em C, isso é permitido: os bytes são relidos como o outro tipo. (Em C++, não é; lá se usa <code>memcpy</code>.) Este programa mostra os 32 bits de um <code>float</code>:</p>
+
+<pre class="file" data-file="bits.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+union Numero {
+    float f;
+    uint32_t bits;
+};
+
+int main(void) {
+    union Numero n;
+    n.f = 1.0f;
+    printf("%.1f fica guardado como 0x%08X\n", n.f, n.bits);
+    n.f = -1.0f;
+    printf("%.1f fica guardado como 0x%08X\n", n.f, n.bits);
+    n.f = 0.1f;
+    printf("%.1f fica guardado como 0x%08X\n", n.f, n.bits);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra bits.c -o bits
+$ ./bits
+1.0 fica guardado como 0x3F800000
+-1.0 fica guardado como 0xBF800000
+0.1 fica guardado como 0x3DCCCCCD</pre>
+
+<p>O <code>uint32_t</code> é um inteiro sem sinal de exatamente 32 bits, do tamanho do <code>float</code> (aula <a href="stdint.html">stdint.h</a>). O <code>%08X</code> mostra o número em hexadecimal com 8 dígitos. Repare que <code>1.0</code> e <code>-1.0</code> diferem só no primeiro dígito: o bit mais alto do <code>float</code> é o <strong>sinal</strong>. E o <code>0.1</code> termina em <code>CCCCCD</code>, uma dízima arredondada: é por isso que <code>0.1</code> não é exato no computador (aula <a href="ponto-flutuante.html">float e double</a>).</p>
+
+<p>O mesmo truque mostra a <strong>ordem dos bytes</strong> de um inteiro:</p>
+
+<pre class="file" data-file="bytes.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+union Pedacos {
+    uint32_t numero;
+    unsigned char byte[4];
+};
+
+int main(void) {
+    union Pedacos p;
+    p.numero = 0x12345678;
+    for (int i = 0; i &lt; 4; i++) {
+        printf("byte[%d] = %02x\n", i, p.byte[i]);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra bytes.c -o bytes
+$ ./bytes
+byte[0] = 78
+byte[1] = 56
+byte[2] = 34
+byte[3] = 12</pre>
+
+<p>O número <code>0x12345678</code> ficou guardado "de trás para frente": o byte <code>78</code>, o menos importante, vem primeiro na memória. Esse jeito se chama <strong>little-endian</strong>, e é o dos processadores Intel, AMD e da maioria dos ARM. O editor do guia (WebAssembly) também é little-endian e mostra o mesmo. A aula <a href="arquivos-binarios.html">Arquivos Binários</a> mostra por que isso importa quando o número vai para um arquivo.</p>
+
+<hr>
+
+<h2>struct, union ou variáveis separadas: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th><th>Exemplo</th></tr>
+<tr><td>Várias informações que existem ao mesmo tempo</td><td><strong>struct</strong></td><td>Aluno com nome, idade e nota.</td></tr>
+<tr><td>Uma informação que pode ser de tipos diferentes, um por vez</td><td><strong>union marcada</strong> (struct + enum + union)</td><td>Pagamento em dinheiro, cartão ou Pix; uma célula de planilha com número ou texto.</td></tr>
+<tr><td>Ver os bytes de um valor</td><td><strong>union</strong> de dois tipos do mesmo tamanho</td><td><code>float</code> + <code>uint32_t</code>.</td></tr>
+<tr><td>Poucos casos e memória sobrando</td><td><strong>struct</strong> com todos os campos</td><td>Mais simples de entender; gasta um pouco mais.</td></tr>
+<tr><td>Union "solta", sem etiqueta</td><td>Evite</td><td>Ninguém sabe qual membro vale: convite para ler lixo.</td></tr>
+</table>
+</div>
+
+<p>Economizar memória era o grande motivo da union nos computadores antigos. Hoje, para um programa comum, alguns bytes não fazem diferença, e a union aparece mais pela <strong>clareza</strong> (a union marcada) e em código de baixo nível: protocolos de rede, formatos de arquivo, programas para microcontroladores com pouca memória.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Números sem sentido: leu o membro errado</strong>
+<pre class="file" data-file="errado.c">    struct Pagamento p = {.forma = PIX, .valor = 15.90, .info.chave = "ana@lojinha.com"};
+    printf("Parcelas: %d\n", p.info.parcelas);
+    printf("Recebido: %g\n", p.info.recebido);
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra errado.c -o errado
+$ ./errado
+Parcelas: 1080127073
+Recebido: 6.3234e+199</pre>
+<p><strong>O que aconteceu:</strong> o pagamento é um Pix, então o que está na union é o texto <code>"ana@lojinha.com"</code>. O programa leu esses bytes como <code>int</code> e como <code>double</code>. O 1080127073 são as letras <code>a</code>, <code>n</code>, <code>a</code>, <code>@</code> lidas como número (em hexadecimal, <code>0x40616e61</code>: os códigos de <code>@</code>, <code>a</code>, <code>n</code> e <code>a</code>, a palavra de trás para frente, por causa da ordem dos bytes da seção 7). Nenhum aviso, nenhum erro: só dados errados, e o editor do guia mostra os mesmos números.</p>
+<p><strong>Como resolver:</strong> antes de ler a union, olhe a etiqueta (<code>if (p.forma == CARTAO)</code> ou um <code>switch</code>), como no <code>pagamento.c</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"unknown type name ‘Valor’; use ‘union’ keyword"</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semunion.c -o semunion
+semunion.c: In function ‘main’:
+semunion.c:9:5: error: unknown type name ‘Valor’; use ‘union’ keyword to refer to the type
+    9 |     Valor v;
+      |     ^~~~~
+      |     union
+semunion.c:10:6: error: request for member ‘inteiro’ in something not a structure or union
+   10 |     v.inteiro = 3;
+      |      ^
+«…»</pre>
+<p><strong>O que aconteceu:</strong> como na struct e no enum, o nome do tipo são as duas palavras: <code>union Valor</code>. O segundo erro é consequência do primeiro: <em>request for member ‘inteiro’ in something not a structure or union</em> = "pediu o membro <code>inteiro</code> de algo que não é struct nem union". O Clang do editor diz <code>must use 'union' tag to refer to type 'Valor'</code>.</p>
+<p><strong>Como resolver:</strong> escreva <code>union Valor v;</code>, ou crie um apelido com <a href="typedef.html">typedef</a>: <code>typedef union { … } Valor;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"‘union Valor’ has no member named ‘texto’"</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra membro.c -o membro
+membro.c: In function ‘main’:
+membro.c:9:23: error: ‘union Valor’ has no member named ‘texto’
+    9 |     union Valor v = {.texto = "oi"};
+      |                       ^~~~~
+membro.c:9:31: error: initialization of ‘int’ from ‘char *’ makes integer from pointer without a cast [-Wint-conversion]
+    9 |     union Valor v = {.texto = "oi"};
+      |                               ^~~~
+membro.c:9:31: note: (near initialization for ‘v.inteiro’)</pre>
+<p><strong>O que aconteceu:</strong> a union só tem <code>inteiro</code> e <code>real</code>. O designador <code>.texto</code> não existe, e o gcc ainda tentou pôr o <code>"oi"</code> no primeiro membro, o que gerou o segundo erro. O Clang do editor diz <code>field designator 'texto' does not refer to any field in type 'union Valor'</code>.</p>
+<p><strong>Como resolver:</strong> confira o nome do membro na declaração, ou acrescente o membro que falta (<code>char texto[20];</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"initialized field overwritten": dois valores na mesma union</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra duasvezes.c -o duasvezes
+duasvezes.c: In function ‘main’:
+duasvezes.c:9:44: warning: initialized field overwritten [-Woverride-init]
+    9 |     union Valor v = {.inteiro = 1, .real = 2.0};
+      |                                            ^~~
+duasvezes.c:9:44: note: (near initialization for ‘v.real’)
+$ ./duasvezes
+2.0</pre>
+<p><strong>O que aconteceu:</strong> "campo inicializado foi sobrescrito". Numa union só cabe um valor; o <code>.real = 2.0</code> apagou o <code>.inteiro = 1</code>. O Clang do editor diz <code>initializer overrides prior initialization of this subobject</code>.</p>
+<p><strong>Como resolver:</strong> dê valor a um membro só. Se você precisa dos dois ao mesmo tempo, o tipo certo é uma struct.</p>
+</div>
+
+<div class="cenario">
+<strong>A etiqueta diz uma coisa, a union guarda outra</strong>
+<p><strong>O que aconteceu:</strong> o programa mudou <code>p.parcelas = 2;</code> mas esqueceu o <code>p.forma = CARTAO;</code>. Para o resto do programa, o pagamento continua sendo em dinheiro, e o "valor recebido" agora é o lixo da seção 3. O compilador não tem como perceber.</p>
+<p><strong>Como resolver:</strong> grave o membro e a etiqueta sempre juntos, de preferência numa função só (a dica da seção 5).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Significado</th></tr>
+<tr><td><code>union Valor { int inteiro; double real; };</code></td><td>Declara o tipo: um <code>int</code> <strong>ou</strong> um <code>double</code> no mesmo lugar.</td></tr>
+<tr><td><code>union Valor v;</code></td><td>Cria uma variável (com lixo, se for local).</td></tr>
+<tr><td><code>v.real = 2.5;</code></td><td>Grava num membro e apaga o que havia nos outros.</td></tr>
+<tr><td><code>sizeof(union Valor)</code></td><td>O tamanho do maior membro, mais o enchimento.</td></tr>
+<tr><td><code>union Valor v = {.real = 2.5};</code></td><td>Cria com valor num membro escolhido (C99).</td></tr>
+<tr><td><code>union Valor v = {7};</code></td><td>Sem designador: o valor vai para o primeiro membro.</td></tr>
+<tr><td><code>struct { enum Forma forma; union { … } info; };</code></td><td>Union marcada: a etiqueta diz qual membro vale.</td></tr>
+<tr><td><code>struct { …; union { int a; double b; }; };</code></td><td>Union anônima (C11): acesso direto, <code>s.a</code>.</td></tr>
+<tr><td><code>p-&gt;info.parcelas</code></td><td>Membro da union dentro de uma struct, por ponteiro.</td></tr>
+<tr><td><code>union { float f; uint32_t bits; }</code></td><td>Grava por um tipo, lê os bytes pelo outro.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O tamanho</h3>
+<p>Quantos bytes tem <code>union { char c; int i; double d; }</code> no gcc do laboratório? (<code>char</code> = 1, <code>int</code> = 4, <code>double</code> = 8)</p>
+<div class="ex-code"><input data-answer="8" aria-label="bytes"> bytes</div>
+</div>
+
+<div class="exercise">
+<h3>2. Escolher o membro</h3>
+<p>Complete para criar a <code>union Valor v</code> com o membro <code>real</code> valendo <code>9.5</code>:</p>
+<div class="ex-code">union Valor v = {<input data-answer=".real = 9.5|.real=9.5" aria-label="designador">};</div>
+</div>
+
+<div class="exercise">
+<h3>3. A palavra que falta</h3>
+<p>Complete a declaração para que os três membros dividam o mesmo lugar na memória:</p>
+<div class="ex-code"><input data-answer="union" aria-label="palavra-chave"> Medida { int gramas; double litros; char tamanho; };</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Depois de <code>v.inteiro = 10; v.real = 1.5;</code>, o que vale <code>v.inteiro</code>?</p>
+<label><input type="radio" name="q4"> 10</label>
+<label><input type="radio" name="q4"> 1</label>
+<label><input type="radio" name="q4"> Bytes do 1.5 lidos como <code>int</code>: não é 10</label>
+<label><input type="radio" name="q4"> Dá erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Para que serve o <code>enum</code> numa union marcada?</p>
+<label><input type="radio" name="q5"> Para a union ocupar menos memória.</label>
+<label><input type="radio" name="q5"> Para o programa saber qual membro da union está valendo.</label>
+<label><input type="radio" name="q5"> Para guardar dois membros ao mesmo tempo.</label>
+<label><input type="radio" name="q5"> Para o compilador conferir sozinho o membro lido.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Com <code>union Valor { int inteiro; double real; };</code>, o que acontece em <code>union Valor d = {2.5};</code> no gcc?</p>
+<label><input type="radio" name="q6"> <code>d.real</code> vale 2.5.</label>
+<label><input type="radio" name="q6"> Dá erro: falta o designador.</label>
+<label><input type="radio" name="q6"> Os dois membros valem 2.5.</label>
+<label><input type="radio" name="q6"> <code>d.inteiro</code> vale 2, sem aviso.</label>
+</div>
+
+<h3>Missão final: a cesta da feira</h3>
+<div class="tryc" data-goal="out:Banana: 1.500 kg = R$ 7.35,out:Ovo: 12 un = R$ 9.60,out:Total: R$ 29.95">
+<p class="try-task"><strong>Missão:</strong> na feira, a banana e o queijo são vendidos <strong>por quilo</strong> (o item guarda <code>kg</code>, um <code>double</code>) e o ovo, <strong>por unidade</strong> (guarda <code>unidades</code>, um <code>int</code>). Os dois dividem uma union anônima, e o campo <code>tipo</code> diz qual vale. A função <code>total</code> está usando <code>kg</code> para todo mundo, e o ovo saiu de graça. Corrija: olhe o <code>tipo</code> e use o membro certo. A saída deve ser:</p>
+<pre class="out">Banana: 1.500 kg = R$ 7.35
+Ovo: 12 un = R$ 9.60
+Queijo: 0.250 kg = R$ 13.00
+Total: R$ 29.95</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+enum Venda { POR_KG, POR_UNIDADE };
+
+struct Item {
+    char nome[20];
+    enum Venda tipo;
+    double preco;          /* preço do kg ou de uma unidade */
+    union {
+        double kg;         /* vale quando tipo == POR_KG */
+        int unidades;      /* vale quando tipo == POR_UNIDADE */
+    };
+};
+
+double total(const struct Item *it) {
+    return it-&gt;preco * it-&gt;kg;
+}
+
+void mostrar(const struct Item *it) {
+    if (it-&gt;tipo == POR_KG) {
+        printf("%s: %.3f kg", it-&gt;nome, it-&gt;kg);
+    } else {
+        printf("%s: %d un", it-&gt;nome, it-&gt;unidades);
+    }
+    printf(" = R$ %.2f\n", total(it));
+}
+
+int main(void) {
+    struct Item cesta[] = {
+        {"Banana", POR_KG, 4.90, .kg = 1.5},
+        {"Ovo", POR_UNIDADE, 0.80, .unidades = 12},
+        {"Queijo", POR_KG, 52.00, .kg = 0.250},
+    };
+    double soma = 0.0;
+    for (int i = 0; i &lt; 3; i++) {
+        mostrar(&amp;cesta[i]);
+        soma += total(&amp;cesta[i]);
+    }
+    printf("Total: R$ %.2f\n", soma);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+enum Venda { POR_KG, POR_UNIDADE };
+
+struct Item {
+    char nome[20];
+    enum Venda tipo;
+    double preco;          /* preço do kg ou de uma unidade */
+    union {
+        double kg;         /* vale quando tipo == POR_KG */
+        int unidades;      /* vale quando tipo == POR_UNIDADE */
+    };
+};
+
+double total(const struct Item *it) {
+    if (it-&gt;tipo == POR_KG) {
+        return it-&gt;preco * it-&gt;kg;
+    }
+    return it-&gt;preco * it-&gt;unidades;
+}
+
+void mostrar(const struct Item *it) {
+    if (it-&gt;tipo == POR_KG) {
+        printf("%s: %.3f kg", it-&gt;nome, it-&gt;kg);
+    } else {
+        printf("%s: %d un", it-&gt;nome, it-&gt;unidades);
+    }
+    printf(" = R$ %.2f\n", total(it));
+}
+
+int main(void) {
+    struct Item cesta[] = {
+        {"Banana", POR_KG, 4.90, .kg = 1.5},
+        {"Ovo", POR_UNIDADE, 0.80, .unidades = 12},
+        {"Queijo", POR_KG, 52.00, .kg = 0.250},
+    };
+    double soma = 0.0;
+    for (int i = 0; i &lt; 3; i++) {
+        mostrar(&amp;cesta[i]);
+        soma += total(&amp;cesta[i]);
+    }
+    printf("Total: R$ %.2f\n", soma);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Rode primeiro sem mudar nada: o ovo aparece com <code>R$ 0.00</code>. É a seção 3 de novo: os bytes do <code>int</code> 12, lidos como <code>double</code>, dão um número tão pequeno que arredonda para zero.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>union</strong> se escreve como uma struct, mas todos os membros ocupam <strong>o mesmo lugar</strong>: o tamanho é o do maior membro.</li>
+  <li>Só o <strong>último</strong> membro gravado vale. Ler outro dá os mesmos bytes interpretados como outro tipo, sem aviso nenhum.</li>
+  <li>Crie com designador: <code>union Valor v = {.real = 2.5};</code>. Sem ele, o valor vai para o primeiro membro.</li>
+  <li>O jeito seguro é a <strong>union marcada</strong>: uma struct com um <code>enum</code> (a etiqueta) e a union. Grave os dois juntos; leia a etiqueta antes da union.</li>
+  <li>A union anônima <span class="versao">C11</span> deixa escrever <code>p.parcelas</code> em vez de <code>p.info.parcelas</code>.</li>
+  <li>Em C, gravar por um membro e ler por outro de propósito mostra os bytes de um valor: <code>1.0f</code> é <code>0x3F800000</code>, e os inteiros ficam em little-endian.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
