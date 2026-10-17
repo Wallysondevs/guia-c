@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C setjmp e longjmp — pular de volta de dentro das funções | Guia C</title>
+<meta name="description" content="setjmp e longjmp em C para iniciantes: marcar um ponto com setjmp, voltar a ele de dentro de várias funções com longjmp, o valor que o setjmp devolve, tratar erros de um boletim e de uma calculadora, volatile nas variáveis locais (gcc -O2), vazamento de memória com valgrind e longjmp para uma função que já terminou. Saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">setjmp e longjmp</span></h1>
+
+<p class="intro">Um erro acontece lá no fundo do programa: o <code>main</code> chamou <code>media</code>, que chamou <code>ler_nota</code>, que achou a nota <code>"oito"</code> escrita por extenso. Para avisar o <code>main</code>, cada função teria de devolver um código de erro, e cada uma que chamou teria de conferir esse código e passá-lo adiante. Em C existe um atalho: <code>setjmp</code> marca um ponto do programa e <code>longjmp</code> volta direto para ele, de qualquer profundidade, pulando todas as funções do meio. É poderoso e é perigoso. Nesta aula você vai usar os dois, ver o que eles fazem com as variáveis e com a memória, e aprender quando <strong>não</strong> usar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que <code>setjmp</code> ("set jump", marcar o pulo) e <code>longjmp</code> ("long jump", pulo longo) fazem, e o tipo <code>jmp_buf</code> que guarda o ponto marcado.</li>
+  <li>Por que o <code>setjmp</code> "devolve duas vezes": 0 ao marcar e outro número ao voltar.</li>
+  <li>Como tratar erros de várias funções num lugar só, com um <code>switch</code>.</li>
+  <li>Por que variáveis locais mudadas depois do <code>setjmp</code> precisam de <code>volatile</code> (e o que o <code>-O2</code> faz sem ele).</li>
+  <li>Os perigos: memória que nunca é liberada e pular para uma função que já terminou.</li>
+  <li>Quando usar <code>setjmp</code> e quando um simples código de retorno é melhor.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/setjmp</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o ponto de salvamento do jogo</h2>
+<p>A Ana está jogando um videogame. Antes de entrar na caverna do chefe, ela passa por um <strong>ponto de salvamento</strong>: o jogo anota onde ela está. Lá dentro, ela desce três andares, abre portas, pega moedas. Aí o personagem cai num buraco. O jogo não a leva de volta andar por andar: ela <strong>reaparece direto</strong> no ponto de salvamento.</p>
+<ul>
+  <li><code>setjmp</code> é passar pelo ponto de salvamento: o programa anota onde está.</li>
+  <li><code>longjmp</code> é cair no buraco: o programa volta direto para o ponto anotado, saindo de todas as funções do meio de uma vez.</li>
+  <li>E o jogo avisa <strong>por que</strong> você voltou ("Você caiu!"). O <code>longjmp</code> também leva um número que diz o motivo.</li>
+</ul>
+<p>Uma diferença importante: o jogo de verdade desfaz tudo o que você fez depois de salvar. O <code>longjmp</code> <strong>não desfaz nada</strong>: a memória reservada continua reservada, os arquivos abertos continuam abertos. Isso vai ser o perigo da seção 5.</p>
+
+<hr>
+
+<h2>1. O primeiro pulo</h2>
+
+<pre class="file" data-file="primeiro.c">#include &lt;stdio.h&gt;
+#include &lt;setjmp.h&gt;
+
+jmp_buf ponto;
+
+void tarefa(void) {
+    printf("Dentro da tarefa: vou pular de volta.\n");
+    longjmp(ponto, 1);
+    printf("Esta linha nunca aparece.\n");
+}
+
+int main(void) {
+    if (setjmp(ponto) == 0) {
+        printf("Marquei o ponto. Chamando a tarefa...\n");
+        tarefa();
+        printf("Nem esta.\n");
+    } else {
+        printf("Voltei para o ponto marcado!\n");
+    }
+    printf("Fim.\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;setjmp.h&gt;</dt><dd>O cabeçalho que traz <code>jmp_buf</code>, <code>setjmp</code> e <code>longjmp</code>. Faz parte do C padrão desde o C89: funciona em qualquer sistema.</dd>
+  <dt>jmp_buf ponto;</dt><dd>"Jump buffer", a caixa que guarda o ponto marcado: onde o programa estava, a posição da pilha e os registradores do processador (aula <a href="pilha-heap.html">Pilha e Heap</a>). Fica fora das funções (global) para que <code>main</code> e <code>tarefa</code> enxerguem a mesma caixa.</dd>
+  <dt>setjmp(ponto)</dt><dd>Anota o ponto atual dentro de <code>ponto</code> e devolve <strong>0</strong>. Com 0, o <code>if</code> segue pelo primeiro bloco.</dd>
+  <dt>tarefa();</dt><dd>Chamada normal de função.</dd>
+  <dt>longjmp(ponto, 1)</dt><dd>Volta para o <code>setjmp</code> que preencheu <code>ponto</code>. A <code>tarefa</code> acaba ali, sem <code>return</code>. O programa continua como se o <code>setjmp</code> estivesse devolvendo de novo, agora com o valor <strong>1</strong>.</dd>
+  <dt>else</dt><dd>Como o <code>setjmp</code> "devolveu" 1, o <code>if</code> é testado de novo e cai no <code>else</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/setjmp">$ gcc -std=c23 -Wall -Wextra primeiro.c -o primeiro
+$ ./primeiro
+Marquei o ponto. Chamando a tarefa...
+Dentro da tarefa: vou pular de volta.
+Voltei para o ponto marcado!
+Fim.</pre>
+
+<p>Siga a ordem das linhas: o <code>if</code> rodou <strong>duas vezes</strong>, uma com 0 e outra com 1. As duas frases "Esta linha nunca aparece" e "Nem esta" ficaram para trás: o <code>longjmp</code> saiu da <code>tarefa</code> e do primeiro bloco do <code>if</code> de uma vez.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Momento</th><th>O que <code>setjmp(ponto)</code> devolve</th><th>Por onde o <code>if</code> segue</th></tr>
+<tr><td>Primeira vez, ao marcar o ponto</td><td><code>0</code></td><td>Bloco do <code>== 0</code>: chama a tarefa</td></tr>
+<tr><td>Depois do <code>longjmp(ponto, 1)</code></td><td><code>1</code> (o número do <code>longjmp</code>)</td><td><code>else</code>: trata a volta</td></tr>
+</table>
+</div>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> troque o <code>1</code> do <code>longjmp</code> por <code>7</code> e rode: muda alguma coisa? (O <code>else</code> pega qualquer número diferente de 0.) Depois apague a linha do <code>longjmp</code>: a tarefa termina com o fim normal da função. Quais frases aparecem agora, e qual some?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;setjmp.h&gt;
+
+jmp_buf ponto;
+
+void tarefa(void) {
+    printf("Dentro da tarefa: vou pular de volta.\n");
+    longjmp(ponto, 1);
+    printf("Esta linha nunca aparece.\n");
+}
+
+int main(void) {
+    if (setjmp(ponto) == 0) {
+        printf("Marquei o ponto. Chamando a tarefa...\n");
+        tarefa();
+        printf("Nem esta.\n");
+    } else {
+        printf("Voltei para o ponto marcado!\n");
+    }
+    printf("Fim.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. O número do motivo: switch (setjmp(...))</h2>
+<p>O segundo argumento do <code>longjmp</code> é o "Você caiu!" do jogo: diz <strong>por que</strong> o programa voltou. Com vários motivos possíveis, o jeito natural é um <code>switch</code> (aula <a href="switch.html">switch</a>) com um <code>enum</code> de nomes para os números (aula <a href="enums.html">Enums</a>). Este programa calcula a média de três alunos. As notas chegam como texto, e o erro é descoberto lá no fundo, em <code>ler_nota</code>:</p>
+
+<pre class="file" data-file="boletim.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;setjmp.h&gt;
+
+enum { NAO_E_NUMERO = 1, FORA_DA_FAIXA = 2 };
+
+jmp_buf erro;
+
+double ler_nota(const char *texto) {
+    char *fim;
+    double nota = strtod(texto, &amp;fim);
+    if (fim == texto || *fim != '\0') {
+        longjmp(erro, NAO_E_NUMERO);
+    }
+    if (nota &lt; 0 || nota &gt; 10) {
+        longjmp(erro, FORA_DA_FAIXA);
+    }
+    return nota;
+}
+
+double media(const char *notas[], int quantas) {
+    double soma = 0;
+    for (int i = 0; i &lt; quantas; i++) {
+        soma += ler_nota(notas[i]);
+    }
+    return soma / quantas;
+}
+
+int main(void) {
+    const char *nomes[] = {"Ana", "Bruno", "Carla"};
+    const char *notas[3][3] = {
+        {"7", "8", "9"},
+        {"6", "oito", "8"},
+        {"10", "11", "5"},
+    };
+
+    for (int i = 0; i &lt; 3; i++) {
+        switch (setjmp(erro)) {
+        case 0:
+            printf("%s: média %.1f\n", nomes[i], media(notas[i], 3));
+            break;
+        case NAO_E_NUMERO:
+            printf("%s: uma das notas não é um número\n", nomes[i]);
+            break;
+        case FORA_DA_FAIXA:
+            printf("%s: uma das notas está fora de 0 a 10\n", nomes[i]);
+            break;
+        }
+    }
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>enum { NAO_E_NUMERO = 1, FORA_DA_FAIXA = 2 };</code></td><td>Dá nome aos motivos. Começa em 1 porque o 0 é reservado para "acabei de marcar o ponto".</td></tr>
+<tr><td><code>strtod(texto, &amp;fim)</code></td><td>Converte o texto em <code>double</code> e aponta <code>fim</code> para o que sobrou (aula <a href="string-numero.html">Texto ↔ Número</a>).</td></tr>
+<tr><td><code>longjmp(erro, NAO_E_NUMERO)</code></td><td>Sai de <code>ler_nota</code> <strong>e</strong> de <code>media</code> de uma vez e volta ao <code>switch</code> do <code>main</code>, com o valor 1.</td></tr>
+<tr><td><code>switch (setjmp(erro))</code></td><td>Marca o ponto a cada aluno. Na primeira passada vale 0 (<code>case 0</code>: calcula a média); depois de um pulo, vale o motivo.</td></tr>
+<tr><td><code>case 0: … media(…)</code></td><td>O caminho feliz. Se nenhuma nota tiver problema, <code>media</code> devolve normalmente e o <code>printf</code> mostra o resultado.</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/setjmp">$ gcc -std=c23 -Wall -Wextra boletim.c -o boletim
+$ ./boletim
+Ana: média 8.0
+Bruno: uma das notas não é um número
+Carla: uma das notas está fora de 0 a 10</pre>
+
+<p>Repare que <code>media</code> não tem nenhuma linha sobre erros: ela soma e divide, e só. Toda a decisão ficou no <code>main</code>. O <code>setjmp</code> é chamado de novo a cada volta do <code>for</code>, então cada aluno tem o seu ponto de salvamento: o erro do Bruno não atrapalha a Carla.</p>
+
+<h3>O longjmp com 0 vira 1</h3>
+<p>Se o <code>longjmp</code> devolvesse 0, o programa não teria como saber se acabou de marcar o ponto ou se voltou. Por isso a regra: <code>longjmp(ponto, 0)</code> faz o <code>setjmp</code> devolver <strong>1</strong>.</p>
+
+<pre class="file" data-file="zero.c">#include &lt;stdio.h&gt;
+#include &lt;setjmp.h&gt;
+
+jmp_buf ponto;
+
+int main(void) {
+    switch (setjmp(ponto)) {
+    case 0:
+        printf("Primeira vez: setjmp devolveu 0\n");
+        longjmp(ponto, 0);
+    case 1:
+        printf("Voltei: setjmp devolveu 1\n");
+        break;
+    }
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/setjmp">$ gcc -std=c23 -Wall -Wextra zero.c -o zero
+$ ./zero
+Primeira vez: setjmp devolveu 0
+Voltei: setjmp devolveu 1</pre>
+<p>Pedimos 0 e veio 1. O <code>case 0</code> não precisa de <code>break</code> depois do <code>longjmp</code>, e o <code>-Wextra</code> nem reclama de "cair no próximo case": o <code>longjmp</code> é uma função que <strong>nunca volta</strong> (no cabeçalho ela é marcada com <code>noreturn</code>; aula <a href="atributos.html">Atributos</a>), e o compilador sabe disso.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> o boletim roda igual aqui no editor. Acrescente um terceiro motivo, <code>NOTA_VAZIA = 3</code>: em <code>ler_nota</code>, se <code>texto[0] == '\0'</code>, pule com esse motivo (antes do <code>strtod</code>), e trate o novo <code>case</code> no <code>main</code>. Teste trocando o <code>"9"</code> da Ana por <code>""</code>. Sem o seu teste, uma nota vazia seria "não é um número": qual mensagem é mais útil para quem digitou?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;setjmp.h&gt;
+
+enum { NAO_E_NUMERO = 1, FORA_DA_FAIXA = 2 };
+
+jmp_buf erro;
+
+double ler_nota(const char *texto) {
+    char *fim;
+    double nota = strtod(texto, &amp;fim);
+    if (fim == texto || *fim != '\0') {
+        longjmp(erro, NAO_E_NUMERO);
+    }
+    if (nota &lt; 0 || nota &gt; 10) {
+        longjmp(erro, FORA_DA_FAIXA);
+    }
+    return nota;
+}
+
+double media(const char *notas[], int quantas) {
+    double soma = 0;
+    for (int i = 0; i &lt; quantas; i++) {
+        soma += ler_nota(notas[i]);
+    }
+    return soma / quantas;
+}
+
+int main(void) {
+    const char *nomes[] = {"Ana", "Bruno", "Carla"};
+    const char *notas[3][3] = {
+        {"7", "8", "9"},
+        {"6", "oito", "8"},
+        {"10", "11", "5"},
+    };
+
+    for (int i = 0; i &lt; 3; i++) {
+        switch (setjmp(erro)) {
+        case 0:
+            printf("%s: média %.1f\n", nomes[i], media(notas[i], 3));
+            break;
+        case NAO_E_NUMERO:
+            printf("%s: uma das notas não é um número\n", nomes[i]);
+            break;
+        case FORA_DA_FAIXA:
+            printf("%s: uma das notas está fora de 0 a 10\n", nomes[i]);
+            break;
+        }
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Onde o setjmp pode ficar</h2>
+<p>O <code>setjmp</code> parece uma função comum, mas não é: ele "devolve duas vezes", e o compilador precisa de cuidado especial com o código em volta. Por isso o padrão C só permite usá-lo em quatro formas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th></tr>
+<tr><td>Sozinho, como condição de <code>if</code>, <code>switch</code>, <code>while</code> ou <code>for</code></td><td><code>switch (setjmp(erro))</code></td></tr>
+<tr><td>Comparado com um número fixo, como condição</td><td><code>if (setjmp(ponto) == 0)</code>, <code>if (setjmp(ponto) != 0)</code></td></tr>
+<tr><td>Com <code>!</code>, como condição</td><td><code>if (!setjmp(ponto))</code></td></tr>
+<tr><td>Como uma instrução sozinha, ignorando o valor</td><td><code>setjmp(ponto);</code></td></tr>
+</table>
+</div>
+
+<p>Guardar o valor numa variável, como <code>int r = setjmp(ponto);</code>, ou usá-lo numa conta, como <code>x = setjmp(ponto) + 1;</code>, <strong>não</strong> está na lista. O gcc compila sem avisar, e muitas vezes funciona, mas é <a href="comportamento-indefinido.html">comportamento indefinido</a>. Precisa do número? Use o <code>switch</code>, que entrega o valor a cada <code>case</code>.</p>
+
+<hr>
+
+<h2>4. Variáveis locais e o -O2: volatile</h2>
+<p>O <code>jmp_buf</code> guarda os <strong>registradores</strong> do processador (as gavetinhas rápidas onde o compilador gosta de deixar as variáveis). Quando o <code>longjmp</code> volta, ele põe nos registradores os valores <strong>da hora do <code>setjmp</code></strong>. Se uma variável local mudou depois do <code>setjmp</code> e estava num registrador, a mudança se perde. Veja:</p>
+
+<pre class="file" data-file="desistir.c">#include &lt;stdio.h&gt;
+#include &lt;setjmp.h&gt;
+
+jmp_buf ponto;
+
+void desistir(void) {
+    longjmp(ponto, 1);
+}
+
+int main(void) {
+    int tentativas = 0;
+    if (setjmp(ponto) != 0) {
+        printf("Desisti depois de %d tentativas.\n", tentativas);
+        return 0;
+    }
+    for (;;) {
+        tentativas++;
+        if (tentativas == 3) {
+            desistir();
+        }
+    }
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int tentativas = 0;</dt><dd>Variável local do <code>main</code>, criada antes do <code>setjmp</code>.</dd>
+  <dt>if (setjmp(ponto) != 0)</dt><dd>Na primeira passada, 0: pula o bloco. Depois do <code>longjmp</code>, 1: mostra quantas tentativas houve.</dd>
+  <dt>for (;;)</dt><dd>Um laço sem condição (repete para sempre). Quem o encerra é o <code>longjmp</code> dentro de <code>desistir</code>.</dd>
+  <dt>tentativas++</dt><dd>A variável muda <strong>depois</strong> do <code>setjmp</code>. É aqui que mora o problema.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/setjmp">$ gcc -std=c23 -Wall -Wextra desistir.c -o desistir
+$ ./desistir
+Desisti depois de 3 tentativas.
+$ gcc -std=c23 -Wall -Wextra -O2 desistir.c -o desistir-O2
+$ ./desistir-O2
+Desisti depois de 0 tentativas.          « o mesmo código, outra resposta</pre>
+
+<p>Sem otimização, o gcc guarda <code>tentativas</code> na memória a cada mudança, e o <code>printf</code> lê o 3. Com <code>-O2</code>, ele mantém a variável num registrador, e o <code>longjmp</code> devolveu ao registrador o valor da hora do <code>setjmp</code>: 0. Nenhum aviso, nenhum erro. O padrão diz que, nesse caso, o valor da variável depois do pulo é <strong>indeterminado</strong>.</p>
+
+<p>O conserto é a palavra <code>volatile</code> (aula <a href="volatile-restrict.html">volatile e restrict</a>), que obriga o compilador a ler e escrever a variável na memória toda vez:</p>
+
+<pre class="file" data-file="desistir2.c (a única linha que muda)">    volatile int tentativas = 0;
+</pre>
+<pre class="term" data-cwd="~/c/setjmp">$ gcc -std=c23 -Wall -Wextra -O2 desistir2.c -o desistir2-O2
+$ ./desistir2-O2
+Desisti depois de 3 tentativas.</pre>
+
+<div class="tip">
+<strong>A regra:</strong> uma variável local da função que chamou o <code>setjmp</code>, que <strong>muda depois do <code>setjmp</code></strong> e é <strong>lida depois do <code>longjmp</code></strong>, tem de ser <code>volatile</code>. Variáveis globais (como o <code>jmp_buf</code>) não têm o problema: elas moram na memória, não nos registradores.
+</div>
+
+<div class="tryc" data-flags="-std=c23 -Wall -Wextra -O2" data-goal="out:Desisti depois de 3 tentativas.,src:volatile">
+<p class="try-task"><strong>Missão:</strong> esta caixa compila com <code>-O2</code>, como o segundo terminal. Rode e veja o 0 (o Clang do editor faz a mesma otimização que o gcc). Depois conserte com <code>volatile</code> para o programa mostrar <code>Desisti depois de 3 tentativas.</code></p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;setjmp.h&gt;
+
+jmp_buf ponto;
+
+void desistir(void) {
+    longjmp(ponto, 1);
+}
+
+int main(void) {
+    int tentativas = 0;
+    if (setjmp(ponto) != 0) {
+        printf("Desisti depois de %d tentativas.\n", tentativas);
+        return 0;
+    }
+    for (;;) {
+        tentativas++;
+        if (tentativas == 3) {
+            desistir();
+        }
+    }
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;setjmp.h&gt;
+
+jmp_buf ponto;
+
+void desistir(void) {
+    longjmp(ponto, 1);
+}
+
+int main(void) {
+    volatile int tentativas = 0;
+    if (setjmp(ponto) != 0) {
+        printf("Desisti depois de %d tentativas.\n", tentativas);
+        return 0;
+    }
+    for (;;) {
+        tentativas++;
+        if (tentativas == 3) {
+            desistir();
+        }
+    }
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. O longjmp não arruma a casa</h2>
+<p>Quando uma função termina com <code>return</code>, ela passa por todas as suas linhas finais: o <code>free</code>, o <code>fclose</code>. O <code>longjmp</code> não passa por nada: as funções do meio simplesmente somem da pilha. Tudo o que elas iam liberar <strong>fica para trás</strong>:</p>
+
+<pre class="file" data-file="vazamento.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;setjmp.h&gt;
+
+jmp_buf erro;
+
+void cadastrar(const char *nome) {
+    char *ficha = malloc(64);
+    if (ficha == NULL) {
+        longjmp(erro, 2);
+    }
+    if (nome[0] == '\0') {
+        longjmp(erro, 1);          // pula o free lá embaixo!
+    }
+    snprintf(ficha, 64, "Cliente: %s", nome);
+    printf("%s\n", ficha);
+    free(ficha);
+}
+
+int main(void) {
+    const char *clientes[] = {"Ana", "", "Bruno"};
+    for (int i = 0; i &lt; 3; i++) {
+        if (setjmp(erro) == 0) {
+            cadastrar(clientes[i]);
+        } else {
+            printf("Cliente %d: nome vazio\n", i + 1);
+        }
+    }
+    return 0;
+}
+</pre>
+
+<p>A saída parece perfeita. Mas o Valgrind (aula <a href="valgrind.html">Valgrind</a>), que confere cada <code>malloc</code> e cada <code>free</code>, conta outra história:</p>
+
+<pre class="term" data-cwd="~/c/setjmp">$ gcc -std=c23 -Wall -Wextra -g vazamento.c -o vazamento
+$ valgrind --leak-check=full ./vazamento
+==419107== Memcheck, a memory error detector
+==419107== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==419107== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==419107== Command: ./vazamento
+==419107==
+Cliente: Ana
+Cliente 2: nome vazio
+Cliente: Bruno
+==419107==
+==419107== HEAP SUMMARY:
+==419107==     in use at exit: 64 bytes in 1 blocks
+==419107==   total heap usage: 4 allocs, 3 frees, 4,288 bytes allocated
+==419107==
+==419107== 64 bytes in 1 blocks are definitely lost in loss record 1 of 1
+==419107==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==419107==    by 0x4001242: cadastrar (vazamento.c:8)
+==419107==    by 0x4001330: main (vazamento.c:24)
+==419107==
+==419107== LEAK SUMMARY:
+==419107==    definitely lost: 64 bytes in 1 blocks
+==419107==    indirectly lost: 0 bytes in 0 blocks
+==419107==      possibly lost: 0 bytes in 0 blocks
+==419107==    still reachable: 0 bytes in 0 blocks
+==419107==         suppressed: 0 bytes in 0 blocks
+==419107==
+==419107== For lists of detected and suppressed errors, rerun with: -s
+==419107== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)</pre>
+
+<p>"64 bytes in 1 blocks are definitely lost": 64 bytes em 1 bloco <strong>com certeza perdidos</strong>, reservados na linha 8 (o <code>malloc</code> de <code>cadastrar</code>). É a ficha da cliente sem nome: o <code>longjmp</code> da linha 13 saiu da função antes do <code>free</code>. O total confirma: 4 reservas (as 3 fichas e o buffer do <code>printf</code>), só 3 liberações. Num programa que roda o dia inteiro, cada erro vaza mais um pouco (aula <a href="vazamentos.html">Vazamentos de Memória</a>).</p>
+
+<p>Dois consertos possíveis:</p>
+<ol class="passo">
+  <li><strong>Conferir antes de reservar.</strong> Se o teste do nome vier antes do <code>malloc</code>, não há nada para liberar na hora do pulo.</li>
+  <li><strong>Liberar antes de pular.</strong> Quando a reserva tem de vir primeiro: <code>free(ficha); longjmp(erro, 1);</code>.</li>
+</ol>
+
+<pre class="file" data-file="vazamento2.c (a função cadastrar)">void cadastrar(const char *nome) {
+    if (nome[0] == '\0') {
+        longjmp(erro, 1);          // confere ANTES de reservar
+    }
+    char *ficha = malloc(64);
+    if (ficha == NULL) {
+        longjmp(erro, 2);
+    }
+    snprintf(ficha, 64, "Cliente: %s", nome);
+    printf("%s\n", ficha);
+    free(ficha);
+}
+</pre>
+<pre class="term" data-cwd="~/c/setjmp">$ gcc -std=c23 -Wall -Wextra -g vazamento2.c -o vazamento2
+$ valgrind ./vazamento2
+==418482== Memcheck, a memory error detector
+==418482== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==418482== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==418482== Command: ./vazamento2
+==418482==
+Cliente: Ana
+Cliente 2: nome vazio
+Cliente: Bruno
+==418482==
+==418482== HEAP SUMMARY:
+==418482==     in use at exit: 0 bytes in 0 blocks
+==418482==   total heap usage: 3 allocs, 3 frees, 4,224 bytes allocated
+==418482==
+==418482== All heap blocks were freed -- no leaks are possible
+==418482==
+==418482== For lists of detected and suppressed errors, rerun with: -s
+==418482== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<p>"All heap blocks were freed": tudo o que foi reservado foi liberado. O mesmo vale para arquivos: um <code>fopen</code> sem o <code>fclose</code> por causa de um pulo deixa o arquivo aberto (e o que estava no buffer pode nunca ser gravado).</p>
+
+<hr>
+
+<h2>6. Nunca pule para uma função que já terminou</h2>
+<p>O <code>jmp_buf</code> guarda uma posição da <strong>pilha</strong>, o lugar onde moram as variáveis locais de cada função que está rodando. Quando a função que chamou o <code>setjmp</code> termina, o pedaço dela na pilha é reaproveitado pelas próximas chamadas. O ponto marcado vira um endereço de um lugar que não existe mais:</p>
+
+<pre class="file" data-file="voltou.c">#include &lt;stdio.h&gt;
+#include &lt;setjmp.h&gt;
+
+jmp_buf ponto;
+
+void marcar(void) {
+    if (setjmp(ponto) != 0) {
+        printf("Voltei para dentro de marcar.\n");
+        return;
+    }
+    printf("Marquei o ponto dentro de marcar.\n");
+}
+
+int main(void) {
+    marcar();
+    printf("marcar já terminou. Pulando...\n");
+    longjmp(ponto, 1);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/setjmp">$ gcc -std=c23 -Wall -Wextra voltou.c -o voltou
+$ ./voltou
+Marquei o ponto dentro de marcar.
+marcar já terminou. Pulando...
+Voltei para dentro de marcar.
+Falha de segmentação     (imagem do núcleo gravada) ./voltou
+$ echo $?
+139
+$ gcc -std=c23 -Wall -Wextra -O2 voltou.c -o voltou-O2
+$ timeout 1 ./voltou-O2 | head -7
+Marquei o ponto dentro de marcar.
+marcar já terminou. Pulando...
+Voltei para dentro de marcar.
+Marquei o ponto dentro de marcar.
+marcar já terminou. Pulando...
+Voltei para dentro de marcar.
+Marquei o ponto dentro de marcar.          « e assim para sempre</pre>
+
+<p>O gcc compilou sem nenhum aviso. Sem otimização, o pulo "deu certo" por um instante (mostrou "Voltei…"), mas o <code>return</code> de <code>marcar</code> tentou voltar para um endereço que já não estava lá, e o programa morreu (139 = 128 + 11, o sinal <code>SIGSEGV</code>; aula <a href="sinais.html">Sinais</a>). Com <code>-O2</code>, o <code>return</code> caiu de volta no começo do <code>main</code>, e o programa entrou num laço infinito (o <code>timeout 1</code> o parou). No editor do guia, o mesmo código termina com <code>Abortado</code> (134). Três resultados diferentes: é <a href="comportamento-indefinido.html">comportamento indefinido</a>.</p>
+
+<div class="warning">
+<strong>A regra:</strong> o <code>longjmp</code> só pode voltar para um <code>setjmp</code> de uma função que <strong>ainda está rodando</strong> (que chamou, direta ou indiretamente, quem faz o <code>longjmp</code>). No jogo: só dá para reaparecer num ponto de salvamento da fase em que você está.
+</div>
+
+<hr>
+
+<h2>setjmp ou código de retorno: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><strong>Devolver um código de erro</strong> (<code>return -1;</code>, <code>NULL</code>, <code>bool</code>) e conferir em quem chamou</td><td>O padrão do C e da biblioteca (<code>fopen</code>, <code>malloc</code>, <code>strtol</code>). Claro, sem surpresas, fácil de liberar memória. <strong>Use quase sempre.</strong></td></tr>
+<tr><td><code>goto</code> para um bloco de limpeza no fim da função</td><td>Erros dentro de <strong>uma</strong> função que reservou várias coisas (aula <a href="goto.html">goto</a>).</td></tr>
+<tr><td><code>setjmp</code>/<code>longjmp</code></td><td>Erros descobertos muito fundo, em código com muitas camadas (um leitor de arquivos de configuração, um interpretador, uma calculadora de expressões), em que passar o código de volta por cada função poluiria tudo. Programas conhecidos, como o interpretador da linguagem Lua e a biblioteca de imagens libpng, usam assim.</td></tr>
+<tr><td><code>exit(1)</code></td><td>O erro é tão grave que não há o que fazer: termina o programa todo (aula <a href="exit.html">exit e atexit</a>).</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Outras linguagens:</strong> C++, Java e Python têm <em>exceções</em> (<code>try</code>/<code>catch</code>), que fazem o mesmo pulo para trás, mas <strong>arrumam a casa</strong> no caminho: liberam a memória e fecham arquivos sozinhas. O <code>setjmp</code> é a versão "faça você mesmo" do C. Para pular de volta de dentro de um <strong>tratador de sinal</strong>, o POSIX tem as versões <code>sigsetjmp</code> e <code>siglongjmp</code> (aula <a href="sinais.html">Sinais</a>).
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: unknown type name ‘jmp_buf’</code></strong>
+<p>Um programa que usa <code>setjmp</code>, mas só tem <code>#include &lt;stdio.h&gt;</code> no topo:</p>
+<pre class="term" data-cwd="~/c/setjmp">$ gcc -std=c23 -Wall -Wextra semheader.c -o semheader
+semheader.c:3:1: error: unknown type name ‘jmp_buf’
+    3 | jmp_buf ponto;
+      | ^~~~~~~
+semheader.c: In function ‘main’:
+semheader.c:6:9: error: implicit declaration of function ‘setjmp’ [-Wimplicit-function-declaration]
+    6 |     if (setjmp(ponto) == 0) {
+      |         ^~~~~~
+semheader.c:7:9: error: implicit declaration of function ‘longjmp’ [-Wimplicit-function-declaration]
+    7 |         longjmp(ponto, 1);
+      |         ^~~~~~~</pre>
+<p><strong>O que significa:</strong> "nome de tipo desconhecido: <code>jmp_buf</code>" e "declaração implícita da função <code>setjmp</code>": o compilador não conhece nenhum dos três nomes. No editor, o Clang diz <code>unknown type name 'jmp_buf'</code> e <code>use of undeclared identifier 'setjmp'</code>.</p>
+<p><strong>Como consertar:</strong> <code>#include &lt;setjmp.h&gt;</code> no topo.</p>
+</div>
+
+<div class="cenario">
+<strong>O valor da variável "voltou no tempo" depois do pulo</strong>
+<p><strong>O que significa:</strong> uma variável local mudou depois do <code>setjmp</code> e foi lida depois do <code>longjmp</code>, sem <code>volatile</code> (o <code>desistir.c</code> da seção 4). Costuma aparecer só com <code>-O2</code>, ou seja, na versão final do programa, e não enquanto você testa.</p>
+<p><strong>Como consertar:</strong> declare a variável como <code>volatile</code>, ou guarde o valor numa variável global.</p>
+</div>
+
+<div class="cenario">
+<strong>O Valgrind acusa <code>definitely lost</code> só quando há erro</strong>
+<p><strong>O que significa:</strong> um <code>longjmp</code> saiu de uma função antes do <code>free</code> (ou do <code>fclose</code>), como no <code>vazamento.c</code> da seção 5. Quando tudo dá certo, não há vazamento; por isso é fácil não perceber.</p>
+<p><strong>Como consertar:</strong> faça as conferências antes de reservar, ou libere antes de chamar <code>longjmp</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code>, laço infinito ou <code>Abortado</code> logo depois de um "Voltei"</strong>
+<p><strong>O que significa:</strong> o <code>longjmp</code> foi para um <code>setjmp</code> de uma função que já tinha terminado (o <code>voltou.c</code> da seção 6). Nem o gcc nem o Clang avisam.</p>
+<p><strong>Como consertar:</strong> chame o <code>setjmp</code> numa função que continua rodando enquanto o pulo puder acontecer: normalmente no <code>main</code>, ou na função que chama todas as outras.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;setjmp.h&gt;</code></td><td>Traz <code>jmp_buf</code>, <code>setjmp</code> e <code>longjmp</code> (C padrão desde o C89)</td></tr>
+<tr><td><code>jmp_buf ponto;</code></td><td>A caixa que guarda o ponto marcado (normalmente global)</td></tr>
+<tr><td><code>setjmp(ponto)</code></td><td>Marca o ponto e devolve 0; depois de um <code>longjmp</code>, "devolve de novo" com o valor do pulo</td></tr>
+<tr><td><code>longjmp(ponto, n)</code></td><td>Volta para o <code>setjmp</code>, saindo de todas as funções do meio; o <code>setjmp</code> devolve <code>n</code> (ou 1, se <code>n</code> for 0). Nunca volta</td></tr>
+<tr><td><code>switch (setjmp(ponto))</code></td><td>O jeito certo de usar o número do motivo</td></tr>
+<tr><td><code>volatile int x;</code></td><td>Para variáveis locais que mudam depois do <code>setjmp</code> e são lidas depois do pulo</td></tr>
+<tr><td><code>sigsetjmp</code>, <code>siglongjmp</code></td><td>Versões do POSIX para usar com sinais</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O cabeçalho</h3>
+<p>Complete o <code>#include</code> que traz <code>setjmp</code> e <code>longjmp</code>:</p>
+<div class="ex-code">#include &lt;<input data-answer="setjmp.h" aria-label="cabeçalho">&gt;</div>
+</div>
+
+<div class="exercise">
+<h3>2. O tipo do ponto</h3>
+<p>Complete a declaração da caixa que guarda o ponto marcado:</p>
+<div class="ex-code"><input data-answer="jmp_buf" aria-label="tipo"> ponto;</div>
+</div>
+
+<div class="exercise">
+<h3>3. Voltar com o motivo 2</h3>
+<p>Complete a linha que volta para o ponto <code>erro</code> com o motivo 2:</p>
+<div class="ex-code"><input data-answer="longjmp(erro, 2);|longjmp(erro,2);|longjmp(erro, 2)|longjmp(erro,2)" aria-label="linha"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O programa faz <code>longjmp(ponto, 0)</code>. O que o <code>setjmp(ponto)</code> devolve na volta?</p>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> 1</label>
+<label><input type="radio" name="q4"> -1</label>
+<label><input type="radio" name="q4"> Nada: o programa termina</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Com <code>-O2</code>, uma variável local mostra depois do <code>longjmp</code> o valor que tinha na hora do <code>setjmp</code>. Qual é o conserto?</p>
+<label><input type="radio" name="q5"> Trocar o <code>longjmp</code> por <code>return</code></label>
+<label><input type="radio" name="q5"> Compilar com <code>-Wall</code></label>
+<label><input type="radio" name="q5"> Declarar a variável como <code>volatile</code></label>
+<label><input type="radio" name="q5"> Chamar o <code>setjmp</code> duas vezes</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Uma função faz <code>malloc</code>, depois descobre um erro e chama <code>longjmp</code>. O que acontece com a memória?</p>
+<label><input type="radio" name="q6"> Fica reservada para sempre: o <code>free</code> do fim da função nunca roda</label>
+<label><input type="radio" name="q6"> O <code>longjmp</code> chama o <code>free</code> sozinho</label>
+<label><input type="radio" name="q6"> O <code>setjmp</code> desfaz o <code>malloc</code></label>
+<label><input type="radio" name="q6"> O compilador dá erro</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. Qual destes usos do <code>setjmp</code> o padrão C <strong>não</strong> permite?</p>
+<label><input type="radio" name="q7"> <code>if (setjmp(ponto) == 0)</code></label>
+<label><input type="radio" name="q7"> <code>switch (setjmp(ponto))</code></label>
+<label><input type="radio" name="q7"> <code>if (!setjmp(ponto))</code></label>
+<label><input type="radio" name="q7"> <code>int r = setjmp(ponto);</code></label>
+</div>
+
+<h3>Missão final: a calculadora que não cai</h3>
+
+<div class="tryc" data-goal="out:10 / 2 = 5,out:Conta 2: divisão por zero,out:9 / 3 = 3,out:Fim das contas.,exit:0,src:longjmp\s*\(\s*erro">
+<p class="try-task"><strong>Missão:</strong> a calculadora da Ana faz três contas. A segunda divide por zero, e o programa morre com <code>Exceção de ponto flutuante</code>. O <code>main</code> já está pronto para tratar o erro. Falta só <code>dividir</code> pular de volta: se <code>b</code> for zero, chame <code>longjmp(erro, 1)</code> antes da divisão. A saída deve ser:</p>
+<pre class="out">10 / 2 = 5
+Conta 2: divisão por zero
+9 / 3 = 3
+Fim das contas.</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;setjmp.h&gt;
+
+jmp_buf erro;
+
+int dividir(int a, int b) {
+    // se b for zero, pule de volta para o setjmp com o valor 1
+    return a / b;
+}
+
+int main(void) {
+    int contas[3][2] = {{10, 2}, {7, 0}, {9, 3}};
+    for (int i = 0; i &lt; 3; i++) {
+        int a = contas[i][0], b = contas[i][1];
+        if (setjmp(erro) == 0) {
+            printf("%d / %d = %d\n", a, b, dividir(a, b));
+        } else {
+            printf("Conta %d: divisão por zero\n", i + 1);
+        }
+    }
+    printf("Fim das contas.\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;setjmp.h&gt;
+
+jmp_buf erro;
+
+int dividir(int a, int b) {
+    // se b for zero, pule de volta para o setjmp com o valor 1
+    if (b == 0) {
+        longjmp(erro, 1);
+    }
+    return a / b;
+}
+
+int main(void) {
+    int contas[3][2] = {{10, 2}, {7, 0}, {9, 3}};
+    for (int i = 0; i &lt; 3; i++) {
+        int a = contas[i][0], b = contas[i][1];
+        if (setjmp(erro) == 0) {
+            printf("%d / %d = %d\n", a, b, dividir(a, b));
+        } else {
+            printf("Conta %d: divisão por zero\n", i + 1);
+        }
+    }
+    printf("Fim das contas.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que <code>a</code>, <code>b</code> e <code>i</code> não precisam de <code>volatile</code>: nenhuma delas muda entre o <code>setjmp</code> e o <code>longjmp</code> da mesma volta do laço. A cada volta, o <code>setjmp</code> marca um ponto novo.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>setjmp(ponto)</code> marca um ponto e devolve 0; <code>longjmp(ponto, n)</code> volta para ele de qualquer profundidade, e o <code>setjmp</code> "devolve de novo", agora com <code>n</code> (ou 1, se <code>n</code> for 0).</li>
+  <li>Use o <code>setjmp</code> só como condição de <code>if</code>/<code>switch</code> (ou sozinho numa linha). Para vários motivos, <code>switch (setjmp(ponto))</code> com um <code>enum</code>.</li>
+  <li>Variáveis locais que mudam depois do <code>setjmp</code> e são lidas depois do pulo precisam de <code>volatile</code>: com <code>-O2</code>, sem ele, o valor "volta no tempo".</li>
+  <li>O <code>longjmp</code> não roda o fim das funções que pula: <code>free</code> e <code>fclose</code> ficam para trás. Confira antes de reservar, ou libere antes de pular.</li>
+  <li>Nunca pule para um <code>setjmp</code> de uma função que já terminou: é comportamento indefinido (segfault, laço infinito ou <code>Abortado</code>).</li>
+  <li>Na maioria dos programas, devolver um código de erro é mais simples e mais seguro. Guarde o <code>setjmp</code> para erros muito fundos em código com muitas camadas.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
