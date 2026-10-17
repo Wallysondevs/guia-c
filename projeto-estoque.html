@@ -1,0 +1,2893 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Projeto Estoque da Lojinha — structs gravadas em arquivo binário (fwrite e fread) | Guia C</title>
+<meta name="description" content="Projeto passo a passo: o estoque da lojinha da Ana em C, guardado num arquivo binário. Uma struct com int32_t e preço em centavos, gravada com fwrite e lida com fread; menu com cadastro, entrada, saída, salvar e desfazer; um cabeçalho com assinatura e versão; e o arquivo temporário com rename para não perder nada. Quatro versões com saídas reais do gcc 15, o xxd mostrando os bytes e as diferenças entre o editor e o gcc.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto <span class="hl">Estoque da Lojinha</span></h1>
+
+<p class="intro">A Ana tem uma lojinha de papelaria e anota o estoque num caderno: quantos cadernos, canetas e borrachas ainda tem, e quanto custa cada um. Neste projeto ela troca o caderno por um programa em C que lembra de tudo de um dia para o outro. O segredo é um <strong>arquivo binário</strong>: o programa copia as fichas dos produtos da memória para o disco com <code>fwrite</code> e, na próxima vez, copia de volta com <code>fread</code>.</p>
+
+<div class="note">
+<strong>Você vai praticar</strong>
+<ul>
+  <li>Desenhar uma <a href="structs.html">struct</a> que pode ir para o disco: com <a href="stdint.html"><code>int32_t</code></a> e o preço em centavos.</li>
+  <li>Gravar um array de structs com <code>fwrite</code> e ler de volta com <code>fread</code> (<a href="arquivos-binarios.html">Arquivos Binários</a>), conferindo o que eles devolvem.</li>
+  <li>Olhar os bytes do arquivo com <code>xxd</code> e achar cada campo.</li>
+  <li>Fazer um menu que lê linhas com <a href="fgets.html">fgets</a> e converte números com <a href="string-numero.html">strtol e strtod</a>.</li>
+  <li>Arredondar dinheiro sem perder um centavo.</li>
+  <li>Pôr um <strong>cabeçalho</strong> no arquivo (assinatura e versão) e salvar com segurança, num arquivo temporário trocado com <code>rename</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que vamos construir</h2>
+<p>O programa pronto, na máquina da Ana. Ele abre, carrega o estoque que estava salvo, ela cadastra a cola que chegou, vende 5 canetas e sai. Na próxima vez, tudo continua lá:</p>
+
+<pre class="term" data-cwd="~/c/estoque">$ ./estoque
+=== Estoque da Lojinha ===
+4 produtos carregados de estoque.bin.
+1) Listar  2) Cadastrar  3) Entrada  4) Saída
+5) Salvar  6) Desfazer   0) Sair
+
+Opção: 1
+Cód  Produto                  Qtd       Preço
+---  -----------------------  ----  ----------
+  1  Caderno                    10  R$   15,90
+  2  Caneta                     25  R$    2,50
+  3  Borracha                   23  R$    1,75
+  4  Apontador                   8  R$    4,35
+Valor do estoque: R$ 296,55
+
+Opção: 2
+Nome: Cola
+Quantidade: 10
+Preço (R$): 3,50
+Cadastrado: 5 - Cola
+
+Opção: 4
+Código: 2
+Quantas unidades? 5
+Caneta: agora são 20.
+
+Opção: 4
+Código: 4
+Quantas unidades? 9
+Só há 8 de Apontador.
+
+Opção: 0
+
+Salvei 5 produtos em estoque.bin. Até amanhã!</pre>
+
+<ol class="passo">
+  <li><a href="#versao1">A ficha do produto e o primeiro arquivo</a> (<code>fwrite</code> e <code>fread</code>).</li>
+  <li><a href="#versao2">O menu e o cadastro</a> (e o centavo que sumia).</li>
+  <li><a href="#versao3">Entrada, saída, salvar e desfazer</a>.</li>
+  <li><a href="#versao4">Um cabeçalho no arquivo e salvar sem perder nada</a>.</li>
+</ol>
+
+<h3>Antes de começar</h3>
+<p>Você precisa ter visto <a href="structs.html">Structs</a>, <a href="typedef.html">typedef</a>, <a href="arquivos.html">Arquivos (fopen e fclose)</a> e, principalmente, <a href="arquivos-binarios.html">Arquivos Binários</a>, que explica o <code>fwrite</code> e o <code>fread</code> argumento por argumento. O arquivo vai se chamar <code>estoque.c</code>:</p>
+
+<pre class="term">$ mkdir -p c/estoque
+$ cd c/estoque</pre>
+
+<hr>
+
+<h2 id="versao1">Versão 1 · A ficha do produto e o primeiro arquivo</h2>
+<p>Pense numa caixa de fichas de papelão, todas do mesmo tamanho: cada produto tem a sua, com os mesmos campos no mesmo lugar. Em C, a ficha é uma <code>struct</code> e a caixa é um array. Gravar o estoque é copiar a caixa inteira para o disco; ler é copiar de volta.</p>
+<p>Antes do código, duas decisões sobre a ficha, porque ela vai parar no disco:</p>
+<ul>
+  <li><strong>Os números são <code>int32_t</code></strong>, e não <code>int</code> ou <code>long</code>. O <code>int32_t</code> tem 4 bytes em qualquer computador (aula <a href="stdint.html">Inteiros de Tamanho Fixo</a>). Assim, a ficha tem sempre o mesmo tamanho, e o arquivo gravado hoje continua legível amanhã, mesmo com outro compilador.</li>
+  <li><strong>O preço é guardado em centavos</strong>: R$ 15,90 vira o inteiro <code>1590</code>. Um <code>double</code> não guarda 15,90 exato (aula <a href="ponto-flutuante.html">float e double</a>), e somar preços com vírgula vai acumulando erros. Com centavos inteiros, a conta é exata.</li>
+</ul>
+
+<p>A primeira versão ainda não tem menu. Ela carrega o arquivo; se ele não existe, começa com três produtos. Depois mostra o estoque, "vende" um caderno e salva. Cada vez que roda, o caderno diminui: é o jeito mais simples de ver que o programa lembra.</p>
+
+<pre class="file" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define MAX_PRODUTOS 100
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+// Lê o estoque do disco e devolve quantos produtos leu.
+// Se o arquivo ainda não existe, devolve 0.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)max, f);
+    fclose(f);
+    return (int)lidos;
+}
+
+// Grava os n produtos no disco. Devolve true se gravou todos.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(ARQUIVO, "wb");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    size_t gravados = fwrite(v, sizeof(Produto), (size_t)n, f);
+    fclose(f);
+    return gravados == (size_t)n;
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+
+    if (n == 0) {
+        printf("Arquivo novo: começando com 3 produtos.\n");
+        estoque[0] = (Produto){1, "Caderno", 12, 1590};
+        estoque[1] = (Produto){2, "Caneta", 40, 250};
+        estoque[2] = (Produto){3, "Borracha", 25, 175};
+        n = 3;
+    } else {
+        printf("Li %d produtos de %s.\n", n, ARQUIVO);
+    }
+
+    for (int i = 0; i &lt; n; i++) {
+        printf("%d  %-10s %3d  R$ %d,%02d\n", estoque[i].codigo, estoque[i].nome,
+               estoque[i].quantidade, estoque[i].preco / 100, estoque[i].preco % 100);
+    }
+
+    estoque[0].quantidade--;        // a Ana vendeu um caderno
+    printf("Vendi 1 %s. Agora são %d.\n", estoque[0].nome, estoque[0].quantidade);
+
+    if (!salvar(estoque, n)) {
+        printf("Erro: o estoque não foi salvo!\n");
+        return 1;
+    }
+    printf("Salvei %d produtos (%zu bytes).\n", n, n * sizeof(Produto));
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;stdint.h&gt;</code></td><td>Traz o <code>int32_t</code>.</td></tr>
+<tr><td><code>typedef struct { … } Produto;</code></td><td>A ficha: código, nome (até 23 letras e o <code>'\0'</code>), quantidade e preço em centavos. São 4 + 24 + 4 + 4 = 36 bytes.</td></tr>
+<tr><td><code>int carregar(Produto v[], int max)</code></td><td>Abre o arquivo com <code>"rb"</code> (ler, binário). Se ele não existe, o <code>fopen</code> devolve <code>NULL</code> e a função devolve 0: estoque vazio, nada de erro.</td></tr>
+<tr><td><code>fread(v, sizeof(Produto), (size_t)max, f)</code></td><td>"Leia até <code>max</code> fichas de 36 bytes para dentro de <code>v</code>." O arquivo pode ter menos: o <code>fread</code> devolve quantas fichas <strong>inteiras</strong> leu, e é esse o número de produtos. O <code>(size_t)</code> converte o <code>int</code> para o tipo que o <code>fread</code> espera.</td></tr>
+<tr><td><code>bool salvar(const Produto v[], int n)</code></td><td>Abre com <code>"wb"</code> (escrever, binário), que cria o arquivo ou <strong>apaga</strong> o que havia, e grava as <code>n</code> fichas de uma vez. O <code>const</code> promete que <code>salvar</code> não muda o estoque.</td></tr>
+<tr><td><code>return gravados == (size_t)n;</code></td><td>Verdadeiro só se o <code>fwrite</code> gravou todas as fichas. Com o disco cheio, ele grava menos, e o <code>main</code> avisa.</td></tr>
+<tr><td><code>estoque[0] = (Produto){1, "Caderno", 12, 1590};</code></td><td>Preenche uma ficha inteira de uma vez, na ordem dos campos. O <code>(Produto){…}</code> é um "literal composto" <span class="versao">C99</span>: uma struct sem nome, criada ali mesmo.</td></tr>
+<tr><td><code>"R$ %d,%02d", preco / 100, preco % 100</code></td><td>Mostra os centavos como reais: <code>1590 / 100</code> é 15 e <code>1590 % 100</code> é 90. O <code>%02d</code> põe o zero da esquerda: 250 centavos viram <code>2,50</code>, e não <code>2,5</code>.</td></tr>
+<tr><td><code>n * sizeof(Produto)</code></td><td>O tamanho do arquivo: 3 × 36 = 108 bytes. O resultado é <code>size_t</code>, por isso o <code>%zu</code>.</td></tr>
+</table>
+</div>
+
+<p>A Ana compilou e rodou três vezes seguidas:</p>
+
+<pre class="term" data-cwd="~/c/estoque">$ gcc -std=c23 -Wall -Wextra estoque.c -o estoque
+$ ./estoque
+Arquivo novo: começando com 3 produtos.
+1  Caderno     12  R$ 15,90
+2  Caneta      40  R$ 2,50
+3  Borracha    25  R$ 1,75
+Vendi 1 Caderno. Agora são 11.
+Salvei 3 produtos (108 bytes).
+$ ./estoque
+Li 3 produtos de estoque.bin.
+1  Caderno     11  R$ 15,90           « lembrou da venda de ontem
+2  Caneta      40  R$ 2,50
+3  Borracha    25  R$ 1,75
+Vendi 1 Caderno. Agora são 10.
+Salvei 3 produtos (108 bytes).
+$ ./estoque
+Li 3 produtos de estoque.bin.
+1  Caderno     10  R$ 15,90
+2  Caneta      40  R$ 2,50
+3  Borracha    25  R$ 1,75
+Vendi 1 Caderno. Agora são 9.
+Salvei 3 produtos (108 bytes).
+$ ls -l estoque.bin
+-rw-rw-r-- 1 ana ana 108 out 17 11:29 estoque.bin</pre>
+
+<p>O programa terminou três vezes, e a memória dele sumiu três vezes. Quem lembrou do caderno foi o <code>estoque.bin</code>, com os seus 108 bytes. Veja o que tem dentro com o <code>xxd</code> (aula <a href="arquivos-binarios.html">Arquivos Binários</a>):</p>
+
+<pre class="term" data-cwd="~/c/estoque">$ xxd estoque.bin
+00000000: 0100 0000 4361 6465 726e 6f00 0000 0000  ....Caderno.....
+00000010: 0000 0000 0000 0000 0000 0000 0900 0000  ................
+00000020: 3606 0000 0200 0000 4361 6e65 7461 0000  6.......Caneta..
+00000030: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+00000040: 2800 0000 fa00 0000 0300 0000 426f 7272  (...........Borr
+00000050: 6163 6861 0000 0000 0000 0000 0000 0000  acha............
+00000060: 0000 0000 1900 0000 af00 0000            ............</pre>
+
+<dl class="anatomy">
+  <dt>Bytes 0 a 3: <code>01 00 00 00</code></dt><dd>O código do caderno, 1. O byte pequeno vem primeiro (<em>little-endian</em>, explicado em <a href="arquivos-binarios.html">Arquivos Binários</a>).</dd>
+  <dt>Bytes 4 a 27: <code>43 61 64 65 72 6e 6f 00 …</code></dt><dd>O nome: as letras de "Caderno", o <code>'\0'</code> e zeros até completar 24 bytes. Um nome curto ocupa a ficha inteira, como num formulário de papel.</dd>
+  <dt>Bytes 28 a 31: <code>09 00 00 00</code></dt><dd>A quantidade: 9 cadernos, depois das três vendas.</dd>
+  <dt>Bytes 32 a 35: <code>36 06 00 00</code></dt><dd>O preço: <code>0x0636</code> é 1590 centavos.</dd>
+  <dt>Byte 36 (<code>0x24</code>) em diante</dt><dd>A ficha da caneta começa exatamente onde a do caderno acaba: <code>02 00 00 00</code> é o código 2. Cada produto ocupa 36 bytes, um atrás do outro, sem separador.</dd>
+</dl>
+
+<p>Como cada ficha tem tamanho fixo, dá para ir direto a um campo. O <code>od</code> abaixo pula 28 bytes (<code>-j 28</code>) e lê 4 (<code>-N 4</code>) como um inteiro (<code>-t d4</code>): é a quantidade de cadernos.</p>
+
+<pre class="term" data-cwd="~/c/estoque">$ od -A d -t d4 -j 28 -N 4 estoque.bin
+0000028           9
+0000032</pre>
+
+<h3>Por que <code>int32_t</code>: o editor e o gcc não concordam sobre o <code>long</code></h3>
+<p>A primeira ideia da Ana era usar os tipos de sempre: <code>long</code> no código e <code>double</code> no preço. Este programa compara o tamanho das duas fichas:</p>
+
+<pre class="file" data-file="tamanhos.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+typedef struct {            // a ficha com os tipos de sempre
+    long codigo;
+    char nome[24];
+    int quantidade;
+    double preco;
+} ProdutoVelho;
+
+typedef struct {            // a ficha do projeto
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;
+} Produto;
+
+int main(void) {
+    printf("long: %zu bytes, double: %zu bytes\n", sizeof(long), sizeof(double));
+    printf("ProdutoVelho: %zu bytes\n", sizeof(ProdutoVelho));
+    printf("Produto:      %zu bytes\n", sizeof(Produto));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/estoque">$ gcc -std=c23 -Wall -Wextra tamanhos.c -o tamanhos
+$ ./tamanhos
+long: 8 bytes, double: 8 bytes
+ProdutoVelho: 48 bytes
+Produto:      36 bytes</pre>
+
+<p>No editor do guia, o mesmo programa mostra outra coisa:</p>
+
+<pre class="term">$ clang -std=c23 -Wall -Wextra tamanhos.c -o tamanhos
+$ ./tamanhos
+long: 4 bytes, double: 8 bytes
+ProdutoVelho: 40 bytes
+Produto:      36 bytes</pre>
+
+<p>O editor é um computador de 32 bits (WebAssembly), em que o <code>long</code> tem 4 bytes; no Linux de 64 bits do laboratório, 8. A <code>ProdutoVelho</code> tem 48 bytes num e 40 no outro (e ainda há bytes de enchimento entre os campos, para alinhar o <code>double</code>; veja <a href="structs.html">Structs</a>). Um arquivo gravado com ela num lado seria lido torto no outro. A <code>Produto</code>, só com <code>int32_t</code> e <code>char</code>, tem 36 bytes nos dois, sem enchimento.</p>
+
+<div class="cenario">
+<strong>O estoque volta sempre para o começo</strong>
+<p>Na pressa, a Ana copiou a linha do <code>fopen</code> de <code>salvar</code> para <code>carregar</code> e deixou o modo <code>"wb"</code> nas duas. Ela guardou essa cópia como <code>errado.c</code>, que compilou sem nenhum aviso. Rodou duas vezes o programa certo e depois o errado:</p>
+<pre class="term" data-cwd="~/c/estoque">$ gcc -std=c23 -Wall -Wextra errado.c -o estoque-errado
+$ rm estoque.bin                          « começa do zero
+$ ./estoque
+Arquivo novo: começando com 3 produtos.
+1  Caderno     12  R$ 15,90
+2  Caneta      40  R$ 2,50
+3  Borracha    25  R$ 1,75
+Vendi 1 Caderno. Agora são 11.
+Salvei 3 produtos (108 bytes).
+$ ./estoque
+Li 3 produtos de estoque.bin.
+1  Caderno     11  R$ 15,90
+2  Caneta      40  R$ 2,50
+3  Borracha    25  R$ 1,75
+Vendi 1 Caderno. Agora são 10.
+Salvei 3 produtos (108 bytes).
+$ ./estoque-errado
+Arquivo novo: começando com 3 produtos.        « os 10 cadernos sumiram
+1  Caderno     12  R$ 15,90
+2  Caneta      40  R$ 2,50
+3  Borracha    25  R$ 1,75
+Vendi 1 Caderno. Agora são 11.
+Salvei 3 produtos (108 bytes).</pre>
+<p><strong>O que aconteceu:</strong> o <code>"w"</code> quer dizer "vou escrever um arquivo novo". O <code>fopen</code> com <code>"wb"</code> <strong>apaga</strong> o conteúdo na mesma hora, antes de qualquer leitura. Depois, o <code>fread</code> num arquivo aberto só para escrita não lê nada e devolve 0, e o programa achou que era a primeira vez. O estoque de verdade foi perdido sem nenhuma mensagem de erro.</p>
+<p><strong>Como consertar:</strong> para ler, <code>"rb"</code>; para gravar tudo de novo, <code>"wb"</code>. Quando estiver em dúvida, consulte a tabela de modos em <a href="arquivos.html">Arquivos (fopen e fclose)</a>, e guarde uma cópia do arquivo (<code>cp estoque.bin backup.bin</code>) antes de testar um programa novo.</p>
+</div>
+
+<div class="tryc" data-goal="out:Salvei 3 produtos (108 bytes).,out:No disco\, o Caderno tem 11.,src:fwrite\s*\(,src:fread\s*\(">
+<p class="try-task"><strong>Missão (versão 1):</strong> as funções <code>carregar</code> e <code>salvar</code> estão sem o <code>fread</code> e o <code>fwrite</code>. Troque os dois <code>0</code> marcados pelas chamadas certas, com <code>sizeof(Produto)</code> como tamanho de cada item. No editor, a pasta começa vazia a cada Rodar; por isso, no fim do <code>main</code>, o programa lê de novo o que acabou de gravar, num array novo, e mostra o que achou no disco.</p>
+<pre class="script" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define MAX_PRODUTOS 100
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+// Lê o estoque do disco e devolve quantos produtos leu.
+// Se o arquivo ainda não existe, devolve 0.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    size_t lidos = 0;           // troque o 0 pelo fread
+    fclose(f);
+    return (int)lidos;
+}
+
+// Grava os n produtos no disco. Devolve true se gravou todos.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(ARQUIVO, "wb");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    size_t gravados = 0;        // troque o 0 pelo fwrite
+    fclose(f);
+    return gravados == (size_t)n;
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+
+    if (n == 0) {
+        printf("Arquivo novo: começando com 3 produtos.\n");
+        estoque[0] = (Produto){1, "Caderno", 12, 1590};
+        estoque[1] = (Produto){2, "Caneta", 40, 250};
+        estoque[2] = (Produto){3, "Borracha", 25, 175};
+        n = 3;
+    } else {
+        printf("Li %d produtos de %s.\n", n, ARQUIVO);
+    }
+
+    for (int i = 0; i &lt; n; i++) {
+        printf("%d  %-10s %3d  R$ %d,%02d\n", estoque[i].codigo, estoque[i].nome,
+               estoque[i].quantidade, estoque[i].preco / 100, estoque[i].preco % 100);
+    }
+
+    estoque[0].quantidade--;        // a Ana vendeu um caderno
+    printf("Vendi 1 %s. Agora são %d.\n", estoque[0].nome, estoque[0].quantidade);
+
+    if (!salvar(estoque, n)) {
+        printf("Erro: o estoque não foi salvo!\n");
+        return 1;
+    }
+    printf("Salvei %d produtos (%zu bytes).\n", n, n * sizeof(Produto));
+
+    // Só no editor: a pasta começa vazia a cada Rodar. Para ver o arquivo
+    // funcionando, lemos de novo, num array novo, o que acabamos de gravar.
+    Produto conferencia[MAX_PRODUTOS];
+    int lidos = carregar(conferencia, MAX_PRODUTOS);
+    printf("Conferência: li %d produtos do disco.\n", lidos);
+    if (lidos &gt; 0) {
+        printf("No disco, o %s tem %d.\n", conferencia[0].nome, conferencia[0].quantidade);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define MAX_PRODUTOS 100
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+// Lê o estoque do disco e devolve quantos produtos leu.
+// Se o arquivo ainda não existe, devolve 0.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)max, f);
+    fclose(f);
+    return (int)lidos;
+}
+
+// Grava os n produtos no disco. Devolve true se gravou todos.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(ARQUIVO, "wb");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    size_t gravados = fwrite(v, sizeof(Produto), (size_t)n, f);
+    fclose(f);
+    return gravados == (size_t)n;
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+
+    if (n == 0) {
+        printf("Arquivo novo: começando com 3 produtos.\n");
+        estoque[0] = (Produto){1, "Caderno", 12, 1590};
+        estoque[1] = (Produto){2, "Caneta", 40, 250};
+        estoque[2] = (Produto){3, "Borracha", 25, 175};
+        n = 3;
+    } else {
+        printf("Li %d produtos de %s.\n", n, ARQUIVO);
+    }
+
+    for (int i = 0; i &lt; n; i++) {
+        printf("%d  %-10s %3d  R$ %d,%02d\n", estoque[i].codigo, estoque[i].nome,
+               estoque[i].quantidade, estoque[i].preco / 100, estoque[i].preco % 100);
+    }
+
+    estoque[0].quantidade--;        // a Ana vendeu um caderno
+    printf("Vendi 1 %s. Agora são %d.\n", estoque[0].nome, estoque[0].quantidade);
+
+    if (!salvar(estoque, n)) {
+        printf("Erro: o estoque não foi salvo!\n");
+        return 1;
+    }
+    printf("Salvei %d produtos (%zu bytes).\n", n, n * sizeof(Produto));
+
+    // Só no editor: a pasta começa vazia a cada Rodar. Para ver o arquivo
+    // funcionando, lemos de novo, num array novo, o que acabamos de gravar.
+    Produto conferencia[MAX_PRODUTOS];
+    int lidos = carregar(conferencia, MAX_PRODUTOS);
+    printf("Conferência: li %d produtos do disco.\n", lidos);
+    if (lidos &gt; 0) {
+        printf("No disco, o %s tem %d.\n", conferencia[0].nome, conferencia[0].quantidade);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao2">Versão 2 · O menu e o cadastro</h2>
+<p>Vender um caderno a cada execução foi só um teste. Agora o programa vira uma ferramenta: carrega o arquivo, mostra um menu e repete até a Ana escolher <code>0</code>; aí salva. Os produtos de exemplo saem, e entra o cadastro. Como a Ana vai digitar nomes, quantidades e preços, toda leitura é feita com <a href="fgets.html">fgets</a>, uma linha inteira por vez, e depois convertida e conferida, como na <a href="projeto-calculadora.html">Calculadora</a>.</p>
+
+<pre class="file" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define MAX_PRODUTOS 100
+#define ESTOQUE_BAIXO 5
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+// Lê o estoque do disco e devolve quantos produtos leu.
+// Se o arquivo ainda não existe, devolve 0.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)max, f);
+    fclose(f);
+    return (int)lidos;
+}
+
+// Grava os n produtos no disco. Devolve true se gravou todos.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(ARQUIVO, "wb");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    size_t gravados = fwrite(v, sizeof(Produto), (size_t)n, f);
+    fclose(f);
+    return gravados == (size_t)n;
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número inteiro de 0 a 999999. Devolve -1 se não for válido.
+int32_t ler_inteiro(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long valor = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || valor &lt; 0 || valor &gt; 999999) {
+        printf("\"%s\" não é um número válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)valor;
+}
+
+// Lê um preço em reais ("15.90" ou "15,90") e devolve em centavos.
+// Devolve -1 se não for válido.
+int32_t ler_preco(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *virgula = strchr(linha, ',');
+    if (virgula != NULL) {
+        *virgula = '.';             // aceita o jeito brasileiro
+    }
+    char *fim = NULL;
+    double reais = strtod(linha, &amp;fim);
+    if (fim == linha || *fim != '\0' || reais &lt; 0 || reais &gt; 99999) {
+        printf("\"%s\" não é um preço válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)(reais * 100 + 0.5);  // arredonda para o centavo
+}
+
+void listar(const Produto v[], int n) {
+    if (n == 0) {
+        printf("O estoque está vazio.\n");
+        return;
+    }
+    long long total = 0;
+    printf("Cód  Produto                  Qtd       Preço\n");
+    printf("---  -----------------------  ----  ----------\n");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%3d  %-23s  %4d  R$ %4d,%02d", v[i].codigo, v[i].nome,
+               v[i].quantidade, v[i].preco / 100, v[i].preco % 100);
+        if (v[i].quantidade &lt;= ESTOQUE_BAIXO) {
+            printf("  (acabando!)");
+        }
+        printf("\n");
+        total += (long long)v[i].quantidade * v[i].preco;
+    }
+    printf("Valor do estoque: R$ %lld,%02lld\n", total / 100, total % 100);
+}
+
+void cadastrar(Produto v[], int *n) {
+    if (*n == MAX_PRODUTOS) {
+        printf("O estoque está cheio (%d produtos).\n", MAX_PRODUTOS);
+        return;
+    }
+    Produto p = {0};
+    char linha[100];
+    if (!ler_linha("Nome: ", linha, sizeof linha) || linha[0] == '\0') {
+        printf("Cadastro cancelado.\n");
+        return;
+    }
+    if (strlen(linha) &gt;= sizeof p.nome) {
+        printf("Nome comprido demais (no máximo %zu letras).\n", sizeof p.nome - 1);
+        return;
+    }
+    strcpy(p.nome, linha);
+    p.quantidade = ler_inteiro("Quantidade: ");
+    if (p.quantidade &lt; 0) {
+        return;
+    }
+    p.preco = ler_preco("Preço (R$): ");
+    if (p.preco &lt; 0) {
+        return;
+    }
+    p.codigo = 1;                   // o próximo código livre
+    for (int i = 0; i &lt; *n; i++) {
+        if (v[i].codigo &gt;= p.codigo) {
+            p.codigo = v[i].codigo + 1;
+        }
+    }
+    v[*n] = p;
+    (*n)++;
+    printf("Cadastrado: %d - %s\n", p.codigo, p.nome);
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Cadastrar  0) Sair\n");
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+    printf("=== Estoque da Lojinha ===\n");
+    printf("%d produtos carregados de %s.\n", n, ARQUIVO);
+    mostrar_menu();
+
+    char linha[100];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(estoque, n);
+        } else if (strcmp(linha, "2") == 0) {
+            cadastrar(estoque, &amp;n);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    if (!salvar(estoque, n)) {
+        printf("Erro: o estoque não foi salvo!\n");
+        return 1;
+    }
+    printf("\nSalvei %d produtos em %s. Até amanhã!\n", n, ARQUIVO);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th></tr>
+<tr><td><code>ler_linha</code></td><td>Mostra a pergunta, lê a linha com <code>fgets</code> e tira o Enter do fim com <code>strcspn</code>. Devolve <code>false</code> quando a entrada acaba (Ctrl+D), e o <code>while</code> do <code>main</code> para.</td></tr>
+<tr><td><code>ler_inteiro</code></td><td>Converte a linha com <code>strtol</code> (aula <a href="string-numero.html">Texto ↔ Número</a>). Recusa se não leu nada (<code>fim == linha</code>), se sobrou texto depois do número (<code>*fim != '\0'</code>) ou se o número é negativo ou grande demais. Devolve <code>-1</code> para dizer "inválido": nenhuma quantidade de verdade é negativa.</td></tr>
+<tr><td><code>ler_preco</code></td><td>Troca a vírgula por ponto (a Ana digita <code>15,90</code>, mas o <code>strtod</code> só entende <code>15.90</code>), converte para <code>double</code> e transforma em centavos, <strong>arredondando</strong> (veja o cenário abaixo).</td></tr>
+<tr><td><code>listar</code></td><td>A tabela, com <code>%3d</code>, <code>%-23s</code> e <code>%4d</code> (aula <a href="formatos-printf.html">Formatos do printf</a>), o aviso <code>(acabando!)</code> para quem tem 5 ou menos e o valor total. O total é <code>long long</code> e cada conta usa <code>(long long)</code>, porque 100 produtos × 1000 unidades × R$ 500,00 passam do maior <code>int32_t</code>.</td></tr>
+<tr><td><code>cadastrar</code></td><td>Recebe <code>int *n</code>, um <strong>ponteiro</strong> para o contador do <code>main</code> (aula <a href="passagem-ponteiro.html">Passar por Ponteiro</a>), porque precisa aumentá-lo. Confere se cabe, se o nome tem até 23 letras, a quantidade e o preço. O código novo é o maior que já existe mais 1.</td></tr>
+<tr><td><code>Produto p = {0};</code></td><td>Começa a ficha toda zerada, inclusive os 24 bytes do nome. Sem isso, os bytes depois do <code>'\0'</code> seriam lixo da memória, e esse lixo iria parar no arquivo.</td></tr>
+<tr><td><code>strcmp(linha, "1") == 0</code></td><td>Compara a opção como texto (aula <a href="funcoes-string.html">Funções de String</a>): assim, <code>12</code> ou <code>1a</code> não passam por <code>1</code>.</td></tr>
+</table>
+</div>
+
+<p>Primeiro dia: a Ana cadastra o que tem na loja. No dia seguinte, abre de novo, e os três produtos estão lá; ela cadastra o apontador:</p>
+
+<pre class="term" data-cwd="~/c/estoque">$ rm estoque.bin                          « o arquivo da versão 1 tinha os exemplos
+$ gcc -std=c23 -Wall -Wextra estoque.c -o estoque
+$ ./estoque
+=== Estoque da Lojinha ===
+0 produtos carregados de estoque.bin.
+1) Listar  2) Cadastrar  0) Sair
+
+Opção: 1
+O estoque está vazio.
+
+Opção: 2
+Nome: Caderno
+Quantidade: 12
+Preço (R$): 15,90
+Cadastrado: 1 - Caderno
+
+Opção: 2
+Nome: Caneta
+Quantidade: 40
+Preço (R$): 2.50
+Cadastrado: 2 - Caneta
+
+Opção: 2
+Nome: Borracha
+Quantidade: 3
+Preço (R$): 1.75
+Cadastrado: 3 - Borracha
+
+Opção: 1
+Cód  Produto                  Qtd       Preço
+---  -----------------------  ----  ----------
+  1  Caderno                    12  R$   15,90
+  2  Caneta                     40  R$    2,50
+  3  Borracha                    3  R$    1,75  (acabando!)
+Valor do estoque: R$ 296,05
+
+Opção: 0
+
+Salvei 3 produtos em estoque.bin. Até amanhã!
+$ ./estoque
+=== Estoque da Lojinha ===
+3 produtos carregados de estoque.bin.
+1) Listar  2) Cadastrar  0) Sair
+
+Opção: 2
+Nome: Apontador
+Quantidade: 8
+Preço (R$): 4.35
+Cadastrado: 4 - Apontador
+
+Opção: 1
+Cód  Produto                  Qtd       Preço
+---  -----------------------  ----  ----------
+  1  Caderno                    12  R$   15,90
+  2  Caneta                     40  R$    2,50
+  3  Borracha                    3  R$    1,75  (acabando!)
+  4  Apontador                   8  R$    4,35
+Valor do estoque: R$ 330,85
+
+Opção: 0
+
+Salvei 4 produtos em estoque.bin. Até amanhã!
+$ ls -l estoque.bin
+-rw-rw-r-- 1 ana ana 144 out 17 11:29 estoque.bin      « 4 × 36 bytes</pre>
+
+<p>E as respostas erradas? Cada uma é recusada com uma mensagem, e o menu continua:</p>
+
+<pre class="term" data-cwd="~/c/estoque">$ ./estoque
+=== Estoque da Lojinha ===
+4 produtos carregados de estoque.bin.
+1) Listar  2) Cadastrar  0) Sair
+
+Opção: 2
+Nome: Caderno universitario 200 folhas
+Nome comprido demais (no máximo 23 letras).
+
+Opção: 2
+Nome: Cola
+Quantidade: doze
+"doze" não é um número válido.
+
+Opção: 2
+Nome: Cola
+Quantidade: 10
+Preço (R$): 3 reais
+"3 reais" não é um preço válido.
+
+Opção: 7
+Opção desconhecida: 7
+1) Listar  2) Cadastrar  0) Sair
+
+Opção: 0
+
+Salvei 4 produtos em estoque.bin. Até amanhã!</pre>
+
+<div class="tip">
+<strong>Por que conferir o tamanho do nome antes do <code>strcpy</code></strong>
+<p>O <code>strcpy</code> copia até achar o <code>'\0'</code>, sem saber o tamanho do destino. Com o nome de 32 letras acima, ele escreveria 33 bytes nos 24 de <code>p.nome</code> e estragaria os campos seguintes (aula <a href="seguranca.html">Segurança</a>). Conferido o <code>strlen</code> antes, o <code>strcpy</code> é seguro. Os nomes do exemplo não têm acento de propósito: cada letra acentuada ocupa 2 bytes e desalinha a tabela, como no <a href="projeto-notas.html">Boletim de Notas</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>R$ 4,35 virou R$ 4,34</strong>
+<p>Na primeira tentativa, a Ana escreveu a conversão para centavos sem o <code>+ 0.5</code>: <code>return (int32_t)(reais * 100);</code>. Compilou sem aviso e cadastrou dois produtos:</p>
+<pre class="term" data-cwd="~/c/estoque">$ cp estoque.bin bom.bin                  « uma cópia do estoque, antes do teste
+$ gcc -std=c23 -Wall -Wextra estoque.c -o estoque
+$ ./estoque
+=== Estoque da Lojinha ===
+4 produtos carregados de estoque.bin.
+1) Listar  2) Cadastrar  0) Sair
+
+Opção: 2
+Nome: Cola
+Quantidade: 6
+Preço (R$): 4.35
+Cadastrado: 5 - Cola
+
+Opção: 2
+Nome: Clipes
+Quantidade: 30
+Preço (R$): 0.29
+Cadastrado: 6 - Clipes
+
+Opção: 1
+Cód  Produto                  Qtd       Preço
+---  -----------------------  ----  ----------
+  1  Caderno                    12  R$   15,90
+  2  Caneta                     40  R$    2,50
+  3  Borracha                    3  R$    1,75  (acabando!)
+  4  Apontador                   8  R$    4,35
+  5  Cola                        6  R$    4,34          « digitou 4.35
+  6  Clipes                     30  R$    0,28          « digitou 0.29
+Valor do estoque: R$ 365,29
+
+Opção: 0
+
+Salvei 6 produtos em estoque.bin. Até amanhã!
+$ cp bom.bin estoque.bin                  « devolve o estoque de antes do teste</pre>
+<p><strong>O que aconteceu:</strong> o <code>double</code> guarda os números em binário, e 4,35 não tem representação exata: o mais perto que ele consegue é um pouquinho menos, e <code>4.35 * 100</code> dá <code>434.99999999999994</code>. A conversão <code>(int32_t)</code> não arredonda: ela <strong>corta</strong> a parte depois do ponto, e sobram 434 centavos. Com 0.29, o mesmo: <code>28.999999999999996</code> vira 28. O erro acontece só com alguns preços (15.90 e 2.50 deram certo), e por isso é traiçoeiro.</p>
+<p><strong>Como consertar:</strong> some meio centavo antes de cortar: <code>(int32_t)(reais * 100 + 0.5)</code>. 434,99… + 0,5 = 435,49…, cortado dá 435. (Funciona para números positivos, que é o caso de preços. Outra saída é <code>lround</code>, do <code>&lt;math.h&gt;</code>, que no gcc pede <code>-lm</code>; veja <a href="matematica.html">Matemática</a>.) É exatamente por isso que o programa guarda centavos: o <code>double</code> aparece uma única vez, na leitura, e é arredondado ali.</p>
+</div>
+
+<div class="tryc" data-stdin="2\nApontador\n8\n4.35\n2\nClipes\n30\n0.29\n1\n0\n" data-goal="out:R$    4\,35,out:R$    0\,29">
+<p class="try-task"><strong>Missão (versão 2):</strong> este é o programa com o defeito do cenário: a Ana cadastra o apontador a R$ 4,35 e os clipes a R$ 0,29, e a tabela mostra <code>4,34</code> e <code>0,28</code>. Conserte a conversão no fim de <code>ler_preco</code> para os dois preços saírem certos.</p>
+<pre class="script" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define MAX_PRODUTOS 100
+#define ESTOQUE_BAIXO 5
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+// Lê o estoque do disco e devolve quantos produtos leu.
+// Se o arquivo ainda não existe, devolve 0.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)max, f);
+    fclose(f);
+    return (int)lidos;
+}
+
+// Grava os n produtos no disco. Devolve true se gravou todos.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(ARQUIVO, "wb");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    size_t gravados = fwrite(v, sizeof(Produto), (size_t)n, f);
+    fclose(f);
+    return gravados == (size_t)n;
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número inteiro de 0 a 999999. Devolve -1 se não for válido.
+int32_t ler_inteiro(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long valor = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || valor &lt; 0 || valor &gt; 999999) {
+        printf("\"%s\" não é um número válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)valor;
+}
+
+// Lê um preço em reais ("15.90" ou "15,90") e devolve em centavos.
+// Devolve -1 se não for válido.
+int32_t ler_preco(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *virgula = strchr(linha, ',');
+    if (virgula != NULL) {
+        *virgula = '.';             // aceita o jeito brasileiro
+    }
+    char *fim = NULL;
+    double reais = strtod(linha, &amp;fim);
+    if (fim == linha || *fim != '\0' || reais &lt; 0 || reais &gt; 99999) {
+        printf("\"%s\" não é um preço válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)(reais * 100);
+}
+
+void listar(const Produto v[], int n) {
+    if (n == 0) {
+        printf("O estoque está vazio.\n");
+        return;
+    }
+    long long total = 0;
+    printf("Cód  Produto                  Qtd       Preço\n");
+    printf("---  -----------------------  ----  ----------\n");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%3d  %-23s  %4d  R$ %4d,%02d", v[i].codigo, v[i].nome,
+               v[i].quantidade, v[i].preco / 100, v[i].preco % 100);
+        if (v[i].quantidade &lt;= ESTOQUE_BAIXO) {
+            printf("  (acabando!)");
+        }
+        printf("\n");
+        total += (long long)v[i].quantidade * v[i].preco;
+    }
+    printf("Valor do estoque: R$ %lld,%02lld\n", total / 100, total % 100);
+}
+
+void cadastrar(Produto v[], int *n) {
+    if (*n == MAX_PRODUTOS) {
+        printf("O estoque está cheio (%d produtos).\n", MAX_PRODUTOS);
+        return;
+    }
+    Produto p = {0};
+    char linha[100];
+    if (!ler_linha("Nome: ", linha, sizeof linha) || linha[0] == '\0') {
+        printf("Cadastro cancelado.\n");
+        return;
+    }
+    if (strlen(linha) &gt;= sizeof p.nome) {
+        printf("Nome comprido demais (no máximo %zu letras).\n", sizeof p.nome - 1);
+        return;
+    }
+    strcpy(p.nome, linha);
+    p.quantidade = ler_inteiro("Quantidade: ");
+    if (p.quantidade &lt; 0) {
+        return;
+    }
+    p.preco = ler_preco("Preço (R$): ");
+    if (p.preco &lt; 0) {
+        return;
+    }
+    p.codigo = 1;                   // o próximo código livre
+    for (int i = 0; i &lt; *n; i++) {
+        if (v[i].codigo &gt;= p.codigo) {
+            p.codigo = v[i].codigo + 1;
+        }
+    }
+    v[*n] = p;
+    (*n)++;
+    printf("Cadastrado: %d - %s\n", p.codigo, p.nome);
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Cadastrar  0) Sair\n");
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+    printf("=== Estoque da Lojinha ===\n");
+    printf("%d produtos carregados de %s.\n", n, ARQUIVO);
+    mostrar_menu();
+
+    char linha[100];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(estoque, n);
+        } else if (strcmp(linha, "2") == 0) {
+            cadastrar(estoque, &amp;n);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    if (!salvar(estoque, n)) {
+        printf("Erro: o estoque não foi salvo!\n");
+        return 1;
+    }
+    printf("\nSalvei %d produtos em %s. Até amanhã!\n", n, ARQUIVO);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define MAX_PRODUTOS 100
+#define ESTOQUE_BAIXO 5
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+// Lê o estoque do disco e devolve quantos produtos leu.
+// Se o arquivo ainda não existe, devolve 0.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)max, f);
+    fclose(f);
+    return (int)lidos;
+}
+
+// Grava os n produtos no disco. Devolve true se gravou todos.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(ARQUIVO, "wb");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    size_t gravados = fwrite(v, sizeof(Produto), (size_t)n, f);
+    fclose(f);
+    return gravados == (size_t)n;
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número inteiro de 0 a 999999. Devolve -1 se não for válido.
+int32_t ler_inteiro(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long valor = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || valor &lt; 0 || valor &gt; 999999) {
+        printf("\"%s\" não é um número válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)valor;
+}
+
+// Lê um preço em reais ("15.90" ou "15,90") e devolve em centavos.
+// Devolve -1 se não for válido.
+int32_t ler_preco(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *virgula = strchr(linha, ',');
+    if (virgula != NULL) {
+        *virgula = '.';             // aceita o jeito brasileiro
+    }
+    char *fim = NULL;
+    double reais = strtod(linha, &amp;fim);
+    if (fim == linha || *fim != '\0' || reais &lt; 0 || reais &gt; 99999) {
+        printf("\"%s\" não é um preço válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)(reais * 100 + 0.5);  // arredonda para o centavo
+}
+
+void listar(const Produto v[], int n) {
+    if (n == 0) {
+        printf("O estoque está vazio.\n");
+        return;
+    }
+    long long total = 0;
+    printf("Cód  Produto                  Qtd       Preço\n");
+    printf("---  -----------------------  ----  ----------\n");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%3d  %-23s  %4d  R$ %4d,%02d", v[i].codigo, v[i].nome,
+               v[i].quantidade, v[i].preco / 100, v[i].preco % 100);
+        if (v[i].quantidade &lt;= ESTOQUE_BAIXO) {
+            printf("  (acabando!)");
+        }
+        printf("\n");
+        total += (long long)v[i].quantidade * v[i].preco;
+    }
+    printf("Valor do estoque: R$ %lld,%02lld\n", total / 100, total % 100);
+}
+
+void cadastrar(Produto v[], int *n) {
+    if (*n == MAX_PRODUTOS) {
+        printf("O estoque está cheio (%d produtos).\n", MAX_PRODUTOS);
+        return;
+    }
+    Produto p = {0};
+    char linha[100];
+    if (!ler_linha("Nome: ", linha, sizeof linha) || linha[0] == '\0') {
+        printf("Cadastro cancelado.\n");
+        return;
+    }
+    if (strlen(linha) &gt;= sizeof p.nome) {
+        printf("Nome comprido demais (no máximo %zu letras).\n", sizeof p.nome - 1);
+        return;
+    }
+    strcpy(p.nome, linha);
+    p.quantidade = ler_inteiro("Quantidade: ");
+    if (p.quantidade &lt; 0) {
+        return;
+    }
+    p.preco = ler_preco("Preço (R$): ");
+    if (p.preco &lt; 0) {
+        return;
+    }
+    p.codigo = 1;                   // o próximo código livre
+    for (int i = 0; i &lt; *n; i++) {
+        if (v[i].codigo &gt;= p.codigo) {
+            p.codigo = v[i].codigo + 1;
+        }
+    }
+    v[*n] = p;
+    (*n)++;
+    printf("Cadastrado: %d - %s\n", p.codigo, p.nome);
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Cadastrar  0) Sair\n");
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+    printf("=== Estoque da Lojinha ===\n");
+    printf("%d produtos carregados de %s.\n", n, ARQUIVO);
+    mostrar_menu();
+
+    char linha[100];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(estoque, n);
+        } else if (strcmp(linha, "2") == 0) {
+            cadastrar(estoque, &amp;n);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    if (!salvar(estoque, n)) {
+        printf("Erro: o estoque não foi salvo!\n");
+        return 1;
+    }
+    printf("\nSalvei %d produtos em %s. Até amanhã!\n", n, ARQUIVO);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao3">Versão 3 · Entrada, saída, salvar e desfazer</h2>
+<p>Um estoque muda o dia todo: chega mercadoria (entrada) e sai mercadoria (venda). A versão 3 acrescenta quatro opções ao menu:</p>
+<ul>
+  <li><strong>3) Entrada</strong> e <strong>4) Saída</strong>: a Ana diz o código do produto e quantas unidades; a saída não deixa vender mais do que existe.</li>
+  <li><strong>5) Salvar</strong>: grava agora, sem sair.</li>
+  <li><strong>6) Desfazer</strong>: joga fora o que mudou desde o último salvamento e carrega de novo o arquivo. É o "voltar" que o caderno de papel não tem, e vem de graça: o arquivo no disco <strong>é</strong> a última versão salva.</li>
+</ul>
+<p>As partes novas (o resto é igual à versão 2):</p>
+
+<pre class="file" data-file="estoque.c">int achar(const Produto v[], int n, int32_t codigo) {
+    for (int i = 0; i &lt; n; i++) {
+        if (v[i].codigo == codigo) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// sinal = +1 para entrada (chegou mercadoria), -1 para saída (venda)
+void movimentar(Produto v[], int n, int sinal) {
+    int32_t codigo = ler_inteiro("Código: ");
+    if (codigo &lt; 0) {
+        return;
+    }
+    int i = achar(v, n, codigo);
+    if (i &lt; 0) {
+        printf("Não existe produto com o código %d.\n", codigo);
+        return;
+    }
+    int32_t qtd = ler_inteiro("Quantas unidades? ");
+    if (qtd &lt;= 0) {
+        return;
+    }
+    if (sinal &lt; 0 &amp;&amp; qtd &gt; v[i].quantidade) {
+        printf("Só há %d de %s.\n", v[i].quantidade, v[i].nome);
+        return;
+    }
+    v[i].quantidade += sinal * qtd;
+    printf("%s: agora são %d.\n", v[i].nome, v[i].quantidade);
+}
+
+// dentro do while do main:
+        } else if (strcmp(linha, "3") == 0) {
+            movimentar(estoque, n, +1);
+        } else if (strcmp(linha, "4") == 0) {
+            movimentar(estoque, n, -1);
+        } else if (strcmp(linha, "5") == 0) {
+            if (salvar(estoque, n)) {
+                printf("Salvei %d produtos em %s.\n", n, ARQUIVO);
+            } else {
+                printf("Erro: o estoque não foi salvo!\n");
+            }
+        } else if (strcmp(linha, "6") == 0) {
+            n = carregar(estoque, MAX_PRODUTOS);
+            printf("Voltei ao que estava salvo: %d produtos.\n", n);
+</pre>
+
+<dl class="anatomy">
+  <dt>int achar(const Produto v[], int n, int32_t codigo)</dt><dd>Procura o código, um produto por vez, e devolve a <strong>posição</strong> no array, ou <code>-1</code> se não achou. Com a posição, o resto do programa mexe na ficha certa.</dd>
+  <dt>void movimentar(Produto v[], int n, int sinal)</dt><dd>Uma função só para entrada e saída: o <code>sinal</code> é <code>+1</code> ou <code>-1</code>, e <code>sinal * qtd</code> soma ou tira. Duas funções quase iguais seriam o dobro de código para manter.</dd>
+  <dt>if (qtd &lt;= 0) return;</dt><dd>O <code>ler_inteiro</code> já mostrou a mensagem quando a resposta era inválida (<code>-1</code>); mexer em 0 unidades não faz sentido.</dd>
+  <dt>if (sinal &lt; 0 &amp;&amp; qtd &gt; v[i].quantidade)</dt><dd>Só na saída: não dá para vender 5 borrachas se há 3. Sem esse teste, o estoque ficaria negativo.</dd>
+  <dt>n = carregar(estoque, MAX_PRODUTOS);</dt><dd>O desfazer: o array é sobrescrito com o que está no disco, e <code>n</code> volta a ser o número de produtos salvos (um produto cadastrado e não salvo também some).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/estoque">$ gcc -std=c23 -Wall -Wextra estoque.c -o estoque
+$ ./estoque
+=== Estoque da Lojinha ===
+4 produtos carregados de estoque.bin.
+1) Listar  2) Cadastrar  3) Entrada  4) Saída
+5) Salvar  6) Desfazer   0) Sair
+
+Opção: 4
+Código: 2
+Quantas unidades? 15
+Caneta: agora são 25.
+
+Opção: 4
+Código: 3
+Quantas unidades? 5
+Só há 3 de Borracha.
+
+Opção: 3
+Código: 3
+Quantas unidades? 20
+Borracha: agora são 23.
+
+Opção: 4
+Código: 9
+Não existe produto com o código 9.
+
+Opção: 1
+Cód  Produto                  Qtd       Preço
+---  -----------------------  ----  ----------
+  1  Caderno                    12  R$   15,90
+  2  Caneta                     25  R$    2,50
+  3  Borracha                   23  R$    1,75
+  4  Apontador                   8  R$    4,35
+Valor do estoque: R$ 328,35
+
+Opção: 6
+Voltei ao que estava salvo: 4 produtos.
+
+Opção: 1
+Cód  Produto                  Qtd       Preço
+---  -----------------------  ----  ----------
+  1  Caderno                    12  R$   15,90
+  2  Caneta                     40  R$    2,50          « as mudanças foram desfeitas
+  3  Borracha                    3  R$    1,75  (acabando!)
+  4  Apontador                   8  R$    4,35
+Valor do estoque: R$ 330,85
+
+Opção: 4
+Código: 2
+Quantas unidades? 15
+Caneta: agora são 25.
+
+Opção: 3
+Código: 3
+Quantas unidades? 20
+Borracha: agora são 23.
+
+Opção: 5
+Salvei 4 produtos em estoque.bin.
+
+Opção: 0
+
+Salvei 4 produtos em estoque.bin. Até amanhã!</pre>
+
+<p>Repare: o programa trabalha o tempo todo com o array <strong>na memória</strong>, que é rápido, e só encosta no disco para carregar e para salvar. Para um estoque de lojinha, com dezenas ou centenas de produtos, regravar o arquivo inteiro leva um instante. Para arquivos enormes, dá para regravar só uma ficha, com <code>fseek</code> e o modo <code>"r+b"</code> (aula <a href="fseek.html">Posição no Arquivo</a>).</p>
+
+<div class="tryc" data-stdin="2\nBorracha\n3\n1.75\n4\n1\n5\n4\n1\n2\n0\n" data-goal="out:Só há 3 de Borracha.,out:Borracha: agora são 1.">
+<p class="try-task"><strong>Missão (versão 3):</strong> a função <code>movimentar</code> está sem o teste da saída, e a Ana consegue vender 5 borrachas quando só tem 3 (o estoque fica em <code>-2</code>). Escreva o teste no lugar do comentário: na saída (<code>sinal &lt; 0</code>), se <code>qtd</code> for maior que a quantidade, mostre <code>Só há 3 de Borracha.</code> (com <code>%d</code> e <code>%s</code>) e saia da função. A entrada da missão cadastra 3 borrachas, tenta vender 5 e depois vende 2.</p>
+<pre class="script" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define MAX_PRODUTOS 100
+#define ESTOQUE_BAIXO 5
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+// Lê o estoque do disco e devolve quantos produtos leu.
+// Se o arquivo ainda não existe, devolve 0.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)max, f);
+    fclose(f);
+    return (int)lidos;
+}
+
+// Grava os n produtos no disco. Devolve true se gravou todos.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(ARQUIVO, "wb");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    size_t gravados = fwrite(v, sizeof(Produto), (size_t)n, f);
+    fclose(f);
+    return gravados == (size_t)n;
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número inteiro de 0 a 999999. Devolve -1 se não for válido.
+int32_t ler_inteiro(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long valor = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || valor &lt; 0 || valor &gt; 999999) {
+        printf("\"%s\" não é um número válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)valor;
+}
+
+// Lê um preço em reais ("15.90" ou "15,90") e devolve em centavos.
+// Devolve -1 se não for válido.
+int32_t ler_preco(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *virgula = strchr(linha, ',');
+    if (virgula != NULL) {
+        *virgula = '.';             // aceita o jeito brasileiro
+    }
+    char *fim = NULL;
+    double reais = strtod(linha, &amp;fim);
+    if (fim == linha || *fim != '\0' || reais &lt; 0 || reais &gt; 99999) {
+        printf("\"%s\" não é um preço válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)(reais * 100 + 0.5);  // arredonda para o centavo
+}
+
+int achar(const Produto v[], int n, int32_t codigo) {
+    for (int i = 0; i &lt; n; i++) {
+        if (v[i].codigo == codigo) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void listar(const Produto v[], int n) {
+    if (n == 0) {
+        printf("O estoque está vazio.\n");
+        return;
+    }
+    long long total = 0;
+    printf("Cód  Produto                  Qtd       Preço\n");
+    printf("---  -----------------------  ----  ----------\n");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%3d  %-23s  %4d  R$ %4d,%02d", v[i].codigo, v[i].nome,
+               v[i].quantidade, v[i].preco / 100, v[i].preco % 100);
+        if (v[i].quantidade &lt;= ESTOQUE_BAIXO) {
+            printf("  (acabando!)");
+        }
+        printf("\n");
+        total += (long long)v[i].quantidade * v[i].preco;
+    }
+    printf("Valor do estoque: R$ %lld,%02lld\n", total / 100, total % 100);
+}
+
+void cadastrar(Produto v[], int *n) {
+    if (*n == MAX_PRODUTOS) {
+        printf("O estoque está cheio (%d produtos).\n", MAX_PRODUTOS);
+        return;
+    }
+    Produto p = {0};
+    char linha[100];
+    if (!ler_linha("Nome: ", linha, sizeof linha) || linha[0] == '\0') {
+        printf("Cadastro cancelado.\n");
+        return;
+    }
+    if (strlen(linha) &gt;= sizeof p.nome) {
+        printf("Nome comprido demais (no máximo %zu letras).\n", sizeof p.nome - 1);
+        return;
+    }
+    strcpy(p.nome, linha);
+    p.quantidade = ler_inteiro("Quantidade: ");
+    if (p.quantidade &lt; 0) {
+        return;
+    }
+    p.preco = ler_preco("Preço (R$): ");
+    if (p.preco &lt; 0) {
+        return;
+    }
+    p.codigo = 1;                   // o próximo código livre
+    for (int i = 0; i &lt; *n; i++) {
+        if (v[i].codigo &gt;= p.codigo) {
+            p.codigo = v[i].codigo + 1;
+        }
+    }
+    v[*n] = p;
+    (*n)++;
+    printf("Cadastrado: %d - %s\n", p.codigo, p.nome);
+}
+
+// sinal = +1 para entrada (chegou mercadoria), -1 para saída (venda)
+void movimentar(Produto v[], int n, int sinal) {
+    int32_t codigo = ler_inteiro("Código: ");
+    if (codigo &lt; 0) {
+        return;
+    }
+    int i = achar(v, n, codigo);
+    if (i &lt; 0) {
+        printf("Não existe produto com o código %d.\n", codigo);
+        return;
+    }
+    int32_t qtd = ler_inteiro("Quantas unidades? ");
+    if (qtd &lt;= 0) {
+        return;
+    }
+    // confira aqui se há unidades suficientes para a saída
+    v[i].quantidade += sinal * qtd;
+    printf("%s: agora são %d.\n", v[i].nome, v[i].quantidade);
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Cadastrar  3) Entrada  4) Saída\n");
+    printf("5) Salvar  6) Desfazer   0) Sair\n");
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+    printf("=== Estoque da Lojinha ===\n");
+    printf("%d produtos carregados de %s.\n", n, ARQUIVO);
+    mostrar_menu();
+
+    char linha[100];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(estoque, n);
+        } else if (strcmp(linha, "2") == 0) {
+            cadastrar(estoque, &amp;n);
+        } else if (strcmp(linha, "3") == 0) {
+            movimentar(estoque, n, +1);
+        } else if (strcmp(linha, "4") == 0) {
+            movimentar(estoque, n, -1);
+        } else if (strcmp(linha, "5") == 0) {
+            if (salvar(estoque, n)) {
+                printf("Salvei %d produtos em %s.\n", n, ARQUIVO);
+            } else {
+                printf("Erro: o estoque não foi salvo!\n");
+            }
+        } else if (strcmp(linha, "6") == 0) {
+            n = carregar(estoque, MAX_PRODUTOS);
+            printf("Voltei ao que estava salvo: %d produtos.\n", n);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    if (!salvar(estoque, n)) {
+        printf("Erro: o estoque não foi salvo!\n");
+        return 1;
+    }
+    printf("\nSalvei %d produtos em %s. Até amanhã!\n", n, ARQUIVO);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define MAX_PRODUTOS 100
+#define ESTOQUE_BAIXO 5
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+// Lê o estoque do disco e devolve quantos produtos leu.
+// Se o arquivo ainda não existe, devolve 0.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)max, f);
+    fclose(f);
+    return (int)lidos;
+}
+
+// Grava os n produtos no disco. Devolve true se gravou todos.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(ARQUIVO, "wb");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    size_t gravados = fwrite(v, sizeof(Produto), (size_t)n, f);
+    fclose(f);
+    return gravados == (size_t)n;
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número inteiro de 0 a 999999. Devolve -1 se não for válido.
+int32_t ler_inteiro(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long valor = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || valor &lt; 0 || valor &gt; 999999) {
+        printf("\"%s\" não é um número válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)valor;
+}
+
+// Lê um preço em reais ("15.90" ou "15,90") e devolve em centavos.
+// Devolve -1 se não for válido.
+int32_t ler_preco(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *virgula = strchr(linha, ',');
+    if (virgula != NULL) {
+        *virgula = '.';             // aceita o jeito brasileiro
+    }
+    char *fim = NULL;
+    double reais = strtod(linha, &amp;fim);
+    if (fim == linha || *fim != '\0' || reais &lt; 0 || reais &gt; 99999) {
+        printf("\"%s\" não é um preço válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)(reais * 100 + 0.5);  // arredonda para o centavo
+}
+
+int achar(const Produto v[], int n, int32_t codigo) {
+    for (int i = 0; i &lt; n; i++) {
+        if (v[i].codigo == codigo) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void listar(const Produto v[], int n) {
+    if (n == 0) {
+        printf("O estoque está vazio.\n");
+        return;
+    }
+    long long total = 0;
+    printf("Cód  Produto                  Qtd       Preço\n");
+    printf("---  -----------------------  ----  ----------\n");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%3d  %-23s  %4d  R$ %4d,%02d", v[i].codigo, v[i].nome,
+               v[i].quantidade, v[i].preco / 100, v[i].preco % 100);
+        if (v[i].quantidade &lt;= ESTOQUE_BAIXO) {
+            printf("  (acabando!)");
+        }
+        printf("\n");
+        total += (long long)v[i].quantidade * v[i].preco;
+    }
+    printf("Valor do estoque: R$ %lld,%02lld\n", total / 100, total % 100);
+}
+
+void cadastrar(Produto v[], int *n) {
+    if (*n == MAX_PRODUTOS) {
+        printf("O estoque está cheio (%d produtos).\n", MAX_PRODUTOS);
+        return;
+    }
+    Produto p = {0};
+    char linha[100];
+    if (!ler_linha("Nome: ", linha, sizeof linha) || linha[0] == '\0') {
+        printf("Cadastro cancelado.\n");
+        return;
+    }
+    if (strlen(linha) &gt;= sizeof p.nome) {
+        printf("Nome comprido demais (no máximo %zu letras).\n", sizeof p.nome - 1);
+        return;
+    }
+    strcpy(p.nome, linha);
+    p.quantidade = ler_inteiro("Quantidade: ");
+    if (p.quantidade &lt; 0) {
+        return;
+    }
+    p.preco = ler_preco("Preço (R$): ");
+    if (p.preco &lt; 0) {
+        return;
+    }
+    p.codigo = 1;                   // o próximo código livre
+    for (int i = 0; i &lt; *n; i++) {
+        if (v[i].codigo &gt;= p.codigo) {
+            p.codigo = v[i].codigo + 1;
+        }
+    }
+    v[*n] = p;
+    (*n)++;
+    printf("Cadastrado: %d - %s\n", p.codigo, p.nome);
+}
+
+// sinal = +1 para entrada (chegou mercadoria), -1 para saída (venda)
+void movimentar(Produto v[], int n, int sinal) {
+    int32_t codigo = ler_inteiro("Código: ");
+    if (codigo &lt; 0) {
+        return;
+    }
+    int i = achar(v, n, codigo);
+    if (i &lt; 0) {
+        printf("Não existe produto com o código %d.\n", codigo);
+        return;
+    }
+    int32_t qtd = ler_inteiro("Quantas unidades? ");
+    if (qtd &lt;= 0) {
+        return;
+    }
+    if (sinal &lt; 0 &amp;&amp; qtd &gt; v[i].quantidade) {
+        printf("Só há %d de %s.\n", v[i].quantidade, v[i].nome);
+        return;
+    }
+    v[i].quantidade += sinal * qtd;
+    printf("%s: agora são %d.\n", v[i].nome, v[i].quantidade);
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Cadastrar  3) Entrada  4) Saída\n");
+    printf("5) Salvar  6) Desfazer   0) Sair\n");
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+    printf("=== Estoque da Lojinha ===\n");
+    printf("%d produtos carregados de %s.\n", n, ARQUIVO);
+    mostrar_menu();
+
+    char linha[100];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(estoque, n);
+        } else if (strcmp(linha, "2") == 0) {
+            cadastrar(estoque, &amp;n);
+        } else if (strcmp(linha, "3") == 0) {
+            movimentar(estoque, n, +1);
+        } else if (strcmp(linha, "4") == 0) {
+            movimentar(estoque, n, -1);
+        } else if (strcmp(linha, "5") == 0) {
+            if (salvar(estoque, n)) {
+                printf("Salvei %d produtos em %s.\n", n, ARQUIVO);
+            } else {
+                printf("Erro: o estoque não foi salvo!\n");
+            }
+        } else if (strcmp(linha, "6") == 0) {
+            n = carregar(estoque, MAX_PRODUTOS);
+            printf("Voltei ao que estava salvo: %d produtos.\n", n);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    if (!salvar(estoque, n)) {
+        printf("Erro: o estoque não foi salvo!\n");
+        return 1;
+    }
+    printf("\nSalvei %d produtos em %s. Até amanhã!\n", n, ARQUIVO);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao4">Versão 4 · Um cabeçalho no arquivo e salvar sem perder nada</h2>
+<p>O programa funciona, mas confia demais no arquivo. Ele lê qualquer <code>estoque.bin</code> que encontrar, de 36 em 36 bytes, sem saber se aquilo é mesmo um estoque. E, se um dia a ficha mudar (um campo novo, por exemplo), os arquivos antigos vão ser lidos tortos, sem nenhum aviso (o cenário "os dois programas não concordam sobre a struct", em <a href="arquivos-binarios.html">Arquivos Binários</a>). A versão 4 resolve isso de dois jeitos.</p>
+
+<h3>1. Um cabeçalho com assinatura e versão</h3>
+<p>Muitos formatos de arquivo começam com alguns bytes fixos, a <strong>assinatura</strong> (ou "número mágico"): todo PDF começa com <code>%PDF</code>, todo PNG com <code>\x89PNG</code>. O comando <code>file</code> do Linux reconhece o tipo de um arquivo por esses bytes, sem olhar o nome. O estoque da Ana vai começar com 12 bytes de cabeçalho:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Bytes</th><th>Campo</th><th>Conteúdo</th></tr>
+<tr><td>0 a 3</td><td><code>assinatura</code></td><td>As letras <code>L O J A</code>: "isto é um estoque da lojinha".</td></tr>
+<tr><td>4 a 7</td><td><code>versao</code></td><td><code>1</code>. Se o formato mudar, a versão nova grava <code>2</code>, e cada programa sabe o que está lendo.</td></tr>
+<tr><td>8 a 11</td><td><code>total</code></td><td>Quantos produtos vêm depois. Assim dá para saber se o arquivo foi cortado.</td></tr>
+<tr><td>12 em diante</td><td>os produtos</td><td>As fichas de 36 bytes, como antes. O produto <code>i</code> começa no byte <code>12 + i × 36</code>.</td></tr>
+</table>
+</div>
+
+<h3>2. Salvar num arquivo temporário e trocar no fim</h3>
+<p>O <code>salvar</code> das versões anteriores abre <code>estoque.bin</code> com <code>"wb"</code>, e nesse instante o estoque antigo já foi apagado. Se o programa morrer no meio da gravação (falta de luz, disco cheio, um Ctrl+C), a Ana fica sem o novo <strong>e</strong> sem o antigo. O jeito seguro, usado por editores de texto e bancos de dados:</p>
+<ol>
+  <li>grave tudo num arquivo novo, <code>estoque.tmp</code>;</li>
+  <li>confira cada <code>fwrite</code> e o <code>fclose</code>;</li>
+  <li>só então troque o nome com <code>rename("estoque.tmp", "estoque.bin")</code>. No Linux, o <code>rename</code> substitui o arquivo antigo de uma vez só: quem abrir <code>estoque.bin</code> vê o antigo inteiro ou o novo inteiro, nunca um pedaço.</li>
+</ol>
+
+<pre class="file" data-file="estoque.c">#define TEMPORARIO "estoque.tmp"
+#define VERSAO_ARQUIVO 1
+
+typedef struct {
+    char assinatura[4];     // sempre 'L', 'O', 'J', 'A'
+    int32_t versao;         // o formato do arquivo
+    int32_t total;          // quantos produtos vêm depois
+} Cabecalho;
+
+// Lê o estoque do disco. Devolve quantos produtos leu (0 se o arquivo
+// ainda não existe) ou -1 se o arquivo não é um estoque da lojinha.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    Cabecalho cab;
+    if (fread(&amp;cab, sizeof cab, 1, f) != 1 ||
+        memcmp(cab.assinatura, "LOJA", 4) != 0) {
+        printf("%s não é um arquivo da lojinha.\n", ARQUIVO);
+        fclose(f);
+        return -1;
+    }
+    if (cab.versao != VERSAO_ARQUIVO) {
+        printf("%s é da versão %d; eu só leio a versão %d.\n",
+               ARQUIVO, cab.versao, VERSAO_ARQUIVO);
+        fclose(f);
+        return -1;
+    }
+    if (cab.total &lt; 0 || cab.total &gt; max) {
+        printf("%s diz ter %d produtos; eu aceito até %d.\n",
+               ARQUIVO, cab.total, max);
+        fclose(f);
+        return -1;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)cab.total, f);
+    fclose(f);
+    if (lidos != (size_t)cab.total) {
+        printf("%s está cortado: li %zu de %d produtos.\n",
+               ARQUIVO, lidos, cab.total);
+        return -1;
+    }
+    return cab.total;
+}
+
+// Grava num arquivo temporário e só no fim troca pelo verdadeiro.
+// Devolve true se deu tudo certo.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(TEMPORARIO, "wb");
+    if (f == NULL) {
+        perror(TEMPORARIO);
+        return false;
+    }
+    Cabecalho cab = {{'L', 'O', 'J', 'A'}, VERSAO_ARQUIVO, n};
+    bool ok = fwrite(&amp;cab, sizeof cab, 1, f) == 1 &amp;&amp;
+              fwrite(v, sizeof(Produto), (size_t)n, f) == (size_t)n;
+    if (fclose(f) != 0) {
+        ok = false;
+    }
+    if (!ok || rename(TEMPORARIO, ARQUIVO) != 0) {
+        perror("Erro ao salvar");
+        remove(TEMPORARIO);
+        return false;
+    }
+    return true;
+}
+
+</pre>
+
+<p>E o <code>main</code> passa a recusar um arquivo estranho, em vez de sobrescrevê-lo ao sair (na opção 6, o desfazer, o mesmo teste: <code>if (n &lt; 0) return 1;</code>):</p>
+
+<pre class="file" data-file="estoque.c">int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+    if (n &lt; 0) {
+        printf("Não vou mexer nele. Confira o arquivo e tente de novo.\n");
+        return 1;
+    }
+    // ... o resto do main é igual ao da versão 3
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>typedef struct { char assinatura[4]; int32_t versao; int32_t total; } Cabecalho;</dt><dd>O cabeçalho também é uma struct, gravada e lida com um <code>fwrite</code> e um <code>fread</code>. São 4 + 4 + 4 = 12 bytes, sem enchimento, no editor e no gcc. A assinatura é um array de 4 <code>char</code>, sem <code>'\0'</code>: não é uma string, são só 4 bytes.</dd>
+  <dt>memcmp(cab.assinatura, "LOJA", 4) != 0</dt><dd>O <code>memcmp</code> ("memory compare", do <code>&lt;string.h&gt;</code>) compara 4 bytes, como o <code>strcmp</code>, mas sem procurar <code>'\0'</code>. Devolve 0 se são iguais.</dd>
+  <dt>fread(&amp;cab, sizeof cab, 1, f) != 1 || …</dt><dd>Se o arquivo tem menos de 12 bytes, nem o cabeçalho existe. O <code>||</code> para no primeiro teste verdadeiro, então o <code>memcmp</code> só olha o cabeçalho quando ele foi lido.</dd>
+  <dt>cab.total &lt; 0 || cab.total &gt; max</dt><dd>Nunca confie num número que veio do arquivo: um <code>total</code> de 5000 faria o <code>fread</code> escrever além do array de 100 produtos.</dd>
+  <dt>lidos != (size_t)cab.total</dt><dd>O cabeçalho promete um número de produtos; se vieram menos, o arquivo foi cortado.</dd>
+  <dt>Cabecalho cab = {{'L', 'O', 'J', 'A'}, VERSAO_ARQUIVO, n};</dt><dd>As chaves de dentro preenchem o array da assinatura; depois vêm a versão e o total.</dd>
+  <dt>bool ok = fwrite(…) == 1 &amp;&amp; fwrite(…) == (size_t)n;</dt><dd>As duas gravações têm de dar certo. O <code>&amp;&amp;</code> nem tenta a segunda se a primeira falhou.</dd>
+  <dt>if (fclose(f) != 0)</dt><dd>O <code>fwrite</code> guarda os bytes num buffer, e o erro de disco cheio pode aparecer só no <code>fclose</code>. Por isso ele também é conferido.</dd>
+  <dt>rename(TEMPORARIO, ARQUIVO)</dt><dd>Troca o nome; devolve 0 se deu certo. Se algo falhou, o <code>remove</code> apaga o temporário, e o <code>estoque.bin</code> antigo continua intacto.</dd>
+</dl>
+
+<p>A primeira coisa que a Ana viu com a versão 4 foi a recusa: o <code>estoque.bin</code> da versão 3 não tem cabeçalho (ele começa com <code>01 00 00 00</code>, o código do caderno):</p>
+
+<pre class="term" data-cwd="~/c/estoque">$ gcc -std=c23 -Wall -Wextra estoque.c -o estoque
+$ ./estoque; echo $?
+estoque.bin não é um arquivo da lojinha.
+Não vou mexer nele. Confira o arquivo e tente de novo.
+1</pre>
+
+<p>É a proteção funcionando: sem ela, a versão 4 leria o código do caderno como assinatura e, ao sair, gravaria por cima. Para não perder o estoque, a Ana escreveu um conversor de uso único, que lê as fichas no formato antigo e grava o cabeçalho na frente:</p>
+
+<pre class="file" data-file="converter.c">// Transforma o estoque da versão 3 (sem cabeçalho) no formato novo.
+#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;
+} Produto;
+
+typedef struct {
+    char assinatura[4];
+    int32_t versao;
+    int32_t total;
+} Cabecalho;
+
+int main(void) {
+    Produto v[100];
+    FILE *f = fopen("estoque-v3.bin", "rb");
+    if (f == NULL) {
+        perror("estoque-v3.bin");
+        return 1;
+    }
+    size_t n = fread(v, sizeof(Produto), 100, f);
+    fclose(f);
+
+    Cabecalho cab = {{'L', 'O', 'J', 'A'}, 1, (int32_t)n};
+    f = fopen("estoque.bin", "wb");
+    if (f == NULL) {
+        perror("estoque.bin");
+        return 1;
+    }
+    bool ok = fwrite(&amp;cab, sizeof cab, 1, f) == 1 &amp;&amp;
+              fwrite(v, sizeof(Produto), n, f) == n;
+    if (fclose(f) != 0 || !ok) {
+        printf("Erro ao gravar estoque.bin\n");
+        return 1;
+    }
+    printf("Converti %zu produtos para o formato novo.\n", n);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/estoque">$ mv estoque.bin estoque-v3.bin
+$ gcc -std=c23 -Wall -Wextra converter.c -o converter
+$ ./converter
+Converti 4 produtos para o formato novo.
+$ ls -l estoque.bin estoque-v3.bin
+-rw-rw-r-- 1 ana ana 156 out 17 11:29 estoque.bin           « 12 + 4 × 36
+-rw-rw-r-- 1 ana ana 144 out 17 11:29 estoque-v3.bin
+$ xxd -l 48 estoque.bin
+00000000: 4c4f 4a41 0100 0000 0400 0000 0100 0000  LOJA............
+00000010: 4361 6465 726e 6f00 0000 0000 0000 0000  Caderno.........
+00000020: 0000 0000 0000 0000 0c00 0000 3606 0000  ............6...</pre>
+
+<p>Lá está o cabeçalho: <code>4c 4f 4a 41</code> são as letras <code>LOJA</code>, depois a versão (<code>01 00 00 00</code>) e o total (<code>04 00 00 00</code>). O caderno começa no byte 12, com o código <code>01 00 00 00</code>. Agora a versão 4 abre o estoque normalmente, e a Ana registra a venda de 2 cadernos:</p>
+
+<pre class="term" data-cwd="~/c/estoque">$ ./estoque
+=== Estoque da Lojinha ===
+4 produtos carregados de estoque.bin.
+1) Listar  2) Cadastrar  3) Entrada  4) Saída
+5) Salvar  6) Desfazer   0) Sair
+
+Opção: 4
+Código: 1
+Quantas unidades? 2
+Caderno: agora são 10.
+
+Opção: 0
+
+Salvei 4 produtos em estoque.bin. Até amanhã!</pre>
+
+<p>Depois, testou as proteções, guardando uma cópia antes:</p>
+
+<pre class="term" data-cwd="~/c/estoque">$ cp estoque.bin bom.bin
+$ echo 'lista de compras' &gt; estoque.bin            « um arquivo que não é estoque
+$ ./estoque; echo $?
+estoque.bin não é um arquivo da lojinha.
+Não vou mexer nele. Confira o arquivo e tente de novo.
+1
+$ cp bom.bin estoque.bin
+$ truncate -s 60 estoque.bin                     « corta no meio do 2º produto
+$ ./estoque
+estoque.bin está cortado: li 1 de 4 produtos.
+Não vou mexer nele. Confira o arquivo e tente de novo.
+$ cp bom.bin estoque.bin
+$ printf '\x02' | dd of=estoque.bin bs=1 seek=4 conv=notrunc status=none
+$ xxd -l 12 estoque.bin
+00000000: 4c4f 4a41 0200 0000 0400 0000            LOJA........
+$ ./estoque
+estoque.bin é da versão 2; eu só leio a versão 1.
+Não vou mexer nele. Confira o arquivo e tente de novo.
+$ cp bom.bin estoque.bin</pre>
+
+<p>O <code>truncate -s 60</code> deixa só os primeiros 60 bytes: o cabeçalho (12), o caderno (36) e um pedaço da caneta. O <code>printf … | dd … seek=4 conv=notrunc</code> troca só o byte 4 por <code>02</code>, como se o arquivo viesse de uma versão futura do programa. Nos três casos, o programa explicou o problema e saiu <strong>sem salvar</strong>: o arquivo ficou como estava, para a Ana investigar.</p>
+
+<div class="cenario">
+<strong><code>error: incompatible type for argument 1 of ‘fwrite’</code></strong>
+<p>Ao escrever o <code>salvar</code>, a Ana esqueceu o <code>&amp;</code> antes do cabeçalho: <code>fwrite(cab, sizeof cab, 1, f)</code>.</p>
+<pre class="term" data-cwd="~/c/estoque">$ gcc -std=c23 -Wall -Wextra estoque.c -o estoque
+estoque.c: In function ‘salvar’:
+estoque.c:70:22: error: incompatible type for argument 1 of ‘fwrite’
+   70 |     bool ok = fwrite(cab, sizeof cab, 1, f) == 1 &amp;&amp;
+      |                      ^~~
+      |                      |
+      |                      Cabecalho
+In file included from estoque.c:1:
+/usr/include/stdio.h:739:46: note: expected ‘const void * restrict’ but argument is of type ‘Cabecalho’
+  739 | extern size_t fwrite (const void *__restrict __ptr, size_t __size,
+      |                       ~~~~~~~~~~~~~~~~~~~~~~~^~~~~</pre>
+<p>No editor do guia, o Clang diz o mesmo com outras palavras: <code>error: passing 'Cabecalho' to parameter of incompatible type 'const void *'</code>.</p>
+<p><strong>O que significa:</strong> o primeiro argumento do <code>fwrite</code> é um <strong>endereço</strong> (<code>const void *</code>, um ponteiro para qualquer coisa; veja <a href="void-ponteiro.html">Ponteiro void*</a>): "os bytes estão aqui". O <code>cab</code> é a struct inteira, não o endereço dela. A nota mostra a declaração do <code>fwrite</code> no <code>stdio.h</code> e o tipo que ele esperava.</p>
+<p><strong>Como consertar:</strong> <code>fwrite(&amp;cab, sizeof cab, 1, f)</code>. Para um array, como o <code>v</code> dos produtos, o <code>&amp;</code> não vai: o nome do array já é o endereço do primeiro elemento (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>).</p>
+</div>
+
+<div class="tryc" data-goal="out:não é um arquivo da lojinha,exit:1">
+<p class="try-task"><strong>Missão (versão 4):</strong> a aba <code>estoque.bin</code> é um arquivo de texto, uma lista de compras, no lugar do estoque. O <code>carregar</code> lê o cabeçalho mas não confere a assinatura, e a mensagem sai confusa (uma "versão" absurda, que são as letras <code>a de</code> lidas como número). Acrescente o teste da assinatura no <code>if</code> marcado, com <code>memcmp</code>, para o programa dizer <code>estoque.bin não é um arquivo da lojinha.</code> e sair com o código 1.</p>
+<pre class="script" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define TEMPORARIO "estoque.tmp"
+#define MAX_PRODUTOS 100
+#define ESTOQUE_BAIXO 5
+#define VERSAO_ARQUIVO 1
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+typedef struct {
+    char assinatura[4];     // sempre 'L', 'O', 'J', 'A'
+    int32_t versao;         // o formato do arquivo
+    int32_t total;          // quantos produtos vêm depois
+} Cabecalho;
+
+// Lê o estoque do disco. Devolve quantos produtos leu (0 se o arquivo
+// ainda não existe) ou -1 se o arquivo não é um estoque da lojinha.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    Cabecalho cab;
+    if (fread(&amp;cab, sizeof cab, 1, f) != 1) {  // e a assinatura?
+        printf("%s não é um arquivo da lojinha.\n", ARQUIVO);
+        fclose(f);
+        return -1;
+    }
+    if (cab.versao != VERSAO_ARQUIVO) {
+        printf("%s é da versão %d; eu só leio a versão %d.\n",
+               ARQUIVO, cab.versao, VERSAO_ARQUIVO);
+        fclose(f);
+        return -1;
+    }
+    if (cab.total &lt; 0 || cab.total &gt; max) {
+        printf("%s diz ter %d produtos; eu aceito até %d.\n",
+               ARQUIVO, cab.total, max);
+        fclose(f);
+        return -1;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)cab.total, f);
+    fclose(f);
+    if (lidos != (size_t)cab.total) {
+        printf("%s está cortado: li %zu de %d produtos.\n",
+               ARQUIVO, lidos, cab.total);
+        return -1;
+    }
+    return cab.total;
+}
+
+// Grava num arquivo temporário e só no fim troca pelo verdadeiro.
+// Devolve true se deu tudo certo.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(TEMPORARIO, "wb");
+    if (f == NULL) {
+        perror(TEMPORARIO);
+        return false;
+    }
+    Cabecalho cab = {{'L', 'O', 'J', 'A'}, VERSAO_ARQUIVO, n};
+    bool ok = fwrite(&amp;cab, sizeof cab, 1, f) == 1 &amp;&amp;
+              fwrite(v, sizeof(Produto), (size_t)n, f) == (size_t)n;
+    if (fclose(f) != 0) {
+        ok = false;
+    }
+    if (!ok || rename(TEMPORARIO, ARQUIVO) != 0) {
+        perror("Erro ao salvar");
+        remove(TEMPORARIO);
+        return false;
+    }
+    return true;
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número inteiro de 0 a 999999. Devolve -1 se não for válido.
+int32_t ler_inteiro(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long valor = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || valor &lt; 0 || valor &gt; 999999) {
+        printf("\"%s\" não é um número válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)valor;
+}
+
+// Lê um preço em reais ("15.90" ou "15,90") e devolve em centavos.
+// Devolve -1 se não for válido.
+int32_t ler_preco(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *virgula = strchr(linha, ',');
+    if (virgula != NULL) {
+        *virgula = '.';             // aceita o jeito brasileiro
+    }
+    char *fim = NULL;
+    double reais = strtod(linha, &amp;fim);
+    if (fim == linha || *fim != '\0' || reais &lt; 0 || reais &gt; 99999) {
+        printf("\"%s\" não é um preço válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)(reais * 100 + 0.5);  // arredonda para o centavo
+}
+
+int achar(const Produto v[], int n, int32_t codigo) {
+    for (int i = 0; i &lt; n; i++) {
+        if (v[i].codigo == codigo) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void listar(const Produto v[], int n) {
+    if (n == 0) {
+        printf("O estoque está vazio.\n");
+        return;
+    }
+    long long total = 0;
+    printf("Cód  Produto                  Qtd       Preço\n");
+    printf("---  -----------------------  ----  ----------\n");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%3d  %-23s  %4d  R$ %4d,%02d", v[i].codigo, v[i].nome,
+               v[i].quantidade, v[i].preco / 100, v[i].preco % 100);
+        if (v[i].quantidade &lt;= ESTOQUE_BAIXO) {
+            printf("  (acabando!)");
+        }
+        printf("\n");
+        total += (long long)v[i].quantidade * v[i].preco;
+    }
+    printf("Valor do estoque: R$ %lld,%02lld\n", total / 100, total % 100);
+}
+
+void cadastrar(Produto v[], int *n) {
+    if (*n == MAX_PRODUTOS) {
+        printf("O estoque está cheio (%d produtos).\n", MAX_PRODUTOS);
+        return;
+    }
+    Produto p = {0};
+    char linha[100];
+    if (!ler_linha("Nome: ", linha, sizeof linha) || linha[0] == '\0') {
+        printf("Cadastro cancelado.\n");
+        return;
+    }
+    if (strlen(linha) &gt;= sizeof p.nome) {
+        printf("Nome comprido demais (no máximo %zu letras).\n", sizeof p.nome - 1);
+        return;
+    }
+    strcpy(p.nome, linha);
+    p.quantidade = ler_inteiro("Quantidade: ");
+    if (p.quantidade &lt; 0) {
+        return;
+    }
+    p.preco = ler_preco("Preço (R$): ");
+    if (p.preco &lt; 0) {
+        return;
+    }
+    p.codigo = 1;                   // o próximo código livre
+    for (int i = 0; i &lt; *n; i++) {
+        if (v[i].codigo &gt;= p.codigo) {
+            p.codigo = v[i].codigo + 1;
+        }
+    }
+    v[*n] = p;
+    (*n)++;
+    printf("Cadastrado: %d - %s\n", p.codigo, p.nome);
+}
+
+// sinal = +1 para entrada (chegou mercadoria), -1 para saída (venda)
+void movimentar(Produto v[], int n, int sinal) {
+    int32_t codigo = ler_inteiro("Código: ");
+    if (codigo &lt; 0) {
+        return;
+    }
+    int i = achar(v, n, codigo);
+    if (i &lt; 0) {
+        printf("Não existe produto com o código %d.\n", codigo);
+        return;
+    }
+    int32_t qtd = ler_inteiro("Quantas unidades? ");
+    if (qtd &lt;= 0) {
+        return;
+    }
+    if (sinal &lt; 0 &amp;&amp; qtd &gt; v[i].quantidade) {
+        printf("Só há %d de %s.\n", v[i].quantidade, v[i].nome);
+        return;
+    }
+    v[i].quantidade += sinal * qtd;
+    printf("%s: agora são %d.\n", v[i].nome, v[i].quantidade);
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Cadastrar  3) Entrada  4) Saída\n");
+    printf("5) Salvar  6) Desfazer   0) Sair\n");
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+    if (n &lt; 0) {
+        printf("Não vou mexer nele. Confira o arquivo e tente de novo.\n");
+        return 1;
+    }
+    printf("=== Estoque da Lojinha ===\n");
+    printf("%d produtos carregados de %s.\n", n, ARQUIVO);
+    mostrar_menu();
+
+    char linha[100];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(estoque, n);
+        } else if (strcmp(linha, "2") == 0) {
+            cadastrar(estoque, &amp;n);
+        } else if (strcmp(linha, "3") == 0) {
+            movimentar(estoque, n, +1);
+        } else if (strcmp(linha, "4") == 0) {
+            movimentar(estoque, n, -1);
+        } else if (strcmp(linha, "5") == 0) {
+            if (salvar(estoque, n)) {
+                printf("Salvei %d produtos em %s.\n", n, ARQUIVO);
+            }
+        } else if (strcmp(linha, "6") == 0) {
+            n = carregar(estoque, MAX_PRODUTOS);
+            if (n &lt; 0) {
+                return 1;
+            }
+            printf("Voltei ao que estava salvo: %d produtos.\n", n);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    if (!salvar(estoque, n)) {
+        return 1;
+    }
+    printf("\nSalvei %d produtos em %s. Até amanhã!\n", n, ARQUIVO);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="estoque.bin">lista de compras
+</pre>
+<pre class="solucao" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define TEMPORARIO "estoque.tmp"
+#define MAX_PRODUTOS 100
+#define ESTOQUE_BAIXO 5
+#define VERSAO_ARQUIVO 1
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+typedef struct {
+    char assinatura[4];     // sempre 'L', 'O', 'J', 'A'
+    int32_t versao;         // o formato do arquivo
+    int32_t total;          // quantos produtos vêm depois
+} Cabecalho;
+
+// Lê o estoque do disco. Devolve quantos produtos leu (0 se o arquivo
+// ainda não existe) ou -1 se o arquivo não é um estoque da lojinha.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    Cabecalho cab;
+    if (fread(&amp;cab, sizeof cab, 1, f) != 1 ||
+        memcmp(cab.assinatura, "LOJA", 4) != 0) {
+        printf("%s não é um arquivo da lojinha.\n", ARQUIVO);
+        fclose(f);
+        return -1;
+    }
+    if (cab.versao != VERSAO_ARQUIVO) {
+        printf("%s é da versão %d; eu só leio a versão %d.\n",
+               ARQUIVO, cab.versao, VERSAO_ARQUIVO);
+        fclose(f);
+        return -1;
+    }
+    if (cab.total &lt; 0 || cab.total &gt; max) {
+        printf("%s diz ter %d produtos; eu aceito até %d.\n",
+               ARQUIVO, cab.total, max);
+        fclose(f);
+        return -1;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)cab.total, f);
+    fclose(f);
+    if (lidos != (size_t)cab.total) {
+        printf("%s está cortado: li %zu de %d produtos.\n",
+               ARQUIVO, lidos, cab.total);
+        return -1;
+    }
+    return cab.total;
+}
+
+// Grava num arquivo temporário e só no fim troca pelo verdadeiro.
+// Devolve true se deu tudo certo.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(TEMPORARIO, "wb");
+    if (f == NULL) {
+        perror(TEMPORARIO);
+        return false;
+    }
+    Cabecalho cab = {{'L', 'O', 'J', 'A'}, VERSAO_ARQUIVO, n};
+    bool ok = fwrite(&amp;cab, sizeof cab, 1, f) == 1 &amp;&amp;
+              fwrite(v, sizeof(Produto), (size_t)n, f) == (size_t)n;
+    if (fclose(f) != 0) {
+        ok = false;
+    }
+    if (!ok || rename(TEMPORARIO, ARQUIVO) != 0) {
+        perror("Erro ao salvar");
+        remove(TEMPORARIO);
+        return false;
+    }
+    return true;
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número inteiro de 0 a 999999. Devolve -1 se não for válido.
+int32_t ler_inteiro(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long valor = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || valor &lt; 0 || valor &gt; 999999) {
+        printf("\"%s\" não é um número válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)valor;
+}
+
+// Lê um preço em reais ("15.90" ou "15,90") e devolve em centavos.
+// Devolve -1 se não for válido.
+int32_t ler_preco(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *virgula = strchr(linha, ',');
+    if (virgula != NULL) {
+        *virgula = '.';             // aceita o jeito brasileiro
+    }
+    char *fim = NULL;
+    double reais = strtod(linha, &amp;fim);
+    if (fim == linha || *fim != '\0' || reais &lt; 0 || reais &gt; 99999) {
+        printf("\"%s\" não é um preço válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)(reais * 100 + 0.5);  // arredonda para o centavo
+}
+
+int achar(const Produto v[], int n, int32_t codigo) {
+    for (int i = 0; i &lt; n; i++) {
+        if (v[i].codigo == codigo) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void listar(const Produto v[], int n) {
+    if (n == 0) {
+        printf("O estoque está vazio.\n");
+        return;
+    }
+    long long total = 0;
+    printf("Cód  Produto                  Qtd       Preço\n");
+    printf("---  -----------------------  ----  ----------\n");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%3d  %-23s  %4d  R$ %4d,%02d", v[i].codigo, v[i].nome,
+               v[i].quantidade, v[i].preco / 100, v[i].preco % 100);
+        if (v[i].quantidade &lt;= ESTOQUE_BAIXO) {
+            printf("  (acabando!)");
+        }
+        printf("\n");
+        total += (long long)v[i].quantidade * v[i].preco;
+    }
+    printf("Valor do estoque: R$ %lld,%02lld\n", total / 100, total % 100);
+}
+
+void cadastrar(Produto v[], int *n) {
+    if (*n == MAX_PRODUTOS) {
+        printf("O estoque está cheio (%d produtos).\n", MAX_PRODUTOS);
+        return;
+    }
+    Produto p = {0};
+    char linha[100];
+    if (!ler_linha("Nome: ", linha, sizeof linha) || linha[0] == '\0') {
+        printf("Cadastro cancelado.\n");
+        return;
+    }
+    if (strlen(linha) &gt;= sizeof p.nome) {
+        printf("Nome comprido demais (no máximo %zu letras).\n", sizeof p.nome - 1);
+        return;
+    }
+    strcpy(p.nome, linha);
+    p.quantidade = ler_inteiro("Quantidade: ");
+    if (p.quantidade &lt; 0) {
+        return;
+    }
+    p.preco = ler_preco("Preço (R$): ");
+    if (p.preco &lt; 0) {
+        return;
+    }
+    p.codigo = 1;                   // o próximo código livre
+    for (int i = 0; i &lt; *n; i++) {
+        if (v[i].codigo &gt;= p.codigo) {
+            p.codigo = v[i].codigo + 1;
+        }
+    }
+    v[*n] = p;
+    (*n)++;
+    printf("Cadastrado: %d - %s\n", p.codigo, p.nome);
+}
+
+// sinal = +1 para entrada (chegou mercadoria), -1 para saída (venda)
+void movimentar(Produto v[], int n, int sinal) {
+    int32_t codigo = ler_inteiro("Código: ");
+    if (codigo &lt; 0) {
+        return;
+    }
+    int i = achar(v, n, codigo);
+    if (i &lt; 0) {
+        printf("Não existe produto com o código %d.\n", codigo);
+        return;
+    }
+    int32_t qtd = ler_inteiro("Quantas unidades? ");
+    if (qtd &lt;= 0) {
+        return;
+    }
+    if (sinal &lt; 0 &amp;&amp; qtd &gt; v[i].quantidade) {
+        printf("Só há %d de %s.\n", v[i].quantidade, v[i].nome);
+        return;
+    }
+    v[i].quantidade += sinal * qtd;
+    printf("%s: agora são %d.\n", v[i].nome, v[i].quantidade);
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Cadastrar  3) Entrada  4) Saída\n");
+    printf("5) Salvar  6) Desfazer   0) Sair\n");
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+    if (n &lt; 0) {
+        printf("Não vou mexer nele. Confira o arquivo e tente de novo.\n");
+        return 1;
+    }
+    printf("=== Estoque da Lojinha ===\n");
+    printf("%d produtos carregados de %s.\n", n, ARQUIVO);
+    mostrar_menu();
+
+    char linha[100];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(estoque, n);
+        } else if (strcmp(linha, "2") == 0) {
+            cadastrar(estoque, &amp;n);
+        } else if (strcmp(linha, "3") == 0) {
+            movimentar(estoque, n, +1);
+        } else if (strcmp(linha, "4") == 0) {
+            movimentar(estoque, n, -1);
+        } else if (strcmp(linha, "5") == 0) {
+            if (salvar(estoque, n)) {
+                printf("Salvei %d produtos em %s.\n", n, ARQUIVO);
+            }
+        } else if (strcmp(linha, "6") == 0) {
+            n = carregar(estoque, MAX_PRODUTOS);
+            if (n &lt; 0) {
+                return 1;
+            }
+            printf("Voltei ao que estava salvo: %d produtos.\n", n);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    if (!salvar(estoque, n)) {
+        return 1;
+    }
+    printf("\nSalvei %d produtos em %s. Até amanhã!\n", n, ARQUIVO);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>O programa completo</h2>
+<p>A versão final, igual à versão 4. Compile com <code>gcc -std=c23 -Wall -Wextra estoque.c -o estoque</code>:</p>
+
+<pre class="file" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;
+
+#define ARQUIVO "estoque.bin"
+#define TEMPORARIO "estoque.tmp"
+#define MAX_PRODUTOS 100
+#define ESTOQUE_BAIXO 5
+#define VERSAO_ARQUIVO 1
+
+typedef struct {
+    int32_t codigo;
+    char nome[24];
+    int32_t quantidade;
+    int32_t preco;          // em centavos: 1590 = R$ 15,90
+} Produto;
+
+typedef struct {
+    char assinatura[4];     // sempre 'L', 'O', 'J', 'A'
+    int32_t versao;         // o formato do arquivo
+    int32_t total;          // quantos produtos vêm depois
+} Cabecalho;
+
+// Lê o estoque do disco. Devolve quantos produtos leu (0 se o arquivo
+// ainda não existe) ou -1 se o arquivo não é um estoque da lojinha.
+int carregar(Produto v[], int max) {
+    FILE *f = fopen(ARQUIVO, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    Cabecalho cab;
+    if (fread(&amp;cab, sizeof cab, 1, f) != 1 ||
+        memcmp(cab.assinatura, "LOJA", 4) != 0) {
+        printf("%s não é um arquivo da lojinha.\n", ARQUIVO);
+        fclose(f);
+        return -1;
+    }
+    if (cab.versao != VERSAO_ARQUIVO) {
+        printf("%s é da versão %d; eu só leio a versão %d.\n",
+               ARQUIVO, cab.versao, VERSAO_ARQUIVO);
+        fclose(f);
+        return -1;
+    }
+    if (cab.total &lt; 0 || cab.total &gt; max) {
+        printf("%s diz ter %d produtos; eu aceito até %d.\n",
+               ARQUIVO, cab.total, max);
+        fclose(f);
+        return -1;
+    }
+    size_t lidos = fread(v, sizeof(Produto), (size_t)cab.total, f);
+    fclose(f);
+    if (lidos != (size_t)cab.total) {
+        printf("%s está cortado: li %zu de %d produtos.\n",
+               ARQUIVO, lidos, cab.total);
+        return -1;
+    }
+    return cab.total;
+}
+
+// Grava num arquivo temporário e só no fim troca pelo verdadeiro.
+// Devolve true se deu tudo certo.
+bool salvar(const Produto v[], int n) {
+    FILE *f = fopen(TEMPORARIO, "wb");
+    if (f == NULL) {
+        perror(TEMPORARIO);
+        return false;
+    }
+    Cabecalho cab = {{'L', 'O', 'J', 'A'}, VERSAO_ARQUIVO, n};
+    bool ok = fwrite(&amp;cab, sizeof cab, 1, f) == 1 &amp;&amp;
+              fwrite(v, sizeof(Produto), (size_t)n, f) == (size_t)n;
+    if (fclose(f) != 0) {
+        ok = false;
+    }
+    if (!ok || rename(TEMPORARIO, ARQUIVO) != 0) {
+        perror("Erro ao salvar");
+        remove(TEMPORARIO);
+        return false;
+    }
+    return true;
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número inteiro de 0 a 999999. Devolve -1 se não for válido.
+int32_t ler_inteiro(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long valor = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || valor &lt; 0 || valor &gt; 999999) {
+        printf("\"%s\" não é um número válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)valor;
+}
+
+// Lê um preço em reais ("15.90" ou "15,90") e devolve em centavos.
+// Devolve -1 se não for válido.
+int32_t ler_preco(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *virgula = strchr(linha, ',');
+    if (virgula != NULL) {
+        *virgula = '.';             // aceita o jeito brasileiro
+    }
+    char *fim = NULL;
+    double reais = strtod(linha, &amp;fim);
+    if (fim == linha || *fim != '\0' || reais &lt; 0 || reais &gt; 99999) {
+        printf("\"%s\" não é um preço válido.\n", linha);
+        return -1;
+    }
+    return (int32_t)(reais * 100 + 0.5);  // arredonda para o centavo
+}
+
+int achar(const Produto v[], int n, int32_t codigo) {
+    for (int i = 0; i &lt; n; i++) {
+        if (v[i].codigo == codigo) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void listar(const Produto v[], int n) {
+    if (n == 0) {
+        printf("O estoque está vazio.\n");
+        return;
+    }
+    long long total = 0;
+    printf("Cód  Produto                  Qtd       Preço\n");
+    printf("---  -----------------------  ----  ----------\n");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%3d  %-23s  %4d  R$ %4d,%02d", v[i].codigo, v[i].nome,
+               v[i].quantidade, v[i].preco / 100, v[i].preco % 100);
+        if (v[i].quantidade &lt;= ESTOQUE_BAIXO) {
+            printf("  (acabando!)");
+        }
+        printf("\n");
+        total += (long long)v[i].quantidade * v[i].preco;
+    }
+    printf("Valor do estoque: R$ %lld,%02lld\n", total / 100, total % 100);
+}
+
+void cadastrar(Produto v[], int *n) {
+    if (*n == MAX_PRODUTOS) {
+        printf("O estoque está cheio (%d produtos).\n", MAX_PRODUTOS);
+        return;
+    }
+    Produto p = {0};
+    char linha[100];
+    if (!ler_linha("Nome: ", linha, sizeof linha) || linha[0] == '\0') {
+        printf("Cadastro cancelado.\n");
+        return;
+    }
+    if (strlen(linha) &gt;= sizeof p.nome) {
+        printf("Nome comprido demais (no máximo %zu letras).\n", sizeof p.nome - 1);
+        return;
+    }
+    strcpy(p.nome, linha);
+    p.quantidade = ler_inteiro("Quantidade: ");
+    if (p.quantidade &lt; 0) {
+        return;
+    }
+    p.preco = ler_preco("Preço (R$): ");
+    if (p.preco &lt; 0) {
+        return;
+    }
+    p.codigo = 1;                   // o próximo código livre
+    for (int i = 0; i &lt; *n; i++) {
+        if (v[i].codigo &gt;= p.codigo) {
+            p.codigo = v[i].codigo + 1;
+        }
+    }
+    v[*n] = p;
+    (*n)++;
+    printf("Cadastrado: %d - %s\n", p.codigo, p.nome);
+}
+
+// sinal = +1 para entrada (chegou mercadoria), -1 para saída (venda)
+void movimentar(Produto v[], int n, int sinal) {
+    int32_t codigo = ler_inteiro("Código: ");
+    if (codigo &lt; 0) {
+        return;
+    }
+    int i = achar(v, n, codigo);
+    if (i &lt; 0) {
+        printf("Não existe produto com o código %d.\n", codigo);
+        return;
+    }
+    int32_t qtd = ler_inteiro("Quantas unidades? ");
+    if (qtd &lt;= 0) {
+        return;
+    }
+    if (sinal &lt; 0 &amp;&amp; qtd &gt; v[i].quantidade) {
+        printf("Só há %d de %s.\n", v[i].quantidade, v[i].nome);
+        return;
+    }
+    v[i].quantidade += sinal * qtd;
+    printf("%s: agora são %d.\n", v[i].nome, v[i].quantidade);
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Cadastrar  3) Entrada  4) Saída\n");
+    printf("5) Salvar  6) Desfazer   0) Sair\n");
+}
+
+int main(void) {
+    Produto estoque[MAX_PRODUTOS];
+    int n = carregar(estoque, MAX_PRODUTOS);
+    if (n &lt; 0) {
+        printf("Não vou mexer nele. Confira o arquivo e tente de novo.\n");
+        return 1;
+    }
+    printf("=== Estoque da Lojinha ===\n");
+    printf("%d produtos carregados de %s.\n", n, ARQUIVO);
+    mostrar_menu();
+
+    char linha[100];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(estoque, n);
+        } else if (strcmp(linha, "2") == 0) {
+            cadastrar(estoque, &amp;n);
+        } else if (strcmp(linha, "3") == 0) {
+            movimentar(estoque, n, +1);
+        } else if (strcmp(linha, "4") == 0) {
+            movimentar(estoque, n, -1);
+        } else if (strcmp(linha, "5") == 0) {
+            if (salvar(estoque, n)) {
+                printf("Salvei %d produtos em %s.\n", n, ARQUIVO);
+            }
+        } else if (strcmp(linha, "6") == 0) {
+            n = carregar(estoque, MAX_PRODUTOS);
+            if (n &lt; 0) {
+                return 1;
+            }
+            printf("Voltei ao que estava salvo: %d produtos.\n", n);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    if (!salvar(estoque, n)) {
+        return 1;
+    }
+    printf("\nSalvei %d produtos em %s. Até amanhã!\n", n, ARQUIVO);
+    return 0;
+}
+</pre>
+
+<p>O que o projeto juntou: <a href="structs.html">structs</a> e <a href="typedef.html">typedef</a>, <a href="stdint.html">int32_t</a>, <a href="arquivos-binarios.html">fwrite e fread</a>, <a href="fgets.html">fgets</a>, <a href="string-numero.html">strtol e strtod</a>, <a href="passagem-ponteiro.html">passagem por ponteiro</a>, <a href="funcoes-string.html">strcmp, strcpy e memcmp</a> e o <a href="errno.html">perror</a>.</p>
+
+<h3>Rodando no laboratório</h3>
+<p>Depois da sessão do começo da página, a Ana abriu o programa de novo: a cola cadastrada e as 5 canetas vendidas estão lá. E o <code>estoque.tmp</code> não sobrou na pasta, porque o <code>rename</code> o transformou no <code>estoque.bin</code>:</p>
+
+<pre class="term" data-cwd="~/c/estoque">$ ./estoque
+=== Estoque da Lojinha ===
+5 produtos carregados de estoque.bin.
+1) Listar  2) Cadastrar  3) Entrada  4) Saída
+5) Salvar  6) Desfazer   0) Sair
+
+Opção: 1
+Cód  Produto                  Qtd       Preço
+---  -----------------------  ----  ----------
+  1  Caderno                    10  R$   15,90
+  2  Caneta                     20  R$    2,50
+  3  Borracha                   23  R$    1,75
+  4  Apontador                   8  R$    4,35
+  5  Cola                       10  R$    3,50
+Valor do estoque: R$ 319,05
+
+Opção: 0
+
+Salvei 5 produtos em estoque.bin. Até amanhã!
+$ ls estoque*
+estoque  estoque.bin  estoque.c  estoque-errado  estoque-v3.bin</pre>
+
+<hr>
+
+<h2>Desafios extras</h2>
+<ol>
+  <li><strong>Remover um produto.</strong> Acrescente a opção <code>7) Remover</code>: ache a posição com <code>achar</code> e puxe os produtos seguintes uma casa para trás (<code>v[j] = v[j + 1]</code>), diminuindo <code>n</code>.</li>
+  <li><strong>Buscar pelo nome.</strong> Mostre só os produtos cujo nome contém o texto digitado, com <code>strstr</code> (aula <a href="funcoes-string.html">Funções de String</a>).</li>
+  <li><strong>Lista de compras.</strong> Uma opção que mostra só os produtos <code>(acabando!)</code> e quanto custaria repor cada um até 20 unidades.</li>
+  <li><strong>Em ordem de nome.</strong> Liste em ordem alfabética com <code>qsort</code> e uma função que compara com <code>strcmp</code> (aula <a href="ordenacao.html">Ordenação</a>).</li>
+  <li><strong>Exportar para planilha.</strong> Grave um <code>estoque.csv</code> com <code>fprintf</code>, uma linha por produto (<code>1;Caderno;10;15,90</code>), para abrir no LibreOffice (aula <a href="escrever-arquivos.html">Escrever Arquivos</a>).</li>
+  <li><strong>Versão 2 do formato.</strong> Acrescente à ficha um campo <code>int32_t minimo</code> (o estoque mínimo de cada produto, no lugar do 5 fixo). Grave com <code>VERSAO_ARQUIVO 2</code> e faça o <code>carregar</code> aceitar também a versão 1, completando o <code>minimo</code> com 5.</li>
+</ol>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. Por que o preço é guardado como <code>int32_t</code> em centavos, e não como <code>double</code> em reais?</p>
+<label><input type="radio" name="q1"> Porque o <code>fwrite</code> não grava <code>double</code>.</label>
+<label><input type="radio" name="q1"> Porque o <code>double</code> ocupa menos bytes.</label>
+<label><input type="radio" name="q1"> Porque o <code>double</code> não guarda valores como 4,35 exatos, e centavos inteiros fazem as contas sem erro.</label>
+<label><input type="radio" name="q1"> Porque o <code>printf</code> não mostra vírgula com <code>double</code>.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Uma struct com <code>long codigo</code> tem 48 bytes no gcc do laboratório e 40 no editor do guia. O que isso causa num arquivo binário?</p>
+<label><input type="radio" name="q2"> Nada: o <code>fread</code> corrige o tamanho sozinho.</label>
+<label><input type="radio" name="q2"> O arquivo gravado de um lado é lido torto do outro, porque cada lado acha que a ficha tem um tamanho.</label>
+<label><input type="radio" name="q2"> Um erro de compilação.</label>
+<label><input type="radio" name="q2"> O arquivo fica com o tamanho da média, 44 bytes por ficha.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. O que acontece com um <code>estoque.bin</code> de 144 bytes quando o programa faz <code>fopen("estoque.bin", "wb")</code>?</p>
+<label><input type="radio" name="q3"> Nada, até o primeiro <code>fwrite</code>.</label>
+<label><input type="radio" name="q3"> O <code>fopen</code> devolve <code>NULL</code>, porque o arquivo já existe.</label>
+<label><input type="radio" name="q3"> As gravações vão para o fim do arquivo.</label>
+<label><input type="radio" name="q3"> O conteúdo é apagado na hora: o arquivo fica com 0 bytes.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Por que a versão 4 grava em <code>estoque.tmp</code> e só depois faz <code>rename</code> para <code>estoque.bin</code>?</p>
+<label><input type="radio" name="q4"> Para que, se a gravação falhar no meio, o <code>estoque.bin</code> antigo continue inteiro.</label>
+<label><input type="radio" name="q4"> Porque o <code>fwrite</code> não grava em arquivos <code>.bin</code>.</label>
+<label><input type="radio" name="q4"> Para o arquivo ficar menor.</label>
+<label><input type="radio" name="q4"> Porque o Linux não deixa abrir o mesmo arquivo duas vezes.</label>
+</div>
+
+<div class="exercise">
+<p>5. No arquivo da versão 4, o cabeçalho tem 12 bytes e cada produto 36. Em que byte começa o terceiro produto (o de índice 2)?</p>
+<div class="ex-code">byte <input data-answer="84" aria-label="posição" size="4"></div>
+</div>
+
+<div class="exercise">
+<p>6. Complete a conversão de reais para centavos, sem perder o centavo do 4,35:</p>
+<div class="ex-code">int32_t centavos = (int32_t)(reais * 100 + <input data-answer="0.5|0.5f|.5" aria-label="o que somar" size="4">);</div>
+</div>
+
+<div class="exercise">
+<p>7. Complete a gravação do cabeçalho <code>cab</code> (uma variável, não um array):</p>
+<div class="ex-code">fwrite(<input data-answer="&amp;cab" aria-label="primeiro argumento" size="6">, sizeof cab, 1, f);</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma struct de tamanho fixo vira um registro no arquivo: <code>fwrite(v, sizeof(Produto), n, f)</code> grava o array inteiro e <code>fread</code> lê de volta.</li>
+  <li>Para o disco, use <code>int32_t</code> e companhia: o <code>long</code> tem 8 bytes no gcc e 4 no editor, e a ficha mudaria de tamanho.</li>
+  <li>Dinheiro em centavos inteiros. Ao converter de <code>double</code>, arredonde com <code>+ 0.5</code>: o <code>(int32_t)</code> corta, e 4,35 viraria 4,34.</li>
+  <li><code>"rb"</code> para ler, <code>"wb"</code> para regravar tudo; o <code>"wb"</code> apaga o arquivo na hora.</li>
+  <li>Confira o que <code>fread</code>, <code>fwrite</code> e <code>fclose</code> devolvem, e nunca confie num número que veio do arquivo.</li>
+  <li>Um cabeçalho com assinatura e versão faz o programa recusar arquivos estranhos, cortados ou de outro formato.</li>
+  <li>Salvar com segurança: grave num temporário, confira tudo e troque com <code>rename</code>.</li>
+</ul>
+<p>Próximo projeto: <a href="projeto-texto.html">Contador de Palavras</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
