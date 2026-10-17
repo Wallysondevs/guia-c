@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Strings Dinâmicas — malloc, strdup e linhas de qualquer tamanho | Guia C</title>
+<meta name="description" content="Strings dinâmicas em C para quem nunca programou: malloc(strlen(s) + 1) e o porquê do +1, copiar com strdup (padrão no C23), juntar duas strings em memória nova, montar texto com snprintf, ler uma linha de qualquer tamanho com fgets em pedaços ou getline (POSIX), com os erros reais do gcc 15, do valgrind e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Strings Dinâmicas</span></h1>
+
+<p class="intro">Até aqui, todo texto morava num array de tamanho fixo: <code>char nome[100];</code>. Se o nome tem 3 letras, sobram 96 bytes vazios; se tem 150, não cabe. Nesta aula você vai guardar textos em memória <strong>do tamanho exato</strong>, reservada com <code>malloc</code>, vai juntar textos, montar frases e ler linhas de qualquer comprimento. Tudo gira em torno de uma conta simples, que todo programador C já errou um dia: <code>strlen(s) + 1</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que um texto de 3 letras precisa de 4 bytes (o <code>+ 1</code> do <code>'\0'</code>).</li>
+  <li>Como copiar um texto para memória nova: à mão com <code>malloc</code> + <code>strcpy</code> e com <code>strdup</code> (padrão no C23).</li>
+  <li>Como juntar duas strings numa terceira, do tamanho certo.</li>
+  <li>Como montar uma frase com números usando <code>snprintf</code> para medir antes.</li>
+  <li>Como ler uma linha de <strong>qualquer</strong> tamanho: com <code>fgets</code> em pedaços e com <code>getline</code> (POSIX).</li>
+  <li>Os erros clássicos: esquecer o <code>+ 1</code>, devolver um array local, dar <code>free</code> num texto entre aspas.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Antes desta aula, vale ter visto <a href="strings.html">Strings</a>, <a href="funcoes-string.html">Funções de String</a> e <a href="malloc-free.html">malloc e free</a>.</p>
+
+<hr>
+
+<h2>A ideia: uma etiqueta sob medida</h2>
+<p>Pense numa etiqueta de nome para crachá. Com <code>char nome[100]</code>, a Ana sempre compra a etiqueta gigante, de 100 espaços, mesmo para escrever "Bia". Com uma string dinâmica, ela <strong>mede o nome primeiro</strong> e corta a etiqueta do tamanho exato.</p>
+
+<p>Só que toda string em C termina com um caractere invisível, o <code>'\0'</code> (o "fim de texto", veja <a href="strings.html">Strings</a>). É ele que diz às funções onde o texto acaba. O <code>strlen</code> conta as letras, mas <strong>não conta o <code>'\0'</code></strong>. Por isso a etiqueta precisa de um espaço a mais:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Texto</th><th>Na memória</th><th><code>strlen</code></th><th>Bytes necessários</th></tr>
+<tr><td><code>"Bia"</code></td><td><code>'B' 'i' 'a' '\0'</code></td><td>3</td><td>4</td></tr>
+<tr><td><code>"Ana Souza"</code></td><td><code>'A' 'n' 'a' ' ' 'S' 'o' 'u' 'z' 'a' '\0'</code></td><td>9</td><td>10</td></tr>
+<tr><td><code>""</code> (vazio)</td><td><code>'\0'</code></td><td>0</td><td>1</td></tr>
+</table>
+</div>
+
+<p>A regra, para decorar: <strong>para guardar uma cópia de <code>s</code>, reserve <code>strlen(s) + 1</code> bytes</strong>. Como cada <code>char</code> ocupa exatamente 1 byte (<code>sizeof(char)</code> é sempre 1), não precisa multiplicar por nada.</p>
+
+<hr>
+
+<h2>1. Copiar um texto para memória nova</h2>
+<p>O programa lê o nome da Ana num buffer grande (temporário) e depois guarda uma cópia do tamanho exato. A cópia é feita por uma função própria, <code>copiar</code>:</p>
+
+<pre class="file" data-file="copia.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *copiar(const char *s) {
+    size_t n = strlen(s);
+    char *nova = malloc(n + 1);
+    if (nova == NULL) {
+        return NULL;
+    }
+    strcpy(nova, s);
+    return nova;
+}
+
+int main(void) {
+    char buffer[100];
+    printf("Seu nome: ");
+    if (fgets(buffer, sizeof buffer, stdin) == NULL) {
+        return 1;
+    }
+    buffer[strcspn(buffer, "\n")] = '\0';
+
+    char *nome = copiar(buffer);
+    if (nome == NULL) {
+        printf("Sem memória!\n");
+        return 1;
+    }
+    printf("\nGuardei \"%s\": %zu letras em %zu bytes\n", nome, strlen(nome), strlen(nome) + 1);
+    free(nome);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>char *copiar(const char *s)</dt><dd>Recebe o texto original (o <code>const</code> promete não mexer nele, veja <a href="const-ponteiros.html">const e Ponteiros</a>) e devolve um ponteiro para a cópia nova.</dd>
+  <dt>size_t n = strlen(s);</dt><dd>Mede o texto: quantas letras, sem o <code>'\0'</code>.</dd>
+  <dt>char *nova = malloc(n + 1);</dt><dd>Reserva as letras <strong>mais um</strong> byte para o <code>'\0'</code>. Este <code>+ 1</code> é o coração da aula.</dd>
+  <dt>if (nova == NULL) return NULL;</dt><dd>Sem memória, a função avisa quem chamou devolvendo <code>NULL</code>.</dd>
+  <dt>strcpy(nova, s);</dt><dd>Copia as letras e o <code>'\0'</code>. O <code>strcpy</code> é perigoso quando o destino pode ser pequeno demais; aqui é seguro, porque o destino acabou de ser reservado com o tamanho exato.</dd>
+  <dt>return nova;</dt><dd>Devolve o endereço da memória reservada. Ela continua existindo depois que a função termina (memória do <a href="pilha-heap.html">heap</a> só some com <code>free</code>).</dd>
+  <dt>buffer[strcspn(buffer, "\n")] = '\0';</dt><dd>Tira o Enter que o <code>fgets</code> guarda no fim (veja <a href="fgets.html">fgets</a>).</dd>
+  <dt>free(nome);</dt><dd>Quem recebeu a cópia é <strong>dono</strong> dela e tem de liberá-la. Combine isso sempre: uma função que devolve memória nova deixa o <code>free</code> para quem chamou.</dd>
+</dl>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra copia.c -o copia
+$ ./copia
+Seu nome: Ana Souza
+
+Guardei "Ana Souza": 9 letras em 10 bytes</pre>
+
+<p>O <code>buffer</code> de 100 bytes é temporário: some quando o <code>main</code> termina e pode ser reaproveitado para ler outro nome. A cópia em <code>nome</code> ocupa só os 10 bytes necessários.</p>
+
+<div class="tryc" data-goal="out:Cópia: Ena Souza,src:\+\s*1">
+<p class="try-task"><strong>Missão:</strong> escreva o corpo da função <code>copiar</code>: reserve <code>n + 1</code> bytes com <code>malloc</code>, devolva <code>NULL</code> se ele falhar, copie o texto com <code>strcpy</code> e devolva o ponteiro. O <code>main</code> troca a primeira letra da cópia, e a tela deve mostrar <code>Original: Ana Souza</code> e <code>Cópia: Ena Souza</code> (o original não muda).</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *copiar(const char *s) {
+    size_t n = strlen(s);
+    /* 1. reserve n + 1 bytes com malloc
+       2. se o malloc devolver NULL, devolva NULL
+       3. copie s para a memória nova com strcpy e devolva o ponteiro */
+    return NULL;
+}
+
+int main(void) {
+    const char *original = "Ana Souza";
+    char *copia = copiar(original);
+    if (copia == NULL) {
+        printf("copiar devolveu NULL\n");
+        return 1;
+    }
+    copia[0] = 'E';
+    printf("Original: %s\n", original);
+    printf("Cópia: %s\n", copia);
+    free(copia);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *copiar(const char *s) {
+    size_t n = strlen(s);
+    char *nova = malloc(n + 1);
+    if (nova == NULL) {
+        return NULL;
+    }
+    strcpy(nova, s);
+    return nova;
+}
+
+int main(void) {
+    const char *original = "Ana Souza";
+    char *copia = copiar(original);
+    if (copia == NULL) {
+        printf("copiar devolveu NULL\n");
+        return 1;
+    }
+    copia[0] = 'E';
+    printf("Original: %s\n", original);
+    printf("Cópia: %s\n", copia);
+    free(copia);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que o código inicial dá o aviso <code>unused variable 'n'</code> ("variável <code>n</code> não usada"): é o compilador lembrando que você mediu o texto e ainda não usou a medida.</p>
+
+<hr>
+
+<h2>2. <code>strdup</code>: a cópia pronta <span class="versao">C23</span></h2>
+<p>Copiar um texto para memória nova é tão comum que existe uma função pronta: <code>strdup</code> (de <em>string duplicate</em>, "duplicar string"). Ela faz exatamente o que a sua <code>copiar</code> faz: mede, reserva <code>strlen + 1</code>, copia e devolve o ponteiro (ou <code>NULL</code> se faltar memória).</p>
+
+<pre class="file" data-file="dup.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *original = "Ana Souza";
+    char *copia = strdup(original);
+    if (copia == NULL) {
+        printf("Sem memória!\n");
+        return 1;
+    }
+    copia[0] = 'E';
+    printf("Original: %s\n", original);
+    printf("Cópia:    %s\n", copia);
+    free(copia);
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra dup.c -o dup
+$ ./dup
+Original: Ana Souza
+Cópia:    Ena Souza</pre>
+
+<p>Por décadas, <code>strdup</code> existiu em todo Linux e macOS (ela faz parte do <strong>POSIX</strong>, o padrão dos sistemas tipo Unix), mas <strong>não</strong> fazia parte do C padrão. Só entrou no padrão no <strong>C23</strong>, junto com a irmã <code>strndup</code>. Com um padrão antigo e estrito, o gcc nem a reconhece:</p>
+
+<pre class="term">$ gcc -std=c17 -Wall -Wextra dup.c -o dup
+dup.c: In function ‘main’:
+dup.c:7:19: error: implicit declaration of function ‘strdup’; did you mean ‘strcmp’? [-Wimplicit-function-declaration]
+    7 |     char *copia = strdup(original);
+      |                   ^~~~~~
+      |                   strcmp
+dup.c:7:19: error: initialization of ‘char *’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
+$ gcc -std=gnu17 -Wall -Wextra dup.c -o dup     « com as extensões GNU/POSIX, compila
+$</pre>
+
+<p><em>implicit declaration of function ‘strdup’</em> = "a função <code>strdup</code> não foi declarada": no modo <code>-std=c17</code> estrito, o <code>string.h</code> esconde o que não é C17. O segundo erro é consequência do primeiro. Com <code>-std=c23</code> (o padrão do guia) ou <code>-std=gnu17</code>, funciona.</p>
+
+<div class="tip">
+<strong><code>strndup</code>: copiar só o começo</strong>
+<p><code>strndup(s, n)</code> copia <strong>no máximo</strong> <code>n</code> letras de <code>s</code> e sempre põe o <code>'\0'</code> no fim. <code>strndup("Arroz, feijão, café", 5)</code> devolve um <code>"Arroz"</code> novinho (6 bytes). No gcc 15 com <code>-std=c23</code>, funciona direto. No editor do guia, a biblioteca C (wasi-libc) ainda só mostra o <code>strndup</code> no modo POSIX: escreva <code>#define _POSIX_C_SOURCE 200809L</code> na primeira linha do arquivo, antes dos <code>#include</code>.</p>
+</div>
+
+<hr>
+
+<h2>3. Juntar duas strings em memória nova</h2>
+<p>Para juntar <code>"Bom dia, "</code> e <code>"Ana!"</code>, o <code>strcat</code> sozinho não serve: ele escreve no fim da primeira string, e um texto entre aspas não pode ser mudado (nem tem espaço sobrando). O certo é reservar uma terceira área, com espaço para os dois textos <strong>e um <code>'\0'</code></strong>:</p>
+
+<pre class="file" data-file="juntar.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *juntar(const char *a, const char *b) {
+    char *nova = malloc(strlen(a) + strlen(b) + 1);
+    if (nova == NULL) {
+        return NULL;
+    }
+    strcpy(nova, a);
+    strcat(nova, b);
+    return nova;
+}
+
+int main(void) {
+    char *saudacao = juntar("Bom dia, ", "Ana!");
+    if (saudacao == NULL) {
+        return 1;
+    }
+    printf("%s\n", saudacao);
+    printf("%zu letras\n", strlen(saudacao));
+    free(saudacao);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>malloc(strlen(a) + strlen(b) + 1)</code></td><td>9 letras de <code>"Bom dia, "</code> + 4 de <code>"Ana!"</code> + 1 do <code>'\0'</code> = 14 bytes. Um <code>'\0'</code> só: o do primeiro texto é substituído pelo segundo.</td></tr>
+<tr><td><code>strcpy(nova, a);</code></td><td>Copia o primeiro texto (com o seu <code>'\0'</code>) para o começo da área nova.</td></tr>
+<tr><td><code>strcat(nova, b);</code></td><td><em>String concatenate</em>, "emendar strings": acha o <code>'\0'</code> de <code>nova</code> e escreve <code>b</code> a partir dali, com um <code>'\0'</code> novo no fim.</td></tr>
+</table>
+</div>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra juntar.c -o juntar
+$ ./juntar
+Bom dia, Ana!
+13 letras</pre>
+
+<p>13 letras em 14 bytes. A função não mexe em <code>a</code> nem em <code>b</code> (<code>const</code>), e quem chama recebe uma string nova, que pode mudar e precisa liberar.</p>
+
+<h3>Textos com números: meça com <code>snprintf</code></h3>
+<p>E se a frase tem números, como <code>"Ana tem 29 anos"</code>? Quantos bytes ocupa o <code>29</code>? E se fosse <code>1234567</code>? Em vez de adivinhar, peça para o <code>snprintf</code> medir: com destino <code>NULL</code> e tamanho <code>0</code>, ele não escreve nada e só <strong>devolve quantas letras a frase teria</strong> (veja <a href="string-numero.html">Texto ↔ Número</a>).</p>
+
+<pre class="file" data-file="formatar.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    const char *nome = "Ana";
+    int idade = 29;
+
+    int n = snprintf(NULL, 0, "%s tem %d anos", nome, idade);
+    if (n &lt; 0) {
+        return 1;
+    }
+    char *frase = malloc((size_t)n + 1);
+    if (frase == NULL) {
+        return 1;
+    }
+    snprintf(frase, (size_t)n + 1, "%s tem %d anos", nome, idade);
+
+    printf("%s (%d letras)\n", frase, n);
+    free(frase);
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra formatar.c -o formatar
+$ ./formatar
+Ana tem 29 anos (15 letras)</pre>
+
+<p>São duas chamadas com o <strong>mesmo</strong> formato: a primeira mede (15), a segunda escreve de verdade nos 16 bytes reservados. O <code>n &lt; 0</code> confere o caso raro de erro no formato. O <code>(size_t)</code> converte o <code>int</code> devolvido pelo <code>snprintf</code> para o tipo de tamanhos (veja <a href="conversao-tipos.html">Conversão de Tipos</a>).</p>
+
+<hr>
+
+<h2>4. Ler uma linha de qualquer tamanho</h2>
+<p>O <code>fgets</code> lê uma linha, mas para num tamanho máximo: com <code>char buffer[100]</code>, uma linha de 300 letras chega em pedaços. Juntando o <code>fgets</code> com o <a href="array-dinamico.html">array que cresce</a>, dá para ler linhas de <strong>qualquer</strong> tamanho: começa com 16 bytes e, enquanto a linha não terminar (o <code>'\n'</code> ainda não chegou), dobra o espaço e lê mais um pedaço.</p>
+
+<pre class="file" data-file="lerlinha.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *ler_linha(FILE *f) {
+    size_t capacidade = 16;
+    size_t tamanho = 0;
+    char *linha = malloc(capacidade);
+    if (linha == NULL) {
+        return NULL;
+    }
+
+    while (fgets(linha + tamanho, (int)(capacidade - tamanho), f) != NULL) {
+        tamanho += strlen(linha + tamanho);
+        if (linha[tamanho - 1] == '\n') {
+            linha[tamanho - 1] = '\0';
+            return linha;
+        }
+        char *maior = realloc(linha, capacidade * 2);
+        if (maior == NULL) {
+            free(linha);
+            return NULL;
+        }
+        linha = maior;
+        capacidade = capacidade * 2;
+        printf("  (o buffer cresceu para %zu bytes)\n", capacidade);
+    }
+
+    if (tamanho == 0) {
+        free(linha);
+        return NULL;
+    }
+    return linha;
+}
+
+int main(void) {
+    char *linha;
+    while ((linha = ler_linha(stdin)) != NULL) {
+        printf("[%s] (%zu bytes)\n", linha, strlen(linha));
+        free(linha);
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>fgets(linha + tamanho, (int)(capacidade - tamanho), f)</dt><dd>Lê o próximo pedaço <strong>depois</strong> do que já foi lido (<code>linha + tamanho</code> é o endereço da primeira posição livre, veja <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>), usando só o espaço que sobra. O <code>fgets</code> pede um <code>int</code> como tamanho, daí o <code>(int)</code>.</dd>
+  <dt>tamanho += strlen(linha + tamanho);</dt><dd>Soma quantas letras vieram neste pedaço.</dd>
+  <dt>if (linha[tamanho - 1] == '\n')</dt><dd>O último caractere lido é o Enter: a linha acabou. Troca o <code>'\n'</code> por <code>'\0'</code> e devolve.</dd>
+  <dt>realloc(linha, capacidade * 2)</dt><dd>Não acabou: o buffer lotou no meio da linha. Dobra o espaço (com a variável auxiliar, como sempre) e o laço lê o próximo pedaço.</dd>
+  <dt>printf("  (o buffer cresceu …")</dt><dd>Só para você ver o buffer crescendo. Num programa de verdade, tire esta linha.</dd>
+  <dt>if (tamanho == 0) { free(linha); return NULL; }</dt><dd>O <code>fgets</code> falhou sem ler nada: a entrada acabou. Devolver <code>NULL</code> avisa o <code>main</code> para parar. Se leu alguma coisa (uma última linha sem Enter no fim), devolve o que leu.</dd>
+  <dt>free(linha);</dt><dd>No <code>main</code>: cada linha devolvida é memória nova, liberada depois de usada.</dd>
+</dl>
+
+<pre class="term">$ cat lista.txt
+arroz
+feijão preto, de preferência o da marca que a vó Rita gosta, pacote de 1 kg
+café
+$ gcc -std=c23 -Wall -Wextra -g lerlinha.c -o lerlinha
+$ ./lerlinha &lt; lista.txt
+[arroz] (5 bytes)
+  (o buffer cresceu para 32 bytes)
+  (o buffer cresceu para 64 bytes)
+  (o buffer cresceu para 128 bytes)
+[feijão preto, de preferência o da marca que a vó Rita gosta, pacote de 1 kg] (78 bytes)
+[café] (5 bytes)
+$ valgrind --leak-check=full ./lerlinha &lt; lista.txt 2&gt;&amp;1 | tail -6
+==52904==   total heap usage: 9 allocs, 9 frees, 8,480 bytes allocated
+==52904==
+==52904== All heap blocks were freed -- no leaks are possible
+==52904==
+==52904== For lists of detected and suppressed errors, rerun with: -s
+==52904== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<p>A linha do feijão coube depois de três dobras (16 → 32 → 64 → 128). <code>café</code> tem 4 letras e 5 bytes porque o <code>é</code> ocupa 2 bytes em UTF-8 (veja <a href="acentos-utf8.html">Acentos e UTF-8</a>); por isso o programa diz "bytes", e não "letras". O valgrind confirma: 9 blocos reservados, 9 liberados, nenhum erro.</p>
+
+<div class="tryc" data-stdin="Ana\nEsta linha é bem comprida: tem bem mais do que os dezesseis bytes do começo, então o buffer vai precisar crescer algumas vezes.\nfim">
+<p class="try-task"><strong>Experimente:</strong> rode e veja o buffer crescer na linha comprida. Depois troque a capacidade inicial de 16 para 4 ou para 256 e compare quantas vezes ele cresce.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *ler_linha(FILE *f) {
+    size_t capacidade = 16;
+    size_t tamanho = 0;
+    char *linha = malloc(capacidade);
+    if (linha == NULL) {
+        return NULL;
+    }
+
+    while (fgets(linha + tamanho, (int)(capacidade - tamanho), f) != NULL) {
+        tamanho += strlen(linha + tamanho);
+        if (linha[tamanho - 1] == '\n') {
+            linha[tamanho - 1] = '\0';
+            return linha;
+        }
+        char *maior = realloc(linha, capacidade * 2);
+        if (maior == NULL) {
+            free(linha);
+            return NULL;
+        }
+        linha = maior;
+        capacidade = capacidade * 2;
+        printf("  (o buffer cresceu para %zu bytes)\n", capacidade);
+    }
+
+    if (tamanho == 0) {
+        free(linha);
+        return NULL;
+    }
+    return linha;
+}
+
+int main(void) {
+    char *linha;
+    while ((linha = ler_linha(stdin)) != NULL) {
+        printf("[%s] (%zu bytes)\n", linha, strlen(linha));
+        free(linha);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<h3>O jeito POSIX: <code>getline</code></h3>
+<p>No Linux e no macOS existe uma função pronta que faz tudo isso: <code>getline</code>. Ela é do <strong>POSIX</strong>, não do C padrão (nem no C23). Por isso, com <code>-std=c23</code> é preciso pedir as funções POSIX com uma linha antes de todos os <code>#include</code>:</p>
+
+<pre class="file" data-file="getline.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    char *linha = NULL;
+    size_t capacidade = 0;
+    ssize_t lidos;
+
+    while ((lidos = getline(&amp;linha, &amp;capacidade, stdin)) != -1) {
+        printf("Li %zd caracteres (o buffer tem %zu): %s", lidos, capacidade, linha);
+    }
+    free(linha);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#define _POSIX_C_SOURCE 200809L</dt><dd>"Quero as funções do POSIX de 2008." Tem de vir <strong>antes</strong> dos <code>#include</code>. (Sobre <code>#define</code>, veja <a href="preprocessador.html">Pré-processador</a>.)</dd>
+  <dt>char *linha = NULL; size_t capacidade = 0;</dt><dd>Começa sem buffer. O <code>getline</code> reserva e aumenta o buffer sozinho, e atualiza as duas variáveis (por isso recebe os endereços delas).</dd>
+  <dt>ssize_t lidos</dt><dd>O <code>getline</code> devolve quantos caracteres leu, <strong>contando</strong> o <code>'\n'</code>, ou <code>-1</code> no fim da entrada. <code>ssize_t</code> é o "<code>size_t</code> com sinal" do POSIX, que aceita o <code>-1</code>; no <code>printf</code>, é <code>%zd</code>.</dd>
+  <dt>free(linha);</dt><dd>Um <code>free</code> só, no fim: o mesmo buffer é reaproveitado a cada linha.</dd>
+</dl>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra getline.c -o getline
+$ ./getline &lt; nomes.txt
+Li 4 caracteres (o buffer tem 120): Ana
+Li 58 caracteres (o buffer tem 120): linha bem mais comprida que a primeira, com muitas letras</pre>
+
+<p>Repare que o <code>'\n'</code> continua na linha (por isso o <code>printf</code> não tem <code>\n</code> no fim) e que a glibc começou com um buffer de 120 bytes. No editor do guia, a biblioteca é outra e os números do buffer saem diferentes (6 e 60), mas o resultado é o mesmo. Sem o <code>#define</code>, o gcc não conhece nem o <code>getline</code> nem o <code>ssize_t</code>:</p>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra getline.c -o getline      « sem a linha do #define
+getline.c: In function ‘main’:
+getline.c:7:5: error: unknown type name ‘ssize_t’; did you mean ‘size_t’?
+    7 |     ssize_t lidos;
+      |     ^~~~~~~
+      |     size_t
+getline.c:9:21: error: implicit declaration of function ‘getline’ [-Wimplicit-function-declaration]
+    9 |     while ((lidos = getline(&amp;linha, &amp;capacidade, stdin)) != -1) {
+      |                     ^~~~~~~
+«…»</pre>
+
+<p>Se o gcc for chamado sem <code>-std</code> (ele usa <code>gnu23</code>, com as extensões GNU e POSIX ligadas), compila mesmo sem o <code>#define</code>. O <code>getline</code> não existe no Windows com o compilador da Microsoft; lá, use a versão com <code>fgets</code>.</p>
+
+<hr>
+
+<h2>Formas de criar uma string dinâmica: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td><code>malloc</code> + <code>strcpy</code></td><td><code>char *c = malloc(strlen(s) + 1); strcpy(c, s);</code></td><td>Para entender o que acontece; em código que precisa compilar com padrões antigos sem POSIX.</td></tr>
+<tr><td><code>strdup</code> <span class="versao">C23</span></td><td><code>char *c = strdup(s);</code></td><td>Copiar um texto inteiro. A escolha do dia a dia.</td></tr>
+<tr><td><code>strndup</code> <span class="versao">C23</span></td><td><code>char *c = strndup(s, 5);</code></td><td>Copiar só o começo de um texto.</td></tr>
+<tr><td><code>malloc</code> + <code>strcpy</code> + <code>strcat</code></td><td><code>malloc(strlen(a) + strlen(b) + 1)</code></td><td>Juntar textos prontos.</td></tr>
+<tr><td><code>snprintf(NULL, 0, …)</code> + <code>malloc</code></td><td><code>int n = snprintf(NULL, 0, "%s tem %d anos", …);</code></td><td>Montar uma frase com números ou vários pedaços.</td></tr>
+<tr><td><code>fgets</code> em pedaços + <code>realloc</code></td><td><code>ler_linha(stdin)</code> desta aula</td><td>Ler linhas de qualquer tamanho em C padrão (funciona em qualquer sistema).</td></tr>
+<tr><td><code>getline</code> (POSIX)</td><td><code>getline(&amp;linha, &amp;cap, stdin)</code></td><td>Ler linhas de qualquer tamanho no Linux e no macOS.</td></tr>
+</table>
+</div>
+
+<p>Em todas, a regra é a mesma: <strong>quem recebe a string nova chama <code>free</code></strong> quando terminar de usá-la.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu o <code>+ 1</code>: "Invalid write of size 1"</strong>
+<pre class="file" data-file="semmais1.c">    char *nova = malloc(n);        /* faltou o + 1 */
+</pre>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra -g semmais1.c -o semmais1
+$ echo "Ana Souza" | valgrind ./semmais1
+«… cabeçalho …»
+==52232== Invalid write of size 1
+==52232==    at 0x485A2F6: strcpy (vg_replace_strmem.c:565)
+==52232==    by 0x4001299: copiar (semmais1.c:11)
+==52232==    by 0x4001320: main (semmais1.c:23)
+==52232==  Address 0x4aa80c9 is 0 bytes after a block of size 9 alloc'd
+==52232==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==52232==    by 0x4001274: copiar (semmais1.c:7)
+==52232==    by 0x4001320: main (semmais1.c:23)
+==52232==
+==52232== Invalid read of size 1
+==52232==    at 0x485A174: strlen (vg_replace_strmem.c:506)
+==52232==    by 0x4001356: main (semmais1.c:28)
+«… mais duas leituras inválidas, no strlen e no printf …»
+Seu nome:
+Guardei "Ana Souza": 9 letras em 10 bytes
+«…»
+==52232== ERROR SUMMARY: 4 errors from 4 contexts (suppressed: 0 from 0)</pre>
+<p><strong>O que significa:</strong> o <code>strcpy</code> da linha 11 escreveu 1 byte (<em>Invalid write of size 1</em>) logo depois (<em>0 bytes after</em>) de um bloco de 9 bytes: é o <code>'\0'</code>, que não tinha lugar. Depois, cada função que procura o fim do texto (<code>strlen</code>, <code>printf</code>) lê esse byte que não é seu. O programa até mostrou a frase certa; no editor do guia também roda sem reclamar. É o tipo de erro que fica escondido por meses e um dia corrompe outro dado.</p>
+<p><strong>Como resolver:</strong> <code>malloc(strlen(s) + 1)</code>, sempre. Ou use <code>strdup</code>, que já faz a conta certa.</p>
+</div>
+
+<div class="cenario">
+<strong>Devolveu um array local: "function returns address of local variable"</strong>
+<pre class="file" data-file="local.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+char *copiar(const char *s) {
+    char nova[100];
+    strcpy(nova, s);
+    return nova;
+}
+
+int main(void) {
+    char *nome = copiar("Ana Souza");
+    printf("Nome: %s\n", nome);
+    return 0;
+}
+</pre>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra local.c -o local
+local.c: In function ‘copiar’:
+local.c:7:12: warning: function returns address of local variable [-Wreturn-local-addr]
+    7 |     return nova;
+      |            ^~~~
+$ ./local
+Nome: (null)</pre>
+<p><strong>O que significa:</strong> "a função devolve o endereço de uma variável local". O array <code>nova</code> mora na <a href="pilha-heap.html">pilha</a> e deixa de existir quando <code>copiar</code> termina; o endereço devolvido aponta para o nada. O gcc, sabendo disso, devolveu <code>NULL</code> no lugar, e o <code>printf</code> mostrou <code>(null)</code>. No editor do guia o Clang avisa com outras palavras (<code>address of stack memory associated with local variable 'nova' returned</code>) e o programa, por sorte, mostra o nome. Os dois estão errados: é <a href="comportamento-indefinido.html">comportamento indefinido</a>.</p>
+<p><strong>Como resolver:</strong> reserve a cópia com <code>malloc</code> (ou <code>strdup</code>), como na seção 1. Memória do heap continua existindo depois que a função termina.</p>
+</div>
+
+<div class="cenario">
+<strong><code>free</code> num texto entre aspas: "free(): invalid pointer"</strong>
+<pre class="file" data-file="literal.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    char *nome = "Ana";
+    printf("Nome: %s\n", nome);
+    free(nome);
+    return 0;
+}
+</pre>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra literal.c -o literal
+literal.c: In function ‘main’:
+literal.c:7:5: warning: ‘free’ called on a pointer to an unallocated object ‘"Ana"’ [-Wfree-nonheap-object]
+    7 |     free(nome);
+      |     ^~~~~~~~~~
+literal.c:5:11: note: assigned here
+    5 |     char *nome = "Ana";
+      |           ^~~~
+$ ./literal
+Nome: Ana
+free(): invalid pointer
+Abortado                   (imagem do núcleo gravada) ./literal</pre>
+<p><strong>O que significa:</strong> o aviso diz "<code>free</code> chamado num ponteiro para um objeto que não foi reservado". O texto <code>"Ana"</code> entre aspas não veio do <code>malloc</code>: faz parte do próprio programa. Ao recebê-lo, a glibc percebeu e abortou com <em>free(): invalid pointer</em> ("ponteiro inválido"). No editor do guia, o programa morre com <code>Falha de segmentação</code>.</p>
+<p><strong>Como resolver:</strong> só passe para o <code>free</code> o que veio de <code>malloc</code>, <code>calloc</code>, <code>realloc</code>, <code>strdup</code>, <code>strndup</code> ou <code>getline</code>. Se uma variável às vezes aponta para um texto fixo e às vezes para memória reservada, use <code>strdup("Ana")</code> também no caso fixo, para o <code>free</code> valer sempre.</p>
+</div>
+
+<div class="cenario">
+<strong>"implicit declaration of function ‘strdup’" ou ‘getline’</strong>
+<p><strong>O que aconteceu:</strong> o padrão escolhido esconde a função. <code>strdup</code> só é C padrão a partir do C23; <code>getline</code> não é C padrão em nenhuma versão (é POSIX).</p>
+<p><strong>Como resolver:</strong> para <code>strdup</code>, compile com <code>-std=c23</code> (ou <code>-std=gnu17</code>). Para <code>getline</code>, ponha <code>#define _POSIX_C_SOURCE 200809L</code> antes de todos os <code>#include</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"definitely lost" no valgrind</strong>
+<p><strong>O que aconteceu:</strong> alguma string nova (de <code>strdup</code>, <code>juntar</code>, <code>ler_linha</code>…) nunca recebeu o seu <code>free</code>. É fácil esquecer quando a função "parece" só devolver um texto.</p>
+<p><strong>Como resolver:</strong> toda função que devolve <code>char *</code> com memória nova deve dizer isso num comentário (<code>/* devolve memória nova: libere com free */</code>), e quem a chama libera. Veja <a href="vazamentos.html">Vazamentos de Memória</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Significado</th></tr>
+<tr><td><code>malloc(strlen(s) + 1)</code></td><td>Espaço para uma cópia de <code>s</code>: as letras mais o <code>'\0'</code>.</td></tr>
+<tr><td><code>strcpy(destino, s)</code></td><td>Copia <code>s</code> com o <code>'\0'</code> (o destino tem de caber).</td></tr>
+<tr><td><code>strcat(destino, s)</code></td><td>Emenda <code>s</code> no fim de <code>destino</code> (que tem de ter espaço sobrando).</td></tr>
+<tr><td><code>strdup(s)</code> <span class="versao">C23</span></td><td>Cópia nova de <code>s</code>; <code>NULL</code> se faltar memória.</td></tr>
+<tr><td><code>strndup(s, n)</code> <span class="versao">C23</span></td><td>Cópia nova de no máximo <code>n</code> letras de <code>s</code>.</td></tr>
+<tr><td><code>malloc(strlen(a) + strlen(b) + 1)</code></td><td>Espaço para juntar <code>a</code> e <code>b</code>.</td></tr>
+<tr><td><code>snprintf(NULL, 0, formato, …)</code></td><td>Não escreve nada; devolve quantas letras a frase teria.</td></tr>
+<tr><td><code>getline(&amp;linha, &amp;cap, stdin)</code></td><td>POSIX: lê uma linha inteira, de qualquer tamanho, com o <code>'\n'</code>; <code>-1</code> no fim. Precisa de <code>#define _POSIX_C_SOURCE 200809L</code> com <code>-std=c23</code>.</td></tr>
+<tr><td><code>free(s)</code></td><td>Libera uma string que veio de <code>malloc</code>, <code>strdup</code>, <code>getline</code>… Nunca um texto entre aspas.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Quantos bytes?</h3>
+<p>Quantos bytes são necessários para guardar uma cópia de <code>"Carla"</code>?</p>
+<div class="ex-code"><input data-answer="6|6 bytes" aria-label="número de bytes"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Reservar para copiar</h3>
+<p>Complete para reservar espaço para uma cópia de <code>nome</code>:</p>
+<div class="ex-code">char *copia = malloc(<input data-answer="strlen(nome) + 1|strlen(nome)+1|1 + strlen(nome)" aria-label="tamanho">);</div>
+</div>
+
+<div class="exercise">
+<h3>3. A função pronta</h3>
+<p>Complete com a função do C23 que faz a cópia inteira de uma vez:</p>
+<div class="ex-code">char *copia = <input data-answer="strdup(nome)|strdup( nome )" aria-label="chamada">;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Para juntar <code>a</code> e <code>b</code> numa string nova, quantos bytes reservar?</p>
+<label><input type="radio" name="q4"> <code>strlen(a) + strlen(b)</code></label>
+<label><input type="radio" name="q4"> <code>strlen(a) + strlen(b) + 2</code>, um <code>'\0'</code> para cada</label>
+<label><input type="radio" name="q4"> <code>strlen(a) + strlen(b) + 1</code></label>
+<label><input type="radio" name="q4"> <code>sizeof(a) + sizeof(b)</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Qual destes ponteiros <strong>não</strong> pode ir para o <code>free</code>?</p>
+<label><input type="radio" name="q5"> <code>char *a = strdup("Ana");</code></label>
+<label><input type="radio" name="q5"> <code>char *b = "Ana";</code></label>
+<label><input type="radio" name="q5"> <code>char *c = malloc(4);</code></label>
+<label><input type="radio" name="q5"> Uma linha devolvida pelo <code>getline</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Sobre o <code>getline</code>, o que é verdade?</p>
+<label><input type="radio" name="q6"> Faz parte do C padrão desde o C99.</label>
+<label><input type="radio" name="q6"> Tira o <code>'\n'</code> do fim da linha.</label>
+<label><input type="radio" name="q6"> Precisa que você reserve o buffer com o tamanho certo antes.</label>
+<label><input type="radio" name="q6"> É do POSIX e aumenta o buffer sozinho; com <code>-std=c23</code> precisa de <code>_POSIX_C_SOURCE</code>.</label>
+</div>
+
+<h3>Missão final: o nome completo</h3>
+<div class="tryc" data-goal="out:[Ana Souza] (9 letras),out:[Bia Lima] (8 letras),src:\+\s*2|\+\s*1[^;]*\+\s*1">
+<p class="try-task"><strong>Missão:</strong> a função <code>nome_completo</code> deve devolver uma string nova com o nome, um espaço e o sobrenome. Hoje ela reserva espaço de menos e esquece o espaço e o sobrenome. Corrija o tamanho do <code>malloc</code> (cabem o nome, o espaço, o sobrenome e o <code>'\0'</code>) e complete com <code>strcat</code>. A tela deve mostrar <code>[Ana Souza] (9 letras)</code> e <code>[Bia Lima] (8 letras)</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+/* devolve memória nova: libere com free */
+char *nome_completo(const char *nome, const char *sobrenome) {
+    size_t tamanho = strlen(nome) + strlen(sobrenome);   /* falta espaço! */
+    char *nova = malloc(tamanho);
+    if (nova == NULL) {
+        return NULL;
+    }
+    strcpy(nova, nome);
+    /* acrescente o espaço e o sobrenome com strcat */
+    return nova;
+}
+
+int main(void) {
+    char *a = nome_completo("Ana", "Souza");
+    char *b = nome_completo("Bia", "Lima");
+    if (a == NULL || b == NULL) {
+        free(a);
+        free(b);
+        return 1;
+    }
+    printf("[%s] (%zu letras)\n", a, strlen(a));
+    printf("[%s] (%zu letras)\n", b, strlen(b));
+    free(a);
+    free(b);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+/* devolve memória nova: libere com free */
+char *nome_completo(const char *nome, const char *sobrenome) {
+    size_t tamanho = strlen(nome) + 1 + strlen(sobrenome) + 1;
+    char *nova = malloc(tamanho);
+    if (nova == NULL) {
+        return NULL;
+    }
+    strcpy(nova, nome);
+    strcat(nova, " ");
+    strcat(nova, sobrenome);
+    return nova;
+}
+
+int main(void) {
+    char *a = nome_completo("Ana", "Souza");
+    char *b = nome_completo("Bia", "Lima");
+    if (a == NULL || b == NULL) {
+        free(a);
+        free(b);
+        return 1;
+    }
+    printf("[%s] (%zu letras)\n", a, strlen(a));
+    printf("[%s] (%zu letras)\n", b, strlen(b));
+    free(a);
+    free(b);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma string de <code>n</code> letras ocupa <code>n + 1</code> bytes: o último é o <code>'\0'</code>, que o <code>strlen</code> não conta.</li>
+  <li>Para copiar: <code>malloc(strlen(s) + 1)</code> + <code>strcpy</code>, ou simplesmente <code>strdup(s)</code> (C padrão desde o C23; antes, POSIX).</li>
+  <li>Para juntar: <code>malloc(strlen(a) + strlen(b) + 1)</code>, <code>strcpy</code> e <code>strcat</code>.</li>
+  <li>Para frases com números: meça com <code>snprintf(NULL, 0, …)</code>, reserve <code>n + 1</code> e escreva com <code>snprintf</code>.</li>
+  <li>Para ler linhas de qualquer tamanho: <code>fgets</code> em pedaços com um buffer que dobra, ou <code>getline</code> (POSIX, com <code>_POSIX_C_SOURCE</code>).</li>
+  <li>Nunca devolva um array local; nunca dê <code>free</code> num texto entre aspas; toda string nova tem o seu <code>free</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
