@@ -1,0 +1,1671 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Projeto Agenda de Contatos — struct, busca e arquivo de texto | Guia C</title>
+<meta name="description" content="Projeto passo a passo: a agenda de contatos da Ana em C. Guarda nome e telefone num array de structs, adiciona, lista, busca sem diferenciar maiúsculas, remove deslocando o array e grava tudo num arquivo de texto que sobrevive ao fechar o programa. Quatro versões com saídas reais do gcc 15, fgets para nomes com espaço e sscanf com largura para ler o arquivo.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto <span class="hl">Agenda de Contatos</span></h1>
+
+<p class="intro">A Ana quer uma agenda no computador: digitar nome e telefone, listar todo mundo, achar um contato pelo nome (sem se importar com maiúsculas) e apagar quem saiu da vida dela. E, o mais importante, que a agenda <strong>não suma</strong> quando ela fechar o programa. É o projeto para juntar <a href="structs.html">structs</a>, <a href="funcoes.html">funções</a>, <a href="funcoes-string.html">texto</a> e <a href="arquivos.html">arquivos</a> num programa de verdade, com um menu que se repete.</p>
+
+<div class="note">
+<strong>Você vai praticar</strong>
+<ul>
+  <li>Guardar nome e telefone juntos numa <a href="structs.html">struct</a> e ter um array de contatos.</li>
+  <li>Ler linhas com espaço usando <a href="fgets.html">fgets</a> e tirar o <code>\n</code> do fim.</li>
+  <li>Um menu que se repete com <code>while</code> e <code>switch</code> (veja <a href="projetos.html">Sobre os Projetos</a>).</li>
+  <li>Buscar sem diferenciar maiúsculas, passando o texto por <code>tolower</code> (<a href="ctype.html">ctype.h</a>).</li>
+  <li>Remover um item de um array <strong>deslocando</strong> os seguintes para trás.</li>
+  <li>Gravar e ler um <a href="arquivos.html">arquivo de texto</a> com <code>fprintf</code> e <code>sscanf</code>, para a agenda sobreviver ao fechar o programa.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que vamos construir</h2>
+<p>A agenda pronta, no terminal da Ana. Ela adiciona dois contatos, lista, busca por "ana", remove a Ana Paula e lista de novo:</p>
+
+<pre class="term" data-cwd="~/c/agenda">$ ./agenda
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair
+Opção: 1
+Nome: Ana Paula
+Telefone: 555-1234
+Contato adicionado.
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair
+Opção: 1
+Nome: Bruno Costa
+Telefone: 555-9000
+Contato adicionado.
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair
+Opção: 2
+
+Nome                 Telefone
+Ana Paula            555-1234
+Bruno Costa          555-9000
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair
+Opção: 3
+Buscar: ana
+Ana Paula            555-1234
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair
+Opção: 4
+Remover (nome exato): Ana Paula
+Contato removido.
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair
+Opção: 2
+
+Nome                 Telefone
+Bruno Costa          555-9000
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair
+Opção: 0
+Até logo!</pre>
+
+<ol class="passo">
+  <li><a href="#versao1">A struct, o array e o menu</a> (adicionar e listar).</li>
+  <li><a href="#versao2">Buscar sem diferenciar maiúsculas</a>.</li>
+  <li><a href="#versao3">Remover um contato</a> (deslocando o array).</li>
+  <li><a href="#versao4">Gravar e carregar o arquivo de texto</a>.</li>
+</ol>
+
+<h3>Antes de começar</h3>
+<p>Você precisa ter visto <a href="structs.html">Structs</a>, <a href="funcoes.html">Funções</a>, <a href="fgets.html">fgets</a> e, para a versão 4, <a href="arquivos.html">Arquivos</a>. O arquivo vai se chamar <code>agenda.c</code>:</p>
+
+<pre class="term">$ mkdir -p c/agenda
+$ cd c/agenda</pre>
+
+<div class="note">
+<strong>Por que ler tudo com <code>fgets</code>?</strong>
+<p>Nomes têm espaço ("Ana Paula"), e o <code>scanf("%s")</code> para no primeiro espaço (veja o <a href="projeto-notas.html">Boletim de Notas</a>). Por isso a agenda lê cada campo com <a href="fgets.html">fgets</a>, que pega a linha inteira. Até a opção do menu é lida com <code>fgets</code>: assim não sobra nenhum <code>\n</code> atrapalhando a próxima leitura — o problema clássico de misturar <code>scanf</code> e <code>fgets</code>.</p>
+</div>
+
+<hr>
+
+<h2 id="versao1">Versão 1 · A struct, o array e o menu</h2>
+<p>Primeiro, a base: uma <a href="structs.html">struct</a> <code>Contato</code> com nome e telefone, um array de contatos, e um menu que se repete com duas opções — adicionar e listar. Duas funções ajudam: <code>tirar_novalinha</code> (tira o <code>\n</code> que o <code>fgets</code> deixa) e <code>ler_linha</code> (mostra o rótulo, lê a linha e limpa o <code>\n</code>).</p>
+
+<pre class="file" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void listar(const struct Contato agenda[], int n) {
+    if (n == 0) {
+        printf("Agenda vazia.\n");
+        return;
+    }
+    printf("\n%-20s %s\n", "Nome", "Telefone");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+    }
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  2. Listar  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); break;
+            case '2': listar(agenda, n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>struct Contato { char nome[TAM_NOME]; char telefone[TAM_TEL]; };</dt><dd>A "ficha" de um contato: nome (até 49 letras + o <code>'\0'</code>) e telefone. Os tamanhos têm nome (<a href="constantes.html">#define</a>), como manda as <a href="boas-praticas.html">boas práticas</a>.</dd>
+  <dt>s[strcspn(s, "\n")] = '\0';</dt><dd>O <code>fgets</code> guarda o Enter como <code>\n</code> no fim. O <code>strcspn(s, "\n")</code> dá a posição do <code>\n</code> (ou do fim); pôr um <code>'\0'</code> ali corta o Enter (veja <a href="fgets.html">fgets</a>).</dd>
+  <dt>int ler_linha(const char *rotulo, char *destino, int tam)</dt><dd>Uma função só para ler um campo com segurança: mostra o rótulo, chama <code>fgets</code> com o <strong>tamanho</strong> do destino (nunca estoura, veja <a href="seguranca.html">Segurança</a>) e tira o <code>\n</code>. Devolve 0 se a entrada acabou.</dd>
+  <dt>agenda[*n] = c; (*n)++;</dt><dd>Guarda o novo contato na primeira posição livre e aumenta a contagem. O <code>n</code> vem por <a href="passagem-ponteiro.html">ponteiro</a> porque a função precisa mudar o <code>n</code> do <code>main</code>.</dd>
+  <dt>printf("%-20s %s\n", ...)</dt><dd><code>%-20s</code> põe o nome numa coluna de 20, à esquerda, para a lista ficar alinhada (veja <a href="formatos-printf.html">Formatos do printf</a>).</dd>
+  <dt>switch (opcao[0])</dt><dd>A opção é lida como texto; <code>opcao[0]</code> é a primeira tecla (<code>'1'</code>, <code>'2'</code>, <code>'0'</code>). Comparar o caractere evita o problema do <code>\n</code> do <code>scanf</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/agenda">$ gcc -std=c23 -Wall -Wextra agenda.c -o agenda
+$ ./agenda
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  0. Sair
+Opção: 1
+Nome: Ana Paula
+Telefone: 555-1234
+Contato adicionado.
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  0. Sair
+Opção: 2
+
+Nome                 Telefone
+Ana Paula            555-1234
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  0. Sair
+Opção: 0
+Até logo!</pre>
+
+<div class="tryc" data-stdin="1\nAna Paula\n555-1234\n1\nBruno Costa\n555-9000\n2\n0\n" data-goal="outre:Ana Paula +555-1234,outre:Bruno Costa +555-9000,src:for">
+<p class="try-task"><strong>Missão (versão 1):</strong> a função <code>listar</code> mostra o cabeçalho, mas não os contatos. Escreva o <code>for</code> que percorre <code>agenda[0]</code> até <code>agenda[n - 1]</code> e mostra cada um com <code>printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);</code>. A entrada adiciona Ana Paula e Bruno Costa e lista.</p>
+<pre class="script" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void listar(const struct Contato agenda[], int n) {
+    if (n == 0) {
+        printf("Agenda vazia.\n");
+        return;
+    }
+    printf("\n%-20s %s\n", "Nome", "Telefone");
+    // escreva aqui o for que mostra cada contato (use agenda[i].nome e agenda[i].telefone)
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  2. Listar  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); break;
+            case '2': listar(agenda, n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void listar(const struct Contato agenda[], int n) {
+    if (n == 0) {
+        printf("Agenda vazia.\n");
+        return;
+    }
+    printf("\n%-20s %s\n", "Nome", "Telefone");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+    }
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  2. Listar  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); break;
+            case '2': listar(agenda, n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao2">Versão 2 · Buscar sem diferenciar maiúsculas</h2>
+<p>A Ana digita "ana" e quer achar "Ana Paula". Para isso, a busca não pode diferenciar maiúsculas de minúsculas. A ideia: passar os dois textos para minúsculas (com <a href="ctype.html">tolower</a>) e ver se um está dentro do outro com <code>strstr</code> (veja <a href="funcoes-string.html">Funções de String</a>). A função <code>contem_ignorando_caso</code> faz isso; a <code>buscar</code> a usa em cada contato.</p>
+
+<pre class="file" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;ctype.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+int contem_ignorando_caso(const char *texto, const char *parte) {
+    char t[TAM_NOME];
+    char p[TAM_NOME];
+    int i;
+    for (i = 0; texto[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        t[i] = (char) tolower((unsigned char) texto[i]);
+    }
+    t[i] = '\0';
+    for (i = 0; parte[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        p[i] = (char) tolower((unsigned char) parte[i]);
+    }
+    p[i] = '\0';
+    return strstr(t, p) != NULL;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void buscar(const struct Contato agenda[], int n) {
+    char alvo[TAM_NOME];
+    ler_linha("Buscar: ", alvo, TAM_NOME);
+    int achou = 0;
+    for (int i = 0; i &lt; n; i++) {
+        if (contem_ignorando_caso(agenda[i].nome, alvo)) {
+            printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+            achou = 1;
+        }
+    }
+    if (!achou) {
+        printf("Nenhum contato com \"%s\".\n", alvo);
+    }
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  3. Buscar  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); break;
+            case '3': buscar(agenda, n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>tolower((unsigned char) texto[i])</dt><dd>Transforma a letra em minúscula. O <code>(unsigned char)</code> evita um problema com acentos e valores negativos (veja <a href="ctype.html">ctype.h</a>).</dd>
+  <dt>strstr(t, p) != NULL</dt><dd><code>strstr</code> ("string in string") procura o texto <code>p</code> dentro de <code>t</code> e devolve onde ele começa, ou <code>NULL</code> se não achar. Assim a busca acha <strong>parte</strong> do nome: "cost" acha "Bruno Costa".</dd>
+  <dt>if (contem_ignorando_caso(agenda[i].nome, alvo))</dt><dd>Para cada contato, pergunta "o nome contém o que a Ana procura?". Se sim, mostra e marca <code>achou = 1</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/agenda">$ ./agenda
+
+=== Agenda da Ana ===
+1. Adicionar  3. Buscar  0. Sair
+Opção: 3
+Buscar: ANA
+Ana Paula            555-1234
+
+=== Agenda da Ana ===
+1. Adicionar  3. Buscar  0. Sair
+Opção: 3
+Buscar: zeca
+Nenhum contato com "zeca".</pre>
+
+<p>"ANA" em maiúsculas achou "Ana Paula": a busca não liga para o tamanho das letras. E um nome que não existe dá uma mensagem clara, em vez de silêncio.</p>
+
+<div class="tryc" data-stdin="1\nAna Paula\n555-1234\n1\nBruno Costa\n555-9000\n3\nana\n0\n" data-goal="outre:Ana Paula +555-1234,src:achou\s*=\s*1">
+<p class="try-task"><strong>Missão (versão 2):</strong> a função <code>buscar</code> tem o laço, mas não compara. Dentro do <code>for</code>, se <code>contem_ignorando_caso(agenda[i].nome, alvo)</code> for verdadeiro, mostre o contato com <code>printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);</code> e faça <code>achou = 1;</code>. A entrada busca "ana" e deve achar a Ana Paula.</p>
+<pre class="script" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;ctype.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+int contem_ignorando_caso(const char *texto, const char *parte) {
+    char t[TAM_NOME];
+    char p[TAM_NOME];
+    int i;
+    for (i = 0; texto[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        t[i] = (char) tolower((unsigned char) texto[i]);
+    }
+    t[i] = '\0';
+    for (i = 0; parte[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        p[i] = (char) tolower((unsigned char) parte[i]);
+    }
+    p[i] = '\0';
+    return strstr(t, p) != NULL;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void buscar(const struct Contato agenda[], int n) {
+    char alvo[TAM_NOME];
+    ler_linha("Buscar: ", alvo, TAM_NOME);
+    int achou = 0;
+    for (int i = 0; i &lt; n; i++) {
+        // se o nome do contato i contém "alvo" (sem diferenciar maiúsculas),
+        // mostre-o e faça achou = 1
+    }
+    if (!achou) {
+        printf("Nenhum contato com \"%s\".\n", alvo);
+    }
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  3. Buscar  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); break;
+            case '3': buscar(agenda, n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;ctype.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+int contem_ignorando_caso(const char *texto, const char *parte) {
+    char t[TAM_NOME];
+    char p[TAM_NOME];
+    int i;
+    for (i = 0; texto[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        t[i] = (char) tolower((unsigned char) texto[i]);
+    }
+    t[i] = '\0';
+    for (i = 0; parte[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        p[i] = (char) tolower((unsigned char) parte[i]);
+    }
+    p[i] = '\0';
+    return strstr(t, p) != NULL;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void buscar(const struct Contato agenda[], int n) {
+    char alvo[TAM_NOME];
+    ler_linha("Buscar: ", alvo, TAM_NOME);
+    int achou = 0;
+    for (int i = 0; i &lt; n; i++) {
+        if (contem_ignorando_caso(agenda[i].nome, alvo)) {
+            printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+            achou = 1;
+        }
+    }
+    if (!achou) {
+        printf("Nenhum contato com \"%s\".\n", alvo);
+    }
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  3. Buscar  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); break;
+            case '3': buscar(agenda, n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao3">Versão 3 · Remover um contato</h2>
+<p>Remover de um array é mais sutil do que parece: não basta "apagar" a posição, porque ficaria um buraco no meio. O jeito certo é <strong>deslocar</strong> todos os contatos seguintes uma posição para trás, tampando o buraco, e depois diminuir a contagem.</p>
+
+<figure>
+<pre class="term">Antes (remover o índice 0):   [Ana Paula][Bruno Costa][Diego]   n = 3
+Desloca para trás:            [Bruno Costa][Diego][Diego]      « cada um copia o seguinte
+Diminui a contagem:           [Bruno Costa][Diego]             n = 2</pre>
+</figure>
+
+<pre class="file" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void listar(const struct Contato agenda[], int n) {
+    if (n == 0) {
+        printf("Agenda vazia.\n");
+        return;
+    }
+    printf("\n%-20s %s\n", "Nome", "Telefone");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+    }
+}
+
+void remover(struct Contato agenda[], int *n) {
+    char alvo[TAM_NOME];
+    ler_linha("Remover (nome exato): ", alvo, TAM_NOME);
+    for (int i = 0; i &lt; *n; i++) {
+        if (strcmp(agenda[i].nome, alvo) == 0) {
+            for (int j = i; j &lt; *n - 1; j++) {
+                agenda[j] = agenda[j + 1];
+            }
+            (*n)--;
+            printf("Contato removido.\n");
+            return;
+        }
+    }
+    printf("Contato \"%s\" não encontrado.\n", alvo);
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  2. Listar  4. Remover  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); break;
+            case '2': listar(agenda, n); break;
+            case '4': remover(agenda, &amp;n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>if (strcmp(agenda[i].nome, alvo) == 0)</dt><dd>Acha o contato com o nome <strong>exato</strong>. O <code>strcmp</code> devolve 0 quando os textos são iguais (veja <a href="funcoes-string.html">Funções de String</a>).</dd>
+  <dt>for (int j = i; j &lt; *n - 1; j++) agenda[j] = agenda[j + 1];</dt><dd>O coração da remoção: cada contato, do achado em diante, recebe o <strong>seguinte</strong>. Uma struct inteira é copiada de uma vez com <code>=</code>.</dd>
+  <dt>(*n)--;</dt><dd>Agora há um contato a menos. A última posição tem uma cópia velha, mas ela está fora da contagem e nunca é mostrada.</dd>
+  <dt>return;</dt><dd>Para no primeiro que casa: remove um contato por vez.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/agenda">$ ./agenda
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  4. Remover  0. Sair
+Opção: 4
+Remover (nome exato): Ana Paula
+Contato removido.
+
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  4. Remover  0. Sair
+Opção: 2
+
+Nome                 Telefone
+Bruno Costa          555-9000</pre>
+
+<div class="tryc" data-stdin="1\nAna Paula\n555-1234\n1\nBruno Costa\n555-9000\n4\nAna Paula\n2\n0\n" data-goal="outre:Bruno Costa +555-9000,src:agenda\[j\]">
+<p class="try-task"><strong>Missão (versão 3):</strong> a <code>remover</code> acha o contato e diminui a contagem, mas esqueceu de <strong>deslocar</strong> os seguintes — então o removido continua na lista. Escreva o <code>for</code> interno que, de <code>j = i</code> até <code>*n - 2</code>, faz <code>agenda[j] = agenda[j + 1];</code>. A entrada adiciona Ana Paula e Bruno Costa, remove a Ana Paula e lista: só deve sobrar o Bruno Costa.</p>
+<pre class="script" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void listar(const struct Contato agenda[], int n) {
+    if (n == 0) {
+        printf("Agenda vazia.\n");
+        return;
+    }
+    printf("\n%-20s %s\n", "Nome", "Telefone");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+    }
+}
+
+void remover(struct Contato agenda[], int *n) {
+    char alvo[TAM_NOME];
+    ler_linha("Remover (nome exato): ", alvo, TAM_NOME);
+    for (int i = 0; i &lt; *n; i++) {
+        if (strcmp(agenda[i].nome, alvo) == 0) {
+            // desloque cada contato seguinte uma posição para trás,
+            // de j = i até *n - 2:  agenda[j] = agenda[j + 1];
+            (*n)--;
+            printf("Contato removido.\n");
+            return;
+        }
+    }
+    printf("Contato \"%s\" não encontrado.\n", alvo);
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  2. Listar  4. Remover  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); break;
+            case '2': listar(agenda, n); break;
+            case '4': remover(agenda, &amp;n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void listar(const struct Contato agenda[], int n) {
+    if (n == 0) {
+        printf("Agenda vazia.\n");
+        return;
+    }
+    printf("\n%-20s %s\n", "Nome", "Telefone");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+    }
+}
+
+void remover(struct Contato agenda[], int *n) {
+    char alvo[TAM_NOME];
+    ler_linha("Remover (nome exato): ", alvo, TAM_NOME);
+    for (int i = 0; i &lt; *n; i++) {
+        if (strcmp(agenda[i].nome, alvo) == 0) {
+            for (int j = i; j &lt; *n - 1; j++) {
+                agenda[j] = agenda[j + 1];
+            }
+            (*n)--;
+            printf("Contato removido.\n");
+            return;
+        }
+    }
+    printf("Contato \"%s\" não encontrado.\n", alvo);
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  2. Listar  4. Remover  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); break;
+            case '2': listar(agenda, n); break;
+            case '4': remover(agenda, &amp;n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao4">Versão 4 · Gravar e carregar o arquivo</h2>
+<p>Até aqui a agenda vivia só na memória: ao fechar o programa, tudo sumia. A versão final grava os contatos num arquivo de texto, <code>agenda.txt</code>, e o lê de volta quando abre. Duas funções novas:</p>
+
+<ul>
+  <li><strong><code>salvar</code></strong> abre o arquivo para escrita (<code>"w"</code>) e grava cada contato numa linha <code>nome;telefone</code> com <code>fprintf</code> (veja <a href="escrever-arquivos.html">Escrever Arquivos</a>).</li>
+  <li><strong><code>carregar</code></strong> abre o arquivo para leitura (<code>"r"</code>), lê cada linha com <code>fgets</code> e separa o nome do telefone com <code>sscanf</code> (veja <a href="ler-arquivos.html">Ler Arquivos</a>).</li>
+</ul>
+
+<p>O <code>main</code> chama <code>carregar</code> logo no começo e <code>salvar</code> depois de toda mudança (adicionar e remover). O menu ganha as quatro opções.</p>
+
+<pre class="file" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;ctype.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+#define ARQUIVO "agenda.txt"
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+int contem_ignorando_caso(const char *texto, const char *parte) {
+    char t[TAM_NOME];
+    char p[TAM_NOME];
+    int i;
+    for (i = 0; texto[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        t[i] = (char) tolower((unsigned char) texto[i]);
+    }
+    t[i] = '\0';
+    for (i = 0; parte[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        p[i] = (char) tolower((unsigned char) parte[i]);
+    }
+    p[i] = '\0';
+    return strstr(t, p) != NULL;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    if (*n &gt;= MAX_CONTATOS) {
+        printf("Agenda cheia.\n");
+        return;
+    }
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void listar(const struct Contato agenda[], int n) {
+    if (n == 0) {
+        printf("Agenda vazia.\n");
+        return;
+    }
+    printf("\n%-20s %s\n", "Nome", "Telefone");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+    }
+}
+
+void buscar(const struct Contato agenda[], int n) {
+    char alvo[TAM_NOME];
+    ler_linha("Buscar: ", alvo, TAM_NOME);
+    int achou = 0;
+    for (int i = 0; i &lt; n; i++) {
+        if (contem_ignorando_caso(agenda[i].nome, alvo)) {
+            printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+            achou = 1;
+        }
+    }
+    if (!achou) {
+        printf("Nenhum contato com \"%s\".\n", alvo);
+    }
+}
+
+void remover(struct Contato agenda[], int *n) {
+    char alvo[TAM_NOME];
+    ler_linha("Remover (nome exato): ", alvo, TAM_NOME);
+    for (int i = 0; i &lt; *n; i++) {
+        if (strcmp(agenda[i].nome, alvo) == 0) {
+            for (int j = i; j &lt; *n - 1; j++) {
+                agenda[j] = agenda[j + 1];
+            }
+            (*n)--;
+            printf("Contato removido.\n");
+            return;
+        }
+    }
+    printf("Contato \"%s\" não encontrado.\n", alvo);
+}
+
+void salvar(const struct Contato agenda[], int n) {
+    FILE *f = fopen(ARQUIVO, "w");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return;
+    }
+    for (int i = 0; i &lt; n; i++) {
+        fprintf(f, "%s;%s\n", agenda[i].nome, agenda[i].telefone);
+    }
+    fclose(f);
+}
+
+void carregar(struct Contato agenda[], int *n) {
+    FILE *f = fopen(ARQUIVO, "r");
+    if (f == NULL) {
+        return;
+    }
+    char linha[TAM_NOME + TAM_TEL];
+    while (*n &lt; MAX_CONTATOS &amp;&amp; fgets(linha, sizeof linha, f) != NULL) {
+        if (sscanf(linha, "%49[^;];%19[^\n]", agenda[*n].nome, agenda[*n].telefone) == 2) {
+            (*n)++;
+        }
+    }
+    fclose(f);
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    carregar(agenda, &amp;n);
+
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); salvar(agenda, n); break;
+            case '2': listar(agenda, n); break;
+            case '3': buscar(agenda, n); break;
+            case '4': remover(agenda, &amp;n); salvar(agenda, n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>FILE *f = fopen(ARQUIVO, "w");</dt><dd>Abre <code>agenda.txt</code> para escrita; o <code>"w"</code> cria o arquivo (ou apaga o conteúdo antigo). Se <code>fopen</code> falhar, devolve <code>NULL</code> — por isso o <code>if</code> logo depois, com <a href="errno.html">perror</a>.</dd>
+  <dt>fprintf(f, "%s;%s\n", ...)</dt><dd>Grava <code>nome;telefone</code> e um Enter. O <code>;</code> separa os dois campos; por isso o telefone não pode ter <code>;</code>.</dd>
+  <dt>fopen(ARQUIVO, "r")</dt><dd>Abre para leitura. Se o arquivo ainda não existe (primeira vez), devolve <code>NULL</code> e <code>carregar</code> simplesmente volta: a agenda começa vazia.</dd>
+  <dt>sscanf(linha, "%49[^;];%19[^\n]", ...)</dt><dd>O <code>%49[^;]</code> lê até 49 caracteres <strong>que não sejam <code>;</code></strong> (o nome, com espaços e tudo); o <code>;</code> casa o separador; o <code>%19[^\n]</code> lê o resto da linha (o telefone). As larguras 49 e 19 protegem os arrays. Se vierem os dois campos (<code>== 2</code>), o contato entra.</dd>
+  <dt>salvar(agenda, n); depois de adicionar e remover</dt><dd>A agenda é gravada a cada mudança, então nunca se perde nada, mesmo que o programa feche sem querer.</dd>
+</dl>
+
+<p>Agora a prova dos nove: adicionar, <strong>fechar</strong> o programa e abrir de novo. O contato continua lá, porque veio do arquivo:</p>
+
+<pre class="term" data-cwd="~/c/agenda">$ ls agenda.txt
+ls: não foi possível acessar 'agenda.txt': Arquivo ou diretório inexistente
+$ ./agenda
+«… a Ana adiciona a Ana Paula e escolhe 0 para sair …»
+Até logo!
+$ cat agenda.txt
+Ana Paula;555-1234
+$ ./agenda                 « abre de novo, sem readicionar ninguém
+=== Agenda da Ana ===
+1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair
+Opção: 2
+
+Nome                 Telefone
+Ana Paula            555-1234</pre>
+
+<p>O arquivo <code>agenda.txt</code> é texto puro: você pode abri-lo em qualquer editor e ver os contatos. Essa é a graça de um formato de texto — simples de gravar, de ler e de conferir.</p>
+
+<div class="tryc" data-stdin="2\n0\n" data-goal="outre:Ana Paula +555-1234,outre:Bruno Costa +555-9000,src:sscanf">
+<p class="try-task"><strong>Missão final (versão 4):</strong> o <code>agenda.txt</code> já tem dois contatos (está na aba ao lado), mas a função <code>carregar</code> não os lê — ao listar, aparece "Agenda vazia". Complete o laço de <code>carregar</code>: para cada <code>linha</code>, use <code>sscanf(linha, "%49[^;];%19[^\n]", agenda[*n].nome, agenda[*n].telefone)</code> e, se ele devolver <code>2</code>, faça <code>(*n)++</code>. A entrada só lista (opção 2) e sai; devem aparecer os dois contatos do arquivo.</p>
+<pre class="script" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;ctype.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+#define ARQUIVO "agenda.txt"
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+int contem_ignorando_caso(const char *texto, const char *parte) {
+    char t[TAM_NOME];
+    char p[TAM_NOME];
+    int i;
+    for (i = 0; texto[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        t[i] = (char) tolower((unsigned char) texto[i]);
+    }
+    t[i] = '\0';
+    for (i = 0; parte[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        p[i] = (char) tolower((unsigned char) parte[i]);
+    }
+    p[i] = '\0';
+    return strstr(t, p) != NULL;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    if (*n &gt;= MAX_CONTATOS) {
+        printf("Agenda cheia.\n");
+        return;
+    }
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void listar(const struct Contato agenda[], int n) {
+    if (n == 0) {
+        printf("Agenda vazia.\n");
+        return;
+    }
+    printf("\n%-20s %s\n", "Nome", "Telefone");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+    }
+}
+
+void buscar(const struct Contato agenda[], int n) {
+    char alvo[TAM_NOME];
+    ler_linha("Buscar: ", alvo, TAM_NOME);
+    int achou = 0;
+    for (int i = 0; i &lt; n; i++) {
+        if (contem_ignorando_caso(agenda[i].nome, alvo)) {
+            printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+            achou = 1;
+        }
+    }
+    if (!achou) {
+        printf("Nenhum contato com \"%s\".\n", alvo);
+    }
+}
+
+void remover(struct Contato agenda[], int *n) {
+    char alvo[TAM_NOME];
+    ler_linha("Remover (nome exato): ", alvo, TAM_NOME);
+    for (int i = 0; i &lt; *n; i++) {
+        if (strcmp(agenda[i].nome, alvo) == 0) {
+            for (int j = i; j &lt; *n - 1; j++) {
+                agenda[j] = agenda[j + 1];
+            }
+            (*n)--;
+            printf("Contato removido.\n");
+            return;
+        }
+    }
+    printf("Contato \"%s\" não encontrado.\n", alvo);
+}
+
+void salvar(const struct Contato agenda[], int n) {
+    FILE *f = fopen(ARQUIVO, "w");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return;
+    }
+    for (int i = 0; i &lt; n; i++) {
+        fprintf(f, "%s;%s\n", agenda[i].nome, agenda[i].telefone);
+    }
+    fclose(f);
+}
+
+void carregar(struct Contato agenda[], int *n) {
+    FILE *f = fopen(ARQUIVO, "r");
+    if (f == NULL) {
+        return;
+    }
+    char linha[TAM_NOME + TAM_TEL];
+    while (*n &lt; MAX_CONTATOS &amp;&amp; fgets(linha, sizeof linha, f) != NULL) {
+        // separe a linha "nome;telefone" com sscanf e, se vierem os 2 campos,
+        // guarde em agenda[*n] e faça (*n)++
+    }
+    fclose(f);
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    carregar(agenda, &amp;n);
+
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); salvar(agenda, n); break;
+            case '2': listar(agenda, n); break;
+            case '3': buscar(agenda, n); break;
+            case '4': remover(agenda, &amp;n); salvar(agenda, n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+<pre class="script" data-file="agenda.txt">Ana Paula;555-1234
+Bruno Costa;555-9000
+</pre>
+<pre class="solucao" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;ctype.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+#define ARQUIVO "agenda.txt"
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+int contem_ignorando_caso(const char *texto, const char *parte) {
+    char t[TAM_NOME];
+    char p[TAM_NOME];
+    int i;
+    for (i = 0; texto[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        t[i] = (char) tolower((unsigned char) texto[i]);
+    }
+    t[i] = '\0';
+    for (i = 0; parte[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        p[i] = (char) tolower((unsigned char) parte[i]);
+    }
+    p[i] = '\0';
+    return strstr(t, p) != NULL;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    if (*n &gt;= MAX_CONTATOS) {
+        printf("Agenda cheia.\n");
+        return;
+    }
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void listar(const struct Contato agenda[], int n) {
+    if (n == 0) {
+        printf("Agenda vazia.\n");
+        return;
+    }
+    printf("\n%-20s %s\n", "Nome", "Telefone");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+    }
+}
+
+void buscar(const struct Contato agenda[], int n) {
+    char alvo[TAM_NOME];
+    ler_linha("Buscar: ", alvo, TAM_NOME);
+    int achou = 0;
+    for (int i = 0; i &lt; n; i++) {
+        if (contem_ignorando_caso(agenda[i].nome, alvo)) {
+            printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+            achou = 1;
+        }
+    }
+    if (!achou) {
+        printf("Nenhum contato com \"%s\".\n", alvo);
+    }
+}
+
+void remover(struct Contato agenda[], int *n) {
+    char alvo[TAM_NOME];
+    ler_linha("Remover (nome exato): ", alvo, TAM_NOME);
+    for (int i = 0; i &lt; *n; i++) {
+        if (strcmp(agenda[i].nome, alvo) == 0) {
+            for (int j = i; j &lt; *n - 1; j++) {
+                agenda[j] = agenda[j + 1];
+            }
+            (*n)--;
+            printf("Contato removido.\n");
+            return;
+        }
+    }
+    printf("Contato \"%s\" não encontrado.\n", alvo);
+}
+
+void salvar(const struct Contato agenda[], int n) {
+    FILE *f = fopen(ARQUIVO, "w");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return;
+    }
+    for (int i = 0; i &lt; n; i++) {
+        fprintf(f, "%s;%s\n", agenda[i].nome, agenda[i].telefone);
+    }
+    fclose(f);
+}
+
+void carregar(struct Contato agenda[], int *n) {
+    FILE *f = fopen(ARQUIVO, "r");
+    if (f == NULL) {
+        return;
+    }
+    char linha[TAM_NOME + TAM_TEL];
+    while (*n &lt; MAX_CONTATOS &amp;&amp; fgets(linha, sizeof linha, f) != NULL) {
+        if (sscanf(linha, "%49[^;];%19[^\n]", agenda[*n].nome, agenda[*n].telefone) == 2) {
+            (*n)++;
+        }
+    }
+    fclose(f);
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    carregar(agenda, &amp;n);
+
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); salvar(agenda, n); break;
+            case '2': listar(agenda, n); break;
+            case '3': buscar(agenda, n); break;
+            case '4': remover(agenda, &amp;n); salvar(agenda, n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<div class="cenario">
+<strong>O programa não carrega o arquivo, e a agenda abre vazia</strong>
+<p><strong>O que aconteceu:</strong> quase sempre o programa foi rodado de uma pasta diferente da do <code>agenda.txt</code>. O <code>fopen("agenda.txt", ...)</code> procura o arquivo na pasta <strong>em que o programa roda</strong>, não na pasta do código.</p>
+<p><strong>Como resolver:</strong> rode o programa de dentro da pasta onde está o <code>agenda.txt</code> (<code>cd ~/c/agenda</code>). No editor do guia, o arquivo é a aba <code>agenda.txt</code> e fica sempre junto.</p>
+</div>
+
+<hr>
+
+<h2>O programa completo</h2>
+<p>A versão final, igual à versão 4. Compile com <code>gcc -std=c23 -Wall -Wextra agenda.c -o agenda</code>:</p>
+
+<pre class="file" data-file="agenda.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;ctype.h&gt;
+
+#define MAX_CONTATOS 100
+#define TAM_NOME 50
+#define TAM_TEL 20
+#define ARQUIVO "agenda.txt"
+
+struct Contato {
+    char nome[TAM_NOME];
+    char telefone[TAM_TEL];
+};
+
+void tirar_novalinha(char *s) {
+    s[strcspn(s, "\n")] = '\0';
+}
+
+int ler_linha(const char *rotulo, char *destino, int tam) {
+    printf("%s", rotulo);
+    if (fgets(destino, tam, stdin) == NULL) {
+        return 0;
+    }
+    tirar_novalinha(destino);
+    return 1;
+}
+
+int contem_ignorando_caso(const char *texto, const char *parte) {
+    char t[TAM_NOME];
+    char p[TAM_NOME];
+    int i;
+    for (i = 0; texto[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        t[i] = (char) tolower((unsigned char) texto[i]);
+    }
+    t[i] = '\0';
+    for (i = 0; parte[i] != '\0' &amp;&amp; i &lt; TAM_NOME - 1; i++) {
+        p[i] = (char) tolower((unsigned char) parte[i]);
+    }
+    p[i] = '\0';
+    return strstr(t, p) != NULL;
+}
+
+void adicionar(struct Contato agenda[], int *n) {
+    if (*n &gt;= MAX_CONTATOS) {
+        printf("Agenda cheia.\n");
+        return;
+    }
+    struct Contato c = {0};
+    ler_linha("Nome: ", c.nome, TAM_NOME);
+    ler_linha("Telefone: ", c.telefone, TAM_TEL);
+    agenda[*n] = c;
+    (*n)++;
+    printf("Contato adicionado.\n");
+}
+
+void listar(const struct Contato agenda[], int n) {
+    if (n == 0) {
+        printf("Agenda vazia.\n");
+        return;
+    }
+    printf("\n%-20s %s\n", "Nome", "Telefone");
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+    }
+}
+
+void buscar(const struct Contato agenda[], int n) {
+    char alvo[TAM_NOME];
+    ler_linha("Buscar: ", alvo, TAM_NOME);
+    int achou = 0;
+    for (int i = 0; i &lt; n; i++) {
+        if (contem_ignorando_caso(agenda[i].nome, alvo)) {
+            printf("%-20s %s\n", agenda[i].nome, agenda[i].telefone);
+            achou = 1;
+        }
+    }
+    if (!achou) {
+        printf("Nenhum contato com \"%s\".\n", alvo);
+    }
+}
+
+void remover(struct Contato agenda[], int *n) {
+    char alvo[TAM_NOME];
+    ler_linha("Remover (nome exato): ", alvo, TAM_NOME);
+    for (int i = 0; i &lt; *n; i++) {
+        if (strcmp(agenda[i].nome, alvo) == 0) {
+            for (int j = i; j &lt; *n - 1; j++) {
+                agenda[j] = agenda[j + 1];
+            }
+            (*n)--;
+            printf("Contato removido.\n");
+            return;
+        }
+    }
+    printf("Contato \"%s\" não encontrado.\n", alvo);
+}
+
+void salvar(const struct Contato agenda[], int n) {
+    FILE *f = fopen(ARQUIVO, "w");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return;
+    }
+    for (int i = 0; i &lt; n; i++) {
+        fprintf(f, "%s;%s\n", agenda[i].nome, agenda[i].telefone);
+    }
+    fclose(f);
+}
+
+void carregar(struct Contato agenda[], int *n) {
+    FILE *f = fopen(ARQUIVO, "r");
+    if (f == NULL) {
+        return;
+    }
+    char linha[TAM_NOME + TAM_TEL];
+    while (*n &lt; MAX_CONTATOS &amp;&amp; fgets(linha, sizeof linha, f) != NULL) {
+        if (sscanf(linha, "%49[^;];%19[^\n]", agenda[*n].nome, agenda[*n].telefone) == 2) {
+            (*n)++;
+        }
+    }
+    fclose(f);
+}
+
+int main(void) {
+    struct Contato agenda[MAX_CONTATOS];
+    int n = 0;
+    carregar(agenda, &amp;n);
+
+    char opcao[10];
+    int rodando = 1;
+    while (rodando) {
+        printf("\n=== Agenda da Ana ===\n");
+        printf("1. Adicionar  2. Listar  3. Buscar  4. Remover  0. Sair\n");
+        printf("Opção: ");
+        if (fgets(opcao, sizeof opcao, stdin) == NULL) {
+            break;
+        }
+        switch (opcao[0]) {
+            case '1': adicionar(agenda, &amp;n); salvar(agenda, n); break;
+            case '2': listar(agenda, n); break;
+            case '3': buscar(agenda, n); break;
+            case '4': remover(agenda, &amp;n); salvar(agenda, n); break;
+            case '0': rodando = 0; break;
+            default: printf("Opção inválida.\n");
+        }
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+
+<p>O que o projeto juntou: <a href="structs.html">structs</a>, um array e um contador, <a href="funcoes.html">funções</a> com <a href="passagem-ponteiro.html">passagem por ponteiro</a>, <a href="fgets.html">fgets</a> para texto com espaço, <a href="ctype.html">tolower</a> e <a href="funcoes-string.html">strstr/strcmp</a> para a busca, o deslocamento do array na remoção e os <a href="arquivos.html">arquivos</a> para a agenda durar.</p>
+
+<hr>
+
+<h2>Desafios extras</h2>
+<ol>
+  <li><strong>Editar um contato.</strong> Acrescente a opção "5. Editar": busca pelo nome exato e deixa a Ana trocar o telefone.</li>
+  <li><strong>Ordem alfabética.</strong> Antes de listar, ordene o array por nome com <a href="ordenacao.html">qsort</a> e <code>strcmp</code>.</li>
+  <li><strong>Confirmar a remoção.</strong> Antes de remover, pergunte "Tem certeza? (s/n)" e só remova se a resposta for <code>s</code>.</li>
+  <li><strong>Agenda de qualquer tamanho.</strong> Troque o array fixo de 100 por um array que cresce com <a href="calloc-realloc.html">realloc</a> quando enche (veja <a href="array-dinamico.html">Array que Cresce</a>).</li>
+  <li><strong>Telefone com <code>;</code>.</strong> Pense no que acontece se um nome tiver <code>;</code> e escolha outro separador, ou grave em outro formato.</li>
+</ol>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Por que a agenda lê os nomes com <code>fgets</code> em vez de <code>scanf("%s")</code>?</p>
+<label><input type="radio" name="q1"> Porque o <code>fgets</code> é mais rápido.</label>
+<label><input type="radio" name="q1"> Porque o <code>scanf("%s")</code> para no primeiro espaço, e nomes têm espaço ("Ana Paula").</label>
+<label><input type="radio" name="q1"> Porque o <code>scanf</code> não existe no C23.</label>
+<label><input type="radio" name="q1"> Porque o <code>fgets</code> não precisa de tamanho.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Para remover o contato da posição <code>i</code> de um array de <code>n</code> contatos, o que o programa faz?</p>
+<label><input type="radio" name="q2"> Põe <code>NULL</code> em <code>agenda[i]</code>.</label>
+<label><input type="radio" name="q2"> Troca <code>agenda[i]</code> com o último e pronto.</label>
+<label><input type="radio" name="q2"> Desloca <code>agenda[i+1..n-1]</code> uma posição para trás e faz <code>n--</code>.</label>
+<label><input type="radio" name="q2"> Nada: o C não deixa remover de um array.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. O que a busca faz para não diferenciar maiúsculas?</p>
+<label><input type="radio" name="q3"> Passa os dois textos para minúsculas com <code>tolower</code> e usa <code>strstr</code>.</label>
+<label><input type="radio" name="q3"> Compara só a primeira letra.</label>
+<label><input type="radio" name="q3"> Usa <code>==</code> entre as strings.</label>
+<label><input type="radio" name="q3"> Grava tudo em maiúsculas no arquivo.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Por que a agenda chama <code>salvar</code> depois de adicionar e remover?</p>
+<label><input type="radio" name="q4"> Para o programa ficar mais rápido.</label>
+<label><input type="radio" name="q4"> Porque o <code>fopen</code> exige.</label>
+<label><input type="radio" name="q4"> Para apagar o arquivo.</label>
+<label><input type="radio" name="q4"> Para que a mudança fique gravada no arquivo e não se perca ao fechar o programa.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete o modo do <code>fopen</code> para <strong>escrever</strong> (criar/sobrescrever) o arquivo:</p>
+<div class="ex-code">FILE *f = fopen("agenda.txt", "<input data-answer="w" aria-label="modo" size="2">");</div>
+</div>
+
+<div class="exercise">
+<p>6. Complete a função que compara dois nomes e vale 0 quando são iguais:</p>
+<div class="ex-code">if (<input data-answer="strcmp" aria-label="função">(agenda[i].nome, alvo) == 0)</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <a href="structs.html">struct</a> junta os dados de um contato; um array de structs e um contador guardam a agenda.</li>
+  <li>Ler tudo com <a href="fgets.html">fgets</a> (inclusive a opção do menu) aceita nomes com espaço e evita o <code>\n</code> perdido do <code>scanf</code>.</li>
+  <li>Buscar sem diferenciar maiúsculas: passar os textos por <code>tolower</code> e usar <code>strstr</code>.</li>
+  <li>Remover de um array é deslocar os seguintes para trás e diminuir a contagem.</li>
+  <li>Gravar com <code>fprintf</code> e ler com <code>fgets</code> + <code>sscanf</code> (com larguras) faz a agenda durar depois de fechar o programa.</li>
+</ul>
+<p>Próximo projeto: <a href="projeto-estoque.html">Estoque da Lojinha (binário)</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
