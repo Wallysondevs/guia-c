@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Operadores Lógicos — &amp;&amp;, || e ! | Guia C</title>
+<meta name="description" content="Operadores lógicos em C para quem nunca programou: &amp;&amp; (e), || (ou) e ! (não), tabela-verdade, qualquer número diferente de zero é verdadeiro, curto-circuito para evitar divisão por zero, &amp; × &amp;&amp;, &amp;&amp; antes de ||, o !x == 5 e o x == 1 || 2, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Operadores Lógicos</span></h1>
+
+<p class="intro">Na aula anterior você fez perguntas simples: "a nota é maior que 6?". Muitas vezes, porém, a pergunta tem <strong>mais de uma parte</strong>: "a nota está entre 0 <em>e</em> 10?", "o cliente é estudante <em>ou</em> tem mais de 65 anos?", "o estoque <em>não</em> acabou?". Para juntar perguntas, o C tem três <strong>operadores lógicos</strong>: <code>&amp;&amp;</code> (e), <code>||</code> (ou) e <code>!</code> (não). Nesta aula você vai ver o que cada um responde, como o C economiza trabalho com o <strong>curto-circuito</strong> (e por que isso evita que o programa quebre) e as confusões mais comuns, como trocar <code>&amp;&amp;</code> por <code>&amp;</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Os três operadores: <code>&amp;&amp;</code> (e), <code>||</code> (ou) e <code>!</code> (não), e a tabela-verdade de cada um.</li>
+  <li>Que, para o C, <strong>qualquer número diferente de zero</strong> é "verdadeiro", e que a resposta é sempre <code>1</code> ou <code>0</code>.</li>
+  <li>O <strong>curto-circuito</strong>: por que <code>b != 0 &amp;&amp; a / b &gt; 2</code> nunca divide por zero.</li>
+  <li>A diferença entre <code>&amp;&amp;</code> e <code>&amp;</code>, e entre <code>||</code> e <code>|</code>.</li>
+  <li>Por que <code>&amp;&amp;</code> vem antes de <code>||</code>, e as armadilhas <code>!x == 5</code> e <code>x == 1 || 2</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: as regras de uma festa</h2>
+<p>Imagine a portaria de uma festa. O segurança tem regras:</p>
+<ul>
+  <li>"Entra quem tem convite <strong>e</strong> documento." Precisa das <strong>duas</strong> coisas. Faltou uma, não entra.</li>
+  <li>"Ganha pulseira VIP quem é aniversariante <strong>ou</strong> amigo do dono." Basta <strong>uma</strong> das duas. Ter as duas também vale.</li>
+  <li>"Pode beber cerveja quem <strong>não</strong> é menor de idade." O "não" <strong>inverte</strong> a resposta.</li>
+</ul>
+<p>Em C, essas três palavras viram símbolos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Nome</th><th>Responde 1 (sim) quando…</th><th>Exemplo</th></tr>
+<tr><td><code>&amp;&amp;</code></td><td>E (<em>AND</em>)</td><td>os <strong>dois</strong> lados são verdadeiros</td><td><code>convite &amp;&amp; documento</code></td></tr>
+<tr><td><code>||</code></td><td>OU (<em>OR</em>)</td><td>pelo menos <strong>um</strong> lado é verdadeiro</td><td><code>aniversariante || amigo</code></td></tr>
+<tr><td><code>!</code></td><td>NÃO (<em>NOT</em>)</td><td>o valor é falso (ele inverte)</td><td><code>!menor</code></td></tr>
+</table>
+</div>
+
+<p>O <code>&amp;&amp;</code> são dois "e comercial" grudados. O <code>||</code> são duas barras verticais (no teclado brasileiro, a barra vertical costuma ficar na tecla à esquerda do <code>Z</code>, com <kbd>Shift</kbd>). O <code>!</code> é o ponto de exclamação, escrito <strong>antes</strong> do valor, como em <code>!=</code> ("não igual").</p>
+
+<hr>
+
+<h2>1. A tabela-verdade</h2>
+<p>Como cada lado só pode ser verdadeiro (1) ou falso (0), dá para listar todas as combinações numa tabela, a <strong>tabela-verdade</strong>. O programa abaixo calcula cada uma:</p>
+
+<pre class="file" data-file="tabela.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf(" a  b | a &amp;&amp; b | a || b\n");
+    printf(" 0  0 |   %d    |   %d\n", 0 &amp;&amp; 0, 0 || 0);
+    printf(" 0  1 |   %d    |   %d\n", 0 &amp;&amp; 1, 0 || 1);
+    printf(" 1  0 |   %d    |   %d\n", 1 &amp;&amp; 0, 1 || 0);
+    printf(" 1  1 |   %d    |   %d\n", 1 &amp;&amp; 1, 1 || 1);
+    printf("!0 = %d   !1 = %d\n", !0, !1);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tabela.c -o tabela
+$ ./tabela
+ a  b | a &amp;&amp; b | a || b
+ 0  0 |   0    |   0
+ 0  1 |   0    |   1
+ 1  0 |   0    |   1
+ 1  1 |   1    |   1
+!0 = 1   !1 = 0</pre>
+
+<p>Leia as colunas assim:</p>
+<ul>
+  <li><strong><code>&amp;&amp;</code></strong> só dá 1 na última linha, quando os <strong>dois</strong> são 1. É exigente.</li>
+  <li><strong><code>||</code></strong> só dá 0 na primeira linha, quando os <strong>dois</strong> são 0. É generoso.</li>
+  <li><strong><code>!</code></strong> troca: o que era 0 vira 1, o que era 1 vira 0.</li>
+</ul>
+<p>O "ou" do C é o <strong>ou inclusivo</strong>: se os dois lados forem verdadeiros, a resposta também é verdadeira. É diferente do "ou" de "quer café ou chá?", em que só se escolhe um.</p>
+
+<h3>Juntando comparações de verdade</h3>
+<p>Na prática, os lados de um <code>&amp;&amp;</code> ou de um <code>||</code> são comparações (aula <a href="operadores-comparacao.html">Operadores de Comparação</a>). O exemplo clássico é a faixa: "a nota está entre 0 e 10?" vira "a nota é maior ou igual a 0 <strong>e</strong> menor ou igual a 10?":</p>
+
+<pre class="file" data-file="faixa.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 15;
+    int idade = 70;
+    bool estudante = false;
+    printf("Nota válida? %d\n", nota &gt;= 0 &amp;&amp; nota &lt;= 10);
+    printf("Meia-entrada? %d\n", estudante || idade &gt;= 65);
+    printf("Paga inteira? %d\n", !(estudante || idade &gt;= 65));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra faixa.c -o faixa
+$ ./faixa
+Nota válida? 0       « 15 &gt;= 0 é 1, mas 15 &lt;= 10 é 0: 1 &amp;&amp; 0 dá 0
+Meia-entrada? 1      « não é estudante (0), mas tem 65 ou mais (1): 0 || 1 dá 1
+Paga inteira? 0      « o ! inverteu a resposta anterior</pre>
+
+<dl class="anatomy">
+  <dt>nota &gt;= 0 &amp;&amp; nota &lt;= 10</dt><dd>Duas perguntas completas, uma de cada lado do <code>&amp;&amp;</code>. Repare que <code>nota</code> aparece <strong>duas vezes</strong>: em C não existe <code>0 &lt;= nota &lt;= 10</code> com o sentido da matemática. Os parênteses em volta de cada comparação são opcionais (as comparações são feitas antes do <code>&amp;&amp;</code>; veja <a href="precedencia.html">Precedência</a>).</dd>
+  <dt>bool estudante = false;</dt><dd>Um <code>bool</code> <span class="versao">C23</span> já é um "sim ou não", então pode ir direto num <code>||</code>, sem comparar com nada.</dd>
+  <dt>!( … )</dt><dd>Os parênteses aqui são obrigatórios: sem eles, o <code>!</code> se aplicaria só ao <code>estudante</code>. O <code>!</code> é "grudento" e pega só o que vem logo depois dele.</dd>
+</dl>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> mude os valores de <code>convite</code> e <code>documento</code> (0 ou 1) e veja quando a pessoa entra. Depois troque o <code>&amp;&amp;</code> por <code>||</code> e compare.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int convite = 1;
+    int documento = 0;
+    printf("Entra na festa? %d\n", convite &amp;&amp; documento);
+    printf("Esqueceu algo? %d\n", !convite || !documento);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Para o C, todo número diferente de zero é "sim"</h2>
+<p>Os operadores lógicos não exigem 0 e 1 nos lados. Eles aceitam <strong>qualquer número</strong> e seguem uma regra simples:</p>
+<ul>
+  <li><code>0</code> é <strong>falso</strong>;</li>
+  <li><strong>qualquer outro valor</strong> (5, −3, 1000) é <strong>verdadeiro</strong>.</li>
+</ul>
+<p>A <strong>resposta</strong>, porém, é sempre <code>1</code> ou <code>0</code>, um <code>int</code>, como nas comparações:</p>
+
+<pre class="file" data-file="numeros.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 5;
+    int b = -3;
+    int c = 0;
+    printf("%d\n", a &amp;&amp; b);
+    printf("%d\n", a &amp;&amp; c);
+    printf("%d\n", c || b);
+    printf("%d\n", !a);
+    printf("%d\n", !c);
+    printf("%d\n", !!a);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra numeros.c -o numeros
+$ ./numeros
+1        « 5 é "sim", -3 é "sim": a resposta é 1 (e não 5, nem -3)
+0        « c é 0, "não"
+1        « b é "sim"
+0        « não 5 = não "sim" = 0
+1        « não 0 = 1
+1        « !!a: dois "não" seguidos transformam qualquer número em 0 ou 1</pre>
+
+<p>É por isso que você vai ver muito código C assim: <code>if (estoque)</code> no lugar de <code>if (estoque != 0)</code>, e <code>if (!estoque)</code> no lugar de <code>if (estoque == 0)</code>. As duas formas fazem a mesma coisa. Para quem está começando, a forma com a comparação escrita (<code>estoque != 0</code>) costuma ser mais fácil de ler; reserve <code>if (x)</code> e <code>if (!x)</code> para variáveis que são mesmo "sim ou não", como um <code>bool</code>.</p>
+
+<hr>
+
+<h2>3. Curto-circuito: o C para assim que sabe a resposta</h2>
+<p>Pense de novo na portaria. Se a pessoa <strong>não tem convite</strong>, o segurança nem pede o documento: já sabe que ela não entra. O C faz igual:</p>
+<ul>
+  <li>Em <code>A &amp;&amp; B</code>, se <code>A</code> é falso, a resposta é 0 de qualquer jeito, e <strong><code>B</code> nem é calculado</strong>.</li>
+  <li>Em <code>A || B</code>, se <code>A</code> é verdadeiro, a resposta é 1 de qualquer jeito, e <strong><code>B</code> nem é calculado</strong>.</li>
+</ul>
+<p>Isso se chama <strong>avaliação em curto-circuito</strong> (<em>short-circuit evaluation</em>). O lado esquerdo é sempre calculado primeiro, e o direito só se for preciso. Parece só uma economia, mas é uma ferramenta de <strong>segurança</strong>. Lembre que dividir um inteiro por zero derruba o programa (aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>):</p>
+
+<pre class="file" data-file="div.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 10;
+    int b = 0;
+    printf("Com proteção: %d\n", b != 0 &amp;&amp; a / b &gt; 2);
+    printf("Sem proteção: %d\n", a / b &gt; 2 &amp;&amp; b != 0);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra div.c -o div
+$ ./div
+Com proteção: 0
+Exceção de ponto flutuante (imagem do núcleo gravada) ./div
+$ echo $?
+136</pre>
+
+<ol class="passo">
+  <li><strong>Linha 6:</strong> o C calcula <code>b != 0</code>. Como <code>b</code> é 0, dá 0 (falso). O <code>&amp;&amp;</code> já sabe que a resposta é 0 e <strong>não faz a divisão</strong>. O programa mostra <code>Com proteção: 0</code>.</li>
+  <li><strong>Linha 7:</strong> as mesmas duas perguntas, na ordem trocada. Agora o lado esquerdo é <code>a / b &gt; 2</code>, que é calculado primeiro: 10 dividido por 0. O processador se recusa, e o sistema encerra o programa com a mensagem "Exceção de ponto flutuante" (o nome é histórico: vale também para divisão de inteiros). O código de saída 136 indica essa morte. A segunda linha nunca aparece.</li>
+</ol>
+<p>Repare que o gcc <strong>não avisou nada</strong>: ele não sabe, ao compilar, que <code>b</code> vai valer 0. A proteção é responsabilidade sua, e a regra é: <strong>a pergunta que protege vem à esquerda</strong>.</p>
+
+<p>O mesmo vale com <code>||</code>, de trás para a frente: "o grupo está vazio <strong>ou</strong> cada pessoa ganha menos de uma pizza?". Se o grupo está vazio, a divisão nem acontece:</p>
+
+<pre class="file" data-file="ou.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pessoas = 0;
+    int pizzas = 3;
+    printf("%d\n", pessoas == 0 || pizzas / pessoas &lt; 1);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ou.c -o ou
+$ ./ou
+1        « pessoas == 0 já é verdade: a divisão por zero não foi feita</pre>
+
+<div class="tip">
+<strong>Você vai usar isso muito</strong>
+<p>O curto-circuito aparece em todo programa C de verdade: "o índice está dentro do array <strong>e</strong> o elemento é 0?" (<a href="arrays.html">Arrays</a>), "o ponteiro não é nulo <strong>e</strong> o valor apontado é positivo?" (<a href="ponteiro-nulo.html">Ponteiro Nulo</a>). Sempre a pergunta que protege primeiro.</p>
+</div>
+
+<hr>
+
+<h2>4. <code>&amp;&amp;</code> não é <code>&amp;</code> (e <code>||</code> não é <code>|</code>)</h2>
+<p>O C também tem <code>&amp;</code> e <code>|</code>, com um símbolo só. Eles são <strong>operadores de bits</strong>: trabalham com cada dígito binário do número, um por um (aula <a href="operadores-bits.html">Operadores de Bits</a>). Com 0 e 1 eles parecem iguais aos lógicos, mas com outros números a diferença aparece:</p>
+
+<pre class="file" data-file="bits.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 1;
+    int b = 2;
+    printf("a &amp;&amp; b = %d\n", a &amp;&amp; b);
+    printf("a &amp; b  = %d\n", a &amp; b);
+    printf("a || b = %d\n", a || b);
+    printf("a | b  = %d\n", a | b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra bits.c -o bits
+$ ./bits
+a &amp;&amp; b = 1     « 1 é "sim" e 2 é "sim": sim
+a &amp; b  = 0     « 01 &amp; 10 em binário: nenhum bit em comum, dá 0!
+a || b = 1
+a | b  = 3     « 01 | 10 = 11 em binário, que é 3</pre>
+
+<p>Dois números "verdadeiros" (1 e 2) deram 0 com o <code>&amp;</code>. Além disso, <strong><code>&amp;</code> e <code>|</code> não fazem curto-circuito</strong>: calculam sempre os dois lados. Trocar <code>b != 0 &amp;&amp; a / b &gt; 2</code> por <code>b != 0 &amp; a / b &gt; 2</code> volta a dividir por zero.</p>
+
+<p>Quando os dois lados são comparações, o gcc desconfia da troca e avisa:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ebits.c -o ebits
+ebits.c: In function ‘main’:
+ebits.c:6:11: warning: suggest parentheses around comparison in operand of ‘&amp;’ [-Wparentheses]
+    6 |     if (x &gt; 0 &amp; y &gt; 0) {
+      |         ~~^~~</pre>
+
+<p>"Sugiro parênteses em volta da comparação usada no <code>&amp;</code>." Na prática, o recado é: "você queria <code>&amp;&amp;</code>?". O Clang do editor não dá esse aviso: mais um motivo para conferir o símbolo com cuidado. Regra simples: <strong>para juntar perguntas, sempre dois símbolos</strong>: <code>&amp;&amp;</code> e <code>||</code>.</p>
+
+<hr>
+
+<h2>5. Misturando <code>&amp;&amp;</code>, <code>||</code> e <code>!</code></h2>
+
+<h3><code>&amp;&amp;</code> vem antes de <code>||</code></h3>
+<p>Assim como na matemática a multiplicação vem antes da soma, em C o <code>&amp;&amp;</code> é calculado antes do <code>||</code>. Então <code>a || b &amp;&amp; c</code> significa <code>a || (b &amp;&amp; c)</code>. Como pouca gente lembra disso, o gcc avisa quando você mistura os dois sem parênteses:</p>
+
+<pre class="file" data-file="mistura.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 70;
+    int estudante = 0;
+    int doador = 0;
+    printf("%d\n", estudante &amp;&amp; doador || idade &gt;= 65);
+    printf("%d\n", !idade == 18);
+    printf("%d\n", idade == 18 || 21);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra mistura.c -o mistura
+mistura.c: In function ‘main’:
+mistura.c:7:30: warning: suggest parentheses around ‘&amp;&amp;’ within ‘||’ [-Wparentheses]
+    7 |     printf("%d\n", estudante &amp;&amp; doador || idade &gt;= 65);
+      |                    ~~~~~~~~~~^~~~~~~~~
+mistura.c:8:27: warning: comparison of constant ‘18’ with boolean expression is always false [-Wbool-compare]
+    8 |     printf("%d\n", !idade == 18);
+      |                           ^~
+mistura.c:8:27: warning: logical not is only applied to the left hand side of comparison [-Wlogical-not-parentheses]
+mistura.c:8:20: note: add parentheses around left hand side expression to silence this warning
+    8 |     printf("%d\n", !idade == 18);
+      |                    ^~~~~~
+      |                    (     )
+$ ./mistura
+1
+0
+1</pre>
+
+<p>Três linhas, três problemas diferentes:</p>
+<dl class="anatomy">
+  <dt>Linha 7: <code>estudante &amp;&amp; doador || idade &gt;= 65</code></dt><dd>"Sugiro parênteses em volta do <code>&amp;&amp;</code> dentro do <code>||</code>." O C leu <code>(estudante &amp;&amp; doador) || idade &gt;= 65</code>. Pode ser o que você queria, ou não: escreva os parênteses para deixar claro, por exemplo <code>(estudante &amp;&amp; doador) || idade &gt;= 65</code> ou <code>estudante &amp;&amp; (doador || idade &gt;= 65)</code>. As duas dão respostas diferentes (aqui, 1 e 0).</dd>
+  <dt>Linha 8: <code>!idade == 18</code></dt><dd>A intenção era "idade não é 18". Mas o <code>!</code> pega só o <code>idade</code>: o C calculou <code>(!idade) == 18</code>, isto é, <code>0 == 18</code>. Os avisos dizem: "o não lógico só é aplicado ao lado esquerdo da comparação" e "comparar 18 com uma expressão booleana dá sempre falso". Escreva <code>idade != 18</code> (ou <code>!(idade == 18)</code>).</dd>
+  <dt>Linha 9: <code>idade == 18 || 21</code></dt><dd>A intenção era "idade é 18 ou 21". Mas o C não "distribui" o <code>idade ==</code>: ele leu <code>(idade == 18) || 21</code>, e 21 é diferente de zero, então é sempre "sim". O gcc <strong>não avisa</strong>. O Clang do editor avisa: <code>use of logical '||' with constant operand [-Wconstant-logical-operand]</code> ("uso de <code>||</code> com uma constante"). Escreva a pergunta completa dos dois lados: <code>idade == 18 || idade == 21</code>.</dd>
+</dl>
+
+<div class="tryc" data-stdin="15" data-goal="out:15 é válida? 0,src:&amp;&amp;,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana quer conferir se uma nota digitada está entre 0 e 10 (a entrada preparada é <code>15</code>). Ela escreveu a faixa como na matemática, e o Clang do editor recusa. Conserte com <code>&amp;&amp;</code>, sem avisos. Depois teste com outras entradas (7, 0, −1, 10).</p>
+<pre class="out">15 é válida? 0</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 0;
+    if (scanf("%d", &amp;nota) != 1) {
+        return 1;
+    }
+    bool valida = 0 &lt;= nota &lt;= 10;
+    printf("%d é válida? %d\n", nota, valida);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 0;
+    if (scanf("%d", &amp;nota) != 1) {
+        return 1;
+    }
+    bool valida = nota &gt;= 0 &amp;&amp; nota &lt;= 10;
+    printf("%d é válida? %d\n", nota, valida);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de escrever a mesma pergunta</h2>
+
+<h3>As leis de De Morgan</h3>
+<p>Um "não" na frente de um "e" ou de um "ou" pode ser distribuído, desde que você <strong>troque</strong> o <code>&amp;&amp;</code> pelo <code>||</code> (e vice-versa). Essas regras têm o nome do matemático inglês Augustus De Morgan:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Esta forma…</th><th>…é igual a esta</th><th>Em palavras</th></tr>
+<tr><td><code>!(a &amp;&amp; b)</code></td><td><code>!a || !b</code></td><td>"não (convite e documento)" = "falta o convite ou falta o documento"</td></tr>
+<tr><td><code>!(a || b)</code></td><td><code>!a &amp;&amp; !b</code></td><td>"não (estudante ou idoso)" = "nem estudante, nem idoso"</td></tr>
+<tr><td><code>!(nota &gt;= 0 &amp;&amp; nota &lt;= 10)</code></td><td><code>nota &lt; 0 || nota &gt; 10</code></td><td>"fora da faixa": o <code>!</code> também inverte cada comparação (<code>&gt;=</code> vira <code>&lt;</code>)</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> A que se lê mais fácil em voz alta. Para "nota inválida", <code>nota &lt; 0 || nota &gt; 10</code> é mais clara do que <code>!(nota &gt;= 0 &amp;&amp; nota &lt;= 10)</code>.</p>
+
+<h3>Palavras no lugar dos símbolos: <code>and</code>, <code>or</code>, <code>not</code> <span class="versao">C95</span></h3>
+<p>O cabeçalho <code>&lt;iso646.h&gt;</code> define nomes em inglês para os operadores (foi criado para teclados que não tinham <code>&amp;</code> ou <code>|</code>):</p>
+
+<pre class="file" data-file="iso.c">#include &lt;iso646.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 20;
+    int tem_titulo = 1;
+    printf("%d\n", idade &gt;= 18 and tem_titulo);
+    printf("%d\n", idade &lt; 16 or not tem_titulo);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra iso.c -o iso
+$ ./iso
+1
+0</pre>
+
+<p>Funciona, mas é raro em C: quase todo código usa <code>&amp;&amp;</code>, <code>||</code> e <code>!</code>, e é isso que você vai encontrar nos livros, fóruns e projetos. Use os símbolos. (Em C++ essas palavras existem sem <code>#include</code>; em C, sem o <code>&lt;iso646.h&gt;</code>, <code>and</code> é só um nome desconhecido.)</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>Exceção de ponto flutuante (imagem do núcleo gravada)</code> numa condição com divisão</strong>
+<p><strong>O que significa:</strong> a divisão por zero foi calculada porque a pergunta que protege estava do lado errado (<code>a / b &gt; 2 &amp;&amp; b != 0</code>) ou porque você usou <code>&amp;</code> no lugar de <code>&amp;&amp;</code>. No editor do guia aparece a mesma mensagem e o código de saída 136.</p>
+<p><strong>Como consertar:</strong> coloque a proteção à esquerda e use <code>&amp;&amp;</code>: <code>b != 0 &amp;&amp; a / b &gt; 2</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: suggest parentheses around ‘&amp;&amp;’ within ‘||’</code></strong>
+<p><strong>O que significa:</strong> você misturou <code>&amp;&amp;</code> e <code>||</code> sem parênteses. O C faz o <code>&amp;&amp;</code> primeiro, o que pode não ser o que você queria. No Clang: <code>'&amp;&amp;' within '||' [-Wlogical-op-parentheses]</code>.</p>
+<p><strong>Como consertar:</strong> escreva os parênteses do jeito que você quer que a pergunta seja lida.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: logical not is only applied to the left hand side of comparison</code></strong>
+<p><strong>O que significa:</strong> em <code>!x == 5</code>, o <code>!</code> pegou só o <code>x</code>.</p>
+<p><strong>Como consertar:</strong> <code>x != 5</code>, ou <code>!(x == 5)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: suggest parentheses around comparison in operand of ‘&amp;’</code></strong>
+<p><strong>O que significa:</strong> você juntou duas comparações com <code>&amp;</code> (ou <code>|</code>), um símbolo só. Isso é operação de bits, sem curto-circuito.</p>
+<p><strong>Como consertar:</strong> use <code>&amp;&amp;</code> (ou <code>||</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>A condição é sempre verdadeira e não há aviso no gcc</strong>
+<p><strong>O que significa:</strong> provavelmente você escreveu <code>x == 1 || 2</code> ou <code>cor == 'a' || 'e'</code>. O lado direito é um número diferente de zero, logo é sempre "sim".</p>
+<p><strong>Como consertar:</strong> repita a comparação: <code>x == 1 || x == 2</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Nome</th><th>Resposta</th><th>Curto-circuito</th></tr>
+<tr><td><code>a &amp;&amp; b</code></td><td>E</td><td>1 se os dois são diferentes de 0; senão 0</td><td>Se <code>a</code> é 0, <code>b</code> não é calculado</td></tr>
+<tr><td><code>a || b</code></td><td>OU</td><td>1 se pelo menos um é diferente de 0; senão 0</td><td>Se <code>a</code> não é 0, <code>b</code> não é calculado</td></tr>
+<tr><td><code>!a</code></td><td>NÃO</td><td>1 se <code>a</code> é 0; senão 0</td><td>—</td></tr>
+<tr><td><code>!!a</code></td><td>"normalizar"</td><td>0 continua 0; qualquer outro vira 1</td><td>—</td></tr>
+<tr><td><code>a &amp; b</code>, <code>a | b</code></td><td>E / OU de bits</td><td>outro número (bit a bit)</td><td>Não: calcula sempre os dois lados</td></tr>
+<tr><td><code>and</code>, <code>or</code>, <code>not</code></td><td>nomes de <code>&lt;iso646.h&gt;</code></td><td>iguais a <code>&amp;&amp;</code>, <code>||</code>, <code>!</code></td><td>igual</td></tr>
+</table>
+</div>
+<p>Ordem de cálculo (do que vem primeiro para o que vem depois): <code>!</code> → comparações (<code>&lt; &lt;= &gt; &gt;=</code>, depois <code>== !=</code>) → <code>&amp;&amp;</code> → <code>||</code>. A tabela completa está em <a href="precedencia.html">Precedência</a>.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Os dois</h3>
+<p>Complete para responder 1 só se a pessoa tem convite <strong>e</strong> documento:</p>
+<div class="ex-code">bool entra = convite <input data-answer="&amp;&amp;" aria-label="operador"> documento;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Pelo menos um</h3>
+<p>Complete para responder 1 se o cliente é estudante <strong>ou</strong> idoso:</p>
+<div class="ex-code">bool meia = estudante <input data-answer="\|\|" aria-label="operador"> idoso;</div>
+</div>
+
+<div class="exercise">
+<h3>3. A proteção primeiro</h3>
+<p>Complete para nunca dividir por zero:</p>
+<div class="ex-code">bool muito = <input data-answer="b != 0|b!=0|0 != b|0!=b" aria-label="proteção"> &amp;&amp; a / b &gt; 2;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Quanto vale <code>7 &amp;&amp; -2</code>?</p>
+<label><input type="radio" name="q4"> 0, porque −2 é negativo</label>
+<label><input type="radio" name="q4"> 1, porque os dois são diferentes de zero</label>
+<label><input type="radio" name="q4"> 5</label>
+<label><input type="radio" name="q4"> −2</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Em <code>pessoas == 0 || pizzas / pessoas &lt; 1</code>, com <code>pessoas</code> valendo 0, o que acontece?</p>
+<label><input type="radio" name="q5"> O programa quebra com divisão por zero</label>
+<label><input type="radio" name="q5"> O gcc recusa compilar</label>
+<label><input type="radio" name="q5"> A resposta é 1 e a divisão nem é feita</label>
+<label><input type="radio" name="q5"> A resposta é 0</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. A Ana quer saber se <code>dia</code> é 6 ou 7 (fim de semana). Qual está certo?</p>
+<label><input type="radio" name="q6"> <code>dia == 6 || 7</code></label>
+<label><input type="radio" name="q6"> <code>dia == 6 | 7</code></label>
+<label><input type="radio" name="q6"> <code>dia == 6 &amp;&amp; dia == 7</code></label>
+<label><input type="radio" name="q6"> <code>dia == 6 || dia == 7</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. Qual destas é igual a <code>!(a &amp;&amp; b)</code>?</p>
+<label><input type="radio" name="q7"> <code>!a || !b</code></label>
+<label><input type="radio" name="q7"> <code>!a &amp;&amp; !b</code></label>
+<label><input type="radio" name="q7"> <code>a || b</code></label>
+<label><input type="radio" name="q7"> <code>!a &amp;&amp; b</code></label>
+</div>
+
+<h3>Missão final: o desconto da lojinha</h3>
+
+<div class="tryc" data-stdin="20 1 30" data-goal="out:Desconto: 0,src:\|\|,src:&amp;&amp;,semaviso">
+<p class="try-task"><strong>Missão:</strong> a lojinha da Ana dá desconto quando o cliente é <strong>estudante ou tem 65 anos ou mais</strong>, mas <strong>só se a compra passa de 50 reais</strong>. O programa lê a idade, se é estudante (1 ou 0) e o total. Troque o <code>0</code> marcado pela pergunta completa, com <code>||</code> e <code>&amp;&amp;</code>, e <strong>sem avisos</strong> (dica: o Clang avisa quando você mistura os dois sem parênteses, e aqui os parênteses mudam a resposta). A entrada preparada é um estudante de 20 anos com compra de 30 reais, que <strong>não</strong> tem desconto:</p>
+<pre class="out">Desconto: 0</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 0;
+    int estudante = 0;
+    double total = 0;
+    if (scanf("%d %d %lf", &amp;idade, &amp;estudante, &amp;total) != 3) {
+        return 1;
+    }
+    bool desconto = 0;     // troque 0 pela pergunta completa
+    printf("Desconto: %d\n", desconto);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 0;
+    int estudante = 0;
+    double total = 0;
+    if (scanf("%d %d %lf", &amp;idade, &amp;estudante, &amp;total) != 3) {
+        return 1;
+    }
+    bool desconto = (estudante || idade &gt;= 65) &amp;&amp; total &gt; 50;
+    printf("Desconto: %d\n", desconto);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Teste outras entradas: <code>70 0 80</code> (idosa, compra de 80: tem desconto), <code>20 1 60</code> (estudante, compra de 60: tem desconto), <code>30 0 100</code> (nem estudante nem idoso: não tem). Experimente tirar os parênteses e veja o aviso e a resposta mudarem com a entrada <code>20 1 30</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>&amp;&amp;</code> (e): 1 só se os dois lados forem verdadeiros. <code>||</code> (ou): 1 se pelo menos um for. <code>!</code> (não): inverte.</li>
+  <li>0 é falso; qualquer outro número é verdadeiro. A resposta é sempre um <code>int</code>, 1 ou 0.</li>
+  <li>Curto-circuito: o lado esquerdo é calculado primeiro; o direito só se for preciso. Use para proteger: <code>b != 0 &amp;&amp; a / b &gt; 2</code>.</li>
+  <li><code>&amp;</code> e <code>|</code> (um símbolo) são operadores de bits: outro resultado e sem curto-circuito.</li>
+  <li><code>&amp;&amp;</code> vem antes de <code>||</code>; ao misturar, use parênteses (<code>suggest parentheses around ‘&amp;&amp;’ within ‘||’</code>).</li>
+  <li><code>!x == 5</code> é <code>(!x) == 5</code>: escreva <code>x != 5</code>. <code>x == 1 || 2</code> é sempre verdade: escreva <code>x == 1 || x == 2</code>.</li>
+  <li>De Morgan: <code>!(a &amp;&amp; b)</code> = <code>!a || !b</code>; <code>!(a || b)</code> = <code>!a &amp;&amp; !b</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
