@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Ordenação (qsort) — ordenar números, textos e structs | Guia C</title>
+<meta name="description" content="Ordenação em C para quem nunca programou: ordenar à mão por inserção, o qsort de stdlib.h e seus quatro argumentos, a função de comparação (negativo, zero, positivo), ordenar double, strings (char * e char[][]) e structs com desempate, por que o qsort não é estável, a diferença de tempo, e os erros reais (assinatura errada, strcmp no lugar errado, x - y que estoura, tamanho errado), com saídas do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Ordenação (qsort)</span></h1>
+
+<p class="intro">Ordenar é pôr em ordem: as notas da turma da maior para a menor, os nomes em ordem alfabética, os produtos do mais barato ao mais caro. É uma das tarefas mais comuns da programação, e também a base para <a href="busca.html">procurar depressa</a>. Nesta aula você vai ordenar à mão uma vez, para entender o que acontece por dentro, e depois usar o <code>qsort</code> da biblioteca padrão para ordenar <strong>qualquer coisa</strong>: números, textos e structs, com o critério que você quiser.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como funciona um algoritmo de ordenação simples, a <strong>ordenação por inserção</strong>.</li>
+  <li>Os quatro argumentos do <code>qsort</code> e a regra da <strong>função de comparação</strong> (negativo, zero, positivo).</li>
+  <li>Como comparar sem estourar o <code>int</code>, e como inverter a ordem.</li>
+  <li>Como ordenar <code>double</code>, textos (<code>char *</code> e <code>char[][N]</code>) e structs.</li>
+  <li>Como <strong>desempatar</strong> por um segundo critério, e por que o <code>qsort</code> não é <strong>estável</strong>.</li>
+  <li>Os erros clássicos: assinatura errada, <code>strcmp</code> no ponteiro errado, <code>x - y</code> e tamanho errado.</li>
+</ul>
+</div>
+
+<p>Esta aula continua a aula <a href="ponteiros-funcao.html">Ponteiros para Funções</a>, que apresentou o <code>qsort</code>, e usa <a href="void-ponteiro.html">ponteiro void*</a> e <a href="structs-ponteiros.html">structs e ponteiros</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: as cartas na mão</h2>
+<p>A Ana está jogando baralho e recebe as cartas uma de cada vez. A cada carta nova, ela a <strong>encaixa</strong> no lugar certo entre as que já estão na mão: passa pelas maiores, empurrando-as um pouco para o lado, até achar uma menor. A mão está sempre em ordem, e no fim todas as cartas estão ordenadas.</p>
+<p>Qualquer jeito de ordenar, por mais esperto que seja, se resume a duas operações: <strong>comparar</strong> dois itens ("qual vem antes?") e <strong>mudar itens de lugar</strong>. O que muda de um algoritmo para outro é <em>quais</em> pares ele compara e <em>quantas</em> vezes.</p>
+
+<hr>
+
+<h2>1. Ordenar à mão: a inserção</h2>
+<p>O jeito da Ana tem nome: <strong>ordenação por inserção</strong> (<em>insertion sort</em>). Em C, a "mão" é o começo do array, que já está ordenado, e a "carta nova" é o próximo item:</p>
+
+<pre class="file" data-file="insercao.c">#include &lt;stdio.h&gt;
+
+void mostrar(const int *v, int n) {
+    for (int i = 0; i &lt; n; i++) {
+        printf(" %d", v[i]);
+    }
+    printf("\n");
+}
+
+void ordenar_insercao(int *v, int n) {
+    for (int i = 1; i &lt; n; i++) {
+        int carta = v[i];
+        int j = i - 1;
+        while (j &gt;= 0 &amp;&amp; v[j] &gt; carta) {
+            v[j + 1] = v[j];
+            j--;
+        }
+        v[j + 1] = carta;
+        printf("depois de encaixar o %2d:", carta);
+        mostrar(v, n);
+    }
+}
+
+int main(void) {
+    int cartas[] = {7, 3, 10, 5, 9, 1};
+    int n = sizeof cartas / sizeof cartas[0];
+    printf("no começo:              ");
+    mostrar(cartas, n);
+    ordenar_insercao(cartas, n);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra insercao.c -o insercao
+$ ./insercao
+no começo:               7 3 10 5 9 1
+depois de encaixar o  3: 3 7 10 5 9 1
+depois de encaixar o 10: 3 7 10 5 9 1
+depois de encaixar o  5: 3 5 7 10 9 1
+depois de encaixar o  9: 3 5 7 9 10 1
+depois de encaixar o  1: 1 3 5 7 9 10</pre>
+
+<dl class="anatomy">
+  <dt>for (int i = 1; i &lt; n; i++)</dt><dd>Começa no segundo item: um array de um item só (o <code>v[0]</code>) já está ordenado. A cada volta, <code>v[0]</code> a <code>v[i - 1]</code> é a "mão" ordenada.</dd>
+  <dt>int carta = v[i];</dt><dd>Guarda a carta nova, porque a posição dela vai ser ocupada por quem andar para a direita.</dd>
+  <dt>while (j &gt;= 0 &amp;&amp; v[j] &gt; carta)</dt><dd>Enquanto houver carta na mão e ela for maior que a nova, continua procurando para a esquerda. O <code>j &gt;= 0</code> vem <strong>antes</strong>: se <code>j</code> for -1, o <code>&amp;&amp;</code> para ali e <code>v[-1]</code> nunca é lido (veja <a href="operadores-logicos.html">Operadores Lógicos</a>).</dd>
+  <dt>v[j + 1] = v[j]; j--;</dt><dd>Empurra a carta maior uma casa para a direita e olha a próxima à esquerda.</dd>
+  <dt>v[j + 1] = carta;</dt><dd>Achou o lugar: logo depois da primeira carta que não é maior. Encaixa ali.</dd>
+</dl>
+
+<p>Repare no "encaixar o 1": ele é o menor de todos, então todas as outras cinco cartas andaram uma casa. A inserção é ótima para arrays pequenos ou quase ordenados, mas, num array grande e bagunçado, cada carta nova pode empurrar quase todas as anteriores. Com o dobro de itens, o trabalho fica <strong>quatro vezes</strong> maior. A seção 6 mede isso.</p>
+
+<hr>
+
+<h2>2. O <code>qsort</code>: a ordenação pronta</h2>
+<p>A biblioteca padrão já tem uma ordenação rápida e testada: o <code>qsort</code>, de <code>&lt;stdlib.h&gt;</code>. O nome vem de <em>quicksort</em> ("ordenação rápida"), o algoritmo das primeiras versões; hoje cada biblioteca usa o algoritmo que quiser, e o padrão do C só promete que o array termina ordenado. O que torna o <code>qsort</code> especial é que ele ordena arrays de <strong>qualquer tipo</strong>:</p>
+
+<pre class="file" data-file="qsort_int.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int crescente(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    return (x &gt; y) - (x &lt; y);
+}
+
+int main(void) {
+    int notas[] = {7, 3, 10, 5, 9, 1, 8};
+    size_t n = sizeof notas / sizeof notas[0];
+
+    qsort(notas, n, sizeof notas[0], crescente);
+
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%d ", notas[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra qsort_int.c -o qsort_int
+$ ./qsort_int
+1 3 5 7 8 9 10</pre>
+
+<p>O protótipo, como está no <code>stdlib.h</code>, é: <code>void qsort(void *base, size_t n, size_t tamanho, int (*comparar)(const void *, const void *));</code></p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Argumento</th><th>Na chamada</th><th>O que é</th></tr>
+<tr><td><code>void *base</code></td><td><code>notas</code></td><td>Onde o array começa. Como é <code>void *</code>, aceita o endereço de qualquer array (aula <a href="void-ponteiro.html">Ponteiro void*</a>).</td></tr>
+<tr><td><code>size_t n</code></td><td><code>n</code></td><td><strong>Quantos itens</strong> ordenar (não quantos bytes). Aqui, 7, calculado com <code>sizeof notas / sizeof notas[0]</code>.</td></tr>
+<tr><td><code>size_t tamanho</code></td><td><code>sizeof notas[0]</code></td><td>Quantos bytes tem <strong>cada item</strong>. O <code>qsort</code> não sabe o tipo, então precisa disso para pular de um item para o outro e para trocá-los de lugar.</td></tr>
+<tr><td><code>comparar</code></td><td><code>crescente</code></td><td>A <strong>sua</strong> função que diz qual de dois itens vem antes. O <code>qsort</code> a chama sempre que precisa comparar (ela é um <em>callback</em>; veja <a href="ponteiros-funcao.html">Ponteiros para Funções</a>).</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Escreva <code>sizeof notas[0]</code>, não <code>sizeof(int)</code></strong>
+<p>Os dois dão 4 aqui. Mas, se um dia o array virar <code>double</code>, o <code>sizeof notas[0]</code> acompanha sozinho, e o <code>sizeof(int)</code> fica errado sem nenhum aviso (é um dos erros da seção <a href="#errado">Quando dá errado</a>).</p>
+</div>
+
+<hr>
+
+<h2>3. A função de comparação</h2>
+<p>O <code>qsort</code> entrega à sua função os <strong>endereços</strong> de dois itens do array, <code>a</code> e <code>b</code>, como <code>const void *</code>. A função devolve um <code>int</code> que segue uma regra fixa:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Devolve</th><th>Quer dizer</th></tr>
+<tr><td>Um número <strong>negativo</strong> (qualquer um: -1, -50…)</td><td><code>a</code> vem <strong>antes</strong> de <code>b</code></td></tr>
+<tr><td><strong>Zero</strong></td><td>Tanto faz: para este critério, os dois são iguais</td></tr>
+<tr><td>Um número <strong>positivo</strong></td><td><code>a</code> vem <strong>depois</strong> de <code>b</code></td></tr>
+</table>
+</div>
+
+<dl class="anatomy">
+  <dt>int crescente(const void *a, const void *b)</dt><dd>A forma é obrigatória: dois <code>const void *</code> e retorno <code>int</code>. O <code>const</code> promete que a comparação só lê, sem mudar os itens.</dd>
+  <dt>int x = *(const int *)a;</dt><dd>Converte o <code>void *</code> para o tipo verdadeiro dos itens (<code>const int *</code>) e lê o valor com o <code>*</code>. Sem a conversão, o C não saberia quantos bytes ler.</dd>
+  <dt>return (x &gt; y) - (x &lt; y);</dt><dd>Uma comparação em C vale 1 (verdadeiro) ou 0 (falso). Se <code>x &gt; y</code>: <code>1 - 0 = 1</code>. Se <code>x &lt; y</code>: <code>0 - 1 = -1</code>. Se iguais: <code>0 - 0 = 0</code>. É o mesmo que os dois <code>if</code> da aula <a href="ponteiros-funcao.html">Ponteiros para Funções</a>, numa linha.</dd>
+</dl>
+
+<h3>Três jeitos de escrever, e um que parece certo</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Corpo da comparação</th><th>Funciona?</th></tr>
+<tr><td><code>if (x &lt; y) return -1; if (x &gt; y) return 1; return 0;</code></td><td>Sim. O mais fácil de ler.</td></tr>
+<tr><td><code>return (x &gt; y) - (x &lt; y);</code></td><td>Sim. Curto, e muito usado em código C.</td></tr>
+<tr><td><code>return x &lt; y ? -1 : x &gt; y;</code></td><td>Sim, com o <a href="ternario.html">ternário</a>. Menos comum.</td></tr>
+<tr><td><code>return x - y;</code></td><td><strong>Só com números pequenos.</strong> Com números grandes, a subtração estoura o <code>int</code> e o sinal sai errado (veja <a href="#errado">Quando dá errado</a>).</td></tr>
+</table>
+</div>
+
+<p><strong>Para inverter a ordem</strong> (do maior para o menor), troque <code>x</code> e <code>y</code> de lugar: <code>return (y &gt; x) - (y &lt; x);</code>. O <code>qsort</code> é o mesmo; só o critério mudou.</p>
+
+<h3>Ordenar <code>double</code></h3>
+<p>Para outros tipos, a receita é a mesma: converta para o ponteiro do tipo certo e compare. Com <code>double</code>, a forma <code>(x &gt; y) - (x &lt; y)</code> é ainda mais importante, porque <code>x - y</code> daria um <code>double</code> como 0,3, que, devolvido como <code>int</code>, vira 0 ("tanto faz").</p>
+
+<div class="tryc" data-goal="out:0.75 3.50 5.99 18.90 25.90">
+<p class="try-task"><strong>Missão:</strong> a Ana quer os preços da lojinha do mais barato ao mais caro. Complete a função <code>crescente</code> para comparar dois <code>double</code>: converta <code>a</code> e <code>b</code> para <code>const double *</code>, leia os valores e devolva <code>(x &gt; y) - (x &lt; y)</code>. A saída deve ser:</p>
+<pre class="out">0.75 3.50 5.99 18.90 25.90</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int crescente(const void *a, const void *b) {
+    // COMPLETE: converta a e b para ponteiros de double, leia os dois valores
+    // e devolva negativo, zero ou positivo, como no crescente dos inteiros
+    (void)a;
+    (void)b;
+    return 0;
+}
+
+int main(void) {
+    double precos[] = {25.90, 0.75, 18.90, 3.50, 5.99};
+    size_t n = sizeof precos / sizeof precos[0];
+
+    qsort(precos, n, sizeof precos[0], crescente);
+
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%.2f ", precos[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int crescente(const void *a, const void *b) {
+    double x = *(const double *)a;
+    double y = *(const double *)b;
+    return (x &gt; y) - (x &lt; y);
+}
+
+int main(void) {
+    double precos[] = {25.90, 0.75, 18.90, 3.50, 5.99};
+    size_t n = sizeof precos / sizeof precos[0];
+
+    qsort(precos, n, sizeof precos[0], crescente);
+
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%.2f ", precos[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Ordenar textos</h2>
+<p>Textos se comparam com <code>strcmp</code> (aula <a href="funcoes-string.html">Funções de String</a>), que já segue a regra do <code>qsort</code>: negativo se o primeiro vem antes no alfabeto, zero se iguais, positivo se vem depois. A pegadinha é <strong>o que</strong> o <code>qsort</code> entrega para a sua função, e isso depende de como os textos estão guardados.</p>
+
+<h3>Um array de ponteiros: <code>const char *turma[]</code></h3>
+
+<pre class="file" data-file="nomes.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int por_nome(const void *a, const void *b) {
+    const char *x = *(const char *const *)a;
+    const char *y = *(const char *const *)b;
+    return strcmp(x, y);
+}
+
+int main(void) {
+    const char *turma[] = {"Rui", "Ana", "Lia", "Bruno", "Davi", "Ana Clara"};
+    size_t n = sizeof turma / sizeof turma[0];
+
+    qsort(turma, n, sizeof turma[0], por_nome);
+
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%s\n", turma[i]);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nomes.c -o nomes
+$ ./nomes
+Ana
+Ana Clara
+Bruno
+Davi
+Lia
+Rui</pre>
+
+<dl class="anatomy">
+  <dt>const char *turma[]</dt><dd>Cada item do array é um <strong>ponteiro</strong> para um texto. É isso que o <code>qsort</code> ordena: os ponteiros mudam de lugar, os textos ficam onde estão.</dd>
+  <dt>*(const char *const *)a</dt><dd>O <code>qsort</code> entrega o endereço de um item. Como cada item é um <code>const char *</code>, <code>a</code> é, na verdade, um <strong>ponteiro para ponteiro</strong> (<code>const char *const *</code>; aula <a href="ponteiro-ponteiro.html">Ponteiro para Ponteiro</a>). O <code>*</code> da frente lê o item: o ponteiro para o texto.</dd>
+  <dt>strcmp(x, y)</dt><dd>Agora sim, compara os dois textos. "Ana" vem antes de "Ana Clara" porque é um pedaço dela: o texto mais curto termina primeiro.</dd>
+</dl>
+
+<h3>Um array de textos: <code>char turma[][12]</code></h3>
+<p>Se os textos estiverem guardados <strong>dentro</strong> do array (um <a href="arrays-multidimensionais.html">array de duas dimensões</a>), cada item já é o texto, e o <code>qsort</code> entrega o endereço do primeiro caractere dele:</p>
+
+<pre class="file" data-file="nomes_matriz.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int por_nome(const void *a, const void *b) {
+    return strcmp((const char *)a, (const char *)b);
+}
+
+int main(void) {
+    char turma[][12] = {"Rui", "Ana", "Lia", "Bruno", "Davi", "Ana Clara"};
+    size_t n = sizeof turma / sizeof turma[0];
+
+    qsort(turma, n, sizeof turma[0], por_nome);
+
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%s\n", turma[i]);
+    }
+    printf("Cada item tem %zu bytes\n", sizeof turma[0]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nomes_matriz.c -o nomes_matriz
+$ ./nomes_matriz
+Ana
+Ana Clara
+Bruno
+Davi
+Lia
+Rui
+Cada item tem 12 bytes</pre>
+
+<p>Aqui <code>a</code> já aponta para o texto, então basta <code>strcmp(a, b)</code>, sem o <code>*</code> extra. E o <code>qsort</code> troca de lugar os <strong>12 bytes</strong> de cada nome, não um ponteiro. O resultado é o mesmo; a função de comparação é diferente:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O array</th><th>Cada item é</th><th><code>a</code> é, na verdade</th><th>Comparação</th></tr>
+<tr><td><code>const char *t[]</code></td><td>um ponteiro para texto</td><td><code>const char *const *</code></td><td><code>strcmp(*(const char *const *)a, *(const char *const *)b)</code></td></tr>
+<tr><td><code>char t[][12]</code></td><td>um texto de até 11 letras</td><td><code>const char *</code></td><td><code>strcmp(a, b)</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Maiúsculas, minúsculas e acentos</strong>
+<p>O <code>strcmp</code> compara os <strong>códigos</strong> dos caracteres. Todas as maiúsculas vêm antes de todas as minúsculas (<code>"Zeca"</code> antes de <code>"ana"</code>), e letras acentuadas (que em <a href="acentos-utf8.html">UTF-8</a> têm códigos altos) vão para o fim: <code>"Ícaro"</code> depois de <code>"Zeca"</code>. Para uma ordem "de dicionário", é preciso comparar de outro jeito (por exemplo, convertendo para minúsculas com <code>tolower</code> antes; veja <a href="ctype.html">ctype.h</a>).</p>
+</div>
+
+<hr>
+
+<h2>5. Ordenar structs e desempatar</h2>
+<p>Com structs, a função de comparação escolhe <strong>o campo</strong> que decide a ordem. O ranking da turma da Ana: maior nota primeiro e, entre notas iguais, ordem alfabética:</p>
+
+<pre class="file" data-file="alunos.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct {
+    char nome[20];
+    int nota;
+} Aluno;
+
+int ranking(const void *a, const void *b) {
+    const Aluno *x = a;
+    const Aluno *y = b;
+    if (x-&gt;nota != y-&gt;nota) {
+        return (y-&gt;nota &gt; x-&gt;nota) - (y-&gt;nota &lt; x-&gt;nota);
+    }
+    return strcmp(x-&gt;nome, y-&gt;nome);
+}
+
+int main(void) {
+    Aluno turma[] = {
+        {"Rui", 7}, {"Lia", 9}, {"Bruno", 7}, {"Ana", 10},
+        {"Davi", 9}, {"Caio", 5}, {"Bia", 7},
+    };
+    size_t n = sizeof turma / sizeof turma[0];
+
+    qsort(turma, n, sizeof turma[0], ranking);
+
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%zuº %-6s %2d\n", i + 1, turma[i].nome, turma[i].nota);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra alunos.c -o alunos
+$ ./alunos
+1º Ana    10
+2º Davi    9
+3º Lia     9
+4º Bia     7
+5º Bruno   7
+6º Rui     7
+7º Caio    5</pre>
+
+<dl class="anatomy">
+  <dt>const Aluno *x = a;</dt><dd>Em C, um <code>void *</code> vira outro ponteiro sozinho, sem cast (aula <a href="void-ponteiro.html">Ponteiro void*</a>). Daí em diante, <code>x-&gt;nota</code> e <code>x-&gt;nome</code>.</dd>
+  <dt>if (x-&gt;nota != y-&gt;nota)</dt><dd>O primeiro critério: a nota. Se forem diferentes, ela decide sozinha.</dd>
+  <dt>(y-&gt;nota &gt; x-&gt;nota) - (y-&gt;nota &lt; x-&gt;nota)</dt><dd>Com <code>y</code> na frente: ordem <strong>decrescente</strong> (maior nota primeiro).</dd>
+  <dt>return strcmp(x-&gt;nome, y-&gt;nome);</dt><dd>O <strong>desempate</strong>: só chega aqui com notas iguais. Davi e Lia (9) e Bia, Bruno e Rui (7) saíram em ordem alfabética.</dd>
+  <dt>%zuº</dt><dd>O <code>%zu</code> é o formato do <code>size_t</code> (veja <a href="formatos-printf.html">Formatos do printf</a>); o <code>º</code> é só texto.</dd>
+</dl>
+
+<h3>Sem desempate: o <code>qsort</code> não é estável</h3>
+<p>Uma ordenação é <strong>estável</strong> quando itens empatados continuam na ordem em que estavam. O padrão do C <strong>não promete</strong> que o <code>qsort</code> seja estável, e cada biblioteca faz de um jeito. Este programa ordena só pela nota uma turma em que todos estão em ordem alfabética:</p>
+
+<pre class="file" data-file="estavel.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct {
+    char nome[8];
+    int nota;
+} Aluno;
+
+int por_nota(const void *a, const void *b) {
+    const Aluno *x = a;
+    const Aluno *y = b;
+    return (x-&gt;nota &gt; y-&gt;nota) - (x-&gt;nota &lt; y-&gt;nota);
+}
+
+int main(void) {
+    Aluno turma[] = {
+        {"Ana", 8}, {"Bia", 6}, {"Caio", 8}, {"Davi", 6}, {"Edu", 8},
+        {"Fabi", 6}, {"Gil", 8}, {"Hugo", 6}, {"Iris", 8}, {"Joao", 6},
+    };
+    size_t n = sizeof turma / sizeof turma[0];
+    qsort(turma, n, sizeof turma[0], por_nota);
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%s(%d) ", turma[i].nome, turma[i].nota);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estavel.c -o estavel
+$ ./estavel
+Bia(6) Davi(6) Fabi(6) Hugo(6) Joao(6) Ana(8) Caio(8) Edu(8) Gil(8) Iris(8)</pre>
+
+<p>No gcc da Ana (com a glibc, a biblioteca C do Linux), os empatados mantiveram a ordem alfabética de antes. Agora rode o mesmo programa no editor do guia, que usa outra biblioteca C (a wasi-libc, baseada na musl):</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e compare com a saída do gcc acima. No editor, os alunos com nota 6 saem <code>Joao(6) Bia(6) Fabi(6) Davi(6) Hugo(6)</code>: a ordem alfabética dos empatados se perdeu. Depois acrescente o desempate por nome na função (como no <code>alunos.c</code>, com <code>#include &lt;string.h&gt;</code>) e rode de novo: a saída fica igual à do gcc.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct {
+    char nome[8];
+    int nota;
+} Aluno;
+
+int por_nota(const void *a, const void *b) {
+    const Aluno *x = a;
+    const Aluno *y = b;
+    return (x-&gt;nota &gt; y-&gt;nota) - (x-&gt;nota &lt; y-&gt;nota);
+}
+
+int main(void) {
+    Aluno turma[] = {
+        {"Ana", 8}, {"Bia", 6}, {"Caio", 8}, {"Davi", 6}, {"Edu", 8},
+        {"Fabi", 6}, {"Gil", 8}, {"Hugo", 6}, {"Iris", 8}, {"Joao", 6},
+    };
+    size_t n = sizeof turma / sizeof turma[0];
+    qsort(turma, n, sizeof turma[0], por_nota);
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%s(%d) ", turma[i].nome, turma[i].nota);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Nenhuma das duas está errada: para o critério "nota", empatados são iguais, e o <code>qsort</code> pode pô-los em qualquer ordem. A lição é: <strong>se a ordem dos empatados importa, ela precisa estar na função de comparação</strong>. Um bom critério de desempate é um campo que não se repete (o nome, uma matrícula). Assim, o resultado é o mesmo em qualquer computador.</p>
+
+<h3>Ordenar só um pedaço</h3>
+<p>Como o <code>qsort</code> recebe um endereço e uma quantidade, dá para ordenar só uma parte do array: passe o endereço do primeiro item do pedaço (<a href="ponteiros-arrays.html">aritmética de ponteiros</a>) e quantos itens ele tem.</p>
+
+<pre class="file" data-file="parte.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int crescente(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    return (x &gt; y) - (x &lt; y);
+}
+
+int main(void) {
+    int v[] = {9, 8, 7, 6, 5, 4, 3};
+    qsort(v + 2, 3, sizeof v[0], crescente);
+    for (int i = 0; i &lt; 7; i++) {
+        printf("%d ", v[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra parte.c -o parte
+$ ./parte
+9 8 5 6 7 4 3</pre>
+
+<p><code>v + 2</code> é o endereço do <code>v[2]</code>; com 3 itens, só <code>v[2]</code>, <code>v[3]</code> e <code>v[4]</code> (o 7, o 6 e o 5) foram ordenados. O resto ficou como estava.</p>
+
+<hr>
+
+<h2>6. Quanto tempo leva</h2>
+<p>Este programa ordena os mesmos 100 mil números duas vezes, com a inserção da seção 1 e com o <code>qsort</code>, e mede o tempo de cada uma com <code>clock()</code> (aula <a href="tempo.html">Data e Hora</a>). Os números vêm de um sorteador próprio, para serem os mesmos a cada execução:</p>
+
+<pre class="file" data-file="tempo.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;time.h&gt;
+
+int crescente(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    return (x &gt; y) - (x &lt; y);
+}
+
+void ordenar_insercao(int *v, int n) {
+    for (int i = 1; i &lt; n; i++) {
+        int carta = v[i];
+        int j = i - 1;
+        while (j &gt;= 0 &amp;&amp; v[j] &gt; carta) {
+            v[j + 1] = v[j];
+            j--;
+        }
+        v[j + 1] = carta;
+    }
+}
+
+int main(void) {
+    const int n = 100000;
+    int *a = malloc(n * sizeof *a);
+    int *b = malloc(n * sizeof *b);
+    if (a == NULL || b == NULL) {
+        free(a);
+        free(b);
+        return 1;
+    }
+    unsigned int semente = 42;
+    for (int i = 0; i &lt; n; i++) {
+        semente = semente * 1103515245u + 12345u;
+        a[i] = (int)(semente / 65536u % 1000000u);
+    }
+    memcpy(b, a, n * sizeof *a);
+
+    clock_t t0 = clock();
+    ordenar_insercao(a, n);
+    clock_t t1 = clock();
+    qsort(b, n, sizeof *b, crescente);
+    clock_t t2 = clock();
+
+    printf("inserção: %.3f s\n", (double)(t1 - t0) / CLOCKS_PER_SEC);
+    printf("qsort:    %.3f s\n", (double)(t2 - t1) / CLOCKS_PER_SEC);
+    printf("iguais? %s\n", memcmp(a, b, n * sizeof *a) == 0 ? "sim" : "não");
+    free(a);
+    free(b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tempo.c -o tempo
+$ ./tempo
+inserção: 7.738 s
+qsort:    0.019 s
+iguais? sim</pre>
+
+<p>O mesmo resultado (<code>iguais? sim</code>, conferido com <code>memcmp</code>), umas <strong>400 vezes</strong> mais depressa. Os tempos mudam de um computador para outro, mas a diferença continua enorme. A inserção compara cada número com uma boa parte dos anteriores: com 100 mil números, são bilhões de comparações. Os algoritmos do <code>qsort</code> (quicksort, mergesort e parentes) dividem o array em pedaços e precisam só de uns 2 milhões. (No editor do guia este programa passa do limite de 15 segundos; deixe-o para o terminal.)</p>
+
+<hr>
+
+<h2>Formas diferentes e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Prefira</th></tr>
+<tr><td>Ordenar um array de qualquer tamanho, de qualquer tipo</td><td><code>qsort</code> com uma função de comparação. É testado, rápido e já está na biblioteca.</td></tr>
+<tr><td>Aprender como a ordenação funciona por dentro</td><td>Escrever a inserção (ou a seleção, ou o <em>bubble sort</em>) à mão, uma vez.</td></tr>
+<tr><td>Poucos itens (dezenas) chegando um a um, e a lista precisa estar sempre ordenada</td><td>Inserir cada novo no lugar certo, como a inserção faz.</td></tr>
+<tr><td>Ordem dos empatados importa</td><td><code>qsort</code> com desempate na comparação (um campo que não se repete).</td></tr>
+<tr><td>Os dados chegam e saem o tempo todo, e você quer sempre a ordem</td><td>Uma <a href="arvores-binarias.html">árvore de busca</a>: a em ordem já sai ordenada.</td></tr>
+<tr><td>Vários critérios ("por nome", "por preço") escolhidos pelo usuário</td><td>Várias funções de comparação e um ponteiro de função para escolher qual passar ao <code>qsort</code>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: passing argument 4 of ‘qsort’ from incompatible pointer type</code></strong>
+<pre class="file" data-file="assinatura.c">int crescente(const int *a, const int *b) {
+    return (*a &gt; *b) - (*a &lt; *b);
+}
+…
+    qsort(notas, 5, sizeof notas[0], crescente);
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra assinatura.c -o assinatura
+assinatura.c: In function ‘main’:
+assinatura.c:10:38: error: passing argument 4 of ‘qsort’ from incompatible pointer type [-Wincompatible-pointer-types]
+   10 |     qsort(notas, 5, sizeof notas[0], crescente);
+      |                                      ^~~~~~~~~
+      |                                      |
+      |                                      int (*)(const int *, const int *)
+In file included from assinatura.c:2:
+/usr/include/stdlib.h:999:34: note: expected ‘__compar_fn_t’ {aka ‘int (*)(const void *, const void *)’} but argument is of type ‘int (*)(const int *, const int *)’
+  999 |                    __compar_fn_t __compar) __nonnull ((1, 4));
+      |                    ~~~~~~~~~~~~~~^~~~~~~~
+assinatura.c:4:5: note: ‘crescente’ declared here
+    4 | int crescente(const int *a, const int *b) {
+      |     ^~~~~~~~~
+/usr/include/stdlib.h:970:15: note: ‘__compar_fn_t’ declared here
+  970 | typedef int (*__compar_fn_t) (const void *, const void *);
+      |               ^~~~~~~~~~~~~</pre>
+<p><strong>O que significa:</strong> parece uma boa ideia receber logo <code>const int *</code> e evitar os casts, mas o <code>qsort</code> exige uma função que receba <strong>dois <code>const void *</code></strong>. "Passando o argumento 4 do <code>qsort</code> com tipo de ponteiro incompatível": a nota mostra o tipo esperado, <code>int (*)(const void *, const void *)</code> (a glibc o chama de <code>__compar_fn_t</code>), e o que você passou. Desde o gcc 14 isso é erro. O Clang do editor diz <code>incompatible function pointer types passing 'int (const int *, const int *)' to parameter of type 'int (*)(const void *, const void *)'</code>.</p>
+<p><strong>Como consertar:</strong> receba <code>const void *a, const void *b</code> e converta dentro da função: <code>int x = *(const int *)a;</code>. Não "conserte" com um cast na chamada (<code>(int (*)(const void *, const void *))crescente</code>): o erro some, mas chamar uma função pelo tipo errado é <a href="comportamento-indefinido.html">comportamento indefinido</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Nomes que não se ordenam: <code>strcmp(a, b)</code> num array de ponteiros</strong>
+<pre class="file" data-file="nomes_errado.c">int por_nome(const void *a, const void *b) {
+    return strcmp(a, b);
+}
+…
+    const char *turma[] = {"Rui", "Ana", "Lia", "Bruno", "Davi", "Ana Clara"};
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nomes_errado.c -o nomes_errado
+$ ./nomes_errado
+Rui
+Ana
+Lia
+Bruno
+Davi
+Ana Clara</pre>
+<p><strong>O que significa:</strong> nenhum aviso (um <code>void *</code> vira <code>const char *</code> sem reclamar), e a lista saiu na ordem original. Num array de ponteiros, <code>a</code> e <code>b</code> são os endereços <strong>dos ponteiros</strong>, não dos textos. O <code>strcmp</code> comparou os bytes dos endereços, como se fossem letras, e o resultado não tem nada a ver com os nomes. No editor do guia, os endereços são outros e sai outra ordem, também sem sentido (<code>Bruno, Davi, Rui, Ana Clara, Ana, Lia</code>).</p>
+<p><strong>Como consertar:</strong> com <code>const char *t[]</code>, leia o ponteiro antes: <code>strcmp(*(const char *const *)a, *(const char *const *)b)</code>. O <code>strcmp(a, b)</code> direto só serve para <code>char t[][N]</code> (seção 4).</p>
+</div>
+
+<div class="cenario">
+<strong><code>return x - y;</code> com números grandes</strong>
+<pre class="file" data-file="subtracao.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int crescente(const void *a, const void *b) {
+    return *(const int *)a - *(const int *)b;
+}
+
+int main(void) {
+    int saldos[] = {2000000000, -7, -2000000000, 500, 1500000000, -1500000000};
+    size_t n = sizeof saldos / sizeof saldos[0];
+
+    qsort(saldos, n, sizeof saldos[0], crescente);
+
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%d\n", saldos[i]);
+    }
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra subtracao.c -o subtracao
+$ ./subtracao
+500
+1500000000
+2000000000
+-2000000000
+-1500000000
+-7
+$ gcc -std=c23 -Wall -Wextra -fsanitize=undefined subtracao.c -o subtracao
+$ ./subtracao 2&gt;&amp;1 | head -3
+subtracao.c:5:28: runtime error: signed integer overflow: 2000000000 - -2000000000 cannot be represented in type 'int'
+500
+1500000000</pre>
+<p><strong>O que significa:</strong> os negativos foram parar no fim. <code>2000000000 - (-2000000000)</code> daria 4 bilhões, que não cabe num <code>int</code> (o máximo é 2147483647; aula <a href="inteiros.html">Inteiros</a>). A conta estourou e deu um número negativo, e o <code>qsort</code> entendeu "2 bilhões vem antes de -2 bilhões". O sanitizer de comportamento indefinido (<code>-fsanitize=undefined</code>) aponta a linha 5. No editor, a ordem errada é outra, porque a biblioteca compara pares diferentes.</p>
+<p><strong>Como consertar:</strong> compare, não subtraia: <code>return (x &gt; y) - (x &lt; y);</code>. Comparações nunca estouram.</p>
+</div>
+
+<div class="cenario">
+<strong>Tamanho errado: <code>sizeof(int)</code> num array de <code>double</code></strong>
+<pre class="file" data-file="tamanho.c">    double precos[] = {25.90, 0.75, 18.90, 3.50, 5.99};
+    size_t n = sizeof precos / sizeof precos[0];
+
+    qsort(precos, n, sizeof(int), crescente);
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanho.c -o tamanho
+$ ./tamanho
+0.75 25.90 18.90 3.50 5.99</pre>
+<p><strong>O que significa:</strong> nenhum aviso: para o compilador, <code>sizeof(int)</code> é só um número. Mas cada <code>double</code> tem 8 bytes, e o <code>qsort</code> achou que cada item tinha 4. Ele trocou de lugar <strong>metades</strong> de <code>double</code> e só mexeu nos primeiros 20 bytes do array (5 itens de 4 bytes). No gcc, o resultado "parece quase certo", o que é o pior caso: passa despercebido. No editor, uma das trocas montou um <code>double</code> com a metade de um e a metade de outro, e apareceu no lugar do 0,75 um número com 186 dígitos.</p>
+<p><strong>Como consertar:</strong> use sempre <code>sizeof v[0]</code> (o tamanho do item do próprio array) e <code>sizeof v / sizeof v[0]</code> para a quantidade.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que ordenar</th><th>Corpo da comparação (crescente)</th></tr>
+<tr><td><code>int v[]</code></td><td><code>int x = *(const int *)a, y = *(const int *)b; return (x &gt; y) - (x &lt; y);</code></td></tr>
+<tr><td><code>double v[]</code></td><td><code>double x = *(const double *)a, y = *(const double *)b; return (x &gt; y) - (x &lt; y);</code></td></tr>
+<tr><td><code>const char *v[]</code></td><td><code>return strcmp(*(const char *const *)a, *(const char *const *)b);</code></td></tr>
+<tr><td><code>char v[][N]</code></td><td><code>return strcmp(a, b);</code></td></tr>
+<tr><td><code>Aluno v[]</code> por um campo</td><td><code>const Aluno *x = a, *y = b; return (x-&gt;nota &gt; y-&gt;nota) - (x-&gt;nota &lt; y-&gt;nota);</code></td></tr>
+<tr><td>Decrescente</td><td>Troque <code>x</code> e <code>y</code> (ou <code>a</code> e <code>b</code>) de lugar</td></tr>
+<tr><td>Com desempate</td><td><code>if (x-&gt;nota != y-&gt;nota) return …; return strcmp(x-&gt;nome, y-&gt;nome);</code></td></tr>
+</table>
+</div>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Chamada</th><th>O que faz</th></tr>
+<tr><td><code>qsort(v, n, sizeof v[0], cmp);</code></td><td>Ordena os <code>n</code> itens de <code>v</code> segundo <code>cmp</code> (<code>&lt;stdlib.h&gt;</code>)</td></tr>
+<tr><td><code>qsort(v + i, k, sizeof v[0], cmp);</code></td><td>Ordena só os <code>k</code> itens a partir de <code>v[i]</code></td></tr>
+<tr><td><code>sizeof v / sizeof v[0]</code></td><td>Quantos itens tem o array (só funciona com o array de verdade, não com um ponteiro recebido por parâmetro)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O tamanho do item</h3>
+<p>Complete a chamada que ordena o array <code>alturas</code>, de <code>n</code> itens:</p>
+<div class="ex-code">qsort(alturas, n, <input data-answer="sizeof alturas[0]|sizeof(alturas[0])|sizeof *alturas|sizeof(*alturas)" aria-label="tamanho">, crescente);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Ler o valor</h3>
+<p>Na função de comparação de um array de <code>int</code>, complete a linha que lê o valor apontado por <code>a</code>:</p>
+<div class="ex-code">int x = <input data-answer="*(const int *)a|*(const int*)a|*(int *)a|*(int*)a" aria-label="expressão">;</div>
+</div>
+
+<div class="exercise">
+<h3>3. O que devolver</h3>
+<p>A função de comparação recebeu <code>a</code> = 9 e <code>b</code> = 4, numa ordenação crescente. O resultado deve ser negativo, zero ou positivo?</p>
+<div class="ex-code"><input data-answer="positivo|positive|um positivo" aria-label="sinal"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Qual comparação ordena do <strong>maior</strong> para o <strong>menor</strong>?</p>
+<label><input type="radio" name="q4"> <code>return (x &gt; y) - (x &lt; y);</code></label>
+<label><input type="radio" name="q4"> <code>return x - y;</code></label>
+<label><input type="radio" name="q4"> <code>return (y &gt; x) - (y &lt; x);</code></label>
+<label><input type="radio" name="q4"> <code>return 0;</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. O array é <code>const char *nomes[]</code>. O que o <code>qsort</code> entrega em <code>a</code>?</p>
+<label><input type="radio" name="q5"> O endereço do primeiro caractere do nome</label>
+<label><input type="radio" name="q5"> O endereço de um item do array, que é um ponteiro para o nome</label>
+<label><input type="radio" name="q5"> O próprio nome, copiado</label>
+<label><input type="radio" name="q5"> O índice do item</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Dois alunos têm a mesma nota e a comparação só olha a nota. Em que ordem eles saem?</p>
+<label><input type="radio" name="q6"> Sempre na ordem em que estavam</label>
+<label><input type="radio" name="q6"> Sempre em ordem alfabética</label>
+<label><input type="radio" name="q6"> O programa dá erro</label>
+<label><input type="radio" name="q6"> Em qualquer ordem: o <code>qsort</code> não é estável, e cada biblioteca pode fazer diferente</label>
+</div>
+
+<h3>Missão final: a vitrine da lojinha</h3>
+
+<div class="tryc" data-goal="outre:^bala   R\$  0\,75\npao    R\$  0\,75\nagua   R\$  4\,50\nsabao  R\$  4\,50\nsal    R\$  4\,50\nleite  R\$  5\,99\ncafe   R\$ 18\,90\narroz  R\$ 25\,90\n$">
+<p class="try-task"><strong>Missão:</strong> a Ana quer a lista de produtos do <strong>mais barato ao mais caro</strong> e, entre os de mesmo preço, em <strong>ordem alfabética</strong>. Complete a função <code>comparar</code>: se os preços forem diferentes, o mais barato vem antes; se forem iguais, decida pelo nome com <code>strcmp</code>. Com o desempate, a saída é a mesma em qualquer biblioteca:</p>
+<pre class="out">bala   R$  0,75
+pao    R$  0,75
+agua   R$  4,50
+sabao  R$  4,50
+sal    R$  4,50
+leite  R$  5,99
+cafe   R$ 18,90
+arroz  R$ 25,90</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct {
+    char nome[20];
+    int preco;
+} Produto;
+
+int comparar(const void *a, const void *b) {
+    const Produto *x = a;
+    const Produto *y = b;
+    // COMPLETE: 1. preços diferentes: o mais barato vem antes
+    //           2. mesmo preço: ordem alfabética do nome (strcmp)
+    (void)x;
+    (void)y;
+    return 0;
+}
+
+int main(void) {
+    Produto loja[] = {
+        {"sabao", 450}, {"arroz", 2590}, {"pao", 75}, {"sal", 450},
+        {"leite", 599}, {"bala", 75}, {"cafe", 1890}, {"agua", 450},
+    };
+    size_t n = sizeof loja / sizeof loja[0];
+
+    qsort(loja, n, sizeof loja[0], comparar);
+
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%-6s R$ %2d,%02d\n", loja[i].nome, loja[i].preco / 100, loja[i].preco % 100);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct {
+    char nome[20];
+    int preco;
+} Produto;
+
+int comparar(const void *a, const void *b) {
+    const Produto *x = a;
+    const Produto *y = b;
+    if (x-&gt;preco != y-&gt;preco) {
+        return (x-&gt;preco &gt; y-&gt;preco) - (x-&gt;preco &lt; y-&gt;preco);
+    }
+    return strcmp(x-&gt;nome, y-&gt;nome);
+}
+
+int main(void) {
+    Produto loja[] = {
+        {"sabao", 450}, {"arroz", 2590}, {"pao", 75}, {"sal", 450},
+        {"leite", 599}, {"bala", 75}, {"cafe", 1890}, {"agua", 450},
+    };
+    size_t n = sizeof loja / sizeof loja[0];
+
+    qsort(loja, n, sizeof loja[0], comparar);
+
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%-6s R$ %2d,%02d\n", loja[i].nome, loja[i].preco / 100, loja[i].preco % 100);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<p>Quer ir além? Escreva também uma <code>por_nome</code> e deixe o usuário escolher a ordem com um ponteiro <code>int (*criterio)(const void *, const void *)</code>, como na calculadora da aula <a href="ponteiros-funcao.html">Ponteiros para Funções</a>. Com a lista ordenada por nome, a próxima aula, <a href="busca.html">Busca (bsearch)</a>, acha qualquer produto em poucos passos.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Ordenar é comparar e mudar de lugar. A <strong>inserção</strong> encaixa cada item entre os já ordenados; é simples, mas lenta com muitos itens.</li>
+  <li><code>qsort(v, n, sizeof v[0], comparar)</code> ordena um array de qualquer tipo: o endereço, quantos itens, o tamanho de cada um e a sua função de comparação.</li>
+  <li>A comparação recebe dois <code>const void *</code>, converte para o tipo certo e devolve <strong>negativo</strong> (<code>a</code> antes), <strong>zero</strong> (tanto faz) ou <strong>positivo</strong> (<code>a</code> depois). Use <code>(x &gt; y) - (x &lt; y)</code>; <code>x - y</code> pode estourar. Para inverter, troque <code>x</code> e <code>y</code>.</li>
+  <li>Textos: <code>strcmp</code>. Num <code>const char *v[]</code>, <code>a</code> é um ponteiro para ponteiro (<code>*(const char *const *)a</code>); num <code>char v[][N]</code>, <code>a</code> já é o texto.</li>
+  <li>Structs: compare o campo que decide e <strong>desempate</strong> por outro. O <code>qsort</code> não é estável: sem desempate, empatados podem sair em ordens diferentes em cada biblioteca.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
