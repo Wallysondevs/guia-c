@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C fgets — ler uma linha inteira com segurança | Guia C</title>
+<meta name="description" content="Ler uma linha em C com fgets, para quem nunca programou: fgets(linha, sizeof linha, stdin), o \n que vem junto e como tirá-lo com strcspn, linhas maiores que o array, por que gets foi removido no C11 (e o que o gcc 15 diz), o \n que sobra ao misturar scanf e fgets e o NULL no fim da entrada (Ctrl+D), com saídas reais e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">fgets</span>: ler uma linha</h1>
+
+<p class="intro">O <code>scanf("%s", …)</code> lê só <strong>uma palavra</strong>: se a Ana digita "Ana Maria", ele fica com "Ana". Para ler uma <strong>linha inteira</strong>, com espaços, o C tem o <code>fgets</code>. Ele é também o jeito <strong>seguro</strong> de ler texto, porque você diz o tamanho do array e ele nunca passa disso. Nesta aula você vai usar o <code>fgets</code>, entender o <code>\n</code> que ele traz junto (e tirá-lo numa linha), descobrir por que o antigo <code>gets</code> foi expulso da linguagem e resolver o problema mais perguntado de C nos fóruns: "meu <code>fgets</code> não espera eu digitar!".</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A receita <code>fgets(linha, sizeof linha, stdin)</code> e o que cada parte faz.</li>
+  <li>Por que a linha lida termina com <code>\n</code>, e como tirá-lo com <code>linha[strcspn(linha, "\n")] = '\0';</code>.</li>
+  <li>O que acontece quando a linha é maior que o array.</li>
+  <li>Por que o <code>gets</code> foi <strong>removido</strong> no C11, e o que o gcc 15 diz se você usá-lo.</li>
+  <li>O <code>\n</code> que o <code>scanf</code> deixa para trás e faz o <code>fgets</code> "pular", e dois consertos.</li>
+  <li>O retorno <code>NULL</code> no fim da entrada (Ctrl+D) e como ler linha por linha até o fim.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Nos exemplos, às vezes a entrada vem de um <code>echo "…" |</code>, que manda o texto para o programa como se a Ana o tivesse digitado; por isso a resposta aparece grudada na pergunta.</p>
+
+<hr>
+
+<h2>A ideia: um balde com medida</h2>
+<p>Imagine encher um balde numa torneira. O <code>scanf("%s")</code> sem limite é uma torneira que não para: se a água for mais do que cabe, transborda e molha o chão (a memória vizinha). O <code>fgets</code> é um balde com a marca "até aqui": você diz quanto cabe, ele enche até a marca ou até o fim da linha, o que vier primeiro, e fecha a torneira. O que sobrar fica esperando na torneira para o próximo balde.</p>
+
+<p>O nome vem de <em>file get string</em>, "pegar uma string de um arquivo". O "arquivo" aqui é o teclado: em C, o teclado se chama <code>stdin</code> (<em>standard input</em>, "entrada padrão", aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>). O mesmo <code>fgets</code> lê linhas de arquivos de verdade, na aula <a href="ler-arquivos.html">Ler Arquivos</a>.</p>
+
+<hr>
+
+<h2>1. A primeira leitura</h2>
+
+<pre class="file" data-file="ler.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[50];
+    printf("Nome completo: ");
+    if (fgets(nome, sizeof nome, stdin) == NULL) {
+        return 1;
+    }
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>char nome[50];</dt><dd>O balde: espaço para até 49 caracteres + o <code>'\0'</code> (aula <a href="strings.html">Strings</a>).</dd>
+  <dt>fgets(</dt><dd>"Leia uma linha…"</dd>
+  <dt>nome,</dt><dd>1º argumento: <strong>onde</strong> guardar (sem <code>&amp;</code>, como toda string).</dd>
+  <dt>sizeof nome,</dt><dd>2º argumento: o <strong>tamanho</strong> do array, 50. O <code>fgets</code> lê no máximo 49 caracteres e reserva o último lugar para o <code>'\0'</code>. Use sempre <code>sizeof</code> do próprio array: se um dia o array mudar de tamanho, o número muda junto.</dd>
+  <dt>stdin)</dt><dd>3º argumento: <strong>de onde</strong> ler. <code>stdin</code> é o teclado.</dd>
+  <dt>== NULL</dt><dd>O <code>fgets</code> devolve <code>NULL</code> ("nulo") quando não consegue ler nada: a entrada acabou (seção 6). Confira sempre, como você confere o retorno do <code>scanf</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ler.c -o ler
+$ ./ler
+Nome completo: Ana Maria
+Olá, Ana Maria
+!                        « o "!" foi parar na linha de baixo</pre>
+
+<p>O nome veio inteiro, com o espaço. Mas o <code>!</code> pulou de linha. Por quê?</p>
+
+<hr>
+
+<h2>2. O <code>\n</code> que vem junto</h2>
+<p>Quando a Ana termina de digitar, ela aperta <strong>Enter</strong>. O Enter também é um caractere: o <code>'\n'</code> (nova linha, aula <a href="escapes.html">Escapes</a>). O <code>fgets</code> lê <strong>até o Enter, inclusive</strong>, e guarda o <code>'\n'</code> na string. Veja os números:</p>
+
+<pre class="file" data-file="bytesn.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[20];
+    if (fgets(linha, sizeof linha, stdin) == NULL) {
+        return 1;
+    }
+    size_t n = strlen(linha);
+    printf("strlen = %zu\n", n);
+    printf("último caractere: código %d\n", linha[n - 1]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra bytesn.c -o bytesn
+$ echo "Ana Maria" | ./bytesn
+strlen = 10              « 9 letras e espaço + o '\n'
+último caractere: código 10     « 10 é o código do '\n'</pre>
+
+<p>A memória do array ficou assim:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Índice</th><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td><td>10</td></tr>
+<tr><th>Caractere</th><td><code>A</code></td><td><code>n</code></td><td><code>a</code></td><td><code>␣</code></td><td><code>M</code></td><td><code>a</code></td><td><code>r</code></td><td><code>i</code></td><td><code>a</code></td><td><code>'\n'</code></td><td><code>'\0'</code></td></tr>
+</table>
+</div>
+
+<p>Por que o <code>fgets</code> guarda o Enter? Para você saber se a linha veio <strong>inteira</strong>. Se a string termina com <code>'\n'</code>, a linha coube toda no balde; se não termina, ela era maior que o array e o resto ficou esperando (seção 3).</p>
+
+<h3>Tirar o <code>\n</code> com <code>strcspn</code></h3>
+<p>Na maioria das vezes você não quer o <code>'\n'</code>: quer comparar o nome, mostrar no meio de uma frase, guardar num arquivo. O jeito mais usado de tirá-lo é uma linha só:</p>
+
+<pre class="file" data-file="tirar.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char nome[50];
+    printf("Nome completo: ");
+    if (fgets(nome, sizeof nome, stdin) == NULL) {
+        return 1;
+    }
+    nome[strcspn(nome, "\n")] = '\0';
+    printf("Olá, %s!\n", nome);
+    printf("(%zu caracteres)\n", strlen(nome));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;string.h&gt;</dt><dd>O <code>strcspn</code> e o <code>strlen</code> moram aqui (aula <a href="funcoes-string.html">Funções de String</a>).</dd>
+  <dt>strcspn(nome, "\n")</dt><dd><code>strcspn</code> = "string complement span", algo como "quantos caracteres do começo <strong>não</strong> estão nesta lista". Ele conta as letras de <code>nome</code> até achar um <code>'\n'</code>. Para "Ana Maria\n", devolve 9: a <strong>posição</strong> do <code>'\n'</code>.</dd>
+  <dt>nome[…] = '\0';</dt><dd>Coloca a placa de fim nessa posição, por cima do <code>'\n'</code>. É o truque de "cortar com <code>'\0'</code>" da aula <a href="strings.html">Strings</a>.</dd>
+  <dt>E se não houver <code>'\n'</code>?</dt><dd>Aí o <code>strcspn</code> conta até o fim e devolve a posição do <code>'\0'</code> que já existe. Trocar um <code>'\0'</code> por <code>'\0'</code> não muda nada. Por isso essa linha é segura em qualquer caso, até com a string vazia.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tirar.c -o tirar
+$ ./tirar
+Nome completo: Ana Maria
+Olá, Ana Maria!
+(9 caracteres)</pre>
+
+<div class="tip">
+<strong>Por que não <code>nome[strlen(nome) - 1] = '\0';</code>?</strong>
+<p>Você vai encontrar essa versão em muito código. Ela apaga o último caractere <strong>sem conferir</strong> se é um <code>'\n'</code>: se a linha veio cortada (sem <code>'\n'</code>), ela apaga uma letra de verdade. E se a string estiver vazia, <code>strlen</code> dá 0 e <code>0 - 1</code> num <code>size_t</code> vira um número enorme: escrita fora do array. A versão com <code>strcspn</code> não tem nenhum dos dois problemas.</p>
+</div>
+
+<hr>
+
+<h2>3. Linha maior que o array</h2>
+<p>O <code>fgets</code> nunca passa do tamanho que você deu. Com um array de 8, ele lê no máximo 7 caracteres por vez, e o resto da linha <strong>fica na entrada</strong> para a próxima leitura. Este programa lê pedaço por pedaço até a entrada acabar:</p>
+
+<pre class="file" data-file="pedacos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char pedaco[8];
+    while (fgets(pedaco, sizeof pedaco, stdin) != NULL) {
+        printf("[%s]\n", pedaco);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pedacos.c -o pedacos
+$ echo "arroz integral tipo 1" | ./pedacos
+[arroz i]                « 7 caracteres + '\0'
+[ntegral]
+[ tipo 1]
+[                        « o último pedaço é só o '\n'
+]</pre>
+
+<p>Nenhum byte foi escrito fora do array: cada leitura parou em 7 caracteres e pôs o <code>'\0'</code>. A linha de 21 caracteres + Enter chegou em quatro pedaços, e só o último trouxe o <code>'\n'</code>. Na prática:</p>
+<ul>
+  <li>Escolha um array <strong>folgado</strong> para o que você espera (100, 256 bytes para uma linha de texto comum).</li>
+  <li>Se a linha não terminou em <code>'\n'</code>, ela foi cortada. Você decide: ler o resto, jogar fora ou avisar o usuário (aula <a href="validar-entrada.html">Validar a Entrada</a>).</li>
+</ul>
+
+<div class="tryc" data-stdin="arroz integral tipo 1">
+<p class="try-task"><strong>Experimente:</strong> rode e veja os pedaços. Depois troque o tamanho do array: com <code>[4]</code> saem mais pedaços; com <code>[100]</code>, um só (com o <code>\n</code> dentro dos colchetes). Você também pode mudar a entrada no campo <strong>Entrada</strong>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char pedaco[8];
+    while (fgets(pedaco, sizeof pedaco, stdin) != NULL) {
+        printf("[%s]\n", pedaco);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Por que o <code>gets</code> foi removido</h2>
+<p>Antes do <code>fgets</code>, os livros ensinavam o <code>gets</code> ("get string"): <code>gets(nome);</code>. Ele lê uma linha inteira e tira o <code>'\n'</code> sozinho. Parece melhor, mas tem um defeito que não tem conserto: <strong>ele não recebe o tamanho do array</strong>. Não existe jeito de usá-lo com segurança. Qualquer linha maior que o array escreve além do fim, e quem decide o tamanho da linha é quem digita.</p>
+
+<p>O <code>gets</code> foi marcado como obsoleto no C99 e <strong>removido</strong> da linguagem no <span class="versao">C11</span>: é a única função da biblioteca padrão que já foi apagada. Veja o que o gcc 15 faz com este programa:</p>
+
+<pre class="file" data-file="gets.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[10];
+    printf("Nome: ");
+    gets(nome);
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra gets.c -o gets
+gets.c: In function ‘main’:
+gets.c:6:5: error: implicit declaration of function ‘gets’; did you mean ‘fgets’? [-Wimplicit-function-declaration]
+    6 |     gets(nome);
+      |     ^~~~
+      |     fgets</pre>
+
+<p><em>Implicit declaration of function ‘gets’; did you mean ‘fgets’?</em> = "declaração implícita da função <code>gets</code>; você quis dizer <code>fgets</code>?". No C23 o <code>stdio.h</code> nem declara mais o <code>gets</code>, então o compilador não o conhece e já sugere o substituto. O Clang do editor diz <code>use of undeclared identifier 'gets'</code>.</p>
+
+<p>Pedindo um padrão antigo, em que o <code>gets</code> ainda existia, o programa compila, mas com dois avisos, um do compilador e outro do ligador (que sai em português no laboratório):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c99 -Wall -Wextra gets.c -o gets
+gets.c: In function ‘main’:
+gets.c:6:5: warning: ‘gets’ is deprecated [-Wdeprecated-declarations]
+    6 |     gets(nome);
+      |     ^~~~
+In file included from gets.c:1:
+/usr/include/stdio.h:671:14: note: declared here
+  671 | extern char *gets (char *__s) __wur __attribute_deprecated__;
+      |              ^~~~
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccp26XUo.o: na função "main":
+gets.c:(.text+0x37): aviso: the `gets' function is dangerous and should not be used.
+$ echo "Ana" | ./gets
+Nome: Olá, Ana!
+$ echo "Maximiliano de Albuquerque" | ./gets; echo "código $?"
+*** stack smashing detected ***: terminated
+código 134</pre>
+
+<ul>
+  <li><em>‘gets’ is deprecated</em> = "<code>gets</code> está obsoleto".</li>
+  <li><em>The `gets' function is dangerous and should not be used</em> = "a função <code>gets</code> é perigosa e não deve ser usada". É o ligador (<code>ld</code>) que avisa, porque o aviso vem gravado na própria biblioteca.</li>
+  <li>Com "Ana" funcionou. Com 26 letras num array de 10, o <code>gets</code> estourou o array e a proteção da pilha abortou o programa (código 134), o mesmo estouro de buffer da aula <a href="funcoes-string.html">Funções de String</a>.</li>
+</ul>
+
+<div class="tryc" data-goal="out:Olá\, Ana Maria!,src:fgets" data-stdin="Ana Maria">
+<p class="try-task"><strong>Missão:</strong> este programa veio de um livro antigo e nem compila mais. Troque o <code>gets</code> por <code>fgets</code> (com o tamanho do array e <code>stdin</code>) e tire o <code>\n</code> com <code>strcspn</code>, para mostrar <code>Olá, Ana Maria!</code> numa linha só. A entrada <code>Ana Maria</code> já está no campo Entrada.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char nome[50];
+    printf("Nome: ");
+    gets(nome);
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char nome[50];
+    printf("Nome: ");
+    if (fgets(nome, sizeof nome, stdin) == NULL) {
+        return 1;
+    }
+    nome[strcspn(nome, "\n")] = '\0';
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Misturar <code>scanf</code> e <code>fgets</code>: o <code>\n</code> que sobra</h2>
+<p>Este é o problema de C mais perguntado nos fóruns. A Ana lê a idade com <code>scanf</code> e depois o nome com <code>fgets</code>:</p>
+
+<pre class="file" data-file="mistura.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    int idade = 0;
+    char nome[50];
+    printf("Idade: ");
+    if (scanf("%d", &amp;idade) != 1) {
+        return 1;
+    }
+    printf("Nome: ");
+    if (fgets(nome, sizeof nome, stdin) == NULL) {
+        return 1;
+    }
+    nome[strcspn(nome, "\n")] = '\0';
+    printf("[%s] tem %d anos.\n", nome, idade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra mistura.c -o mistura
+$ ./mistura
+Idade: 29
+Nome: [] tem 29 anos.    « nem deu tempo de digitar o nome!</pre>
+
+<p>O programa não esperou o nome. O que aconteceu, passo a passo:</p>
+<ol class="passo">
+  <li>A Ana digitou <code>29</code> e apertou Enter. Na entrada ficou: <code>2</code> <code>9</code> <code>\n</code>.</li>
+  <li>O <code>scanf("%d")</code> leu o <code>29</code> e <strong>parou</strong> antes do <code>\n</code>, que não faz parte do número. O <code>\n</code> ficou na entrada.</li>
+  <li>O <code>fgets</code> lê "até o Enter". O primeiro caractere que ele encontrou já era o <code>\n</code> que sobrou: leu uma linha <strong>vazia</strong> e voltou na hora.</li>
+</ol>
+
+<h3>Conserto 1: jogar fora o resto da linha depois do <code>scanf</code></h3>
+
+<pre class="file" data-file="conserto.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    int idade = 0;
+    char nome[50];
+    printf("Idade: ");
+    if (scanf("%d", &amp;idade) != 1) {
+        return 1;
+    }
+    int c;
+    while ((c = getchar()) != '\n' &amp;&amp; c != EOF) {
+        // joga fora o resto da linha
+    }
+    printf("Nome: ");
+    if (fgets(nome, sizeof nome, stdin) == NULL) {
+        return 1;
+    }
+    nome[strcspn(nome, "\n")] = '\0';
+    printf("[%s] tem %d anos.\n", nome, idade);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int c;</dt><dd>Um <code>int</code>, e não um <code>char</code>: o <code>getchar</code> devolve o código do caractere ou o valor especial <code>EOF</code> (<em>end of file</em>, fim da entrada), que não cabe num <code>char</code>.</dd>
+  <dt>(c = getchar())</dt><dd>Lê <strong>um</strong> caractere da entrada e guarda em <code>c</code>.</dd>
+  <dt>!= '\n' &amp;&amp; c != EOF</dt><dd>Continua enquanto não chegar no Enter e a entrada não acabar. O laço não faz nada dentro: o trabalho é só ler e descartar.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra conserto.c -o conserto
+$ ./conserto
+Idade: 29
+Nome: Ana Maria
+[Ana Maria] tem 29 anos.</pre>
+
+<p>Esse laço também joga fora qualquer lixo depois do número: com a entrada <code>29 anos</code>, o <code>scanf</code> fica com o 29 e o laço descarta " anos" e o Enter.</p>
+
+<h3>Conserto 2 (o melhor): ler tudo com <code>fgets</code></h3>
+<p>Muitos programadores experientes simplesmente não misturam: leem <strong>toda</strong> entrada com <code>fgets</code>, linha por linha, e depois tiram o número de dentro da linha com <code>sscanf</code> (um <code>scanf</code> que lê de uma string) ou <code>strtol</code>:</p>
+
+<pre class="file" data-file="sofgets.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[50];
+    int idade = 0;
+    char nome[50];
+
+    printf("Idade: ");
+    if (fgets(linha, sizeof linha, stdin) == NULL || sscanf(linha, "%d", &amp;idade) != 1) {
+        printf("Idade inválida.\n");
+        return 1;
+    }
+    printf("Nome: ");
+    if (fgets(nome, sizeof nome, stdin) == NULL) {
+        return 1;
+    }
+    nome[strcspn(nome, "\n")] = '\0';
+    printf("[%s] tem %d anos.\n", nome, idade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sofgets.c -o sofgets
+$ printf "29\nAna Maria\n" | ./sofgets
+Idade: Nome: [Ana Maria] tem 29 anos.
+$ printf "abc\nAna\n" | ./sofgets
+Idade: Idade inválida.</pre>
+
+<p>Cada <code>fgets</code> consome a linha inteira, Enter incluído, então nada sobra para a leitura seguinte. E, se a pessoa digitar besteira, a linha errada já saiu da entrada. (O <code>printf "29\nAna Maria\n" |</code> manda duas linhas de uma vez, como se a Ana tivesse digitado as duas.) Transformar texto em número com segurança é o assunto da próxima aula, <a href="string-numero.html">Texto ↔ Número</a>.</p>
+
+<hr>
+
+<h2>6. O fim da entrada: <code>NULL</code> e o Ctrl+D</h2>
+<p>O <code>fgets</code> devolve <code>NULL</code> quando não há mais nada para ler. Isso acontece:</p>
+<ul>
+  <li>quando a entrada vem de um <code>echo</code>, de um <code>printf</code> ou de um arquivo e as linhas acabaram;</li>
+  <li>quando a pessoa aperta <strong>Ctrl+D</strong> no começo de uma linha, no terminal do Linux ou do macOS. É o jeito de dizer "acabou" pelo teclado. No Windows, é <strong>Ctrl+Z</strong> seguido de Enter.</li>
+</ul>
+
+<p>Com isso dá para ler "quantas linhas vierem", sem saber o número antes:</p>
+
+<pre class="file" data-file="linhas.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[100];
+    int total = 0;
+    while (fgets(linha, sizeof linha, stdin) != NULL) {
+        total++;
+        linha[strcspn(linha, "\n")] = '\0';
+        printf("%d: %s\n", total, linha);
+    }
+    printf("Fim da entrada: %d linhas.\n", total);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra linhas.c -o linhas
+$ ./linhas
+arroz
+1: arroz
+feijão
+2: feijão
+Fim da entrada: 2 linhas.     « aqui a Ana apertou Ctrl+D
+$ printf "arroz\nfeijão\ncafé\n" | ./linhas
+1: arroz
+2: feijão
+3: café
+Fim da entrada: 3 linhas.</pre>
+
+<dl class="anatomy">
+  <dt>while (fgets(…) != NULL)</dt><dd>"Enquanto conseguir ler uma linha…". É a forma padrão de ler até o fim, em C, tanto do teclado quanto de arquivos.</dd>
+  <dt>Ctrl+D</dt><dd>Não aparece na tela. O terminal entende "fim da entrada", o <code>fgets</code> devolve <code>NULL</code> e o laço termina.</dd>
+</dl>
+
+<p>Quando o programa espera <strong>uma</strong> linha e a pessoa aperta Ctrl+D logo de cara, é o <code>== NULL</code> do começo da aula que evita usar um array que nunca recebeu nada:</p>
+
+<pre class="term" data-cwd="~/c">$ cat vazio.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[50];
+    printf("Nome: ");
+    if (fgets(nome, sizeof nome, stdin) == NULL) {
+        printf("\nNada foi digitado.\n");
+        return 1;
+    }
+    printf("Olá, %s", nome);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra vazio.c -o vazio
+$ ./vazio
+Nome:                    « Ctrl+D aqui
+Nada foi digitado.</pre>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>Quando a caixa tem uma <strong>Entrada</strong> preenchida, o programa recebe aquelas linhas e depois o fim da entrada, como no <code>printf "…" |</code>. Sem entrada preenchida, o programa espera você digitar no terminal da caixa, e o <strong>Ctrl+D</strong> no campo de digitação também encerra a entrada.</p>
+</div>
+
+<hr>
+
+<h2>Formas de ler texto: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Lê</th><th>Limite de tamanho?</th><th>Quando usar</th></tr>
+<tr><td><code>fgets(s, sizeof s, stdin)</code></td><td>Uma linha, com espaços e o <code>'\n'</code></td><td>Sim</td><td><strong>Padrão do guia</strong> para qualquer texto digitado.</td></tr>
+<tr><td><code>scanf("%49s", s)</code></td><td>Uma palavra (para no espaço)</td><td>Só se você escrever o número</td><td>Quando a resposta é uma palavra só, e com o número.</td></tr>
+<tr><td><code>scanf("%s", s)</code></td><td>Uma palavra</td><td><strong>Não</strong></td><td>Nunca: estoura como o <code>gets</code>.</td></tr>
+<tr><td><code>getchar()</code></td><td>Um caractere</td><td>(um por vez)</td><td>Ler letra por letra, descartar o resto da linha.</td></tr>
+<tr><td><code>gets(s)</code></td><td>Uma linha</td><td><strong>Não</strong></td><td>Nunca. Removido no C11.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A frase sai quebrada: <code>Olá, Ana Maria</code> e o resto na linha de baixo</strong>
+<p><strong>O que significa:</strong> o <code>'\n'</code> do Enter ficou na string lida pelo <code>fgets</code>.</p>
+<p><strong>Como consertar:</strong> logo depois do <code>fgets</code>, <code>s[strcspn(s, "\n")] = '\0';</code> (com <code>#include &lt;string.h&gt;</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>fgets</code> não espera eu digitar (lê uma linha vazia)</strong>
+<p><strong>O que significa:</strong> um <code>scanf</code> anterior deixou o <code>'\n'</code> na entrada, e o <code>fgets</code> leu só ele.</p>
+<p><strong>Como consertar:</strong> depois do <code>scanf</code>, descarte o resto da linha com <code>while ((c = getchar()) != '\n' &amp;&amp; c != EOF) {}</code>, ou leia tudo com <code>fgets</code> e converta com <code>sscanf</code>/<code>strtol</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘gets’; did you mean ‘fgets’?</code></strong>
+<p><strong>O que significa:</strong> o <code>gets</code> não existe mais no C11 em diante. Com <code>-std=c99</code> ele compila, mas com <code>warning: ‘gets’ is deprecated</code> e o aviso do ligador <code>the `gets' function is dangerous and should not be used</code>.</p>
+<p><strong>Como consertar:</strong> <code>fgets(s, sizeof s, stdin)</code> e tirar o <code>'\n'</code> com <code>strcspn</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A linha chega cortada, ou o resto aparece na próxima leitura</strong>
+<p><strong>O que significa:</strong> a linha era maior que o array. O <code>fgets</code> leu <code>sizeof s - 1</code> caracteres e deixou o resto na entrada.</p>
+<p><strong>Como consertar:</strong> use um array maior. Para detectar, confira se a string termina em <code>'\n'</code>: se não terminar (e a entrada não acabou), a linha foi cortada.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘sizeof’ on array function parameter ‘nome’ will return size of ‘char *’ [-Wsizeof-array-argument]</code></strong>
+<p><strong>O que significa:</strong> o <code>fgets(nome, sizeof nome, stdin)</code> está dentro de uma <strong>função</strong> que recebeu <code>nome</code> como parâmetro (aula <a href="parametros.html">Parâmetros</a>). Ali, <code>nome</code> não é mais o array, e sim um ponteiro para ele, e o <code>sizeof</code> mede o ponteiro: 8 bytes no Linux. No laboratório, com <code>void ler_nome(char nome[])</code> e a entrada "Ana Maria", o programa guardou só <code>[Ana Mar]</code> (7 letras + <code>'\0'</code>). O motivo está em <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>.</p>
+<p><strong>Como consertar:</strong> use <code>sizeof</code> só onde o array foi criado. Na função, receba o tamanho como outro parâmetro: <code>void ler_nome(char nome[], int tamanho)</code> e <code>fgets(nome, tamanho, stdin)</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>fgets(s, sizeof s, stdin)</code></td><td>Lê uma linha (até <code>sizeof s - 1</code> caracteres), com o <code>'\n'</code>, e põe <code>'\0'</code></td></tr>
+<tr><td>retorno <code>NULL</code></td><td>Nada foi lido: fim da entrada (Ctrl+D) ou erro</td></tr>
+<tr><td><code>s[strcspn(s, "\n")] = '\0';</code></td><td>Tira o <code>'\n'</code> do fim (seguro mesmo sem <code>'\n'</code>)</td></tr>
+<tr><td><code>strcspn(s, "\n")</code></td><td>Posição do primeiro <code>'\n'</code> (ou do <code>'\0'</code>, se não houver)</td></tr>
+<tr><td><code>while (fgets(s, sizeof s, stdin) != NULL) { … }</code></td><td>Lê linha por linha até o fim</td></tr>
+<tr><td><code>while ((c = getchar()) != '\n' &amp;&amp; c != EOF) {}</code></td><td>Descarta o resto da linha (depois de um <code>scanf</code>)</td></tr>
+<tr><td><code>sscanf(linha, "%d", &amp;n)</code></td><td>Lê um número de dentro de uma string já lida</td></tr>
+<tr><td>Ctrl+D (Linux, macOS) / Ctrl+Z e Enter (Windows)</td><td>Fim da entrada pelo teclado</td></tr>
+<tr><td><code>gets(s)</code></td><td>Removido no C11: nunca use</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Os três argumentos</h3>
+<p>Complete a leitura segura de uma linha para o array <code>frase</code>:</p>
+<div class="ex-code">fgets(frase, <input data-answer="sizeof frase|sizeof(frase)" aria-label="tamanho">, <input data-answer="stdin" aria-label="origem">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Tirar o Enter</h3>
+<p>Complete a linha que tira o <code>'\n'</code> do fim de <code>frase</code>:</p>
+<div class="ex-code">frase[<input data-answer="strcspn" aria-label="função">(frase, "\n")] = '\0';</div>
+</div>
+
+<div class="exercise">
+<h3>3. Quantos caracteres?</h3>
+<p>Com <code>char s[10];</code>, quantos caracteres (no máximo) um <code>fgets(s, sizeof s, stdin)</code> lê de uma vez? Escreva só o número.</p>
+<div class="ex-code"><input data-answer="9" aria-label="número"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A Ana digitou <code>oi</code> e Enter. Depois do <code>fgets</code>, quanto vale <code>strlen(s)</code>?</p>
+<label><input type="radio" name="q4"> 2</label>
+<label><input type="radio" name="q4"> 3, por causa do <code>'\n'</code></label>
+<label><input type="radio" name="q4"> 4, por causa do <code>'\n'</code> e do <code>'\0'</code></label>
+<label><input type="radio" name="q4"> 10, o tamanho do array</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que o <code>gets</code> foi removido do C?</p>
+<label><input type="radio" name="q5"> Porque era lento</label>
+<label><input type="radio" name="q5"> Porque não lia espaços</label>
+<label><input type="radio" name="q5"> Porque não recebe o tamanho do array, então não há como impedir o estouro</label>
+<label><input type="radio" name="q5"> Porque deixava o <code>'\n'</code> na string</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Depois de <code>scanf("%d", &amp;n);</code>, um <code>fgets</code> devolveu uma linha vazia na hora. Por quê?</p>
+<label><input type="radio" name="q6"> O <code>scanf</code> deixou o <code>'\n'</code> do Enter na entrada</label>
+<label><input type="radio" name="q6"> O <code>fgets</code> não funciona depois de <code>scanf</code></label>
+<label><input type="radio" name="q6"> A pessoa apertou Ctrl+D</label>
+<label><input type="radio" name="q6"> Faltou o <code>&amp;</code> no <code>fgets</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. O que o <code>fgets</code> devolve quando a pessoa aperta Ctrl+D no começo da linha?</p>
+<label><input type="radio" name="q7"> Uma string vazia <code>""</code></label>
+<label><input type="radio" name="q7"> A string <code>"\n"</code></label>
+<label><input type="radio" name="q7"> O número 0</label>
+<label><input type="radio" name="q7"> <code>NULL</code></label>
+</div>
+
+<h3>Missão final: a lista de compras</h3>
+
+<div class="tryc" data-goal="out:1. arroz,out:2. feijão,out:3. café,out:Total: 3 itens,src:fgets" data-stdin="arroz\nfeijão\n\ncafé">
+<p class="try-task"><strong>Missão:</strong> a Ana digita a lista de compras, um item por linha, e termina com Ctrl+D (aqui a entrada já está preenchida, com uma linha em branco no meio). Leia linha por linha com <code>fgets</code> até o fim, tire o <code>\n</code>, <strong>pule as linhas vazias</strong> e numere os itens. No fim, mostre o total.</p>
+<pre class="out">1. arroz
+2. feijão
+3. café
+Total: 3 itens</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[100];
+    int itens = 0;
+
+    // leia até o fim da entrada, pulando linhas vazias
+
+    printf("Total: %d itens\n", itens);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[100];
+    int itens = 0;
+
+    while (fgets(linha, sizeof linha, stdin) != NULL) {
+        linha[strcspn(linha, "\n")] = '\0';
+        if (linha[0] == '\0') {
+            continue;
+        }
+        itens++;
+        printf("%d. %s\n", itens, linha);
+    }
+
+    printf("Total: %d itens\n", itens);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Depois de tirar o <code>'\n'</code>, uma linha em branco vira a string vazia: o primeiro caractere já é o <code>'\0'</code>. O <code>continue</code> (aula <a href="break-continue.html">break e continue</a>) pula para a próxima volta do laço sem contar o item.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>fgets(s, sizeof s, stdin)</code> lê uma linha inteira, com espaços, até <code>sizeof s - 1</code> caracteres, e sempre põe o <code>'\0'</code>. Nunca escreve fora do array.</li>
+  <li>A linha vem com o <code>'\n'</code> do Enter. Tire com <code>s[strcspn(s, "\n")] = '\0';</code>, que é seguro mesmo sem <code>'\n'</code>.</li>
+  <li>Linha maior que o array chega em pedaços; o que sobra fica na entrada. Sem <code>'\n'</code> no fim = linha cortada.</li>
+  <li>O <code>gets</code> não tem limite e foi removido no C11; o gcc 15 nem o reconhece (<code>implicit declaration of function ‘gets’; did you mean ‘fgets’?</code>).</li>
+  <li>O <code>scanf</code> deixa o <code>'\n'</code> na entrada e o <code>fgets</code> seguinte lê uma linha vazia. Descarte o resto da linha com <code>getchar</code>, ou leia tudo com <code>fgets</code> e converta com <code>sscanf</code>/<code>strtol</code>.</li>
+  <li><code>fgets</code> devolve <code>NULL</code> no fim da entrada (Ctrl+D no Linux). <code>while (fgets(…) != NULL)</code> lê até o fim.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
