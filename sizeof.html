@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Tamanho dos Tipos — sizeof, size_t e %zu | Guia C</title>
+<meta name="description" content="sizeof em C para quem nunca programou: quantos bytes ocupa cada tipo, sizeof(int) e sizeof x, o tipo size_t e o formato %zu, o tamanho de um array e como contar seus elementos, e por que long e ponteiros têm 4 bytes no editor do guia e 8 no gcc do Linux.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Tamanho dos Tipos (sizeof)</span></h1>
+
+<p class="intro">Cada variável ocupa um pedaço da memória do computador, e o tamanho desse pedaço depende do <strong>tipo</strong>: um <code>char</code> cabe em 1 byte, um <code>double</code> precisa de 8. Em C, você pode perguntar esse tamanho ao compilador com o operador <code>sizeof</code> ("tamanho de"). Parece curiosidade, mas é uma ferramenta do dia a dia: com ele você descobre quantos elementos tem um array, quanta memória pedir com <code>malloc</code> e por que um programa se comporta diferente em computadores diferentes. Nesta aula, você vai ver isso acontecer de verdade: o editor do guia e o gcc do Linux dão respostas diferentes para a mesma pergunta.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um byte e por que cada tipo tem um tamanho.</li>
+  <li>As duas formas de usar o operador: <code>sizeof(int)</code> e <code>sizeof x</code>.</li>
+  <li>O tipo <code>size_t</code> e o formato <code>%zu</code>, que mostra o resultado.</li>
+  <li>Quanto ocupa cada tipo no gcc do Linux (64 bits) e no editor do guia (WebAssembly, 32 bits), e por que são diferentes.</li>
+  <li>O tamanho de um array e a conta que descobre quantos elementos ele tem.</li>
+  <li>Os erros comuns: <code>%d</code> no lugar de <code>%zu</code>, <code>sizeof int</code> sem parênteses e o <code>sizeof</code> de um array dentro de uma função.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>, um Linux de 64 bits), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Quando o editor do guia dá um resultado diferente, a aula mostra os dois.</p>
+
+<hr>
+
+<h2>A ideia: caixas de tamanhos diferentes</h2>
+<p>A memória do computador é como uma fileira enorme de gavetinhas, todas do mesmo tamanho. Cada gavetinha é um <strong>byte</strong>, e guarda um número de 0 a 255 (8 bits, 8 "zeros e uns").</p>
+
+<p>Um número pequeno, como a letra <code>'A'</code> (código 65), cabe numa gavetinha. Um número maior precisa de várias gavetinhas lado a lado, como uma caixa de mudança que ocupa várias prateleiras. Cada tipo do C ocupa um número fixo de gavetinhas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Bytes (gcc, Linux 64 bits)</th><th>O que cabe</th></tr>
+<tr><td><code>char</code></td><td>1</td><td>uma letra, ou um número de -128 a 127</td></tr>
+<tr><td><code>int</code></td><td>4</td><td>números até cerca de 2 bilhões (para mais ou para menos)</td></tr>
+<tr><td><code>double</code></td><td>8</td><td>números com vírgula, com uns 15 algarismos de precisão</td></tr>
+</table>
+</div>
+
+<p>Mais bytes = números maiores ou mais precisos, mas também mais memória gasta. O <code>sizeof</code> responde: "quantas gavetinhas este tipo (ou esta variável) ocupa?".</p>
+
+<hr>
+
+<h2>1. <code>sizeof</code> de um tipo</h2>
+
+<pre class="file" data-file="tamanho.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Um int ocupa %zu bytes.\n", sizeof(int));
+    printf("Um double ocupa %zu bytes.\n", sizeof(double));
+    printf("Um char ocupa %zu byte.\n", sizeof(char));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>sizeof</dt><dd>Um <strong>operador</strong> da linguagem (como o <code>+</code>), e não uma função: não precisa de <code>#include</code>. Ele devolve o tamanho em bytes.</dd>
+  <dt>(int)</dt><dd>Para perguntar o tamanho de um <strong>tipo</strong>, o nome do tipo vai entre parênteses, obrigatoriamente.</dd>
+  <dt>%zu</dt><dd>O formato do <code>printf</code> para o resultado de <code>sizeof</code>. O <code>z</code> avisa que o valor é um <code>size_t</code> (seção 3) e o <code>u</code> diz que ele não tem sinal (<em>unsigned</em>). Veja <a href="formatos-printf.html">Formatos do printf</a>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanho.c -o tamanho
+$ ./tamanho
+Um int ocupa 4 bytes.
+Um double ocupa 8 bytes.
+Um char ocupa 1 byte.</pre>
+
+<p>O <code>sizeof(char)</code> é <strong>sempre</strong> 1, em qualquer computador: a linguagem define o byte como "o tamanho de um <code>char</code>". Todo o resto pode variar, como a próxima seção mostra.</p>
+
+<hr>
+
+<h2>2. Todos os tipos, em dois computadores</h2>
+<p>Este programa pergunta o tamanho dos tipos básicos. O <code>int *</code> é um <strong>ponteiro</strong> (um endereço de memória, aula <a href="ponteiros.html">Ponteiros</a>) e o <code>size_t</code> é o tipo do próprio resultado do <code>sizeof</code>:</p>
+
+<pre class="file" data-file="tipos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("char:        %zu\n", sizeof(char));
+    printf("short:       %zu\n", sizeof(short));
+    printf("int:         %zu\n", sizeof(int));
+    printf("long:        %zu\n", sizeof(long));
+    printf("long long:   %zu\n", sizeof(long long));
+    printf("float:       %zu\n", sizeof(float));
+    printf("double:      %zu\n", sizeof(double));
+    printf("long double: %zu\n", sizeof(long double));
+    printf("bool:        %zu\n", sizeof(bool));
+    printf("ponteiro:    %zu\n", sizeof(int *));
+    printf("size_t:      %zu\n", sizeof(size_t));
+    return 0;
+}
+</pre>
+
+<p>No laboratório (gcc 15, Linux de 64 bits):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipos.c -o tipos
+$ ./tipos
+char:        1
+short:       2
+int:         4
+long:        8
+long long:   8
+float:       4
+double:      8
+long double: 16
+bool:        1
+ponteiro:    8
+size_t:      8</pre>
+
+<p>E no editor do guia (Clang compilado para WebAssembly, que é de 32 bits), o <strong>mesmo</strong> código mostra:</p>
+
+<pre class="term">$ clang -std=c23 -Wall -Wextra tipos.c -o tipos
+$ ./tipos
+char:        1
+short:       2
+int:         4
+long:        4                « 8 no gcc
+long long:   8
+float:       4
+double:      8
+long double: 16
+bool:        1
+ponteiro:    4                « 8 no gcc
+size_t:      4                « 8 no gcc
+[código de saída: 0]</pre>
+
+<p>Três tipos mudaram: <code>long</code>, ponteiro e <code>size_t</code>. Rode você mesmo e confira:</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e compare com a saída do gcc acima. Depois acrescente uma linha para <code>sizeof(unsigned int)</code> e outra para <code>sizeof(char *)</code> (um ponteiro para texto). Algum deles muda de tamanho por não ter sinal ou por apontar para outro tipo?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("int:      %zu\n", sizeof(int));
+    printf("long:     %zu\n", sizeof(long));
+    printf("double:   %zu\n", sizeof(double));
+    printf("ponteiro: %zu\n", sizeof(int *));
+    printf("size_t:   %zu\n", sizeof(size_t));
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Por que os tamanhos mudam?</h3>
+<p>O C nasceu em 1972 para rodar em computadores muito diferentes entre si, e por isso a linguagem <strong>não fixa</strong> o tamanho da maioria dos tipos. Ela só garante mínimos e uma ordem:</p>
+<ul>
+  <li><code>char</code> tem 1 byte; <code>short</code> e <code>int</code> têm pelo menos 2; <code>long</code> pelo menos 4; <code>long long</code> pelo menos 8.</li>
+  <li><code>sizeof(short)</code> ≤ <code>sizeof(int)</code> ≤ <code>sizeof(long)</code> ≤ <code>sizeof(long long)</code>.</li>
+</ul>
+<p>Cada sistema escolhe os tamanhos dentro dessas regras. O que mais pesa é o tamanho do <strong>endereço de memória</strong> do processador:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sistema</th><th><code>int</code></th><th><code>long</code></th><th>ponteiro e <code>size_t</code></th></tr>
+<tr><td>Linux e macOS de 64 bits (o gcc do laboratório)</td><td>4</td><td>8</td><td>8</td></tr>
+<tr><td>Windows de 64 bits</td><td>4</td><td>4</td><td>8</td></tr>
+<tr><td>Sistemas de 32 bits e o WebAssembly do editor</td><td>4</td><td>4</td><td>4</td></tr>
+<tr><td>Microcontroladores pequenos (Arduino Uno)</td><td>2</td><td>4</td><td>2</td></tr>
+</table>
+</div>
+
+<p>Um computador "de 64 bits" usa endereços de 8 bytes (64 bits), então ponteiros e <code>size_t</code> (que mede tamanhos de memória) têm 8. O WebAssembly que roda no navegador usa endereços de 4 bytes (32 bits). O <code>long</code> acompanha o ponteiro no Linux, mas não no Windows. É por isso que o guia diz: <strong>nunca suponha o tamanho de um tipo; pergunte com <code>sizeof</code></strong>.</p>
+
+<div class="tip">
+<strong>Precisa de um tamanho exato?</strong>
+<p>Quando o tamanho importa (arquivos binários, comunicação com outros programas), use os tipos de <code>&lt;stdint.h&gt;</code>: <code>int32_t</code> tem exatamente 4 bytes e <code>int64_t</code> exatamente 8, em qualquer sistema. Aula <a href="stdint.html">Inteiros de Tamanho Fixo</a>.</p>
+</div>
+
+<p>O tamanho muda também o <strong>maior valor</strong> que cabe no tipo. O <code>&lt;limits.h&gt;</code> tem esses limites (aula <a href="inteiros.html">Inteiros</a>):</p>
+
+<pre class="term" data-cwd="~/c">$ cat limite.c
+#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+
+int main(void) {
+    printf("INT_MAX  = %d\n", INT_MAX);
+    printf("LONG_MAX = %ld\n", LONG_MAX);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra limite.c -o limite
+$ ./limite
+INT_MAX  = 2147483647
+LONG_MAX = 9223372036854775807     « no editor: 2147483647</pre>
+
+<hr>
+
+<h2>3. O resultado: <code>size_t</code> e <code>%zu</code></h2>
+<p>O <code>sizeof</code> não devolve um <code>int</code>. Ele devolve um <code>size_t</code> ("tipo de tamanho"): um inteiro <strong>sem sinal</strong> (tamanho nunca é negativo) grande o bastante para medir qualquer coisa que caiba na memória. Por isso o <code>size_t</code> tem o tamanho de um endereço: 8 bytes no laboratório, 4 no editor.</p>
+
+<p>Você pode guardar o resultado numa variável desse tipo:</p>
+
+<pre class="file" data-file="guarda.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    size_t bytes = sizeof(double);
+    printf("Um double ocupa %zu bytes.\n", bytes);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra guarda.c -o guarda
+$ ./guarda
+Um double ocupa 8 bytes.</pre>
+
+<p>O <code>size_t</code> é definido em vários cabeçalhos, entre eles o <code>&lt;stdio.h&gt;</code>, <code>&lt;stdlib.h&gt;</code> e <code>&lt;stddef.h&gt;</code>; com o <code>stdio.h</code> incluído, ele já está disponível. Você vai encontrá-lo de novo em <code>strlen</code> (aula <a href="funcoes-string.html">Funções de String</a>) e em <code>malloc</code> (aula <a href="malloc-free.html">malloc e free</a>).</p>
+
+<h3>Por que não <code>%d</code>?</h3>
+<p>Porque o <code>%d</code> é para <code>int</code>, e o tipo do <code>sizeof</code> é outro:</p>
+
+<pre class="file" data-file="formato.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("%d\n", sizeof idade);
+    printf("%lu\n", sizeof idade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra formato.c -o formato
+formato.c: In function ‘main’:
+formato.c:5:14: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘long unsigned int’ [-Wformat=]
+    5 |     printf("%d\n", sizeof idade);
+      |             ~^     ~~~~~~~~~~~~
+      |              |     |
+      |              int   long unsigned int
+      |             %ld
+$ ./formato
+4
+4</pre>
+
+<ul>
+  <li><em>Argument 2 has type ‘long unsigned int’</em>: no Linux de 64 bits, o <code>size_t</code> é um apelido para <code>unsigned long</code>. O gcc sugere <code>%ld</code>, mas o certo para um <code>size_t</code> é <code>%zu</code>.</li>
+  <li>O programa mostrou <code>4</code> mesmo assim, por sorte: lixo que "deu certo". Não confie nisso.</li>
+  <li>O <code>%lu</code> não deu aviso aqui, mas daria no Windows de 64 bits, onde <code>size_t</code> não é <code>unsigned long</code>. O <code>%zu</code> é o único que está certo em todo lugar <span class="versao">C99</span>.</li>
+</ul>
+
+<p>O Clang do editor avisa o mesmo, já sugerindo o formato certo: <code>format specifies type 'int' but the argument has type '__size_t' (aka 'unsigned long') [-Wformat]</code>, com <code>%zu</code> embaixo.</p>
+
+<div class="warning">
+<strong>Cuidado ao subtrair <code>size_t</code></strong>
+<p>Como o <code>size_t</code> não tem negativos, uma conta que "deveria" dar negativo dá a volta e vira um número enorme:</p>
+<pre class="term" data-cwd="~/c">$ cat menos.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    size_t tem = 3;
+    size_t precisa = 5;
+    printf("Faltam: %zu\n", tem - precisa);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra menos.c -o menos
+$ ./menos
+Faltam: 18446744073709551614       « no editor: 4294967294</pre>
+<p>3 − 5 virou 18 quintilhões, sem aviso nenhum. Antes de subtrair tamanhos, compare qual é o maior. A aula <a href="conversao-tipos.html">Conversão de Tipos</a> mostra mais surpresas dos tipos sem sinal.</p>
+</div>
+
+<hr>
+
+<h2>4. <code>sizeof</code> de uma variável ou de um valor</h2>
+<p>Além de tipos, o <code>sizeof</code> aceita uma variável ou qualquer expressão. Aí os parênteses são opcionais:</p>
+
+<pre class="file" data-file="variavel.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 4.5;
+    printf("%zu\n", sizeof preco);
+    printf("%zu\n", sizeof(preco));
+    printf("%zu\n", sizeof(preco * 2));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra variavel.c -o variavel
+$ ./variavel
+8
+8
+8</pre>
+
+<dl class="anatomy">
+  <dt>sizeof preco</dt><dd>O tamanho da variável <code>preco</code>, ou seja, do tipo dela (<code>double</code>). Sem parênteses, porque é uma variável.</dd>
+  <dt>sizeof(preco)</dt><dd>O mesmo, com parênteses. Os parênteses em volta de uma variável são só parênteses comuns, como em <code>(2 + 3)</code>.</dd>
+  <dt>sizeof(preco * 2)</dt><dd>O tamanho do <strong>tipo do resultado</strong> da conta (um <code>double</code>). A conta em si não é feita.</dd>
+</dl>
+
+<p>Perguntar pela variável (<code>sizeof preco</code>) em vez do tipo (<code>sizeof(double)</code>) tem uma vantagem: se um dia você trocar o tipo da variável, o <code>sizeof</code> acompanha sozinho.</p>
+
+<h3>O <code>sizeof</code> não executa a conta</h3>
+<p>O <code>sizeof</code> é resolvido pelo <strong>compilador</strong>, antes de o programa rodar: ele só olha o tipo. Uma surpresa disso:</p>
+
+<pre class="term" data-cwd="~/c">$ cat naoavalia.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int x = 5;
+    size_t t = sizeof(x = 99);
+    printf("x = %d, t = %zu\n", x, t);
+    printf("%zu %zu %zu\n", sizeof 'A', sizeof 3.0f, sizeof "Ana");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra naoavalia.c -o naoavalia
+$ ./naoavalia
+x = 5, t = 4
+4 4 4</pre>
+
+<ul>
+  <li>O <code>x = 99</code> dentro do <code>sizeof</code> <strong>nunca rodou</strong>: o <code>x</code> continua 5. O Clang do editor avisa (<code>expression with side effects has no effect in an unevaluated context</code>, "expressão com efeito não tem efeito num contexto que não é avaliado"); o gcc, não.</li>
+  <li><code>sizeof 'A'</code> deu <strong>4</strong>, e não 1: em C, uma letra entre aspas simples escrita direto no código é um <code>int</code>, não um <code>char</code> (no C++ é diferente). Uma variável <code>char</code> tem 1 byte.</li>
+  <li><code>sizeof 3.0f</code> é o tamanho de um <code>float</code> (4).</li>
+  <li><code>sizeof "Ana"</code> deu 4: as 3 letras mais o <code>'\0'</code> invisível que marca o fim de todo texto em C (aula <a href="strings.html">Strings</a>).</li>
+</ul>
+
+<hr>
+
+<h2>5. O tamanho de um array</h2>
+<p>Com um array (uma fileira de valores do mesmo tipo, aula <a href="arrays.html">Arrays</a>), o <code>sizeof</code> devolve o tamanho da fileira <strong>inteira</strong>:</p>
+
+<pre class="file" data-file="array.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    double precos[3] = {4.5, 2.0, 7.25};
+    char nome[] = "Ana";
+    printf("notas:  %zu bytes\n", sizeof notas);
+    printf("precos: %zu bytes\n", sizeof precos);
+    printf("nome:   %zu bytes\n", sizeof nome);
+    printf("elementos de notas: %zu\n", sizeof notas / sizeof notas[0]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra array.c -o array
+$ ./array
+notas:  20 bytes
+precos: 24 bytes
+nome:   4 bytes
+elementos de notas: 5</pre>
+
+<dl class="anatomy">
+  <dt>sizeof notas</dt><dd>5 inteiros × 4 bytes = 20 bytes.</dd>
+  <dt>sizeof precos</dt><dd>3 <code>double</code> × 8 bytes = 24 bytes.</dd>
+  <dt>sizeof nome</dt><dd>O texto <code>"Ana"</code> guardado num array de <code>char</code>: 3 letras + o <code>'\0'</code> = 4 bytes.</dd>
+  <dt>sizeof notas[0]</dt><dd>O tamanho de <strong>um</strong> elemento (o primeiro): 4 bytes.</dd>
+  <dt>sizeof notas / sizeof notas[0]</dt><dd>Tamanho total ÷ tamanho de um = <strong>quantos elementos</strong>: 20 ÷ 4 = 5. Essa conta funciona para qualquer tipo, em qualquer computador.</dd>
+</dl>
+
+<p>Essa última conta é um dos usos mais comuns do <code>sizeof</code>: você escreve os valores do array uma vez e o programa descobre sozinho quantos são. Se acrescentar uma nota, a conta se ajusta.</p>
+
+<div class="tryc" data-goal="out:Temperaturas guardadas: 7,src:sizeof\s*\(?\s*temperaturas\s*\)?\s*/\s*sizeof">
+<p class="try-task"><strong>Missão:</strong> a Ana anotou as temperaturas da semana. O programa diz que guardou 28, o que não faz sentido: <code>sizeof temperaturas</code> conta <strong>bytes</strong>, não temperaturas. Divida pelo tamanho de um elemento para mostrar <code>Temperaturas guardadas: 7</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int temperaturas[] = {28, 31, 30, 27, 25, 29, 32};
+    size_t quantas = sizeof temperaturas;
+    printf("Temperaturas guardadas: %zu\n", quantas);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int temperaturas[] = {28, 31, 30, 27, 25, 29, 32};
+    size_t quantas = sizeof temperaturas / sizeof temperaturas[0];
+    printf("Temperaturas guardadas: %zu\n", quantas);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>A pegadinha: array dentro de uma função</h3>
+<p>A conta só funciona onde o array foi <strong>criado</strong>. Quando você passa um array para uma função (aula <a href="funcoes.html">Funções</a>), a função recebe só o <strong>endereço</strong> do começo dele, e o <code>sizeof</code> mede o endereço:</p>
+
+<pre class="file" data-file="funcao.c">#include &lt;stdio.h&gt;
+
+void mostra(int v[]) {
+    printf("dentro da função: %zu\n", sizeof v);
+}
+
+int main(void) {
+    int notas[5] = {7, 8, 6, 9, 10};
+    printf("no main: %zu\n", sizeof notas);
+    mostra(notas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra funcao.c -o funcao
+funcao.c: In function ‘mostra’:
+funcao.c:4:46: warning: ‘sizeof’ on array function parameter ‘v’ will return size of ‘int *’ [-Wsizeof-array-argument]
+    4 |     printf("dentro da função: %zu\n", sizeof v);
+      |                                              ^
+funcao.c:3:17: note: declared here
+    3 | void mostra(int v[]) {
+      |             ~~~~^~~
+$ ./funcao
+no main: 20
+dentro da função: 8                « o tamanho de um ponteiro (4 no editor)</pre>
+
+<p><em>‘sizeof’ on array function parameter ‘v’ will return size of ‘int *’</em> = "o <code>sizeof</code> de um parâmetro array vai devolver o tamanho de <code>int *</code>" (um ponteiro). Por isso, funções que recebem arrays sempre recebem também a quantidade de elementos, num segundo parâmetro. A explicação completa está em <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes: qual usar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Funciona com</th><th>Quando usar</th></tr>
+<tr><td><code>sizeof(int)</code></td><td>tipos (parênteses obrigatórios)</td><td>Para perguntar sobre um tipo em geral, como na tabela da seção 2.</td></tr>
+<tr><td><code>sizeof x</code></td><td>variáveis e expressões</td><td>Quando você tem a variável à mão. Acompanha sozinho se o tipo mudar. É o estilo de muitos programadores C experientes.</td></tr>
+<tr><td><code>sizeof(x)</code></td><td>variáveis e expressões</td><td>O mesmo que <code>sizeof x</code>; muita gente prefere os parênteses por costume. Os dois estão certos.</td></tr>
+<tr><td><code>sizeof v / sizeof v[0]</code></td><td>arrays, onde foram criados</td><td>Para contar os elementos de um array. Nunca dentro de uma função que recebeu o array.</td></tr>
+<tr><td>Escrever o número (<code>4</code>, <code>8</code>) direto</td><td>-</td><td><strong>Nunca.</strong> Funciona no seu computador e quebra no do vizinho.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘long unsigned int’</code></strong>
+<p><strong>O que significa:</strong> você mostrou um <code>sizeof</code> (ou um <code>size_t</code>) com <code>%d</code>.</p>
+<p><strong>Como consertar:</strong> use <code>%zu</code>. No Clang, a mensagem fala em <code>'__size_t' (aka 'unsigned long')</code>, e a solução é a mesma.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expected expression before ‘int’</code></strong>
+<p><strong>O que significa:</strong> você escreveu <code>sizeof int</code>, sem parênteses. Com tipos, eles são obrigatórios. O Clang é mais claro: <code>expected parentheses around type name in sizeof expression</code> ("faltam parênteses em volta do nome do tipo").</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semparen.c -o semparen
+semparen.c: In function ‘main’:
+semparen.c:4:28: error: expected expression before ‘int’
+    4 |     printf("%zu\n", sizeof int);
+      |                            ^~~</pre>
+<p><strong>Como consertar:</strong> <code>sizeof(int)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘sizeof’ on array function parameter ‘v’ will return size of ‘int *’</code></strong>
+<p><strong>O que significa:</strong> dentro de uma função, o "array" recebido é só um endereço; o <code>sizeof</code> devolve 8 (ou 4), não o tamanho do array.</p>
+<p><strong>Como consertar:</strong> calcule a quantidade de elementos onde o array foi criado e passe-a como parâmetro: <code>mostra(notas, sizeof notas / sizeof notas[0])</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa dá um resultado no seu computador e outro no do colega (ou no editor)</strong>
+<p><strong>O que significa:</strong> o código supõe um tamanho, por exemplo que <code>long</code> tem 8 bytes ou que um ponteiro cabe num <code>int</code>.</p>
+<p><strong>Como consertar:</strong> use <code>sizeof</code> em vez de números fixos e, quando o tamanho exato importar, os tipos de <code>&lt;stdint.h&gt;</code> (<code>int64_t</code>…).</p>
+</div>
+
+<div class="cenario">
+<strong>Uma subtração de tamanhos dá um número gigante</strong>
+<p><strong>O que significa:</strong> <code>size_t</code> não tem negativo; <code>3 - 5</code> dá a volta para o maior valor menos 1.</p>
+<p><strong>Como consertar:</strong> compare antes (<code>if (tem &lt; precisa)</code>) ou faça a conta num tipo com sinal, de propósito.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Resultado (gcc, Linux 64 bits)</th><th>No editor (32 bits)</th></tr>
+<tr><td><code>sizeof(char)</code></td><td>1 (sempre)</td><td>1</td></tr>
+<tr><td><code>sizeof(short)</code></td><td>2</td><td>2</td></tr>
+<tr><td><code>sizeof(int)</code></td><td>4</td><td>4</td></tr>
+<tr><td><code>sizeof(long)</code></td><td>8</td><td><strong>4</strong></td></tr>
+<tr><td><code>sizeof(long long)</code></td><td>8</td><td>8</td></tr>
+<tr><td><code>sizeof(float)</code> / <code>sizeof(double)</code></td><td>4 / 8</td><td>4 / 8</td></tr>
+<tr><td><code>sizeof(long double)</code></td><td>16</td><td>16</td></tr>
+<tr><td><code>sizeof(bool)</code></td><td>1</td><td>1</td></tr>
+<tr><td><code>sizeof(int *)</code> (ponteiro)</td><td>8</td><td><strong>4</strong></td></tr>
+<tr><td><code>sizeof(size_t)</code></td><td>8</td><td><strong>4</strong></td></tr>
+<tr><td><code>sizeof 'A'</code></td><td>4 (é um <code>int</code>)</td><td>4</td></tr>
+<tr><td><code>sizeof "Ana"</code></td><td>4 (3 letras + <code>'\0'</code>)</td><td>4</td></tr>
+<tr><td><code>sizeof v</code> (array)</td><td>bytes do array inteiro</td><td>igual, se o tipo tiver o mesmo tamanho</td></tr>
+<tr><td><code>sizeof v / sizeof v[0]</code></td><td>quantidade de elementos</td><td>igual</td></tr>
+<tr><td><code>printf("%zu", sizeof x)</code></td><td>o formato certo para <code>size_t</code></td><td>igual</td></tr>
+</table>
+</div>
+
+<p>Mais limites e tamanhos em <a href="ref-tipos.html">Tipos e Limites</a>.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O formato</h3>
+<p>Complete com o formato certo para mostrar um <code>sizeof</code>:</p>
+<div class="ex-code">printf("<input data-answer="%zu" aria-label="formato">\n", sizeof(double));</div>
+</div>
+
+<div class="exercise">
+<h3>2. Contar elementos</h3>
+<p>Complete para calcular quantos elementos tem o array <code>idades</code>:</p>
+<div class="ex-code">size_t n = sizeof idades / <input data-answer="sizeof idades[0]|sizeof(idades[0])|sizeof(int)" aria-label="divisor">;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual destes tamanhos é igual em <strong>todo</strong> computador?</p>
+<label><input type="radio" name="q3"> <code>sizeof(int)</code></label>
+<label><input type="radio" name="q3"> <code>sizeof(long)</code></label>
+<label><input type="radio" name="q3"> <code>sizeof(char)</code></label>
+<label><input type="radio" name="q3"> <code>sizeof(int *)</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. <code>double medidas[6];</code> Quanto vale <code>sizeof medidas</code> (com <code>double</code> de 8 bytes)?</p>
+<label><input type="radio" name="q4"> 6</label>
+<label><input type="radio" name="q4"> 48</label>
+<label><input type="radio" name="q4"> 8</label>
+<label><input type="radio" name="q4"> 14</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. O mesmo programa mostra <code>sizeof(long)</code> = 8 no gcc do Linux e 4 no editor do guia. Por quê?</p>
+<label><input type="radio" name="q5"> O editor tem um erro</label>
+<label><input type="radio" name="q5"> O Clang e o gcc discordam sobre o C</label>
+<label><input type="radio" name="q5"> O <code>sizeof</code> mede em bits no editor</label>
+<label><input type="radio" name="q5"> O C não fixa o tamanho do <code>long</code>; cada sistema escolhe, e o WebAssembly do editor é de 32 bits</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Depois de <code>int x = 1; size_t t = sizeof(x = 50);</code>, quanto vale <code>x</code>?</p>
+<label><input type="radio" name="q6"> 1, porque o <code>sizeof</code> não executa a expressão</label>
+<label><input type="radio" name="q6"> 50</label>
+<label><input type="radio" name="q6"> 4</label>
+<label><input type="radio" name="q6"> Não compila</label>
+</div>
+
+<h3>Missão final: o estoque que se conta sozinho</h3>
+
+<div class="tryc" data-goal="out:Produtos: 5,out:Bytes dos preços: 40,src:sizeof\s*\(?\s*precos\s*\)?\s*/\s*sizeof,semaviso">
+<p class="try-task"><strong>Missão:</strong> a lojinha da Ana tinha 4 produtos, e o programa diz isso com um <code>4</code> escrito à mão. Chegou um produto novo, que custa <code>3.75</code>. Acrescente esse preço no array e troque os números escritos à mão por <code>sizeof</code>: a quantidade de produtos com a conta de elementos, e os bytes com <code>sizeof precos</code>. A saída deve mostrar <code>Produtos: 5</code> e <code>Bytes dos preços: 40</code>, sem avisos.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double precos[] = {4.50, 2.00, 7.25, 12.90};
+    int produtos = 4;
+    int bytes = 32;
+    printf("Produtos: %d\n", produtos);
+    printf("Bytes dos preços: %d\n", bytes);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double precos[] = {4.50, 2.00, 7.25, 12.90, 3.75};
+    size_t produtos = sizeof precos / sizeof precos[0];
+    size_t bytes = sizeof precos;
+    printf("Produtos: %zu\n", produtos);
+    printf("Bytes dos preços: %zu\n", bytes);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que a solução também trocou <code>int</code> por <code>size_t</code> e <code>%d</code> por <code>%zu</code>: é o tipo e o formato certos para tamanhos. Com <code>%d</code> e um <code>sizeof</code>, o compilador avisaria.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>sizeof</code> é um operador que diz quantos bytes ocupa um tipo ou uma variável. Para tipos, parênteses obrigatórios: <code>sizeof(int)</code>; para variáveis, opcionais: <code>sizeof x</code>.</li>
+  <li>O resultado é um <code>size_t</code> (inteiro sem sinal) e se mostra com <code>%zu</code>, nunca com <code>%d</code>.</li>
+  <li><code>sizeof(char)</code> é sempre 1; o resto depende do sistema. No gcc do Linux de 64 bits, <code>long</code>, ponteiro e <code>size_t</code> têm 8 bytes; no editor do guia (WebAssembly de 32 bits), têm 4.</li>
+  <li>O <code>sizeof</code> é resolvido na compilação e não executa a expressão. <code>sizeof 'A'</code> é 4 em C, e <code>sizeof "Ana"</code> é 4 (conta o <code>'\0'</code>).</li>
+  <li><code>sizeof v / sizeof v[0]</code> conta os elementos de um array, mas só onde o array foi criado: dentro de uma função que o recebeu, o <code>sizeof</code> mede um ponteiro.</li>
+  <li>Nunca suponha tamanhos: pergunte com <code>sizeof</code>, e use <code>&lt;stdint.h&gt;</code> quando precisar de um tamanho exato.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
