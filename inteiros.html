@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Inteiros — short, int, long, long long e unsigned | Guia C</title>
+<meta name="description" content="Inteiros em C para quem nunca programou: short, int, long, long long e unsigned, os limites de limits.h, por que long tem 8 bytes no gcc e 4 no editor, o estouro de unsigned (dá a volta, definido) e de int (comportamento indefinido), literais 0x, 0b e 1'000'000 do C23, com saídas reais do gcc 15 e missões.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Inteiros</span></h1>
+
+<p class="intro">Números inteiros estão em todo lugar: a quantidade de maçãs da lojinha, a idade de um cliente, os pontos de um jogo, os segundos de um cronômetro. O C tem uma <strong>família</strong> de tipos inteiros, de tamanhos diferentes, com e sem sinal. Nesta aula você vai conhecer cada um, descobrir até onde cada caixa vai e ver o que acontece quando uma conta passa do limite, um dos assuntos mais importantes (e perigosos) do C.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A família: <code>short</code>, <code>int</code>, <code>long</code>, <code>long long</code>, e a letra de cada um no <code>printf</code>.</li>
+  <li>Os limites de cada tipo, com <code>limits.h</code> (<code>INT_MAX</code>, <code>LLONG_MAX</code>…).</li>
+  <li>Por que o <code>long</code> tem 8 bytes no gcc do laboratório e 4 no editor do guia.</li>
+  <li><code>unsigned</code>: só positivos, e o que acontece com <code>3 - 5</code>.</li>
+  <li>Estouro (<em>overflow</em>): no <code>unsigned</code>, a conta dá a volta e isso é garantido; no <code>int</code>, é <strong>comportamento indefinido</strong>.</li>
+  <li>Como escrever inteiros: <code>0xFF</code>, <code>0b1010</code> e <code>1'000'000</code> <span class="versao">C23</span>, e a armadilha do zero à esquerda.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>, Linux 64 bits), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o hodômetro do carro</h2>
+<p>O hodômetro de um carro antigo tem 6 rodinhas: mostra de <code>000000</code> a <code>999999</code> quilômetros. Ele não consegue mostrar um milhão. Se o carro rodar mais 1 km depois de <code>999999</code>, as rodinhas voltam para <code>000000</code>.</p>
+<p>Os inteiros do computador são iguais: cada tipo tem um número fixo de "rodinhas" (bits), e por isso um <strong>maior valor</strong> e um <strong>menor valor</strong>. Para números maiores, você precisa de uma caixa com mais rodinhas. E o que acontece quando a conta passa do limite depende do tipo, como você vai ver na seção 4.</p>
+
+<hr>
+
+<h2>1. A família dos inteiros</h2>
+
+<pre class="file" data-file="familia.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    short pequeno = 1200;
+    int normal = 2000000;
+    long grande = 2000000000L;
+    long long enorme = 9000000000000LL;
+    unsigned int positivo = 4000000000U;
+    printf("short:     %hd\n", pequeno);
+    printf("int:       %d\n", normal);
+    printf("long:      %ld\n", grande);
+    printf("long long: %lld\n", enorme);
+    printf("unsigned:  %u\n", positivo);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra familia.c -o familia
+$ ./familia
+short:     1200
+int:       2000000
+long:      2000000000
+long long: 9000000000000
+unsigned:  4000000000</pre>
+
+<dl class="anatomy">
+  <dt>short</dt><dd>"Curto": inteiro pequeno. O nome completo é <code>short int</code>; quase ninguém escreve o <code>int</code>. No <code>printf</code>: <code>%hd</code> (<code>h</code> de <em>half</em>, "meio").</dd>
+  <dt>int</dt><dd>O inteiro padrão, o que o computador calcula mais à vontade. Na dúvida, use <code>int</code>. No <code>printf</code>: <code>%d</code>.</dd>
+  <dt>long … 2000000000L</dt><dd>"Longo". O <code>L</code> no fim do número diz "este literal é <code>long</code>". No <code>printf</code>: <code>%ld</code>.</dd>
+  <dt>long long … 9000000000000LL</dt><dd>"Longo longo" <span class="versao">C99</span>: o maior inteiro garantido, com pelo menos 64 bits. <code>LL</code> no número, <code>%lld</code> no <code>printf</code>.</dd>
+  <dt>unsigned int … 4000000000U</dt><dd>"Sem sinal": só zero e positivos (seção 3). <code>U</code> no número, <code>%u</code> no <code>printf</code>.</dd>
+</dl>
+
+<p>Todos estes tipos são, na verdade, <code>signed</code> ("com sinal") quando você não diz nada: <code>int</code> e <code>signed int</code> são a mesma coisa. Cada um tem a sua versão <code>unsigned</code>: <code>unsigned short</code> (<code>%hu</code>), <code>unsigned int</code> ou só <code>unsigned</code> (<code>%u</code>), <code>unsigned long</code> (<code>%lu</code>) e <code>unsigned long long</code> (<code>%llu</code>).</p>
+
+<hr>
+
+<h2>2. Os limites: <code>limits.h</code></h2>
+<p>O cabeçalho <code>limits.h</code> ("limites") traz o maior e o menor valor de cada tipo, com nomes em maiúsculas: <code>INT_MAX</code> (o máximo do <code>int</code>), <code>INT_MIN</code> (o mínimo), e assim por diante.</p>
+
+<pre class="file" data-file="limites.c">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+
+int main(void) {
+    printf("char:      %d a %d\n", CHAR_MIN, CHAR_MAX);
+    printf("short:     %d a %d\n", SHRT_MIN, SHRT_MAX);
+    printf("int:       %d a %d\n", INT_MIN, INT_MAX);
+    printf("long:      %ld a %ld\n", LONG_MIN, LONG_MAX);
+    printf("long long: %lld a %lld\n", LLONG_MIN, LLONG_MAX);
+    printf("unsigned:  0 a %u\n", UINT_MAX);
+    printf("unsigned long long: 0 a %llu\n", ULLONG_MAX);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra limites.c -o limites
+$ ./limites
+char:      -128 a 127
+short:     -32768 a 32767
+int:       -2147483648 a 2147483647
+long:      -9223372036854775808 a 9223372036854775807
+long long: -9223372036854775808 a 9223372036854775807
+unsigned:  0 a 4294967295
+unsigned long long: 0 a 18446744073709551615</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Bytes (gcc)</th><th>Faixa no gcc do laboratório</th><th>Em palavras</th></tr>
+<tr><td><code>short</code></td><td>2</td><td>-32 768 a 32 767</td><td>uns 32 mil</td></tr>
+<tr><td><code>int</code></td><td>4</td><td>-2 147 483 648 a 2 147 483 647</td><td>uns 2,1 bilhões</td></tr>
+<tr><td><code>long</code></td><td>8</td><td>-9 223 372 036 854 775 808 a 9 223 372 036 854 775 807</td><td>uns 9,2 quintilhões</td></tr>
+<tr><td><code>long long</code></td><td>8</td><td>igual ao <code>long</code> aqui</td><td>uns 9,2 quintilhões</td></tr>
+<tr><td><code>unsigned</code></td><td>4</td><td>0 a 4 294 967 295</td><td>uns 4,2 bilhões</td></tr>
+<tr><td><code>unsigned long long</code></td><td>8</td><td>0 a 18 446 744 073 709 551 615</td><td>uns 18 quintilhões</td></tr>
+</table>
+</div>
+
+<p>Repare que o lado negativo sempre tem um a mais (<code>-128</code> e <code>127</code>): o zero "ocupa" uma vaga do lado positivo. E o <code>unsigned</code> vai até o dobro, porque usa para os positivos as vagas que seriam dos negativos.</p>
+
+<h3>O <code>long</code> do gcc e o <code>long</code> do editor</h3>
+<p>Rode o mesmo <code>limites.c</code> no editor do guia e uma linha muda:</p>
+
+<pre class="term">long:      -2147483648 a 2147483647        « no editor: o long tem 4 bytes, igual ao int</pre>
+
+<p>Não é defeito. A norma do C só exige que o <code>long</code> tenha <strong>pelo menos</strong> 32 bits. Cada sistema escolhe:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sistema</th><th><code>int</code></th><th><code>long</code></th><th><code>long long</code></th></tr>
+<tr><td>Linux e macOS de 64 bits (o gcc do laboratório)</td><td>4</td><td><strong>8</strong></td><td>8</td></tr>
+<tr><td>Windows de 64 bits</td><td>4</td><td>4</td><td>8</td></tr>
+<tr><td>O editor do guia (WebAssembly de 32 bits)</td><td>4</td><td>4</td><td>8</td></tr>
+</table>
+</div>
+
+<p>Moral: <strong>não conte com o tamanho do <code>long</code></strong>. Para números que podem passar de 2 bilhões, use <code>long long</code>, que tem 8 bytes nos três. Quando o tamanho exato importa (arquivos, protocolos de rede), existem os tipos de tamanho fixo, como <code>int32_t</code> e <code>int64_t</code> (aula <a href="stdint.html">Inteiros de Tamanho Fixo</a>). As missões desta aula nunca dependem do tamanho do <code>long</code>.</p>
+
+<h3>Quando o valor não cabe na caixa</h3>
+<p>Escrever direto um número grande demais para o tipo gera um aviso, e o valor guardado é outro:</p>
+
+<pre class="file" data-file="naocabe.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int populacao = 8100000000;
+    short ano = 70000;
+    printf("%d %hd\n", populacao, ano);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra naocabe.c -o naocabe
+naocabe.c: In function ‘main’:
+naocabe.c:4:21: warning: overflow in conversion from ‘long int’ to ‘int’ changes value from ‘8100000000’ to ‘-489934592’ [-Woverflow]
+    4 |     int populacao = 8100000000;
+      |                     ^~~~~~~~~~
+naocabe.c:5:17: warning: overflow in conversion from ‘int’ to ‘short int’ changes value from ‘70000’ to ‘4464’ [-Woverflow]
+    5 |     short ano = 70000;
+      |                 ^~~~~
+$ ./naocabe
+-489934592 4464</pre>
+
+<dl class="anatomy">
+  <dt>overflow in conversion from ‘long int’ to ‘int’</dt><dd>"Estouro na conversão de <code>long</code> para <code>int</code>". O número 8100000000 não cabe num <code>int</code>, então o próprio literal já é <code>long</code> (o C escolhe o primeiro tipo em que ele cabe). Guardar num <code>int</code> obriga a cortar.</dd>
+  <dt>changes value from ‘8100000000’ to ‘-489934592’</dt><dd>"Muda o valor": o gcc até conta qual número vai sair. Sobraram só os 32 bits de baixo, que formam um número negativo sem nenhuma relação com a população do mundo.</dd>
+</dl>
+<p>O Clang do editor avisa o mesmo com outras palavras: <code>implicit conversion from 'long long' to 'int' changes value from 8100000000 to -489934592 [-Wconstant-conversion]</code> (lá o literal é <code>long long</code>, porque o <code>long</code> do editor é pequeno). Conserto: <code>long long populacao = 8'100'000'000;</code>.</p>
+
+<hr>
+
+<h2>3. <code>unsigned</code>: só positivos</h2>
+<p>Um <code>unsigned</code> não tem sinal: não guarda números negativos. Parece ótimo para quantidades ("estoque nunca é negativo"), mas veja o que acontece quando uma conta dá menos que zero:</p>
+
+<pre class="file" data-file="negativo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    unsigned int estoque = 3;
+    estoque = estoque - 5;
+    printf("Estoque: %u\n", estoque);
+    unsigned int menos_um = -1;
+    printf("menos_um: %u\n", menos_um);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra negativo.c -o negativo
+$ ./negativo
+Estoque: 4294967294      « 3 - 5 deu quase 4,3 bilhões
+menos_um: 4294967295     « e -1 virou o maior unsigned</pre>
+
+<p>Nenhum aviso, nem com <code>-Wall -Wextra</code>. O <code>unsigned</code> não "fica negativo": ele <strong>dá a volta</strong> por cima, como o hodômetro andando para trás. 3 - 5 = -2, que vira 4294967296 - 2 = 4294967294. Por isso o conselho da maioria dos guias de estilo é: use <code>int</code> para contas comuns, mesmo de coisas que "nunca são negativas", e deixe o <code>unsigned</code> para quando você realmente precisar dele (bits, tamanhos, aula <a href="operadores-bits.html">Operadores de Bits</a>).</p>
+
+<div class="tryc" data-goal="out:Estoque: -2,semaviso,src:\bint\s+estoque\b">
+<p class="try-task"><strong>Missão:</strong> a Ana tinha 3 cadernos e vendeu 5 (2 ficaram encomendados). O programa mostra um estoque de 4 bilhões! Troque o tipo de <code>estoque</code> para <code>int</code> (e a letra do <code>printf</code> para <code>%d</code>), para mostrar <code>Estoque: -2</code>: um número negativo que avisa que faltam 2 cadernos.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    unsigned int estoque = 3;
+    estoque = estoque - 5;
+    printf("Estoque: %u\n", estoque);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int estoque = 3;
+    estoque = estoque - 5;
+    printf("Estoque: %d\n", estoque);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Estouro: quando a conta passa do limite</h2>
+<p>Estouro (<em>overflow</em>, "transbordar") é quando o resultado de uma conta não cabe no tipo. Aqui o C trata os dois tipos de inteiro de jeitos <strong>muito</strong> diferentes.</p>
+
+<h3>Sem sinal (<code>unsigned</code>): dá a volta, e isso é garantido</h3>
+
+<pre class="file" data-file="volta.c">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+
+int main(void) {
+    unsigned int u = UINT_MAX;
+    printf("u     = %u\n", u);
+    u = u + 1;
+    printf("u + 1 = %u\n", u);
+    unsigned char c = 250;
+    for (int i = 0; i &lt; 8; i++) {
+        printf("%d ", c);
+        c = c + 1;
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra volta.c -o volta
+$ ./volta
+u     = 4294967295
+u + 1 = 0
+250 251 252 253 254 255 0 1 </pre>
+
+<p>O maior <code>unsigned</code> mais 1 é <code>0</code>, exatamente como o hodômetro. O <code>unsigned char</code> (1 byte, de 0 a 255) mostra isso devagar: 254, 255, <strong>0</strong>, 1. (O <code>for</code> só repete a linha 8 vezes; ele tem aula própria, <a href="for.html">for</a>.)</p>
+<p>A norma do C <strong>garante</strong> esse comportamento: contas com <code>unsigned</code> são feitas "módulo 2<sup>bits</sup>", ou seja, dão a volta. Todo compilador, em todo computador, dá o mesmo resultado. Não é um erro da linguagem; às vezes é justamente o que se quer (relógios, contadores circulares, cálculos de <em>hash</em>).</p>
+
+<h3>Com sinal (<code>int</code>, <code>long long</code>…): comportamento indefinido</h3>
+<p>Agora o mesmo com <code>int</code>:</p>
+
+<pre class="file" data-file="estouro.c">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+
+int main(void) {
+    int pontos = INT_MAX;
+    printf("pontos     = %d\n", pontos);
+    pontos = pontos + 1;
+    printf("pontos + 1 = %d\n", pontos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estouro.c -o estouro
+$ ./estouro
+pontos     = 2147483647
+pontos + 1 = -2147483648 « o jogador ficou com 2 bilhões de pontos negativos</pre>
+
+<p>Parece que deu a volta também. Mas, para o <code>int</code>, a norma diz que o estouro é <strong>comportamento indefinido</strong> (<em>undefined behavior</em>, UB): o programa está errado, e a linguagem não promete <em>nada</em> sobre o resultado. O <code>-2147483648</code> foi o que esta máquina fez desta vez. O gcc tem uma opção que vigia isso enquanto o programa roda, o <code>-fsanitize=undefined</code> ("sanitizar o indefinido"):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -fsanitize=undefined estouro.c -o estouro
+$ ./estouro
+pontos     = 2147483647
+estouro.c:7:12: runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'
+pontos + 1 = -2147483648</pre>
+
+<p><em>Runtime error: signed integer overflow</em> = "erro durante a execução: estouro de inteiro com sinal: 2147483647 + 1 não pode ser representado no tipo <code>int</code>". Ele aponta a linha 7 e a coluna 12, o <code>+</code>, e deixa o programa continuar. (Os sanitizers têm aula própria, <a href="sanitizers.html">Sanitizers</a>, e não funcionam no editor do guia.)</p>
+
+<h3>Por que "indefinido" é pior do que "dá a volta"</h3>
+<p>Como o estouro de <code>int</code> "não pode acontecer" num programa correto, o compilador tem o direito de <strong>supor</strong> que ele nunca acontece. Veja uma função que tenta descobrir se ainda cabe mais um:</p>
+
+<pre class="file" data-file="otimiza.c">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+
+int cabe_mais_um(int x) {
+    return x + 1 &gt; x;
+}
+
+int main(void) {
+    printf("%d\n", cabe_mais_um(10));
+    printf("%d\n", cabe_mais_um(INT_MAX));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra otimiza.c -o otimiza
+$ ./otimiza
+1
+1                        « INT_MAX + 1 &gt; INT_MAX? o gcc diz que sim</pre>
+
+<p>Se a conta desse a volta, <code>INT_MAX + 1</code> seria <code>-2147483648</code>, e a resposta seria <code>0</code> (falso). Mas o gcc raciocinou assim: "<code>x + 1</code> é sempre maior que <code>x</code>, porque estouro não existe" e trocou a conta inteira por <code>1</code>. No editor do guia, o Clang compilou a conta de verdade e mostrou <code>1</code> e <code>0</code>. Dois compiladores, duas respostas, e os dois estão "certos": com comportamento indefinido, qualquer resultado vale. A aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a> mostra outros casos.</p>
+
+<div class="warning">
+<strong>Regra: nunca deixe um inteiro com sinal estourar</strong>
+<p>Escolha um tipo grande o bastante (<code>long long</code> para valores que passam de 2 bilhões) e, quando o valor vem de fora (do teclado, de um arquivo), confira <strong>antes</strong> da conta se ela cabe: <code>if (x &lt; INT_MAX) x = x + 1;</code>. Para testar seus programas, compile de vez em quando com <code>-fsanitize=undefined</code>.</p>
+</div>
+
+<h3>O estouro escondido na conta</h3>
+<p>Uma armadilha clássica: guardar o resultado num tipo grande não basta, se a conta foi feita num tipo pequeno.</p>
+
+<pre class="file" data-file="segundos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int anos = 100;
+    long long segundos = anos * 365 * 24 * 60 * 60;
+    printf("Segundos em %d anos: %lld\n", anos, segundos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra segundos.c -o segundos
+$ ./segundos
+Segundos em 100 anos: -1141367296</pre>
+
+<p>A caixa <code>segundos</code> é <code>long long</code>, mas a conta <code>anos * 365 * 24 * 60 * 60</code> só tem <code>int</code>, então é feita em <code>int</code>. O resultado certo (3 153 600 000) passa de <code>INT_MAX</code>: estourou <strong>antes</strong> de chegar na caixa. Nem o gcc nem o Clang avisaram, porque <code>anos</code> é uma variável. Para a conta ser feita em <code>long long</code>, pelo menos um dos números tem de ser <code>long long</code> desde o começo: <code>long long anos = 100;</code> ou <code>anos * 365LL * …</code>. A missão final é sobre isso.</p>
+
+<hr>
+
+<h2>5. Como escrever números inteiros (literais)</h2>
+
+<pre class="file" data-file="literais.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int decimal = 255;
+    int hexa = 0xFF;
+    int binario = 0b11111111;
+    int octal = 0377;
+    int milhao = 1'000'000;
+    printf("%d %d %d %d %d\n", decimal, hexa, binario, octal, milhao);
+    int cep_errado = 010;
+    printf("010 vale %d\n", cep_errado);
+    printf("%x %X %o\n", 255, 255, 255);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra literais.c -o literais
+$ ./literais
+255 255 255 255 1000000
+010 vale 8
+ff FF 377</pre>
+
+<dl class="anatomy">
+  <dt>255</dt><dd>Decimal, base 10, o jeito de sempre.</dd>
+  <dt>0xFF</dt><dd><strong>Hexadecimal</strong>, base 16: começa com <code>0x</code> e usa os dígitos 0 a 9 e A a F (A = 10 … F = 15). <code>FF</code> = 15 × 16 + 15 = 255. Muito usado para cores (<code>#FF8000</code>) e endereços de memória.</dd>
+  <dt>0b11111111</dt><dd><strong>Binário</strong>, base 2 <span class="versao">C23</span>: começa com <code>0b</code> e só usa 0 e 1. Oito 1s = 255. Antes do C23 era uma extensão do gcc e do Clang.</dd>
+  <dt>0377</dt><dd><strong>Octal</strong>, base 8: qualquer número que começa com <code>0</code>! 3 × 64 + 7 × 8 + 7 = 255.</dd>
+  <dt>1'000'000</dt><dd>Separador de dígitos <span class="versao">C23</span>: os apóstrofos só ajudam a ler e são ignorados. Funciona em qualquer base: <code>0b1111'0000</code>.</dd>
+  <dt>010 vale 8</dt><dd>A <strong>armadilha</strong>: o zero à esquerda transforma o número em octal. Nunca escreva <code>010</code> querendo dez. (É mais um motivo para guardar CEP e telefone como texto.)</dd>
+  <dt>%x %X %o</dt><dd>O <code>printf</code> também mostra em hexadecimal (<code>%x</code> minúsculo, <code>%X</code> maiúsculo) e em octal (<code>%o</code>). O C23 criou o <code>%b</code>, para binário: no laboratório, <code>printf("%b\n", 10)</code> mostra <code>1010</code>, mas a biblioteca do editor do guia ainda não o conhece e não mostra nada. Veja <a href="formatos-printf.html">Formatos do printf</a>.</dd>
+</dl>
+
+<p>Pedindo o C17 com <code>-Wpedantic</code>, o gcc lembra que essas duas escritas são novas, e o separador nem compila:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c17 -Wall -Wextra -Wpedantic literais.c -o literais
+literais.c: In function ‘main’:
+literais.c:6:19: warning: binary constants are a C23 feature or GCC extension [-Wpedantic]
+    6 |     int binario = 0b11111111;
+      |                   ^~~~~~~~~~
+literais.c:8:19: warning: multi-character character constant [-Wmultichar]
+    8 |     int milhao = 1'000'000;
+      |                   ^~~~~
+literais.c:8:19: error: expected ‘,’ or ‘;’ before '\x303030'</pre>
+
+<p>No C17, o apóstrofo abre um <strong>caractere</strong> (como <code>'A'</code>), e o gcc leu <code>'000'</code> como um caractere estranho de três letras. Se você vir esse erro em código moderno, o compilador está num padrão antigo.</p>
+
+<h3>Sufixos: o tipo do literal</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sufixo</th><th>Tipo</th><th>Exemplo</th></tr>
+<tr><td>(nenhum)</td><td><code>int</code> (ou maior, se não couber)</td><td><code>42</code></td></tr>
+<tr><td><code>U</code> ou <code>u</code></td><td><code>unsigned int</code></td><td><code>42U</code></td></tr>
+<tr><td><code>L</code> ou <code>l</code></td><td><code>long</code></td><td><code>42L</code> (prefira o <code>L</code> maiúsculo: <code>l</code> parece <code>1</code>)</td></tr>
+<tr><td><code>LL</code></td><td><code>long long</code></td><td><code>42LL</code></td></tr>
+<tr><td><code>UL</code>, <code>ULL</code></td><td><code>unsigned long</code>, <code>unsigned long long</code></td><td><code>42ULL</code></td></tr>
+</table>
+</div>
+
+<div class="tryc" data-goal="out:R=255 G=128 B=0,src:0[xX]80\b,src:0[xX][fF]{2}\b">
+<p class="try-task"><strong>Missão:</strong> a cor laranja do site da lojinha é <code>#FF8000</code>: vermelho <code>FF</code>, verde <code>80</code> e azul <code>00</code>, em hexadecimal. Escreva os valores de <code>r</code> e <code>g</code> como literais hexadecimais (com <code>0x</code>) para o programa mostrar <code>R=255 G=128 B=0</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int r = 0;
+    int g = 0;
+    int b = 0x00;
+    printf("R=%d G=%d B=%d\n", r, g, b);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int r = 0xFF;
+    int g = 0x80;
+    int b = 0x00;
+    printf("R=%d G=%d B=%d\n", r, g, b);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: overflow in conversion from ‘long int’ to ‘int’ changes value…</code></strong>
+<p><strong>O que significa:</strong> o número escrito não cabe no tipo da variável. O valor guardado será outro (o gcc diz qual). No Clang: <code>implicit conversion … changes value [-Wconstant-conversion]</code>.</p>
+<p><strong>Como consertar:</strong> use um tipo maior, em geral <code>long long</code> (com <code>%lld</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: integer overflow in expression of type ‘int’ results in ‘-2147483648’</code></strong>
+<p><strong>O que significa:</strong> uma conta só com valores fixos (como <code>INT_MAX + 1</code>) estoura, e o gcc percebeu na hora de compilar:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra constante.c -o constante
+constante.c: In function ‘main’:
+constante.c:5:21: warning: integer overflow in expression of type ‘int’ results in ‘-2147483648’ [-Woverflow]
+    5 |     int x = INT_MAX + 1;
+      |                     ^</pre>
+<p><strong>Como consertar:</strong> faça a conta num tipo maior (<code>INT_MAX + 1LL</code>, guardado num <code>long long</code>). O Clang diz <code>overflow in expression; result is -2'147'483'648 with type 'int' [-Winteger-overflow]</code>. Com variáveis, nenhum dos dois avisa: aí só o <code>-fsanitize=undefined</code> pega.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma quantidade "nunca negativa" virou 4294967294</strong>
+<p><strong>O que significa:</strong> uma conta com <code>unsigned</code> deu menos que zero e deu a volta. Nenhum aviso aparece.</p>
+<p><strong>Como consertar:</strong> use <code>int</code> (ou <code>long long</code>) para contas; confira <code>if (a &gt;= b)</code> antes de fazer <code>a - b</code> com <code>unsigned</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O resultado de uma conta grande saiu negativo</strong>
+<p><strong>O que significa:</strong> estouro de inteiro com sinal, muitas vezes escondido numa conta feita em <code>int</code> e guardada em <code>long long</code>.</p>
+<p><strong>Como consertar:</strong> faça pelo menos um operando ser <code>long long</code> desde o início (<code>365LL</code> ou uma variável <code>long long</code>). Teste com <code>-fsanitize=undefined</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>010</code> mostra 8</strong>
+<p><strong>O que significa:</strong> número com zero à esquerda é octal (base 8).</p>
+<p><strong>Como consertar:</strong> tire o zero. Se os zeros à esquerda fazem parte do dado (CEP, código de barras), guarde como texto.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th><code>printf</code></th><th>Máximo (<code>limits.h</code>)</th><th>Bytes gcc / editor</th></tr>
+<tr><td><code>short</code></td><td><code>%hd</code></td><td><code>SHRT_MAX</code> = 32767</td><td>2 / 2</td></tr>
+<tr><td><code>unsigned short</code></td><td><code>%hu</code></td><td><code>USHRT_MAX</code> = 65535</td><td>2 / 2</td></tr>
+<tr><td><code>int</code></td><td><code>%d</code></td><td><code>INT_MAX</code> = 2147483647</td><td>4 / 4</td></tr>
+<tr><td><code>unsigned int</code></td><td><code>%u</code></td><td><code>UINT_MAX</code> = 4294967295</td><td>4 / 4</td></tr>
+<tr><td><code>long</code></td><td><code>%ld</code></td><td><code>LONG_MAX</code> (depende do sistema)</td><td>8 / 4</td></tr>
+<tr><td><code>unsigned long</code></td><td><code>%lu</code></td><td><code>ULONG_MAX</code> (depende do sistema)</td><td>8 / 4</td></tr>
+<tr><td><code>long long</code></td><td><code>%lld</code></td><td><code>LLONG_MAX</code> = 9223372036854775807</td><td>8 / 8</td></tr>
+<tr><td><code>unsigned long long</code></td><td><code>%llu</code></td><td><code>ULLONG_MAX</code> = 18446744073709551615</td><td>8 / 8</td></tr>
+<tr><td colspan="4">Literais: <code>255</code>, <code>0xFF</code>, <code>0b1111'1111</code> <span class="versao">C23</span>, <code>0377</code> (octal), <code>1'000'000</code> <span class="versao">C23</span>, sufixos <code>U</code>, <code>L</code>, <code>LL</code>.</td></tr>
+<tr><td colspan="4">Estouro: <code>unsigned</code> dá a volta (definido); com sinal é comportamento indefinido.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A letra do long long</h3>
+<p>Complete o formato para mostrar um <code>long long</code>:</p>
+<div class="ex-code">printf("<input data-answer="%lld|%lli" aria-label="formato">\n", habitantes);</div>
+</div>
+
+<div class="exercise">
+<h3>2. O máximo do int</h3>
+<p>Qual é o nome, em <code>limits.h</code>, do maior valor que um <code>int</code> guarda?</p>
+<div class="ex-code"><input data-answer="INT_MAX" aria-label="nome"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. <code>unsigned int u = 0; u = u - 1;</code> Quanto vale <code>u</code> no gcc do laboratório?</p>
+<label><input type="radio" name="q3"> -1</label>
+<label><input type="radio" name="q3"> 4294967295: o <code>unsigned</code> dá a volta, e isso é garantido</label>
+<label><input type="radio" name="q3"> 0</label>
+<label><input type="radio" name="q3"> Comportamento indefinido</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. E <code>int x = INT_MAX; x = x + 1;</code>?</p>
+<label><input type="radio" name="q4"> Sempre -2147483648</label>
+<label><input type="radio" name="q4"> Sempre 0</label>
+<label><input type="radio" name="q4"> Erro de compilação</label>
+<label><input type="radio" name="q4"> Comportamento indefinido: a linguagem não promete nenhum resultado</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Quanto vale <code>012</code> em C?</p>
+<label><input type="radio" name="q5"> 12</label>
+<label><input type="radio" name="q5"> 18</label>
+<label><input type="radio" name="q5"> 10, porque o zero à esquerda faz o número ser octal</label>
+<label><input type="radio" name="q5"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Você precisa guardar 5 bilhões e quer que funcione igual no Linux, no Windows e no editor do guia. Qual tipo?</p>
+<label><input type="radio" name="q6"> <code>long long</code></label>
+<label><input type="radio" name="q6"> <code>long</code></label>
+<label><input type="radio" name="q6"> <code>int</code></label>
+<label><input type="radio" name="q6"> <code>unsigned int</code></label>
+</div>
+
+<h3>Missão final: quantos segundos tem um século?</h3>
+
+<div class="tryc" data-goal="out:Segundos em 100 anos: 3153600000,semaviso">
+<p class="try-task"><strong>Missão:</strong> o programa calcula quantos segundos existem em 100 anos (de 365 dias), mas mostra um número negativo: a conta estoura o <code>int</code> antes de chegar na caixa <code>long long</code>. Conserte para mostrar <code>Segundos em 100 anos: 3153600000</code>. Dica: basta mudar o tipo de <code>anos</code> (e a letra do <code>printf</code> que mostra <code>anos</code>).</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int anos = 100;
+    long long segundos = anos * 365 * 24 * 60 * 60;
+    printf("Segundos em %d anos: %lld\n", anos, segundos);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    long long anos = 100;
+    long long segundos = anos * 365 * 24 * 60 * 60;
+    printf("Segundos em %lld anos: %lld\n", anos, segundos);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Outra solução que funciona: deixar <code>anos</code> como <code>int</code> e escrever <code>anos * 365LL * 24 * 60 * 60</code>. Assim que um número da conta é <code>long long</code>, o resto da conta é feita em <code>long long</code> (as regras exatas estão em <a href="conversao-tipos.html">Conversão de Tipos</a>).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Família: <code>short</code> (<code>%hd</code>), <code>int</code> (<code>%d</code>), <code>long</code> (<code>%ld</code>), <code>long long</code> (<code>%lld</code>), cada um com versão <code>unsigned</code> (<code>%hu</code>, <code>%u</code>, <code>%lu</code>, <code>%llu</code>). Na dúvida, <code>int</code>.</li>
+  <li><code>limits.h</code> traz os limites: <code>INT_MAX</code> = 2147483647, <code>LLONG_MAX</code> ≈ 9,2 quintilhões.</li>
+  <li>O <code>long</code> tem 8 bytes no gcc do Linux 64 bits e 4 no editor e no Windows. Para valores grandes em qualquer lugar, <code>long long</code>.</li>
+  <li><code>unsigned</code> não guarda negativos: <code>3 - 5</code> dá 4294967294. Use <code>int</code> para contas comuns.</li>
+  <li>Estouro de <code>unsigned</code> dá a volta (garantido). Estouro de inteiro com sinal é comportamento indefinido: o compilador pode supor que nunca acontece. <code>-fsanitize=undefined</code> ajuda a achar.</li>
+  <li>Uma conta só com <code>int</code> é feita em <code>int</code>, mesmo que o resultado vá para um <code>long long</code>.</li>
+  <li>Literais: <code>0xFF</code> (hexa), <code>0b1010</code> e <code>1'000'000</code> <span class="versao">C23</span>, e cuidado: <code>010</code> é octal (8).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
