@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Tipos e Limites — tamanhos, limits.h, float.h e stdint.h | Guia C</title>
+<meta name="description" content="Referência dos tipos do C: o tamanho real de cada tipo no gcc 15 (Linux de 64 bits) e no editor do guia (WebAssembly de 32 bits), os limites do limits.h (INT_MAX, LONG_MAX…), do float.h (DBL_EPSILON, FLT_DIG…) e do stdint.h (int32_t, INT64_MAX, SIZE_MAX…), o tipo de cada literal, conversões, estouros e os erros mais comuns.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Tipos e Limites</span></h1>
+
+<p class="intro">Esta é a página de consulta rápida dos tipos do C: <strong>quantos bytes</strong> cada um ocupa, o <strong>menor e o maior valor</strong> que cabe nele, o tipo de cada número escrito no código e o que acontece quando um valor não cabe. O C não fixa quase nenhum tamanho: ele muda de máquina para máquina. Por isso, cada tabela mostra os valores medidos em duas máquinas diferentes, o gcc da Ana e o editor do guia. Para aprender com calma, veja as aulas <a href="tipos-dados.html">Tipos de Dados</a>, <a href="inteiros.html">Inteiros</a>, <a href="ponto-flutuante.html">float e double</a>, <a href="sizeof.html">sizeof</a> e <a href="stdint.html">stdint.h</a>.</p>
+
+<dl class="anatomy">
+  <dt>gcc 15.2 da Ana</dt><dd>Linux de <strong>64 bits</strong> num processador x86-64 (Intel/AMD), com a glibc. Pasta <code>~/c/ref</code>, comando <code>gcc -std=c23 -Wall -Wextra</code>. É como a maioria dos computadores com Linux e macOS.</dd>
+  <dt>Editor do guia</dt><dd>Clang 22 gerando <strong>WebAssembly de 32 bits</strong> (wasm32), com a wasi-libc. Aqui, <code>long</code>, ponteiros e <code>size_t</code> têm 4 bytes, como nos computadores de 32 bits de antigamente.</dd>
+</dl>
+
+<p>Atalhos: <a href="#tamanhos">Tamanhos (sizeof)</a> · <a href="#limits">limits.h</a> · <a href="#stdint">stdint.h</a> · <a href="#float">float.h</a> · <a href="#literais">O tipo dos literais</a> · <a href="#conversoes">Conversões e estouros</a> · <a href="#diferencas">Editor × gcc</a> · <a href="#erros">Erros comuns</a> · <a href="#experimente">Experimente</a></p>
+
+<hr>
+
+<h2 id="tamanhos">Tamanhos: <code>sizeof</code> e <code>alignof</code></h2>
+<p><code>sizeof(T)</code> dá o tamanho do tipo em bytes; <code>alignof(T)</code> <span class="versao">C23</span> (no C11, <code>_Alignof</code>) dá o <strong>alinhamento</strong>: o endereço de uma variável desse tipo é sempre múltiplo desse número. Medidos com este programa:</p>
+<pre class="file" data-file="tamanhos.c">#include &lt;stdio.h&gt;
+#include &lt;stddef.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;wchar.h&gt;
+#include &lt;uchar.h&gt;
+
+#define MOSTRA(T) printf("%-20s %2zu %2zu\n", #T, sizeof(T), alignof(T))
+
+int main(void) {
+    printf("%-20s %2s %2s\n", "tipo", "sz", "al");
+    MOSTRA(char);
+    MOSTRA(bool);
+    MOSTRA(short);
+    MOSTRA(int);
+    MOSTRA(long);
+    MOSTRA(long long);
+    MOSTRA(float);
+    MOSTRA(double);
+    MOSTRA(long double);
+    MOSTRA(void *);
+    MOSTRA(int (*)(void));
+    MOSTRA(size_t);
+    MOSTRA(ptrdiff_t);
+    MOSTRA(intptr_t);
+    MOSTRA(intmax_t);
+    MOSTRA(max_align_t);
+    MOSTRA(wchar_t);
+    MOSTRA(char8_t);
+    MOSTRA(char16_t);
+    MOSTRA(char32_t);
+    MOSTRA(nullptr_t);
+    MOSTRA(_BitInt(7));
+    MOSTRA(_BitInt(100));
+    MOSTRA(int_least8_t);
+    MOSTRA(int_fast8_t);
+    MOSTRA(int_fast16_t);
+    MOSTRA(int_fast32_t);
+    MOSTRA(int_fast64_t);
+    printf("char tem sinal? %s\n", (char)-1 &lt; 0 ? "sim" : "não");
+    printf("wchar_t tem sinal? %s\n", (wchar_t)-1 &lt; 0 ? "sim" : "não");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra tamanhos.c -o tamanhos
+$ ./tamanhos
+tipo                 sz al
+char                  1  1
+bool                  1  1
+short                 2  2
+int                   4  4
+long                  8  8
+long long             8  8
+float                 4  4
+double                8  8
+long double          16 16
+void *                8  8
+int (*)(void)         8  8
+size_t                8  8
+ptrdiff_t             8  8
+intptr_t              8  8
+intmax_t              8  8
+max_align_t          32 16
+wchar_t               4  4
+char8_t               1  1
+char16_t              2  2
+char32_t              4  4
+nullptr_t             8  8
+_BitInt(7)            1  1
+_BitInt(100)         16  8
+int_least8_t          1  1
+int_fast8_t           1  1
+int_fast16_t          8  8
+int_fast32_t          8  8
+int_fast64_t          8  8
+char tem sinal? sim
+wchar_t tem sinal? sim</pre>
+<p>No editor, o <code>char8_t</code> não existe (<code>error: use of undeclared identifier 'char8_t'</code>: a <code>&lt;uchar.h&gt;</code> da wasi-libc ainda não o tem). Sem essa linha, o programa roda, e as diferenças estão na tabela.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>gcc (x86-64)<br>bytes / alinh.</th><th>Editor (wasm32)<br>bytes / alinh.</th><th>O C garante</th><th><code>printf</code></th><th>Aula</th></tr>
+<tr><td><code>char</code>, <code>signed char</code>, <code>unsigned char</code></td><td>1 / 1</td><td>1 / 1</td><td>exatamente 1 byte (o byte tem <code>CHAR_BIT</code> = 8 bits)</td><td><code>%c</code>, <code>%hhd</code></td><td><a href="char.html">char</a></td></tr>
+<tr><td><code>bool</code> <span class="versao">C23</span></td><td>1 / 1</td><td>1 / 1</td><td>guarda 0 ou 1</td><td><code>%d</code></td><td><a href="bool.html">bool</a></td></tr>
+<tr><td><code>short</code></td><td>2 / 2</td><td>2 / 2</td><td>pelo menos 16 bits</td><td><code>%hd</code></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>int</code></td><td>4 / 4</td><td>4 / 4</td><td>pelo menos 16 bits</td><td><code>%d</code></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>long</code></td><td><strong>8</strong> / 8</td><td><strong>4</strong> / 4</td><td>pelo menos 32 bits</td><td><code>%ld</code></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>long long</code> <span class="versao">C99</span></td><td>8 / 8</td><td>8 / 8</td><td>pelo menos 64 bits</td><td><code>%lld</code></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>float</code></td><td>4 / 4</td><td>4 / 4</td><td>(quase sempre IEEE 754, 32 bits)</td><td><code>%f</code></td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+<tr><td><code>double</code></td><td>8 / 8</td><td>8 / 8</td><td>(quase sempre IEEE 754, 64 bits)</td><td><code>%f</code> (no <code>scanf</code>, <code>%lf</code>)</td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+<tr><td><code>long double</code></td><td>16 / 16 (usa 10: 64 bits de mantissa)</td><td>16 / 16 (usa todos: 113 bits de mantissa)</td><td>pelo menos a precisão do <code>double</code></td><td><code>%Lf</code> (no editor, <a href="ref-printf.html#tamanho">veja o aviso</a>)</td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+<tr><td>ponteiros (<code>void *</code>, <code>int *</code>, <code>int (*)(void)</code>)</td><td><strong>8</strong> / 8</td><td><strong>4</strong> / 4</td><td>nada</td><td><code>%p</code></td><td><a href="ponteiros.html">Ponteiros</a></td></tr>
+<tr><td><code>size_t</code> (sem sinal), <code>ptrdiff_t</code> (com sinal)</td><td><strong>8</strong> / 8</td><td><strong>4</strong> / 4</td><td>cabe o tamanho de qualquer objeto</td><td><code>%zu</code>, <code>%td</code></td><td><a href="sizeof.html">sizeof</a></td></tr>
+<tr><td><code>intptr_t</code>, <code>uintptr_t</code></td><td>8 / 8</td><td>4 / 4</td><td>cabe um ponteiro</td><td><code>PRIdPTR</code></td><td><a href="stdint.html">stdint.h</a></td></tr>
+<tr><td><code>intmax_t</code>, <code>uintmax_t</code></td><td>8 / 8</td><td>8 / 8</td><td>o maior inteiro</td><td><code>%jd</code>, <code>%ju</code></td><td><a href="stdint.html">stdint.h</a></td></tr>
+<tr><td><code>max_align_t</code> <span class="versao">C11</span></td><td>32 / 16</td><td>32 / 16</td><td>o maior alinhamento comum (o do <code>malloc</code>)</td><td>—</td><td><a href="malloc-free.html">malloc e free</a></td></tr>
+<tr><td><code>wchar_t</code></td><td>4 / 4</td><td>4 / 4</td><td>cabe qualquer caractere do sistema</td><td><code>%lc</code>, <code>%ls</code></td><td><a href="acentos-utf8.html">Acentos e UTF-8</a></td></tr>
+<tr><td><code>char8_t</code> <span class="versao">C23</span>, <code>char16_t</code>, <code>char32_t</code> <span class="versao">C11</span></td><td>1, 2, 4</td><td>(não existe), 2, 4</td><td>pedaços de UTF-8, UTF-16, UTF-32</td><td>—</td><td><a href="acentos-utf8.html">Acentos e UTF-8</a></td></tr>
+<tr><td><code>nullptr_t</code> <span class="versao">C23</span></td><td>8 / 8</td><td>4 / 4</td><td>o tipo do <code>nullptr</code> (em <code>&lt;stddef.h&gt;</code>)</td><td>—</td><td><a href="ponteiro-nulo.html">Ponteiro Nulo</a></td></tr>
+<tr><td><code>_BitInt(N)</code> <span class="versao">C23</span></td><td><code>_BitInt(7)</code>: 1 / 1; <code>_BitInt(100)</code>: 16 / 8</td><td>igual</td><td>um inteiro de exatamente <code>N</code> bits (até <code>BITINT_MAXWIDTH</code>)</td><td>—</td><td><a href="novidades.html">Novidades</a></td></tr>
+<tr><td><code>int_fast16_t</code>, <code>int_fast32_t</code></td><td>8, 8</td><td>2, 4</td><td>"o mais rápido com pelo menos N bits"</td><td><code>PRIdFAST16</code></td><td><a href="stdint.html">stdint.h</a></td></tr>
+<tr><td><code>struct</code></td><td colspan="2">a soma dos campos, <strong>mais</strong> os buracos de alinhamento</td><td>nada</td><td>—</td><td><a href="structs.html">Structs</a></td></tr>
+</table>
+</div>
+
+<ul>
+  <li><strong><code>char</code> com ou sem sinal:</strong> nos dois, <code>char</code> sozinho tem sinal (vai de −128 a 127). Em processadores ARM (celulares, Raspberry Pi), ele costuma não ter (0 a 255). Para bytes, use <code>unsigned char</code> ou <code>uint8_t</code>.</li>
+  <li><strong>Os unsigned</strong> (<code>unsigned short</code>, <code>unsigned int</code>…) têm o mesmo tamanho do tipo com sinal.</li>
+  <li><strong>Só <code>long</code>, ponteiros e os tipos ligados a eles</strong> (<code>size_t</code>, <code>ptrdiff_t</code>, <code>intptr_t</code>, <code>nullptr_t</code>) mudam entre as duas máquinas. Se você precisa de um tamanho exato, use os tipos do <code>stdint.h</code>.</li>
+</ul>
+
+<h2 id="limits">limits.h: o menor e o maior valor de cada inteiro</h2>
+<pre class="file" data-file="limites.c">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+
+int main(void) {
+    printf("CHAR_BIT   = %d\n", CHAR_BIT);
+    printf("SCHAR_MIN  = %d\n", SCHAR_MIN);
+    printf("SCHAR_MAX  = %d\n", SCHAR_MAX);
+    printf("UCHAR_MAX  = %d\n", UCHAR_MAX);
+    printf("CHAR_MIN   = %d\n", CHAR_MIN);
+    printf("CHAR_MAX   = %d\n", CHAR_MAX);
+    printf("SHRT_MIN   = %d\n", SHRT_MIN);
+    printf("SHRT_MAX   = %d\n", SHRT_MAX);
+    printf("USHRT_MAX  = %d\n", USHRT_MAX);
+    printf("INT_MIN    = %d\n", INT_MIN);
+    printf("INT_MAX    = %d\n", INT_MAX);
+    printf("UINT_MAX   = %u\n", UINT_MAX);
+    printf("LONG_MIN   = %ld\n", LONG_MIN);
+    printf("LONG_MAX   = %ld\n", LONG_MAX);
+    printf("ULONG_MAX  = %lu\n", ULONG_MAX);
+    printf("LLONG_MIN  = %lld\n", LLONG_MIN);
+    printf("LLONG_MAX  = %lld\n", LLONG_MAX);
+    printf("ULLONG_MAX = %llu\n", ULLONG_MAX);
+    printf("BOOL_WIDTH = %d, CHAR_WIDTH = %d, SHRT_WIDTH = %d, INT_WIDTH = %d\n", BOOL_WIDTH, CHAR_WIDTH, SHRT_WIDTH, INT_WIDTH);
+    printf("LONG_WIDTH = %d, LLONG_WIDTH = %d\n", LONG_WIDTH, LLONG_WIDTH);
+    printf("BITINT_MAXWIDTH = %llu\n", (unsigned long long)BITINT_MAXWIDTH);
+    printf("MB_LEN_MAX = %d\n", MB_LEN_MAX);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Macro</th><th>gcc 15 (x86-64)</th><th>Editor (wasm32)</th><th>Aula</th></tr>
+<tr><td><code>CHAR_BIT</code></td><td><code>8</code></td><td><code>8</code></td><td><a href="operadores-bits.html">Bits</a></td></tr>
+<tr><td><code>SCHAR_MIN</code>, <code>SCHAR_MAX</code></td><td><code>-128</code>, <code>127</code></td><td>igual</td><td><a href="char.html">char</a></td></tr>
+<tr><td><code>UCHAR_MAX</code></td><td><code>255</code></td><td>igual</td><td><a href="char.html">char</a></td></tr>
+<tr><td><code>CHAR_MIN</code>, <code>CHAR_MAX</code></td><td><code>-128</code>, <code>127</code> (o <code>char</code> tem sinal)</td><td>igual</td><td><a href="char.html">char</a></td></tr>
+<tr><td><code>SHRT_MIN</code>, <code>SHRT_MAX</code></td><td><code>-32768</code>, <code>32767</code></td><td>igual</td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>USHRT_MAX</code></td><td><code>65535</code></td><td>igual</td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>INT_MIN</code>, <code>INT_MAX</code></td><td><code>-2147483648</code>, <code>2147483647</code> (cerca de ±2,1 bilhões)</td><td>igual</td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>UINT_MAX</code></td><td><code>4294967295</code></td><td>igual</td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>LONG_MIN</code>, <code>LONG_MAX</code></td><td><code>-9223372036854775808</code>, <code>9223372036854775807</code></td><td><strong><code>-2147483648</code>, <code>2147483647</code></strong></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>ULONG_MAX</code></td><td><code>18446744073709551615</code></td><td><strong><code>4294967295</code></strong></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>LLONG_MIN</code>, <code>LLONG_MAX</code></td><td><code>-9223372036854775808</code>, <code>9223372036854775807</code> (cerca de ±9,2 quintilhões)</td><td>igual</td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>ULLONG_MAX</code></td><td><code>18446744073709551615</code></td><td>igual</td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>BOOL_WIDTH</code>, <code>CHAR_WIDTH</code>, <code>SHRT_WIDTH</code>, <code>INT_WIDTH</code> <span class="versao">C23</span></td><td><code>1</code>, <code>8</code>, <code>16</code>, <code>32</code> (bits)</td><td>igual</td><td><a href="novidades.html">Novidades</a></td></tr>
+<tr><td><code>LONG_WIDTH</code>, <code>LLONG_WIDTH</code> <span class="versao">C23</span></td><td><code>64</code>, <code>64</code></td><td><strong><code>32</code></strong>, <code>64</code></td><td><a href="novidades.html">Novidades</a></td></tr>
+<tr><td><code>BITINT_MAXWIDTH</code> <span class="versao">C23</span></td><td><code>65535</code></td><td><strong><code>128</code></strong></td><td><a href="novidades.html">Novidades</a></td></tr>
+<tr><td><code>MB_LEN_MAX</code></td><td><code>16</code></td><td><strong><code>4</code></strong></td><td><a href="acentos-utf8.html">Acentos e UTF-8</a></td></tr>
+</table>
+</div>
+<p>Os tipos com sinal vão de −2<sup>N−1</sup> a 2<sup>N−1</sup> − 1, e os sem sinal, de 0 a 2<sup>N</sup> − 1, onde N é o número de bits. Por isso o mínimo tem "um a mais" que o máximo: <code>INT_MIN</code> = −2147483648, <code>INT_MAX</code> = 2147483647.</p>
+
+<h2 id="stdint">stdint.h: inteiros de tamanho fixo</h2>
+<p>Quando o tamanho importa (um arquivo binário, um protocolo de rede, um valor que passa de 2 bilhões), use os tipos do <code>&lt;stdint.h&gt;</code> <span class="versao">C99</span>: eles têm o mesmo tamanho em toda máquina. Aula: <a href="stdint.html">stdint.h</a>.</p>
+<pre class="file" data-file="fixos.c">#include &lt;stdio.h&gt;
+#include &lt;stddef.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;inttypes.h&gt;
+
+int main(void) {
+    printf("INT8_MIN   = %" PRId8 ", INT8_MAX = %" PRId8 ", UINT8_MAX = %" PRIu8 "\n", INT8_MIN, INT8_MAX, UINT8_MAX);
+    printf("INT16_MIN  = %" PRId16 ", INT16_MAX = %" PRId16 ", UINT16_MAX = %" PRIu16 "\n", INT16_MIN, INT16_MAX, UINT16_MAX);
+    printf("INT32_MIN  = %" PRId32 ", INT32_MAX = %" PRId32 "\n", INT32_MIN, INT32_MAX);
+    printf("UINT32_MAX = %" PRIu32 "\n", UINT32_MAX);
+    printf("INT64_MIN  = %" PRId64 "\n", INT64_MIN);
+    printf("INT64_MAX  = %" PRId64 "\n", INT64_MAX);
+    printf("UINT64_MAX = %" PRIu64 "\n", UINT64_MAX);
+    printf("INTMAX_MAX = %" PRIdMAX "\n", INTMAX_MAX);
+    printf("SIZE_MAX   = %zu\n", (size_t)SIZE_MAX);
+    printf("PTRDIFF_MAX = %td\n", (ptrdiff_t)PTRDIFF_MAX);
+    printf("INTPTR_MAX = %" PRIdPTR "\n", (intptr_t)INTPTR_MAX);
+    printf("PRId64 = \"%s\", PRIu64 = \"%s\", PRIdPTR = \"%s\"\n", PRId64, PRIu64, PRIdPTR);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra fixos.c -o fixos
+$ ./fixos
+INT8_MIN   = -128, INT8_MAX = 127, UINT8_MAX = 255
+INT16_MIN  = -32768, INT16_MAX = 32767, UINT16_MAX = 65535
+INT32_MIN  = -2147483648, INT32_MAX = 2147483647
+UINT32_MAX = 4294967295
+INT64_MIN  = -9223372036854775808
+INT64_MAX  = 9223372036854775807
+UINT64_MAX = 18446744073709551615
+INTMAX_MAX = 9223372036854775807
+SIZE_MAX   = 18446744073709551615
+PTRDIFF_MAX = 9223372036854775807
+INTPTR_MAX = 9223372036854775807
+PRId64 = "ld", PRIu64 = "lu", PRIdPTR = "ld"</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Bytes</th><th>Faixa (macros <code>_MIN</code>/<code>_MAX</code>)</th><th><code>printf</code></th></tr>
+<tr><td><code>int8_t</code>, <code>uint8_t</code></td><td>1</td><td><code>INT8_MIN</code> = −128 a <code>INT8_MAX</code> = 127; <code>UINT8_MAX</code> = 255</td><td><code>PRId8</code>, <code>PRIu8</code></td></tr>
+<tr><td><code>int16_t</code>, <code>uint16_t</code></td><td>2</td><td>−32768 a 32767; <code>UINT16_MAX</code> = 65535</td><td><code>PRId16</code>, <code>PRIu16</code></td></tr>
+<tr><td><code>int32_t</code>, <code>uint32_t</code></td><td>4</td><td>−2147483648 a 2147483647; <code>UINT32_MAX</code> = 4294967295</td><td><code>PRId32</code>, <code>PRIu32</code></td></tr>
+<tr><td><code>int64_t</code>, <code>uint64_t</code></td><td>8</td><td>−9223372036854775808 a 9223372036854775807; <code>UINT64_MAX</code> = 18446744073709551615</td><td><code>PRId64</code>, <code>PRIu64</code></td></tr>
+<tr><td><code>int_leastN_t</code></td><td>o menor com pelo menos N bits (nos dois, igual ao <code>intN_t</code>)</td><td><code>INT_LEAST8_MAX</code>…</td><td><code>PRIdLEAST8</code>…</td></tr>
+<tr><td><code>int_fastN_t</code></td><td>o mais rápido com pelo menos N bits: <code>int_fast16_t</code> tem 8 no gcc e 2 no editor</td><td><code>INT_FAST16_MAX</code>…</td><td><code>PRIdFAST16</code>…</td></tr>
+<tr><td><code>intmax_t</code>, <code>uintmax_t</code></td><td>8</td><td><code>INTMAX_MAX</code> = 9223372036854775807</td><td><code>%jd</code> ou <code>PRIdMAX</code></td></tr>
+<tr><td><code>intptr_t</code>, <code>uintptr_t</code></td><td>8 no gcc, 4 no editor</td><td><code>INTPTR_MAX</code>: 9223372036854775807 no gcc, 2147483647 no editor</td><td><code>PRIdPTR</code></td></tr>
+<tr><td><code>size_t</code></td><td>8 no gcc, 4 no editor</td><td><code>SIZE_MAX</code>: 18446744073709551615 no gcc, 4294967295 no editor</td><td><code>%zu</code></td></tr>
+<tr><td><code>ptrdiff_t</code></td><td>8 no gcc, 4 no editor</td><td><code>PTRDIFF_MAX</code>: 9223372036854775807 no gcc, 2147483647 no editor</td><td><code>%td</code></td></tr>
+</table>
+</div>
+<ul>
+  <li><strong>Por que <code>PRId64</code>?</strong> Porque o <code>int64_t</code> é um <code>long</code> no gcc (<code>PRId64</code> vira <code>"ld"</code>) e um <code>long long</code> no editor (vira <code>"lld"</code>). Escrever <code>%ld</code> à mão funcionaria só numa das duas máquinas. Veja a <a href="ref-printf.html#tamanho">tabela do printf</a>.</li>
+  <li><strong>Literais de tamanho fixo:</strong> <code>INT64_C(5000000000)</code> e <code>UINT32_C(7)</code> escrevem o número já com o tipo certo.</li>
+  <li><strong>No editor, os casts <code>(size_t)SIZE_MAX</code> são necessários:</strong> lá, <code>SIZE_MAX</code>, <code>PTRDIFF_MAX</code> e <code>INTPTR_MAX</code> são <code>unsigned int</code>/<code>int</code>, e o Clang avisa <code>format specifies type 'size_t' (aka 'unsigned long') but the argument has type 'unsigned int'</code> num <code>%zu</code> sem o cast. No gcc, não faz diferença.</li>
+</ul>
+
+<h2 id="float">float.h: limites do ponto flutuante</h2>
+<pre class="file" data-file="flutuante.c">#include &lt;stdio.h&gt;
+#include &lt;float.h&gt;
+
+int main(void) {
+    printf("FLT_RADIX = %d, FLT_EVAL_METHOD = %d\n", FLT_RADIX, FLT_EVAL_METHOD);
+    printf("float:  MANT_DIG = %d, DIG = %d, DECIMAL_DIG = %d\n", FLT_MANT_DIG, FLT_DIG, FLT_DECIMAL_DIG);
+    printf("        MIN = %g, MAX = %g, EPSILON = %g, TRUE_MIN = %g\n", FLT_MIN, FLT_MAX, FLT_EPSILON, FLT_TRUE_MIN);
+    printf("double: MANT_DIG = %d, DIG = %d, DECIMAL_DIG = %d\n", DBL_MANT_DIG, DBL_DIG, DBL_DECIMAL_DIG);
+    printf("        MIN = %g, MAX = %g, EPSILON = %g, TRUE_MIN = %g\n", DBL_MIN, DBL_MAX, DBL_EPSILON, DBL_TRUE_MIN);
+    printf("long double: MANT_DIG = %d, DIG = %d, DECIMAL_DIG = %d\n", LDBL_MANT_DIG, LDBL_DIG, LDBL_DECIMAL_DIG);
+    printf("        MIN = %Lg, MAX = %Lg, EPSILON = %Lg\n", LDBL_MIN, LDBL_MAX, LDBL_EPSILON);
+    printf("FLT_MIN_EXP = %d, FLT_MAX_EXP = %d, FLT_MAX_10_EXP = %d\n", FLT_MIN_EXP, FLT_MAX_EXP, FLT_MAX_10_EXP);
+    printf("DBL_MIN_10_EXP = %d, DBL_MAX_10_EXP = %d\n", DBL_MIN_10_EXP, DBL_MAX_10_EXP);
+    printf("DECIMAL_DIG = %d\n", DECIMAL_DIG);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra flutuante.c -o flutuante
+$ ./flutuante
+FLT_RADIX = 2, FLT_EVAL_METHOD = 0
+float:  MANT_DIG = 24, DIG = 6, DECIMAL_DIG = 9
+        MIN = 1.17549e-38, MAX = 3.40282e+38, EPSILON = 1.19209e-07, TRUE_MIN = 1.4013e-45
+double: MANT_DIG = 53, DIG = 15, DECIMAL_DIG = 17
+        MIN = 2.22507e-308, MAX = 1.79769e+308, EPSILON = 2.22045e-16, TRUE_MIN = 4.94066e-324
+long double: MANT_DIG = 64, DIG = 18, DECIMAL_DIG = 21
+        MIN = 3.3621e-4932, MAX = 1.18973e+4932, EPSILON = 1.0842e-19
+FLT_MIN_EXP = -125, FLT_MAX_EXP = 128, FLT_MAX_10_EXP = 38
+DBL_MIN_10_EXP = -307, DBL_MAX_10_EXP = 308
+DECIMAL_DIG = 21</pre>
+<p>No editor, por causa do <code>%Lg</code>, o programa precisa de <code>data-flags="-std=c23 -Wall -Wextra -lc-printscan-long-double"</code> (veja <a href="ref-printf.html#tamanho">o aviso do printf</a>). Com isso, <code>float</code> e <code>double</code> saem iguais; o <code>long double</code> é diferente (tabela abaixo).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Macro (<code>FLT_</code> = float, <code>DBL_</code> = double, <code>LDBL_</code> = long double)</th><th>O que é</th><th><code>float</code></th><th><code>double</code></th><th><code>long double</code><br>gcc / editor</th></tr>
+<tr><td><code>…_DIG</code></td><td>algarismos decimais que <strong>sempre</strong> sobrevivem à ida e volta (texto → número → texto)</td><td>6</td><td>15</td><td>18 / 33</td></tr>
+<tr><td><code>…_DECIMAL_DIG</code> <span class="versao">C11</span></td><td>algarismos que você precisa imprimir para não perder nada (número → texto → número)</td><td>9</td><td>17</td><td>21 / 36</td></tr>
+<tr><td><code>…_MANT_DIG</code></td><td>bits da mantissa (a parte dos algarismos)</td><td>24</td><td>53</td><td>64 / 113</td></tr>
+<tr><td><code>…_EPSILON</code></td><td>a distância entre 1 e o próximo número que o tipo consegue guardar</td><td><code>1.19209e-07</code></td><td><code>2.22045e-16</code></td><td><code>1.0842e-19</code> / <code>1.92593e-34</code></td></tr>
+<tr><td><code>…_MIN</code></td><td>o menor positivo <strong>normal</strong> (não é o mais negativo! Esse é <code>-…_MAX</code>)</td><td><code>1.17549e-38</code></td><td><code>2.22507e-308</code></td><td><code>3.3621e-4932</code> (igual)</td></tr>
+<tr><td><code>…_TRUE_MIN</code> <span class="versao">C11</span></td><td>o menor positivo que existe (subnormal)</td><td><code>1.4013e-45</code></td><td><code>4.94066e-324</code></td><td>—</td></tr>
+<tr><td><code>…_MAX</code></td><td>o maior valor finito</td><td><code>3.40282e+38</code></td><td><code>1.79769e+308</code></td><td><code>1.18973e+4932</code> (igual)</td></tr>
+<tr><td><code>…_MAX_10_EXP</code>, <code>…_MIN_10_EXP</code></td><td>maior e menor expoente de 10</td><td>38, −37</td><td>308, −307</td><td>—</td></tr>
+<tr><td><code>FLT_RADIX</code></td><td>a base usada por dentro</td><td colspan="3">2 (binário), nos dois</td></tr>
+<tr><td><code>FLT_EVAL_METHOD</code></td><td>em que tipo as contas são feitas (0 = no próprio tipo)</td><td colspan="3">0, nos dois</td></tr>
+<tr><td><code>DECIMAL_DIG</code></td><td>o <code>…_DECIMAL_DIG</code> do maior tipo</td><td colspan="3">21 no gcc, 36 no editor</td></tr>
+</table>
+</div>
+<p>Na prática: um <code>float</code> guarda uns <strong>6 a 7 algarismos</strong>; um <code>double</code>, <strong>15 a 16</strong>. Para dinheiro, guarde centavos num inteiro (<code>long long centavos</code>). Para comparar dois <code>double</code>, use uma tolerância: <code>fabs(a - b) &lt; 1e-9</code>. Aula: <a href="ponto-flutuante.html">float e double</a>.</p>
+
+<h2 id="literais">O tipo de cada literal</h2>
+<p>Todo número escrito no código (um <strong>literal</strong>) tem um tipo. Medido com <code>_Generic</code> (aula <a href="generic.html">_Generic</a>), que escolhe um texto conforme o tipo:</p>
+<pre class="file" data-file="literais.c">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+#include &lt;stddef.h&gt;
+
+#define TIPO(x) _Generic((x), \
+    char: "char", int: "int", unsigned: "unsigned int", \
+    long: "long", unsigned long: "unsigned long", \
+    long long: "long long", unsigned long long: "unsigned long long", \
+    float: "float", double: "double", long double: "long double", \
+    bool: "bool", nullptr_t: "nullptr_t", default: "outro")
+
+int main(void) {
+    printf("42          -&gt; %s\n", TIPO(42));
+    printf("42u         -&gt; %s\n", TIPO(42u));
+    printf("42L         -&gt; %s\n", TIPO(42L));
+    printf("42LL        -&gt; %s\n", TIPO(42LL));
+    printf("42ull       -&gt; %s\n", TIPO(42ull));
+    printf("2147483648  -&gt; %s\n", TIPO(2147483648));
+    printf("0xFFFFFFFF  -&gt; %s\n", TIPO(0xFFFFFFFF));
+    printf("3.14        -&gt; %s\n", TIPO(3.14));
+    printf("3.14f       -&gt; %s\n", TIPO(3.14f));
+    printf("3.14L       -&gt; %s\n", TIPO(3.14L));
+    printf("'A'         -&gt; %s\n", TIPO('A'));
+    printf("true        -&gt; %s\n", TIPO(true));
+    printf("nullptr     -&gt; %s\n", TIPO(nullptr));
+    printf("1'000'000   -&gt; %d\n", 1'000'000);
+    printf("0b1010      -&gt; %d\n", 0b1010);
+    printf("sizeof(3wb) = %zu, sizeof(200uwb) = %zu\n", sizeof(3wb), sizeof(200uwb));
+    char c = 'A';
+    printf("c + 1       -&gt; %s\n", TIPO(c + 1));
+    printf("1u + -2     -&gt; %s = %u\n", TIPO(1u + -2), 1u + -2);
+    printf("-1 &lt; 1u     -&gt; %d\n", -1 &lt; 1u);
+    printf("(unsigned char)300 = %d, (signed char)200 = %d\n", (unsigned char)300, (signed char)200);
+    printf("UINT_MAX + 1u = %u\n", UINT_MAX + 1u);
+    printf("(int)3.99 = %d, (int)-3.99 = %d\n", (int)3.99, (int)-3.99);
+    float f = 16777217;
+    printf("float 16777217 -&gt; %.1f\n", f);
+    printf("0.1f == 0.1 -&gt; %d\n", 0.1f == 0.1);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra literais.c -o literais
+literais.c: In function ‘main’:
+literais.c:32:38: warning: comparison of integer expressions of different signedness: ‘int’ and ‘unsigned int’ [-Wsign-compare]
+   32 |     printf("-1 &lt; 1u     -&gt; %d\n", -1 &lt; 1u);
+      |                                      ^
+$ ./literais
+42          -&gt; int
+42u         -&gt; unsigned int
+42L         -&gt; long
+42LL        -&gt; long long
+42ull       -&gt; unsigned long long
+2147483648  -&gt; long                               « no editor: long long
+0xFFFFFFFF  -&gt; unsigned int
+3.14        -&gt; double
+3.14f       -&gt; float
+3.14L       -&gt; long double
+'A'         -&gt; int
+true        -&gt; bool
+nullptr     -&gt; nullptr_t
+1'000'000   -&gt; 1000000
+0b1010      -&gt; 10
+sizeof(3wb) = 1, sizeof(200uwb) = 1
+c + 1       -&gt; int
+1u + -2     -&gt; unsigned int = 4294967295
+-1 &lt; 1u     -&gt; 0
+(unsigned char)300 = 44, (signed char)200 = -56
+UINT_MAX + 1u = 0
+(int)3.99 = 3, (int)-3.99 = -3
+float 16777217 -&gt; 16777216.0
+0.1f == 0.1 -&gt; 0</pre>
+<p>No editor, o Clang não dá o aviso do <code>-1 &lt; 1u</code>, mas dá outros dois (veja <a href="#erros">Erros comuns</a>). A única diferença na saída é a do <code>2147483648</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Literal</th><th>Tipo</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td>inteiro sem sufixo</td><td><code>int</code>; se não couber, <code>long</code>; depois <code>long long</code></td><td><code>42</code> → <code>int</code>; <code>2147483648</code> → <code>long</code> no gcc, <code>long long</code> no editor</td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td>hexadecimal ou octal sem sufixo</td><td>como acima, mas pode virar <code>unsigned</code> antes de crescer</td><td><code>0xFFFFFFFF</code> → <code>unsigned int</code></td><td><a href="operadores-bits.html">Bits</a></td></tr>
+<tr><td><code>u</code> / <code>U</code></td><td><code>unsigned int</code> (ou maior)</td><td><code>42u</code></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>l</code> / <code>L</code>, <code>ll</code> / <code>LL</code></td><td><code>long</code>, <code>long long</code> (com <code>u</code>: sem sinal)</td><td><code>42L</code>, <code>42LL</code>, <code>42ull</code></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>wb</code>, <code>uwb</code> <span class="versao">C23</span></td><td><code>_BitInt(N)</code> do menor tamanho que cabe</td><td><code>sizeof(3wb)</code> → <code>1</code></td><td><a href="novidades.html">Novidades</a></td></tr>
+<tr><td><code>0b…</code> <span class="versao">C23</span></td><td>binário</td><td><code>0b1010</code> = 10</td><td><a href="operadores-bits.html">Bits</a></td></tr>
+<tr><td><code>1'000'000</code> <span class="versao">C23</span></td><td>o <code>'</code> só separa os dígitos, para ler melhor</td><td><code>1'000'000</code> = 1000000</td><td><a href="novidades.html">Novidades</a></td></tr>
+<tr><td>com ponto ou <code>e</code></td><td><code>double</code></td><td><code>3.14</code>, <code>1e3</code></td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+<tr><td><code>f</code> / <code>F</code>, <code>L</code></td><td><code>float</code>, <code>long double</code></td><td><code>3.14f</code>, <code>3.14L</code></td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+<tr><td><code>'A'</code></td><td><strong><code>int</code></strong> (em C, não <code>char</code>!)</td><td><code>sizeof('A')</code> = 4</td><td><a href="char.html">char</a></td></tr>
+<tr><td><code>true</code>, <code>false</code> <span class="versao">C23</span></td><td><code>bool</code></td><td>—</td><td><a href="bool.html">bool</a></td></tr>
+<tr><td><code>nullptr</code> <span class="versao">C23</span></td><td><code>nullptr_t</code></td><td>—</td><td><a href="ponteiro-nulo.html">Ponteiro Nulo</a></td></tr>
+<tr><td><code>"Ana"</code></td><td><code>char[4]</code> (3 letras + <code>'\0'</code>)</td><td><code>sizeof "Ana"</code> = 4</td><td><a href="strings.html">Strings</a></td></tr>
+</table>
+</div>
+
+<h2 id="conversoes">Conversões e estouros</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Regra</th><th>Exemplo → resultado (igual nos dois)</th><th>Aula</th></tr>
+<tr><td>conta com <code>char</code> ou <code>short</code></td><td>viram <code>int</code> antes da conta ("promoção")</td><td><code>c + 1</code> → <code>int</code></td><td><a href="conversao-tipos.html">Conversão de Tipos</a></td></tr>
+<tr><td>conta com <code>int</code> e <code>unsigned</code></td><td>o <code>int</code> vira <code>unsigned</code></td><td><code>1u + -2</code> → <code>4294967295</code>; <code>-1 &lt; 1u</code> → <code>0</code> (falso!)</td><td><a href="conversao-tipos.html">Conversão de Tipos</a></td></tr>
+<tr><td>conta com inteiro e <code>double</code></td><td>o inteiro vira <code>double</code></td><td><code>7 / 2.0</code> → <code>3.5</code> (mas <code>7 / 2</code> → <code>3</code>)</td><td><a href="operadores-aritmeticos.html">Aritméticos</a></td></tr>
+<tr><td>sem sinal que não cabe</td><td>"dá a volta" (módulo 2<sup>N</sup>): definido pelo C</td><td><code>(unsigned char)300</code> → <code>44</code>; <code>UINT_MAX + 1u</code> → <code>0</code></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td>com sinal, conversão que não cabe</td><td>o resultado depende do compilador ("definido pela implementação"); o gcc e o Clang dão a volta</td><td><code>(signed char)200</code> → <code>-56</code></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td>com sinal, <strong>conta</strong> que estoura</td><td><strong>comportamento indefinido</strong>: o compilador pode fazer qualquer coisa</td><td><code>INT_MAX + 1</code> deu <code>-2147483648</code> nos dois, mas não é garantido</td><td><a href="comportamento-indefinido.html">Comportamento Indefinido</a></td></tr>
+<tr><td><code>double</code> → inteiro</td><td>corta a parte decimal (em direção ao zero)</td><td><code>(int)3.99</code> → <code>3</code>; <code>(int)-3.99</code> → <code>-3</code>. Para arredondar: <code>lround</code> do <code>math.h</code></td><td><a href="conversao-tipos.html">Conversão de Tipos</a></td></tr>
+<tr><td>inteiro grande → <code>float</code></td><td>perde os últimos algarismos</td><td><code>float f = 16777217;</code> → <code>16777216.0</code></td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+<tr><td><code>float</code> × <code>double</code></td><td>o mesmo número decimal vira valores binários diferentes</td><td><code>0.1f == 0.1</code> → <code>0</code></td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+</table>
+</div>
+<p>Para saber, antes de fazer a conta, se ela vai estourar, o C23 trouxe o <code>&lt;stdckdint.h&gt;</code>: <code>ckd_add(&amp;total, a, b)</code> devolve <code>true</code> se estourou. Aula: <a href="inteiros.html">Inteiros</a>.</p>
+
+<h2 id="diferencas">Editor × gcc</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Assunto</th><th>Editor (wasm32)</th><th>gcc 15 (x86-64)</th></tr>
+<tr><td><code>sizeof</code> de <code>long</code>, ponteiro, <code>size_t</code>, <code>ptrdiff_t</code>, <code>intptr_t</code>, <code>nullptr_t</code></td><td>4</td><td>8</td></tr>
+<tr><td><code>LONG_MAX</code>, <code>ULONG_MAX</code></td><td><code>2147483647</code>, <code>4294967295</code></td><td><code>9223372036854775807</code>, <code>18446744073709551615</code></td></tr>
+<tr><td><code>SIZE_MAX</code></td><td><code>4294967295</code> (e é um <code>unsigned int</code>)</td><td><code>18446744073709551615</code></td></tr>
+<tr><td>tipo de <code>2147483648</code></td><td><code>long long</code></td><td><code>long</code></td></tr>
+<tr><td><code>int64_t</code> é…</td><td><code>long long</code> (<code>PRId64</code> = <code>"lld"</code>)</td><td><code>long</code> (<code>PRId64</code> = <code>"ld"</code>)</td></tr>
+<tr><td><code>int_fast16_t</code>, <code>int_fast32_t</code></td><td>2 e 4 bytes</td><td>8 e 8 bytes</td></tr>
+<tr><td><code>long double</code></td><td>113 bits de mantissa, 33 algarismos (<code>LDBL_DIG</code>); <code>%Lf</code> precisa de <code>-lc-printscan-long-double</code></td><td>64 bits de mantissa, 18 algarismos</td></tr>
+<tr><td><code>char8_t</code></td><td>não existe</td><td>existe (1 byte)</td></tr>
+<tr><td><code>BITINT_MAXWIDTH</code>, <code>MB_LEN_MAX</code></td><td><code>128</code>, <code>4</code></td><td><code>65535</code>, <code>16</code></td></tr>
+<tr><td><code>long x = 3000000000;</code></td><td>não cabe: vira <code>-1294967296</code> (e o Clang avisa)</td><td>cabe</td></tr>
+</table>
+</div>
+<p>Iguais nos dois: <code>char</code>, <code>short</code>, <code>int</code>, <code>long long</code>, <code>float</code>, <code>double</code>, <code>bool</code>, <code>wchar_t</code>, todos os <code>intN_t</code>, <code>INT_MAX</code>, os limites de <code>float</code> e <code>double</code>, as regras de conversão e o <code>char</code> com sinal. <strong>Para um programa funcionar igual em qualquer máquina, use <code>int</code>, <code>long long</code> e os tipos do <code>stdint.h</code>, nunca <code>long</code>.</strong></p>
+
+<hr>
+
+<h2 id="erros">Erros comuns</h2>
+<pre class="file" data-file="estouro.c">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+
+int main(void) {
+    int populacao = 3000000000;
+    char letra = 300;
+    int depois = INT_MAX + 1;
+    unsigned int positivo = -1;
+    long grande = 3000000000;
+    printf("%d %d %d %u %ld\n", populacao, letra, depois, positivo, grande);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra estouro.c -o estouro
+estouro.c: In function ‘main’:
+estouro.c:6:18: warning: overflow in conversion from ‘int’ to ‘char’ changes value from ‘300’ to ‘44’ [-Woverflow]
+    6 |     char letra = 300;
+      |                  ^~~
+estouro.c:7:26: warning: integer overflow in expression of type ‘int’ results in ‘-2147483648’ [-Woverflow]
+    7 |     int depois = INT_MAX + 1;
+      |                          ^
+$ ./estouro
+-1294967296 44 -2147483648 4294967295 3000000000</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>gcc 15</th><th>Clang (editor)</th><th>O que acontece e como consertar</th></tr>
+<tr><td><code>int populacao = 3000000000;</code></td><td><strong>(nenhum aviso!)</strong></td><td><code>implicit conversion from 'long long' to 'int' changes value from 3000000000 to -1294967296 [-Wconstant-conversion]</code></td><td>3 bilhões não cabem num <code>int</code>: virou <code>-1294967296</code>. O gcc só avisa com <code>-Wconversion</code> (<code>conversion from ‘long int’ to ‘int’ changes value from ‘3000000000’ to ‘-1294967296’</code>). Use <code>long long</code> ou <code>int64_t</code>.</td></tr>
+<tr><td><code>char letra = 300;</code></td><td><code>overflow in conversion from ‘int’ to ‘char’ changes value from ‘300’ to ‘44’ [-Woverflow]</code></td><td><code>implicit conversion from 'int' to 'char' changes value from 300 to 44 [-Wconstant-conversion]</code></td><td>Um <code>char</code> vai até 127: sobrou 300 − 256 = 44.</td></tr>
+<tr><td><code>int depois = INT_MAX + 1;</code></td><td><code>integer overflow in expression of type ‘int’ results in ‘-2147483648’ [-Woverflow]</code></td><td><code>overflow in expression; result is -2'147'483'648 with type 'int' [-Winteger-overflow]</code></td><td>Estouro de conta com sinal: comportamento indefinido. Faça a conta num tipo maior: <code>(long long)INT_MAX + 1</code>.</td></tr>
+<tr><td><code>unsigned int positivo = -1;</code></td><td>(nenhum aviso)</td><td>(nenhum aviso)</td><td>É permitido e vira o maior <code>unsigned</code>: <code>4294967295</code>. Às vezes é de propósito; às vezes é um bug.</td></tr>
+<tr><td><code>long grande = 3000000000;</code></td><td>(nenhum aviso: cabe)</td><td><code>implicit conversion from 'long long' to 'long' changes value from 3000000000 to -1294967296 [-Wconstant-conversion]</code></td><td>Funciona no gcc e não no editor: o <code>long</code> muda de tamanho. Use <code>long long</code>.</td></tr>
+<tr><td><code>-1 &lt; 1u</code></td><td><code>comparison of integer expressions of different signedness: ‘int’ and ‘unsigned int’ [-Wsign-compare]</code></td><td>(nenhum aviso)</td><td>Dá <strong>falso</strong>: o −1 vira 4294967295. Acontece muito com <code>strlen</code> e <code>sizeof</code> (que são <code>size_t</code>): <code>if (i &lt; strlen(s) - 1)</code> com string vazia. Compare tipos iguais.</td></tr>
+<tr><td><code>float f = 16777217;</code></td><td>(nenhum aviso)</td><td><code>implicit conversion from 'int' to 'float' changes value from 16777217 to 16777216 [-Wimplicit-const-int-float-conversion]</code></td><td>O <code>float</code> só tem 24 bits de mantissa. Use <code>double</code>.</td></tr>
+<tr><td><code>0.1f == 0.1</code></td><td>(nenhum aviso)</td><td><code>floating-point comparison is always false; constant cannot be represented exactly in type 'float' [-Wliteral-range]</code></td><td>Não misture <code>float</code> e <code>double</code> numa comparação; e não compare ponto flutuante com <code>==</code>.</td></tr>
+</table>
+</div>
+
+<div class="cenario">
+<strong>A soma das vendas ficou negativa</strong>
+<p>Com <code>int janeiro = 1500000000, fevereiro = 1500000000;</code>, a conta <code>janeiro + fevereiro</code> dá <code>-1294967296</code>, sem aviso nenhum (os valores só são conhecidos na execução). Guardar o resultado num <code>long long</code> <strong>não basta</strong>: a conta é feita em <code>int</code> e estoura antes. Converta um dos lados antes da conta: <code>(long long)janeiro + fevereiro</code>. É a missão abaixo.</p>
+</div>
+
+<hr>
+
+<h2 id="experimente">Experimente</h2>
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> veja os tamanhos no editor (WebAssembly de 32 bits) e compare com a tabela do gcc. Acrescente outros tipos: <code>unsigned short</code>, <code>int16_t</code>, uma <code>struct</code> sua…</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;limits.h&gt;
+
+struct produto {
+    char codigo;
+    int quantidade;
+    double preco;
+};
+
+int main(void) {
+    printf("int: %zu bytes, long: %zu, long long: %zu\n", sizeof(int), sizeof(long), sizeof(long long));
+    printf("ponteiro: %zu bytes, size_t: %zu\n", sizeof(void *), sizeof(size_t));
+    printf("int64_t: %zu bytes\n", sizeof(int64_t));
+    printf("struct produto: %zu bytes (1 + 4 + 8 = 13 sem os buracos)\n", sizeof(struct produto));
+    printf("INT_MAX = %d, LONG_MAX = %ld\n", INT_MAX, LONG_MAX);
+    return 0;
+}
+</pre>
+</div>
+
+<div class="tryc" data-goal="out:Total: 3000000000,src:long long">
+<p class="try-task"><strong>Missão:</strong> a lojinha da Ana vendeu R$ 1,5 bilhão em janeiro e outro tanto em fevereiro (é uma lojinha otimista), mas o total sai negativo. Guarde o total num <code>long long</code>, faça a conta nesse tipo e mostre com <code>%lld</code>, para sair <code>Total: 3000000000</code>. (Não use <code>long</code>: no editor ele tem 4 bytes e estoura igual.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int janeiro = 1500000000;
+    int fevereiro = 1500000000;
+    int total = janeiro + fevereiro;
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int janeiro = 1500000000;
+    int fevereiro = 1500000000;
+    long long total = (long long)janeiro + fevereiro;
+    printf("Total: %lld\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Iguais em quase toda máquina: <code>char</code> 1, <code>short</code> 2, <code>int</code> 4, <code>long long</code> 8, <code>float</code> 4, <code>double</code> 8 bytes.</li>
+  <li>Mudam: <code>long</code>, ponteiros e <code>size_t</code> (8 bytes no Linux de 64 bits, 4 no editor). Para tamanho exato, <code>int32_t</code>, <code>int64_t</code>… do <code>stdint.h</code>, com <code>PRId64</code> no <code>printf</code>.</li>
+  <li>Limites: <code>INT_MAX</code> = 2147483647, <code>LLONG_MAX</code> = 9223372036854775807 (<code>limits.h</code>); <code>DBL_EPSILON</code>, <code>DBL_DIG</code> = 15 (<code>float.h</code>).</li>
+  <li>Sem sinal dá a volta; conta com sinal que estoura é comportamento indefinido. Converta <strong>antes</strong> da conta: <code>(long long)a + b</code>.</li>
+  <li>Cuidado com <code>int</code> × <code>unsigned</code> (<code>-1 &lt; 1u</code> é falso) e com <code>'A'</code>, que é um <code>int</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
