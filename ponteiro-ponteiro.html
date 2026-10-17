@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Ponteiro para Ponteiro — int **pp, mudar um ponteiro dentro da função | Guia C</title>
+<meta name="description" content="Ponteiro para ponteiro em C para quem está começando: o que é int **pp, desenho da memória, *pp e **pp, uma função que muda o ponteiro de quem chamou (criar memória dentro da função), char **argv e listas de strings, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<style>
+svg.mem{display:block;width:100%;height:auto;margin:0 auto}
+svg.mem text{font-family:"Ubuntu Mono",ui-monospace,Menlo,Consolas,monospace;font-size:15px;fill:var(--text)}
+svg.mem .nome{font-weight:bold;font-size:17px}
+svg.mem .tipo,svg.mem .end{fill:var(--muted);font-size:13px}
+svg.mem .caixa{fill:var(--code-bg);stroke:var(--border);stroke-width:2}
+svg.mem .ptr{stroke:var(--accent)}
+svg.mem .alvo{stroke:var(--ok)}
+svg.mem .seta{stroke:var(--accent);stroke-width:2;fill:none}
+svg.mem .ponta{fill:var(--accent)}
+svg.mem .ruim{stroke:var(--bad)}
+svg.mem .ponta-ruim{fill:var(--bad)}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Ponteiro para Ponteiro</span></h1>
+
+<p class="intro">Um ponteiro é uma variável que guarda o <strong>endereço</strong> de outra variável. Mas o ponteiro também é uma variável: ele mora em algum lugar da memória e tem o seu próprio endereço. Então nada impede que <strong>outro</strong> ponteiro guarde esse endereço. Isso é um <strong>ponteiro para ponteiro</strong>, escrito com dois asteriscos: <code>int **pp</code>. Parece um trava-língua, mas resolve um problema bem concreto: deixar uma função <strong>mudar um ponteiro</strong> de quem a chamou. E é exatamente o tipo do famoso <code>char **argv</code> do <code>main</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é <code>int **pp</code> e como desenhá-lo na memória (três caixas, duas setas).</li>
+  <li>A diferença entre <code>pp</code>, <code>*pp</code> e <code>**pp</code>.</li>
+  <li>Por que uma função que recebe <code>int *p</code> <strong>não consegue</strong> mudar o ponteiro de quem chamou, e como <code>int **p</code> resolve.</li>
+  <li>Onde o <code>**</code> aparece no dia a dia: <code>char **argv</code>, listas de strings, <code>strtol</code>.</li>
+  <li>Os erros reais: <code>incompatible pointer type</code>, <code>%d</code> com um ponteiro e a falha de segmentação de <code>**pp</code> num ponteiro nulo.</li>
+</ul>
+</div>
+
+<p>Esta aula supõe que você já leu <a href="ponteiros.html">Ponteiros</a> e <a href="passagem-ponteiro.html">Passar por Ponteiro</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o bilhete que diz onde está o bilhete</h2>
+<p>Pense numa caça ao tesouro na festa da Ana. O tesouro (um saquinho com <strong>10 moedas</strong>) está escondido na <strong>gaveta 44</strong>. Quem guarda o segredo é um bilhete que diz <em>"o tesouro está na gaveta 44"</em>. Esse bilhete, por sua vez, foi escondido na <strong>gaveta 48</strong>.</p>
+<p>A Ana entrega para a primeira criança um segundo bilhete: <em>"procure o bilhete na gaveta 48"</em>. A criança abre a gaveta 48, lê o primeiro bilhete, vai até a gaveta 44 e acha as moedas. Dois saltos.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na caça ao tesouro</th><th>Em C</th><th>Tipo</th></tr>
+<tr><td>O saquinho com 10 moedas</td><td><code>moedas</code></td><td><code>int</code></td></tr>
+<tr><td>O bilhete "o tesouro está na gaveta 44"</td><td><code>p</code>, um ponteiro</td><td><code>int *</code> (ponteiro para <code>int</code>)</td></tr>
+<tr><td>O bilhete "procure o bilhete na gaveta 48"</td><td><code>pp</code>, um ponteiro para ponteiro</td><td><code>int **</code> (ponteiro para <code>int *</code>)</td></tr>
+</table>
+</div>
+
+<p>Cada asterisco é um salto. Com <code>p</code> você precisa de um salto até as moedas (<code>*p</code>). Com <code>pp</code>, de dois (<code>**pp</code>).</p>
+
+<hr>
+
+<h2>1. Declarar um ponteiro para ponteiro</h2>
+<p>O programa abaixo monta a caça ao tesouro e mostra onde cada coisa mora. O <code>%p</code> do <code>printf</code> mostra um endereço (veja <a href="memoria.html">Memória e Endereços</a>); o <code>(void *)</code> antes de cada endereço é a forma que o <code>%p</code> pede, explicada em <a href="void-ponteiro.html">Ponteiro void*</a>.</p>
+
+<pre class="file" data-file="pp.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int moedas = 10;
+    int *p = &amp;moedas;
+    int **pp = &amp;p;
+
+    printf("moedas = %d, mora em %p\n", moedas, (void *)&amp;moedas);
+    printf("p      = %p, mora em %p\n", (void *)p, (void *)&amp;p);
+    printf("pp     = %p, mora em %p\n", (void *)pp, (void *)&amp;pp);
+    printf("*pp    = %p\n", (void *)*pp);
+    printf("**pp   = %d\n", **pp);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int moedas = 10;</dt><dd>Uma variável comum: o tesouro.</dd>
+  <dt>int *p = &amp;moedas;</dt><dd><code>p</code> é um ponteiro para <code>int</code> e guarda o endereço de <code>moedas</code>. É o primeiro bilhete.</dd>
+  <dt>int **pp</dt><dd>Leia de trás para a frente: <code>pp</code> é um ponteiro (<code>*</code>) para um ponteiro (<code>*</code>) para <code>int</code>. O tipo dele é <code>int **</code>.</dd>
+  <dt>= &amp;p;</dt><dd><code>pp</code> guarda o endereço <strong>de <code>p</code></strong> (não o de <code>moedas</code>). É o segundo bilhete.</dd>
+  <dt>*pp</dt><dd>Um salto: "o que está guardado no lugar para onde <code>pp</code> aponta". Lá está <code>p</code>, então <code>*pp</code> <strong>é</strong> <code>p</code>: o endereço de <code>moedas</code>.</dd>
+  <dt>**pp</dt><dd>Dois saltos: <code>*(*pp)</code>, ou seja, <code>*p</code>, ou seja, <code>moedas</code>: o número 10.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pp.c -o pp
+$ ./pp
+moedas = 10, mora em 0x7ffc78692c44
+p      = 0x7ffc78692c44, mora em 0x7ffc78692c48
+pp     = 0x7ffc78692c48, mora em 0x7ffc78692c50
+*pp    = 0x7ffc78692c44
+**pp   = 10</pre>
+
+<p>Siga os números: o valor de <code>p</code> (<code>…c44</code>) é o endereço de <code>moedas</code>; o valor de <code>pp</code> (<code>…c48</code>) é o endereço de <code>p</code>. Os endereços mudam a cada execução (o Linux sorteia onde a memória começa), mas essa amarração é sempre a mesma.</p>
+
+<figure>
+<svg class="mem" viewBox="0 0 660 150" style="max-width:660px" role="img" aria-label="pp guarda o endereço de p, p guarda o endereço de moedas, moedas guarda 10">
+<defs><marker id="pp-seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="ponta" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+<text class="nome" x="100" y="22" text-anchor="middle">pp</text>
+<text class="tipo" x="100" y="40" text-anchor="middle">int **</text>
+<rect class="caixa ptr" x="20" y="50" width="160" height="46" rx="6"/>
+<text x="100" y="79" text-anchor="middle">0x7ffc78692c48</text>
+<text class="end" x="100" y="118" text-anchor="middle">mora em …c50</text>
+<line class="seta" x1="182" y1="73" x2="238" y2="73" marker-end="url(#pp-seta)"/>
+<text class="nome" x="330" y="22" text-anchor="middle">p</text>
+<text class="tipo" x="330" y="40" text-anchor="middle">int *</text>
+<rect class="caixa ptr" x="250" y="50" width="160" height="46" rx="6"/>
+<text x="330" y="79" text-anchor="middle">0x7ffc78692c44</text>
+<text class="end" x="330" y="118" text-anchor="middle">mora em …c48</text>
+<line class="seta" x1="412" y1="73" x2="478" y2="73" marker-end="url(#pp-seta)"/>
+<text class="nome" x="560" y="22" text-anchor="middle">moedas</text>
+<text class="tipo" x="560" y="40" text-anchor="middle">int</text>
+<rect class="caixa alvo" x="490" y="50" width="140" height="46" rx="6"/>
+<text x="560" y="79" text-anchor="middle" style="font-weight:bold">10</text>
+<text class="end" x="560" y="118" text-anchor="middle">mora em …c44</text>
+<text class="end" x="210" y="144" text-anchor="middle">*pp</text>
+<text class="end" x="445" y="144" text-anchor="middle">**pp</text>
+</svg>
+<figcaption>Três caixas, duas setas. Cada seta é um endereço guardado numa caixa. Seguir a primeira seta é <code>*pp</code>; seguir as duas é <code>**pp</code>.</figcaption>
+</figure>
+
+<p>A mesma coisa em forma de tabela, do jeito que a memória é de verdade (uma rua de casas numeradas):</p>
+
+<figure>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Endereço</th><th>Nome</th><th>Tipo (tamanho)</th><th>O que está guardado</th></tr>
+<tr><td><code>0x7ffc78692c44</code></td><td><code>moedas</code></td><td><code>int</code> (4 bytes)</td><td><strong>10</strong></td></tr>
+<tr><td><code>0x7ffc78692c48</code></td><td><code>p</code></td><td><code>int *</code> (8 bytes)</td><td><code>0x7ffc78692c44</code> → aponta para <code>moedas</code></td></tr>
+<tr><td><code>0x7ffc78692c50</code></td><td><code>pp</code></td><td><code>int **</code> (8 bytes)</td><td><code>0x7ffc78692c48</code> → aponta para <code>p</code></td></tr>
+</table>
+</div>
+<figcaption>Repare que <code>p</code> começa em <code>…c48</code> e <code>pp</code> em <code>…c50</code>: a diferença é 8, o tamanho de um ponteiro no Linux de 64 bits. Um ponteiro para ponteiro tem o mesmo tamanho de qualquer outro ponteiro: ele também só guarda um endereço.</figcaption>
+</figure>
+
+<h3>As três perguntas</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você escreve</th><th>Tipo</th><th>Pergunta</th><th>Resposta no exemplo</th></tr>
+<tr><td><code>pp</code></td><td><code>int **</code></td><td>"O que está anotado no segundo bilhete?"</td><td>o endereço de <code>p</code></td></tr>
+<tr><td><code>*pp</code></td><td><code>int *</code></td><td>"Siga uma vez: o que está no primeiro bilhete?"</td><td>o endereço de <code>moedas</code> (é o próprio <code>p</code>)</td></tr>
+<tr><td><code>**pp</code></td><td><code>int</code></td><td>"Siga duas vezes: o que tem no tesouro?"</td><td><code>10</code></td></tr>
+</table>
+</div>
+
+<p>Uma regra prática para nunca se perder: <strong>cada <code>*</code> que você escreve na frente do nome tira um <code>*</code> do tipo</strong>. <code>pp</code> é <code>int **</code>; <code>*pp</code> é <code>int *</code>; <code>**pp</code> é <code>int</code>. E cada <code>&amp;</code> põe um: <code>moedas</code> é <code>int</code>, <code>&amp;moedas</code> é <code>int *</code>, <code>&amp;p</code> é <code>int **</code>.</p>
+
+<div class="note">
+<strong>Onde vai o asterisco?</strong>
+<p><code>int **pp</code>, <code>int** pp</code> e <code>int * * pp</code> são a mesma coisa para o compilador. O guia escreve colado ao nome (<code>int **pp</code>), o estilo mais comum em C, porque numa linha como <code>int **a, *b;</code> o <code>*</code> vale para cada nome separadamente: <code>a</code> é <code>int **</code> e <code>b</code> é <code>int *</code>.</p>
+</div>
+
+<hr>
+
+<h2>2. Mudar as coisas pelo ponteiro para ponteiro</h2>
+<p>Com <code>pp</code> na mão você pode mexer em <strong>dois</strong> lugares diferentes, dependendo de quantos asteriscos usa:</p>
+<ul>
+  <li><code>**pp = 15;</code> muda o <strong>valor final</strong> (o tesouro).</li>
+  <li><code>*pp = &amp;outra;</code> muda <strong>o ponteiro do meio</strong>: agora ele aponta para outra variável.</li>
+</ul>
+
+<p>No jogo da Ana, duas jogadoras disputam uma partida e o ponteiro <code>vez</code> indica de quem é a vez:</p>
+
+<pre class="file" data-file="mudar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int ana = 10;
+    int bia = 50;
+    int *vez = &amp;ana;
+    int **pp = &amp;vez;
+
+    **pp = 15;
+    printf("ana = %d, bia = %d, *vez = %d\n", ana, bia, *vez);
+
+    *pp = &amp;bia;
+    printf("ana = %d, bia = %d, *vez = %d\n", ana, bia, *vez);
+
+    **pp = 55;
+    printf("ana = %d, bia = %d, *vez = %d\n", ana, bia, *vez);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra mudar.c -o mudar
+$ ./mudar
+ana = 15, bia = 50, *vez = 15      « **pp = 15 mudou a ana
+ana = 15, bia = 50, *vez = 50      « *pp = &amp;bia: agora vez aponta para a bia
+ana = 15, bia = 55, *vez = 55      « o mesmo **pp = 55 agora muda a bia</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>**pp = 15;</code></td><td>Segue <code>pp</code> até <code>vez</code>, segue <code>vez</code> até <code>ana</code> e guarda 15 lá. É o mesmo que <code>*vez = 15;</code> ou <code>ana = 15;</code>.</td></tr>
+<tr><td><code>*pp = &amp;bia;</code></td><td>Segue <code>pp</code> só uma vez, até <code>vez</code>, e guarda <strong>nele</strong> o endereço de <code>bia</code>. É o mesmo que <code>vez = &amp;bia;</code>. Ninguém mexeu em <code>ana</code> nem em <code>bia</code>.</td></tr>
+<tr><td><code>**pp = 55;</code></td><td>A mesma escrita da primeira linha, mas agora o caminho termina na <code>bia</code>.</td></tr>
+</table>
+</div>
+
+<figure>
+<svg class="mem" viewBox="0 0 660 190" style="max-width:660px" role="img" aria-label="Depois de *pp = &amp;bia, vez deixa de apontar para ana e passa a apontar para bia">
+<defs><marker id="pp-seta2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="ponta" d="M0,0 L10,5 L0,10 z"/></marker>
+<marker id="pp-seta2r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="ponta-ruim" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+<text class="nome" x="90" y="70" text-anchor="middle">pp</text>
+<rect class="caixa ptr" x="30" y="80" width="120" height="44" rx="6"/>
+<text x="90" y="107" text-anchor="middle">&amp;vez</text>
+<line class="seta" x1="152" y1="102" x2="228" y2="102" marker-end="url(#pp-seta2)"/>
+<text class="nome" x="300" y="70" text-anchor="middle">vez</text>
+<rect class="caixa ptr" x="240" y="80" width="120" height="44" rx="6"/>
+<text x="300" y="107" text-anchor="middle">&amp;bia</text>
+<path class="seta ruim" d="M362,92 C420,60 440,48 478,44" stroke-dasharray="6 5" marker-end="url(#pp-seta2r)"/>
+<text class="end" x="420" y="38" text-anchor="middle" style="fill:var(--bad)">antes</text>
+<path class="seta" d="M362,112 C420,140 440,150 478,152" marker-end="url(#pp-seta2)"/>
+<text class="end" x="420" y="172" text-anchor="middle">depois</text>
+<text class="nome" x="625" y="49" text-anchor="end">ana</text>
+<rect class="caixa alvo" x="490" y="22" width="90" height="44" rx="6"/>
+<text x="535" y="49" text-anchor="middle">15</text>
+<text class="nome" x="625" y="157" text-anchor="end">bia</text>
+<rect class="caixa alvo" x="490" y="130" width="90" height="44" rx="6"/>
+<text x="535" y="157" text-anchor="middle">55</text>
+</svg>
+<figcaption><code>*pp = &amp;bia</code> troca a seta do meio. <code>pp</code> continua apontando para <code>vez</code>; quem mudou foi o conteúdo de <code>vez</code>.</figcaption>
+</figure>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e confira as três linhas. Depois acrescente, no fim, <code>*pp = &amp;ana;</code> seguido de <code>**pp += 1;</code> e mostre de novo: quem ganhou o ponto? (No editor os endereços seriam bem menores, como <code>0x7ffff8</code>, porque o programa roda em WebAssembly, dentro do navegador; por isso este exemplo nem mostra endereços.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int ana = 10;
+    int bia = 50;
+    int *vez = &amp;ana;
+    int **pp = &amp;vez;
+
+    **pp = 15;
+    printf("ana = %d, bia = %d, *vez = %d\n", ana, bia, *vez);
+
+    *pp = &amp;bia;
+    printf("ana = %d, bia = %d, *vez = %d\n", ana, bia, *vez);
+
+    **pp = 55;
+    printf("ana = %d, bia = %d, *vez = %d\n", ana, bia, *vez);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Para que serve: uma função que muda um ponteiro</h2>
+<p>Até aqui, <code>pp</code> só complicou o que <code>vez</code> fazia sozinho. O motivo de existir o <code>**</code> aparece com <strong>funções</strong>. Lembre da regra de <a href="passagem-ponteiro.html">Passar por Ponteiro</a>: em C, a função recebe uma <strong>cópia</strong> de cada argumento. Para uma função mudar um <code>int</code> de quem chamou, ela recebe um <code>int *</code>. Pela mesma lógica:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A função precisa mudar…</th><th>…então recebe</th><th>…e quem chama passa</th></tr>
+<tr><td>um <code>int</code></td><td><code>int *</code></td><td><code>&amp;numero</code></td></tr>
+<tr><td>um <code>int *</code> (um ponteiro)</td><td><code>int **</code></td><td><code>&amp;ponteiro</code></td></tr>
+<tr><td>um <code>char *</code> (uma string)</td><td><code>char **</code></td><td><code>&amp;texto</code></td></tr>
+</table>
+</div>
+
+<h3>A versão que não funciona</h3>
+<p>A Ana quer uma função <code>criar_placar</code> que reserve memória para um placar e deixe o ponteiro do <code>main</code> apontando para ela. Para reservar memória, o programa usa <code>malloc</code> ("memory allocation", reservar memória), que devolve o endereço da memória nova; a aula <a href="malloc-free.html">malloc e free</a> explica tudo com calma. Aqui só importa: <code>malloc</code> devolve um endereço, e alguém precisa guardá-lo.</p>
+
+<pre class="file" data-file="aloca1.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void criar_placar(int *placar) {
+    placar = malloc(sizeof *placar);
+    if (placar == NULL) return;
+    *placar = 0;
+    printf("Dentro da função: placar = %p\n", (void *)placar);
+}
+
+int main(void) {
+    int *placar = NULL;
+    criar_placar(placar);
+    printf("De volta no main: placar = %p\n", (void *)placar);
+    if (placar == NULL) {
+        printf("O main continua sem placar!\n");
+        return 1;
+    }
+    free(placar);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aloca1.c -o aloca1
+$ ./aloca1
+Dentro da função: placar = 0x59ee8dd79010
+De volta no main: placar = (nil)        « (nil) é como a glibc mostra o NULL
+O main continua sem placar!</pre>
+
+<p>Compilou sem nenhum aviso, e mesmo assim não funcionou. O que aconteceu:</p>
+<ol class="passo">
+  <li>No <code>main</code>, <code>placar</code> vale <code>NULL</code>. A chamada <code>criar_placar(placar)</code> entrega uma <strong>cópia</strong> desse valor ao parâmetro, que também se chama <code>placar</code> mas é <strong>outra variável</strong>, que só existe dentro da função.</li>
+  <li><code>placar = malloc(…)</code> guarda o endereço novo <strong>na cópia</strong>. O <code>placar</code> do <code>main</code> nem fica sabendo.</li>
+  <li>A função termina, a cópia desaparece, e o endereço da memória reservada se perde para sempre: além de não funcionar, o programa <strong>vazou</strong> memória (aula <a href="vazamentos.html">Vazamentos de Memória</a>).</li>
+</ol>
+
+<p>É o mesmo erro de escrever <code>void dobrar(int n) { n = n * 2; }</code> e esperar que o número de quem chamou dobre. O fato de a cópia ser um ponteiro não muda nada: mudar <strong>a cópia</strong> não muda o original. (Mudar <strong>o lugar para onde ela aponta</strong>, com <code>*placar = …</code>, funcionaria, mas aqui o que queremos mudar é o próprio ponteiro.)</p>
+
+<h3>A versão que funciona: <code>int **</code></h3>
+
+<pre class="file" data-file="aloca2.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void criar_placar(int **placar) {
+    *placar = malloc(sizeof **placar);
+    if (*placar == NULL) return;
+    **placar = 0;
+    printf("Dentro da função: *placar = %p\n", (void *)*placar);
+}
+
+int main(void) {
+    int *placar = NULL;
+    criar_placar(&amp;placar);
+    printf("De volta no main: placar = %p\n", (void *)placar);
+    if (placar == NULL) {
+        printf("O main continua sem placar!\n");
+        return 1;
+    }
+    *placar += 3;
+    printf("Placar: %d\n", *placar);
+    free(placar);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>void criar_placar(int **placar)</dt><dd>O parâmetro agora é o endereço <strong>do ponteiro</strong> do <code>main</code>. Ele ainda é uma cópia, mas uma cópia do <em>endereço</em>, e com o endereço dá para ir até o original.</dd>
+  <dt>*placar = malloc(…);</dt><dd>Um salto: guarda o endereço novo <strong>no ponteiro do <code>main</code></strong>.</dd>
+  <dt>sizeof **placar</dt><dd>O tamanho de um <code>int</code> (o que fica no fim dos dois saltos). <code>sizeof</code> não segue ponteiro nenhum de verdade; ele só olha o tipo, então funciona mesmo antes de existir memória.</dd>
+  <dt>**placar = 0;</dt><dd>Dois saltos: zera o número dentro da memória nova.</dd>
+  <dt>criar_placar(&amp;placar);</dt><dd>O <code>main</code> passa o <strong>endereço</strong> do seu ponteiro. É o <code>&amp;</code> que dá à função o poder de mudá-lo.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aloca2.c -o aloca2
+$ ./aloca2
+Dentro da função: *placar = 0x5e1a462c4010
+De volta no main: placar = 0x5e1a462c4010     « agora o main recebeu o endereço
+Placar: 3</pre>
+
+<figure>
+<svg class="mem" viewBox="0 0 660 200" style="max-width:660px" role="img" aria-label="O parâmetro placar da função aponta para o placar do main, que aponta para a memória criada pelo malloc">
+<defs><marker id="pp-seta3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="ponta" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+<rect x="6" y="6" width="190" height="130" rx="8" style="fill:none;stroke:var(--border);stroke-dasharray:5 4"/>
+<text class="tipo" x="101" y="26" text-anchor="middle">dentro de criar_placar</text>
+<text class="nome" x="101" y="56" text-anchor="middle">placar</text>
+<text class="tipo" x="101" y="72" text-anchor="middle">int **</text>
+<rect class="caixa ptr" x="31" y="80" width="140" height="44" rx="6"/>
+<text x="101" y="107" text-anchor="middle">&amp;placar do main</text>
+<line class="seta" x1="173" y1="102" x2="238" y2="102" marker-end="url(#pp-seta3)"/>
+<rect x="216" y="6" width="190" height="130" rx="8" style="fill:none;stroke:var(--border);stroke-dasharray:5 4"/>
+<text class="tipo" x="311" y="26" text-anchor="middle">dentro do main</text>
+<text class="nome" x="320" y="56" text-anchor="middle">placar</text>
+<text class="tipo" x="320" y="72" text-anchor="middle">int *</text>
+<rect class="caixa ptr" x="250" y="80" width="140" height="44" rx="6"/>
+<text x="320" y="107" text-anchor="middle">0x5e1a462c4010</text>
+<line class="seta" x1="392" y1="102" x2="478" y2="102" marker-end="url(#pp-seta3)"/>
+<text class="nome" x="560" y="56" text-anchor="middle">(sem nome)</text>
+<text class="tipo" x="560" y="72" text-anchor="middle">int, criado pelo malloc</text>
+<rect class="caixa alvo" x="490" y="80" width="140" height="44" rx="6"/>
+<text x="560" y="107" text-anchor="middle">0 → 3</text>
+<text class="end" x="210" y="160" text-anchor="middle">*placar = malloc(…) escreve aqui ↑ (no ponteiro do main)</text>
+<text class="end" x="440" y="190" text-anchor="middle">**placar = 0 escreve aqui ↑</text>
+</svg>
+<figcaption>Com <code>int **</code>, a função alcança o ponteiro do <code>main</code> e guarda nele o endereço da memória nova. Quando a função termina e o parâmetro some, o <code>main</code> continua com o endereço.</figcaption>
+</figure>
+
+<div class="tryc" data-goal="out:Placar: 3,src:int\s*\*\s*\*\s*placar">
+<p class="try-task"><strong>Missão:</strong> este é o <code>aloca1.c</code>, que não funciona. Conserte-o com um <strong>ponteiro para ponteiro</strong>: mude o parâmetro para <code>int **placar</code>, ajuste os asteriscos dentro da função e passe <code>&amp;placar</code> na chamada. A saída tem de terminar com <code>Placar: 3</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void criar_placar(int *placar) {
+    placar = malloc(sizeof *placar);
+    if (placar == NULL) return;
+    *placar = 0;
+}
+
+int main(void) {
+    int *placar = NULL;
+    criar_placar(placar);
+    if (placar == NULL) {
+        printf("O main continua sem placar!\n");
+        return 1;
+    }
+    *placar += 3;
+    printf("Placar: %d\n", *placar);
+    free(placar);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void criar_placar(int **placar) {
+    *placar = malloc(sizeof **placar);
+    if (*placar == NULL) return;
+    **placar = 0;
+}
+
+int main(void) {
+    int *placar = NULL;
+    criar_placar(&amp;placar);
+    if (placar == NULL) {
+        printf("O main continua sem placar!\n");
+        return 1;
+    }
+    *placar += 3;
+    printf("Placar: %d\n", *placar);
+    free(placar);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>A outra saída: devolver o ponteiro</h3>
+<p>Muitas vezes dá para fugir do <code>**</code> fazendo a função <strong>devolver</strong> o endereço com <code>return</code>:</p>
+
+<pre class="file" data-file="aloca3.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int *criar_placar(void) {
+    int *placar = malloc(sizeof *placar);
+    if (placar != NULL) {
+        *placar = 0;
+    }
+    return placar;      // devolve o endereço (ou NULL, se faltou memória)
+}
+
+int main(void) {
+    int *placar = criar_placar();
+    if (placar == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+    *placar += 3;
+    printf("Placar: %d\n", *placar);
+    free(placar);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aloca3.c -o aloca3
+$ ./aloca3
+Placar: 3</pre>
+
+<p>É o que o próprio <code>malloc</code> faz. Então, qual usar?</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Prefira</th></tr>
+<tr><td>A função cria <strong>uma</strong> coisa e não tem mais nada a devolver</td><td>Devolver o ponteiro: <code>int *criar(void)</code>. É mais simples de ler e de usar.</td></tr>
+<tr><td>O <code>return</code> já está ocupado (por exemplo, com um código de erro: 0 = deu certo, -1 = falhou)</td><td><code>int **</code>: <code>int criar(int **saida)</code>.</td></tr>
+<tr><td>A função precisa mudar <strong>dois ou mais</strong> ponteiros</td><td><code>**</code> para cada um (é o caso da missão final).</td></tr>
+<tr><td>A função precisa trocar um ponteiro <strong>que já aponta</strong> para algo (andar numa lista, trocar o começo de uma <a href="listas-ligadas.html">lista ligada</a>)</td><td><code>**</code>.</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Na biblioteca padrão: <code>strtol</code></strong>
+<p>A função <code>strtol</code> ("string to long", texto para número) tem o protótipo <code>long strtol(const char *texto, char **fim, int base)</code>. O <code>return</code> já devolve o número; o <code>char **fim</code> é por onde ela conta <strong>onde parou de ler</strong>: ela muda um ponteiro seu (<code>char *fim;</code> … <code>strtol(texto, &amp;fim, 10)</code>). Veja em <a href="string-numero.html">Texto ↔ Número</a>.</p>
+</div>
+
+<hr>
+
+<h2>4. Listas de strings: <code>char **</code> e o <code>argv</code></h2>
+<p>O outro lugar onde o <code>**</code> aparece o tempo todo é em <strong>listas de textos</strong>. Uma string em C é acessada por um <code>char *</code>, o endereço da primeira letra (aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>). Uma lista de strings é então um <strong>array de <code>char *</code></strong>, e o nome de um array vira o endereço do primeiro item (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>). O endereço de um <code>char *</code> é um <code>char **</code>.</p>
+
+<pre class="file" data-file="frutas.c">#include &lt;stdio.h&gt;
+
+void listar(const char **lista) {
+    for (const char **p = lista; *p != NULL; p++) {
+        printf("- %s (começa com %c)\n", *p, **p);
+    }
+}
+
+int main(void) {
+    const char *compras[] = {"arroz", "feijão", "café", NULL};
+    listar(compras);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>const char *compras[]</dt><dd>Um array de ponteiros para texto. Cada item guarda o endereço de uma string; as letras moram em outro lugar. O <code>const</code> diz que não vamos mudar as letras (aula <a href="const-ponteiros.html">const e Ponteiros</a>).</dd>
+  <dt>NULL</dt><dd>Um último item "vazio" marca o fim da lista, assim quem percorre não precisa saber o tamanho. (O <code>argv</code> também termina com um <code>NULL</code>.)</dd>
+  <dt>listar(compras)</dt><dd>O array vira o endereço do primeiro item, <code>&amp;compras[0]</code>, que é um <code>const char **</code>.</dd>
+  <dt>const char **p = lista</dt><dd><code>p</code> anda pelos itens da lista, um por vez (<code>p++</code> pula um ponteiro inteiro, 8 bytes no laboratório).</dd>
+  <dt>*p</dt><dd>Um salto: o item atual, um <code>const char *</code>, que o <code>%s</code> mostra como texto.</dd>
+  <dt>**p</dt><dd>Dois saltos: a primeira letra do item atual, um <code>char</code>, mostrada pelo <code>%c</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra frutas.c -o frutas
+$ ./frutas
+- arroz (começa com a)
+- feijão (começa com f)
+- café (começa com c)</pre>
+
+<figure>
+<svg class="mem" viewBox="0 0 660 240" style="max-width:660px" role="img" aria-label="p aponta para compras[0]; cada item de compras aponta para um texto; o último é NULL">
+<defs><marker id="pp-seta4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="ponta" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+<text class="nome" x="70" y="30" text-anchor="middle">p</text>
+<text class="tipo" x="70" y="46" text-anchor="middle">const char **</text>
+<rect class="caixa ptr" x="20" y="54" width="100" height="40" rx="6"/>
+<text x="70" y="79" text-anchor="middle">&amp;compras[0]</text>
+<line class="seta" x1="122" y1="74" x2="198" y2="74" marker-end="url(#pp-seta4)"/>
+<text class="nome" x="270" y="30" text-anchor="middle">compras</text>
+<text class="tipo" x="270" y="46" text-anchor="middle">const char *[4]</text>
+<rect class="caixa ptr" x="210" y="54" width="120" height="40"/>
+<rect class="caixa ptr" x="210" y="94" width="120" height="40"/>
+<rect class="caixa ptr" x="210" y="134" width="120" height="40"/>
+<rect class="caixa" x="210" y="174" width="120" height="40"/>
+<text x="270" y="79" text-anchor="middle">•</text>
+<text x="270" y="119" text-anchor="middle">•</text>
+<text x="270" y="159" text-anchor="middle">•</text>
+<text x="270" y="199" text-anchor="middle">NULL</text>
+<text class="end" x="345" y="79">[0]</text>
+<text class="end" x="345" y="119">[1]</text>
+<text class="end" x="345" y="159">[2]</text>
+<text class="end" x="345" y="199">[3]</text>
+<line class="seta" x1="282" y1="74" x2="438" y2="74" marker-end="url(#pp-seta4)"/>
+<line class="seta" x1="282" y1="114" x2="438" y2="114" marker-end="url(#pp-seta4)"/>
+<line class="seta" x1="282" y1="154" x2="438" y2="154" marker-end="url(#pp-seta4)"/>
+<rect class="caixa alvo" x="450" y="56" width="180" height="36" rx="6"/>
+<text x="540" y="79" text-anchor="middle">a r r o z \0</text>
+<rect class="caixa alvo" x="450" y="96" width="180" height="36" rx="6"/>
+<text x="540" y="119" text-anchor="middle">f e i j ã o \0</text>
+<rect class="caixa alvo" x="450" y="136" width="180" height="36" rx="6"/>
+<text x="540" y="159" text-anchor="middle">c a f é \0</text>
+<text class="end" x="540" y="232" text-anchor="middle">as letras (em outro lugar da memória)</text>
+</svg>
+<figcaption>Uma lista de strings: <code>p</code> aponta para um item do array; cada item aponta para as letras. <code>*p</code> é o item (o texto inteiro) e <code>**p</code> é a primeira letra dele. Quando <code>*p</code> vale <code>NULL</code>, a lista acabou.</figcaption>
+</figure>
+
+<h3>O <code>argv</code> do <code>main</code></h3>
+<p>O <code>main</code> pode receber o que você digita depois do nome do programa no terminal. A forma completa dele é <code>int main(int argc, char **argv)</code>, e agora você sabe ler esse tipo: <code>argv</code> aponta para o primeiro item de uma lista de strings, exatamente como o <code>p</code> acima. (Muita gente escreve <code>char *argv[]</code>; num parâmetro de função, as duas escritas são a mesma coisa.)</p>
+
+<pre class="file" data-file="args.c">#include &lt;stdio.h&gt;
+
+int main(int argc, char **argv) {
+    for (int i = 0; i &lt; argc; i++) {
+        printf("argv[%d] = %s\n", i, argv[i]);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra args.c -o args
+$ ./args Ana Bia
+argv[0] = ./args            « o primeiro item é o nome do programa
+argv[1] = Ana
+argv[2] = Bia</pre>
+
+<p>O <code>argc</code> ("argument count") conta os itens; o <code>argv</code> ("argument vector", lista de argumentos) é a lista. Os detalhes estão em <a href="argc-argv.html">Argumentos da Linha de Comando</a>.</p>
+
+<div class="note">
+<strong>E <code>int ***</code>?</strong>
+<p>Existe: um ponteiro para ponteiro para ponteiro, com três saltos. Aparece, por exemplo, numa função que precisa <strong>criar</strong> uma lista de strings para quem chamou (ela recebe um <code>char ***</code>). Mas é raro; quando você sentir vontade de escrever três asteriscos, quase sempre uma <a href="structs.html">struct</a> deixa o código mais claro.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: passing argument 1 of ‘criar_placar’ from incompatible pointer type</code></strong>
+<p>Você esqueceu o <code>&amp;</code> na chamada: a função pede um <code>int **</code> e recebeu um <code>int *</code>.</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra erro1.c -o erro1
+erro1.c: In function ‘main’:
+erro1.c:13:18: error: passing argument 1 of ‘criar_placar’ from incompatible pointer type [-Wincompatible-pointer-types]
+   13 |     criar_placar(placar);
+      |                  ^~~~~~
+      |                  |
+      |                  int *
+erro1.c:4:25: note: expected ‘int **’ but argument is of type ‘int *’
+    4 | void criar_placar(int **placar) {
+      |                   ~~~~~~^~~~~~</pre>
+<p><strong>O que significa:</strong> "passando o argumento 1 de <code>criar_placar</code> a partir de um tipo de ponteiro incompatível". A nota diz tudo: <em>expected ‘int **’ but argument is of type ‘int *’</em> = "esperava <code>int **</code>, mas o argumento é <code>int *</code>". Até o gcc 13 isso era só um aviso (e o programa quebrava ao rodar); desde o gcc 14 é <strong>erro</strong>. O Clang do editor diz <code>incompatible pointer types passing 'int *' to parameter of type 'int **'; take the address with &amp;</code> e até sugere o conserto: "pegue o endereço com <code>&amp;</code>".</p>
+<p><strong>Como consertar:</strong> <code>criar_placar(&amp;placar);</code>. Conte os asteriscos: o tipo do argumento tem de ter o mesmo número de <code>*</code> que o parâmetro.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: initialization of ‘int **’ from incompatible pointer type ‘int *’</code></strong>
+<p>Você escreveu <code>int **pp = &amp;moedas;</code>, pulando o ponteiro do meio:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra erro2.c -o erro2
+erro2.c: In function ‘main’:
+erro2.c:5:16: error: initialization of ‘int **’ from incompatible pointer type ‘int *’ [-Wincompatible-pointer-types]
+    5 |     int **pp = &amp;moedas;
+      |                ^</pre>
+<p><strong>O que significa:</strong> <code>&amp;moedas</code> é um <code>int *</code> (um <code>&amp;</code> põe só um asterisco). Um <code>int **</code> precisa do endereço de um <strong>ponteiro</strong>.</p>
+<p><strong>Como consertar:</strong> crie o ponteiro do meio (<code>int *p = &amp;moedas;</code>) e aponte <code>pp</code> para ele: <code>int **pp = &amp;p;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘int *’</code></strong>
+<p>Você usou um asterisco a menos: <code>printf("%d\n", *pp);</code>.</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra erro3.c -o erro3
+erro3.c: In function ‘main’:
+erro3.c:7:14: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘int *’ [-Wformat=]
+    7 |     printf("%d\n", *pp);
+      |             ~^     ~~~
+      |              |     |
+      |              int   int *
+      |             %ls
+$ ./erro3
+-34380812                « um pedaço do endereço, mostrado como número</pre>
+<p><strong>O que significa:</strong> <code>*pp</code> ainda é um ponteiro (<code>int *</code>), não o número. O programa é gerado, mas mostra um pedaço do endereço como se fosse número (e outro a cada execução). (A sugestão <code>%ls</code> do gcc não tem nada a ver com o seu caso: ela serve para textos "largos". Ignore.)</p>
+<p><strong>Como consertar:</strong> para chegar no <code>int</code>, são dois saltos: <code>**pp</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação (imagem do núcleo gravada)</code> ao usar <code>**pp</code></strong>
+<pre class="file" data-file="nulo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int *p = NULL;
+    int **pp = &amp;p;
+    printf("Vou escrever em **pp...\n");
+    **pp = 5;
+    printf("Escrevi!\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nulo.c -o nulo
+$ ./nulo
+Vou escrever em **pp...
+Falha de segmentação     (imagem do núcleo gravada) ./nulo</pre>
+<p><strong>O que significa:</strong> o primeiro salto deu certo (<code>pp</code> aponta para <code>p</code>, que existe), mas <code>p</code> vale <code>NULL</code>, e o segundo salto tentou escrever no endereço zero. O sistema matou o programa (veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>). No editor do guia acontece o mesmo: <code>Falha de segmentação (imagem do núcleo gravada)</code> e código de saída 139.</p>
+<p><strong>Como consertar:</strong> confira os dois níveis antes de usar: <code>if (pp != NULL &amp;&amp; *pp != NULL) **pp = 5;</code>. Numa função que recebe <code>int **</code>, o <code>pp</code> quase sempre é válido (veio de um <code>&amp;</code>); quem costuma ser <code>NULL</code> é o <code>*pp</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A função "funcionou" lá dentro, mas o ponteiro do <code>main</code> não mudou</strong>
+<p><strong>O que significa:</strong> é o <code>aloca1.c</code> da seção 3. A função recebe <code>int *</code> e faz <code>p = …</code>: muda só a cópia. Nenhum compilador avisa, porque o código é válido; ele só não faz o que você queria.</p>
+<p><strong>Como consertar:</strong> receba <code>int **</code>, escreva <code>*p = …</code> lá dentro e chame com <code>&amp;</code>. Ou devolva o ponteiro com <code>return</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Tipo</th><th>O que é</th></tr>
+<tr><td><code>int **pp = &amp;p;</code></td><td><code>int **</code></td><td>Declara um ponteiro para ponteiro que aponta para o ponteiro <code>p</code></td></tr>
+<tr><td><code>pp</code></td><td><code>int **</code></td><td>O endereço de <code>p</code></td></tr>
+<tr><td><code>*pp</code></td><td><code>int *</code></td><td>O próprio <code>p</code> (o endereço guardado nele)</td></tr>
+<tr><td><code>**pp</code></td><td><code>int</code></td><td>A variável no fim dos dois saltos</td></tr>
+<tr><td><code>*pp = &amp;outra;</code></td><td></td><td>Faz <code>p</code> apontar para <code>outra</code></td></tr>
+<tr><td><code>**pp = 7;</code></td><td></td><td>Guarda 7 no fim dos dois saltos</td></tr>
+<tr><td><code>void f(int **saida)</code> + <code>f(&amp;p);</code></td><td></td><td>Função que pode mudar o ponteiro <code>p</code> de quem chama</td></tr>
+<tr><td><code>int main(int argc, char **argv)</code></td><td><code>char **</code></td><td>Lista de strings com os argumentos (termina em <code>NULL</code>)</td></tr>
+<tr><td><code>const char **p = lista;</code> … <code>p++</code></td><td><code>const char **</code></td><td>Anda por uma lista de strings; <code>*p</code> é o texto, <code>**p</code> a primeira letra</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Declarar</h3>
+<p>Complete para criar <code>pp</code>, que aponta para o ponteiro <code>p</code> (que é um <code>double *</code>):</p>
+<div class="ex-code">double <input data-answer="**" aria-label="asteriscos">pp = <input data-answer="&amp;p" aria-label="valor">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Dois saltos</h3>
+<p>Com <code>int x = 3; int *p = &amp;x; int **pp = &amp;p;</code>, complete para guardar 9 em <code>x</code> usando só <code>pp</code>:</p>
+<div class="ex-code"><input data-answer="**pp" aria-label="expressão"> = 9;</div>
+</div>
+
+<div class="exercise">
+<h3>3. Chamar a função</h3>
+<p>A função é <code>void abrir(char **nome)</code> e você tem <code>char *arquivo = NULL;</code>. Complete a chamada para que <code>abrir</code> possa mudar <code>arquivo</code>:</p>
+<div class="ex-code">abrir(<input data-answer="&amp;arquivo" aria-label="argumento">);</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com <code>int x = 3; int *p = &amp;x; int **pp = &amp;p;</code>, qual é o tipo de <code>*pp</code>?</p>
+<label><input type="radio" name="q4"> <code>int</code></label>
+<label><input type="radio" name="q4"> <code>int *</code></label>
+<label><input type="radio" name="q4"> <code>int **</code></label>
+<label><input type="radio" name="q4"> <code>int ***</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Depois de <code>int a = 1, b = 2; int *p = &amp;a; int **pp = &amp;p; *pp = &amp;b; **pp = 9;</code>, quanto valem <code>a</code> e <code>b</code>?</p>
+<label><input type="radio" name="q5"> a = 9, b = 2</label>
+<label><input type="radio" name="q5"> a = 9, b = 9</label>
+<label><input type="radio" name="q5"> a = 1, b = 9</label>
+<label><input type="radio" name="q5"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que <code>void criar(int *p) { p = malloc(sizeof *p); }</code> não entrega a memória para quem chamou?</p>
+<label><input type="radio" name="q6"> Porque <code>p</code> é uma cópia do ponteiro de quem chamou; mudar a cópia não muda o original</label>
+<label><input type="radio" name="q6"> Porque <code>malloc</code> não funciona dentro de funções</label>
+<label><input type="radio" name="q6"> Porque faltou um <code>return 0;</code></label>
+<label><input type="radio" name="q6"> Porque <code>sizeof *p</code> vale zero</label>
+</div>
+
+<h3>Missão final: trocar os ponteiros, não os valores</h3>
+
+<div class="tryc" data-goal="out:primeiro aponta para 50,out:segundo aponta para 100,out:ouro = 100\, prata = 50,semaviso">
+<p class="try-task"><strong>Missão:</strong> no pódio do jogo da Ana, <code>primeiro</code> aponta para <code>ouro</code> e <code>segundo</code> para <code>prata</code>. Escreva o corpo de <code>trocar</code> para que os dois <strong>ponteiros</strong> troquem de alvo, sem mexer nos números guardados em <code>ouro</code> e <code>prata</code>. Dica: guarde <code>*a</code> num <code>int *temp</code>, como na troca de dois números. A saída deve ser, sem avisos:</p>
+<pre class="out">primeiro aponta para 50
+segundo aponta para 100
+ouro = 100, prata = 50</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void trocar(int **a, int **b) {
+    // troque para onde *a e *b apontam
+}
+
+int main(void) {
+    int ouro = 100;
+    int prata = 50;
+    int *primeiro = &amp;ouro;
+    int *segundo = &amp;prata;
+
+    trocar(&amp;primeiro, &amp;segundo);
+
+    printf("primeiro aponta para %d\n", *primeiro);
+    printf("segundo aponta para %d\n", *segundo);
+    printf("ouro = %d, prata = %d\n", ouro, prata);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void trocar(int **a, int **b) {
+    int *temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+int main(void) {
+    int ouro = 100;
+    int prata = 50;
+    int *primeiro = &amp;ouro;
+    int *segundo = &amp;prata;
+
+    trocar(&amp;primeiro, &amp;segundo);
+
+    printf("primeiro aponta para %d\n", *primeiro);
+    printf("segundo aponta para %d\n", *segundo);
+    printf("ouro = %d, prata = %d\n", ouro, prata);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare no tipo do <code>temp</code>: ele guarda um <code>*a</code>, que é um <code>int *</code>. Se você escrever <code>int temp = *a;</code>, o gcc recusa com <code>error: initialization of ‘int’ from ‘int *’ makes integer from pointer without a cast</code> ("transforma ponteiro em inteiro sem conversão"). Trocar ponteiros em vez de valores é muito usado para <strong>ordenar</strong> coisas grandes: em vez de copiar fichas inteiras de um lado para o outro, você troca só as setas (veja <a href="ordenacao.html">Ordenação</a>).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um ponteiro também mora num endereço; quem guarda esse endereço é um <strong>ponteiro para ponteiro</strong>: <code>int **pp = &amp;p;</code>.</li>
+  <li><code>pp</code> é o endereço de <code>p</code>; <code>*pp</code> é o próprio <code>p</code>; <code>**pp</code> é o valor final. Cada <code>*</code> na frente tira um <code>*</code> do tipo; cada <code>&amp;</code> põe um.</li>
+  <li><code>*pp = &amp;outra;</code> muda para onde o ponteiro do meio aponta; <code>**pp = 7;</code> muda o valor final.</li>
+  <li>Para uma função mudar um <strong>ponteiro</strong> de quem chama (por exemplo, guardar nele a memória de um <code>malloc</code>), ela recebe <code>tipo **</code> e é chamada com <code>&amp;ponteiro</code>. Com um <code>tipo *</code> ela só mudaria a cópia.</li>
+  <li>Quando dá, devolver o ponteiro com <code>return</code> é mais simples; o <code>**</code> fica para quando o <code>return</code> está ocupado ou há vários ponteiros a mudar (como no <code>strtol</code>).</li>
+  <li>Listas de strings são arrays de <code>char *</code>; quem anda nelas é um <code>char **</code>, como o <code>argv</code> do <code>main</code>.</li>
+  <li>Erros típicos: esquecer o <code>&amp;</code> (<code>incompatible pointer type</code>, erro desde o gcc 14), um <code>*</code> a menos no <code>printf</code> e <code>**pp</code> com <code>*pp</code> valendo <code>NULL</code> (falha de segmentação).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
