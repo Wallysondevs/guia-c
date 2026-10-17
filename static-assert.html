@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C static_assert — conferir na compilação | Guia C</title>
+<meta name="description" content="static_assert em C para quem está aprendendo: conferir regras durante a compilação, como sizeof(int) == 4 e o tamanho de uma struct, a forma do C11 (_Static_assert), a do C23 (sem include e sem mensagem obrigatória), os erros reais do gcc 15 e do Clang e a diferença para o assert, que confere com o programa rodando.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">static_assert</span></h1>
+
+<p class="intro">Todo programa parte de algumas <strong>certezas</strong>: "um <code>int</code> tem 4 bytes", "cada registro do arquivo tem 24 bytes", "a lista de nomes tem um nome para cada dia da semana". Se uma dessas certezas deixar de valer (outro computador, alguém mexeu numa struct), o programa erra em silêncio. O <strong><code>static_assert</code></strong> transforma essas certezas em <strong>regras que o compilador confere</strong>: se a regra falhar, o programa nem é gerado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma "afirmação" (<em>assertion</em>) e por que conferir <strong>na compilação</strong>.</li>
+  <li>Como escrever <code>static_assert(condição, "mensagem");</code> e ler o erro quando ela falha.</li>
+  <li>As três escritas: <code>_Static_assert</code> <span class="versao">C11</span>, <code>static_assert</code> com <code>assert.h</code> e <code>static_assert</code> sem include e sem mensagem <span class="versao">C23</span>.</li>
+  <li>Conferir o tamanho de tipos e de structs, e se um array tem um item para cada valor de um <code>enum</code>.</li>
+  <li>Por que a condição precisa ser uma constante (e como o <code>constexpr</code> ajuda).</li>
+  <li>A diferença para o <code>assert</code>, que confere com o programa rodando.</li>
+</ul>
+</div>
+
+<p>Os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o medidor de bagagem do aeroporto</h2>
+<p>No aeroporto, antes de embarcar, a mala de mão passa por um <strong>medidor</strong>: uma caixa de metal do tamanho máximo permitido. Se a mala não cabe, você descobre <strong>no chão</strong>, antes de o avião sair. Ninguém espera o avião decolar para descobrir que a mala não cabe no bagageiro.</p>
+
+<p>O <code>static_assert</code> é o medidor: ele confere a regra <strong>antes</strong> de o programa existir, durante a compilação. Já o <code>assert</code> comum (aula <a href="testes.html">Testes</a>) é como um alarme que toca <strong>durante o voo</strong>: ele confere enquanto o programa roda, e quando toca, o programa é interrompido.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>static_assert</code></th><th><code>assert</code></th></tr>
+<tr><td>Quando confere</td><td>Na <strong>compilação</strong></td><td>Com o programa <strong>rodando</strong></td></tr>
+<tr><td>O que pode conferir</td><td>Só o que o compilador já sabe: <code>sizeof</code>, constantes, <code>enum</code></td><td>Qualquer coisa: variáveis, o que o usuário digitou</td></tr>
+<tr><td>Quando falha</td><td>Erro de compilação: o programa não é gerado</td><td>O programa para com "Abortado" (código 134)</td></tr>
+<tr><td>Custa tempo ao rodar?</td><td>Nada: no programa pronto ele nem existe</td><td>Um pouquinho, a cada vez que passa por ali</td></tr>
+</table>
+</div>
+
+<p><strong>Assert</strong> é "afirmar" em inglês: você afirma que algo é verdade, e o computador confere. <strong>Static</strong> ("estático", "parado") quer dizer aqui "na compilação", quando nada ainda está rodando.</p>
+
+<hr>
+
+<h2>1. O primeiro <code>static_assert</code></h2>
+<p>A Ana guarda pontuações de até 2 bilhões num <code>int</code>. Isso só cabe se o <code>int</code> tiver 4 bytes (aula <a href="inteiros.html">Inteiros</a>). Ela escreve essa certeza no código:</p>
+
+<pre class="file" data-file="tamanho.c">#include &lt;stdio.h&gt;
+
+static_assert(sizeof(int) == 4, "este programa precisa de int com 4 bytes");
+
+int main(void) {
+    int pontos = 2000000000;
+    printf("Pontos: %d\n", pontos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanho.c -o tamanho
+$ ./tamanho
+Pontos: 2000000000</pre>
+
+<dl class="anatomy">
+  <dt>static_assert</dt><dd>Em C23, uma palavra-chave da linguagem: não precisa de nenhum <code>#include</code>.</dd>
+  <dt>( sizeof(int) == 4</dt><dd>A <strong>condição</strong>: a regra que tem de ser verdadeira. O <code>sizeof(int)</code> é conhecido pelo compilador, então ele consegue conferir na hora (aula <a href="sizeof.html">Tamanho dos Tipos</a>).</dd>
+  <dt>, "este programa…" )</dt><dd>A <strong>mensagem</strong>, mostrada só se a condição for falsa. Escreva o <em>porquê</em> da regra: quem ler o erro daqui a um ano vai agradecer.</dd>
+  <dt>fora do main</dt><dd>O <code>static_assert</code> pode ficar fora de qualquer função (como aqui), dentro de uma função ou até dentro de uma <code>struct</code>. Ele não vira código nenhum: é só uma conferência.</dd>
+</dl>
+
+<p>Quando a regra é verdadeira, nada acontece: o <code>gcc</code> compilou calado e o programa rodou normalmente. O <code>static_assert</code> só aparece quando falha.</p>
+
+<h3>Quando a regra é falsa</h3>
+<p>Agora, de propósito, uma regra que não vale no computador da Ana:</p>
+
+<pre class="file" data-file="falha.c">#include &lt;stdio.h&gt;
+
+static_assert(sizeof(int) == 8, "este programa precisa de int com 8 bytes");
+
+int main(void) {
+    printf("Compilou!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra falha.c -o falha
+falha.c:3:1: error: static assertion failed: "este programa precisa de int com 8 bytes"
+    3 | static_assert(sizeof(int) == 8, "este programa precisa de int com 8 bytes");
+      | ^~~~~~~~~~~~~
+$ ./falha
+bash: ./falha: Arquivo ou diretório inexistente</pre>
+
+<dl class="anatomy">
+  <dt>falha.c:3:1:</dt><dd>Arquivo, linha 3, coluna 1: onde está o <code>static_assert</code> que falhou.</dd>
+  <dt>error: static assertion failed:</dt><dd>"Erro: afirmação estática falhou". É um <strong>error</strong>, não um aviso: o programa não foi gerado.</dd>
+  <dt>"este programa precisa de int com 8 bytes"</dt><dd>A sua mensagem, copiada do código. É por isso que ela deve explicar a regra.</dd>
+  <dt>Arquivo ou diretório inexistente</dt><dd>Como a compilação falhou, o arquivo <code>falha</code> não existe. Nenhum programa com a regra quebrada chega a rodar.</dd>
+</dl>
+
+<p>O Clang, compilador do editor do guia, mostra ainda <strong>a conta</strong> que deu errado, o que ajuda bastante:</p>
+
+<pre class="term">falha.c:3:15: error: static assertion failed due to requirement 'sizeof(int) == 8': este programa precisa de int com 8 bytes
+    3 | static_assert(sizeof(int) == 8, "este programa precisa de int com 8 bytes");
+      |               ^~~~~~~~~~~~~~~~
+falha.c:3:27: note: expression evaluates to '4 == 8'</pre>
+
+<p><em>Due to requirement</em> = "por causa da exigência"; <em>expression evaluates to '4 == 8'</em> = "a expressão dá <code>4 == 8</code>": o <code>sizeof(int)</code> valeu 4, e 4 não é 8.</p>
+
+<div class="tryc" data-goal="erro:static assertion failed">
+<p class="try-task"><strong>Missão (provoque o erro):</strong> a sala da escola tem 40 cadeiras, e o <code>static_assert</code> garante que <code>MAX_ALUNOS</code> nunca passe disso. Rode: compila. Agora mude <code>MAX_ALUNOS</code> para <code>45</code> e rode de novo: o compilador tem de recusar, com a sua mensagem.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define MAX_ALUNOS 35
+
+static_assert(MAX_ALUNOS &lt;= 40, "a sala só tem 40 cadeiras");
+
+int main(void) {
+    printf("A turma pode ter até %d alunos.\n", MAX_ALUNOS);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define MAX_ALUNOS 45
+
+static_assert(MAX_ALUNOS &lt;= 40, "a sala só tem 40 cadeiras");
+
+int main(void) {
+    printf("A turma pode ter até %d alunos.\n", MAX_ALUNOS);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. C23: a mensagem é opcional</h2>
+<p>Em C23, você pode escrever só a condição. Para regras óbvias, a mensagem seria repetir o que o código já diz:</p>
+
+<pre class="file" data-file="semmsg.c">#include &lt;stdio.h&gt;
+
+static_assert(sizeof(int) == 8);
+
+int main(void) {
+    printf("Compilou!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semmsg.c -o semmsg
+semmsg.c:3:1: error: static assertion failed
+    3 | static_assert(sizeof(int) == 8);
+      | ^~~~~~~~~~~~~</pre>
+
+<p>O gcc diz só "falhou" e mostra a linha; a regra está ali, escrita no código. O Clang mostra <code>static assertion failed due to requirement 'sizeof(int) == 8'</code> e a nota <code>expression evaluates to '4 == 8'</code>.</p>
+
+<hr>
+
+<h2>3. As escritas antigas: <code>_Static_assert</code> e <code>assert.h</code></h2>
+<p>O recurso nasceu no <span class="versao">C11</span>, com um nome feio de propósito: <code>_Static_assert</code>. O nome "bonito" era só uma <strong>macro</strong> definida em <code>assert.h</code>. Isso tudo ainda funciona, e você vai encontrar muito código assim:</p>
+
+<pre class="file" data-file="c11.c">#include &lt;stdio.h&gt;
+
+_Static_assert(sizeof(int) == 4, "int precisa ter 4 bytes");
+
+int main(void) {
+    printf("Compilou!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c11 -Wall -Wextra c11.c -o c11 &amp;&amp; ./c11
+Compilou!</pre>
+
+<p>O <code>-std=c11</code> pede ao gcc o C de 2011 (aula <a href="compilar.html">Compilar com gcc</a>). Nesse padrão, escrever <code>static_assert</code> <strong>sem</strong> incluir <code>assert.h</code> dá um erro estranho:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c11 -Wall -Wextra c11b.c -o c11b
+c11b.c:3:15: error: expected declaration specifiers or ‘...’ before ‘sizeof’
+    3 | static_assert(sizeof(int) == 4, "int precisa ter 4 bytes");
+      |               ^~~~~~
+c11b.c:3:33: error: expected declaration specifiers or ‘...’ before string constant
+    3 | static_assert(sizeof(int) == 4, "int precisa ter 4 bytes");
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~~~~</pre>
+
+<p>No C11, sem a macro, <code>static_assert</code> é um nome desconhecido, e o compilador acha que você está declarando uma função chamada <code>static_assert</code> com parâmetros esquisitos. A mensagem não fala nada de "assert", por isso confunde. Com <code>#include &lt;assert.h&gt;</code> no começo, o mesmo arquivo compila com <code>-std=c11</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Desde</th><th>Precisa de</th><th>Mensagem</th></tr>
+<tr><td><code>_Static_assert(cond, "msg");</code></td><td><span class="versao">C11</span></td><td>Nada</td><td>Obrigatória até o C17</td></tr>
+<tr><td><code>static_assert(cond, "msg");</code></td><td><span class="versao">C11</span></td><td><code>#include &lt;assert.h&gt;</code> (no C11 e C17)</td><td>Obrigatória até o C17</td></tr>
+<tr><td><code>static_assert(cond, "msg");</code></td><td><span class="versao">C23</span></td><td>Nada (é palavra-chave)</td><td>Opcional</td></tr>
+<tr><td><code>static_assert(cond);</code></td><td><span class="versao">C23</span></td><td>Nada</td><td>Sem mensagem</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar:</strong> com o gcc 15 ou o Clang em C23, escreva <code>static_assert</code>, com mensagem quando a regra precisar de explicação. Se o seu código precisa compilar também em C11/C17, inclua <code>assert.h</code> e escreva sempre a mensagem. (O gcc aceita <code>_Static_assert(cond)</code> sem mensagem até com <code>-std=c11</code>, mas com <code>-pedantic</code> ele avisa: <code>ISO C11 does not support omitting the string in ‘_Static_assert’</code>.)</p>
+
+<hr>
+
+<h2>4. Conferir o tamanho de uma struct</h2>
+<p>O uso mais comum: proteger um formato de arquivo. A lojinha da Ana grava o estoque num arquivo binário, um produto depois do outro, cada um com <strong>24 bytes</strong> (aula <a href="arquivos-binarios.html">Arquivos Binários</a>). Se a struct mudar de tamanho, os arquivos antigos passam a ser lidos errado. O <code>static_assert</code> vigia isso:</p>
+
+<pre class="file" data-file="produto.c">#include &lt;stdio.h&gt;
+
+struct produto {
+    char codigo[8];
+    int quantidade;
+    double preco;
+};
+
+static_assert(sizeof(struct produto) == 24, "o arquivo estoque.dat usa registros de 24 bytes");
+
+int main(void) {
+    printf("Cada produto ocupa %zu bytes.\n", sizeof(struct produto));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra produto.c -o produto
+$ ./produto
+Cada produto ocupa 24 bytes.</pre>
+
+<p>Meses depois, alguém acrescenta um campo <code>bool ativo;</code> no fim da struct, sem lembrar do arquivo:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra produto2.c -o produto2
+produto2.c:10:1: error: static assertion failed: "o arquivo estoque.dat usa registros de 24 bytes"
+   10 | static_assert(sizeof(struct produto) == 24, "o arquivo estoque.dat usa registros de 24 bytes");
+      | ^~~~~~~~~~~~~</pre>
+
+<p>A regra pegou o problema <strong>antes</strong> de algum estoque ser estragado. E de quanto ficou a struct? Não 25, como a conta "24 + 1 byte do <code>bool</code>" sugere: o Clang mostra <code>expression evaluates to '32 == 24'</code>. O compilador acrescenta bytes vazios (<em>padding</em>, "enchimento") para alinhar a struct na memória; a aula <a href="structs.html">Structs</a> explica. Mais um motivo para conferir com <code>static_assert</code> em vez de fazer a conta de cabeça.</p>
+
+<hr>
+
+<h2>5. Um nome para cada valor do <code>enum</code></h2>
+<p>Outro erro clássico: um <code>enum</code> com os dias da semana e um array com o nome de cada dia (aula <a href="enums.html">Enums</a>). Se alguém esquece um nome, o array fica menor que o <code>enum</code>. Sem conferência, olha o que acontece:</p>
+
+<pre class="file" data-file="dias0.c">#include &lt;stdio.h&gt;
+
+enum dia { SEG, TER, QUA, QUI, SEX, SAB, DOM, TOTAL_DIAS };
+
+const char *nomes[] = { "segunda", "terça", "quarta", "quinta", "sexta", "sábado" };
+
+int main(void) {
+    for (int d = SEG; d &lt; TOTAL_DIAS; d++) {
+        printf("%d: %s\n", d, nomes[d]);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dias0.c -o dias0
+$ ./dias0
+0: segunda
+1: terça
+2: quarta
+3: quinta
+4: sexta
+5: sábado
+6: (null)                 « o domingo foi esquecido: leu fora do array</pre>
+
+<p>O <code>nomes[6]</code> não existe. Ler fora do array é <strong>comportamento indefinido</strong> (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>): aqui saiu <code>(null)</code>, em outro computador poderia ser lixo ou o programa poderia morrer. E o gcc não avisou nada. Uma linha resolve:</p>
+
+<p>O <code>dias.c</code> é o mesmo programa com esta linha a mais, logo depois do array (linha 7):</p>
+
+<pre class="file" data-file="dias.c">static_assert(sizeof nomes / sizeof nomes[0] == TOTAL_DIAS, "falta nome para algum dia");
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dias.c -o dias
+dias.c:7:1: error: static assertion failed: "falta nome para algum dia"
+    7 | static_assert(sizeof nomes / sizeof nomes[0] == TOTAL_DIAS, "falta nome para algum dia");
+      | ^~~~~~~~~~~~~</pre>
+
+<dl class="anatomy">
+  <dt>sizeof nomes</dt><dd>O tamanho do array inteiro, em bytes.</dd>
+  <dt>/ sizeof nomes[0]</dt><dd>Dividido pelo tamanho de um item: dá <strong>quantos itens</strong> o array tem (aula <a href="arrays.html">Arrays</a>). Aqui, 6.</dd>
+  <dt>== TOTAL_DIAS</dt><dd>O último nome do <code>enum</code> vale 7, porque os valores começam em 0. Esse "item extra no fim" é um truque comum para contar quantos valores o <code>enum</code> tem.</dd>
+</dl>
+
+<p>A missão final desta aula é consertar esse programa.</p>
+
+<hr>
+
+<h2>6. A condição precisa ser constante</h2>
+<p>O compilador só confere o que ele <strong>já sabe</strong> antes de o programa rodar. O valor de uma variável comum, ele não sabe:</p>
+
+<pre class="file" data-file="naoconst.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int dias = 7;
+    static_assert(dias == 7, "a semana tem 7 dias");
+    printf("ok\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra naoconst.c -o naoconst
+naoconst.c: In function ‘main’:
+naoconst.c:5:24: error: expression in static assertion is not constant
+    5 |     static_assert(dias == 7, "a semana tem 7 dias");
+      |                   ~~~~~^~~~</pre>
+
+<p>"A expressão na afirmação estática não é constante." Para nós é óbvio que <code>dias</code> vale 7, mas para a linguagem uma variável pode mudar a qualquer momento. (O Clang diz <code>static assertion expression is not an integral constant expression</code>, "não é uma expressão constante inteira".)</p>
+
+<p>O que vale numa condição: números escritos no código, <code>sizeof</code>, valores de <code>enum</code>, macros <code>#define</code> e, no <span class="versao">C23</span>, variáveis <code>constexpr</code> (aula <a href="constantes.html">Constantes</a>):</p>
+
+<pre class="file" data-file="constexpr.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    constexpr int dias = 7;
+    static_assert(dias == 7, "a semana tem 7 dias");
+    printf("A semana tem %d dias.\n", dias);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra constexpr.c -o constexpr
+$ ./constexpr
+A semana tem 7 dias.</pre>
+
+<p>Atenção: <code>const int dias = 7;</code> <strong>não</strong> serve, pela regra da linguagem. Em C, <code>const</code> quer dizer "não posso mudar", mas não "o compilador conhece o valor". O gcc recusa com o mesmo <code>expression in static assertion is not constant</code>. O Clang do editor aceita, como uma extensão por conta própria, e isso engana: o código passa no editor e falha no gcc. Só o <code>constexpr</code> funciona em todo compilador C23.</p>
+
+<hr>
+
+<h2>7. <code>static_assert</code> × <code>assert</code></h2>
+<p>Para conferir o que só se sabe com o programa rodando (o estoque depois de uma venda, um número digitado), existe o <code>assert</code>, de <code>assert.h</code>:</p>
+
+<pre class="file" data-file="runtime.c">#include &lt;stdio.h&gt;
+#include &lt;assert.h&gt;
+
+int main(void) {
+    int estoque = 0;
+    printf("Vendendo...\n");
+    estoque = estoque - 1;
+    assert(estoque &gt;= 0);
+    printf("Estoque: %d\n", estoque);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra runtime.c -o runtime
+$ ./runtime
+Vendendo...
+runtime: runtime.c:8: main: Assertion `estoque &gt;= 0' failed.
+Abortado                   (imagem do núcleo gravada) ./runtime
+$ echo $?
+134</pre>
+
+<ul>
+  <li>Este compilou sem reclamar: o <code>assert</code> só olha a variável quando o programa passa pela linha 8.</li>
+  <li><code>Assertion `estoque &gt;= 0' failed.</code> = "a afirmação <code>estoque &gt;= 0</code> falhou", com o nome do programa, do arquivo, a linha e a função.</li>
+  <li><code>Abortado</code> é o Bash avisando que o programa foi interrompido pelo sinal <code>SIGABRT</code> (aula <a href="sinais.html">Sinais</a>); o código de saída é <strong>134</strong> (128 + 6, o número do sinal).</li>
+  <li>O <code>printf("Estoque…")</code> nunca rodou: o estoque negativo não chegou a ser usado.</li>
+  <li>No editor do guia, a mensagem tem outro formato (<code>Assertion failed: estoque &gt;= 0 (runtime.c: main: 8)</code>), mas o efeito e o código 134 são os mesmos.</li>
+</ul>
+
+<p>Um detalhe importante: compilando com <code>-DNDEBUG</code> ("no debug", sem depuração), todo <code>assert</code> some do programa. O <code>static_assert</code> nunca some:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -DNDEBUG runtime.c -o runtime
+$ ./runtime
+Vendendo...
+Estoque: -1               « o assert foi removido; o erro passou</pre>
+
+<h3>Qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Tamanho de tipo ou de struct, valores de <code>enum</code>, macros, tamanho de array</td><td><code>static_assert</code>: o erro aparece antes de existir programa</td></tr>
+<tr><td>Valor de variável, resultado de conta, parâmetro recebido por uma função</td><td><code>assert</code>: confere ao rodar</td></tr>
+<tr><td>Algo que o <strong>usuário</strong> pode errar (digitou letra, arquivo não existe)</td><td>Nenhum dos dois: um <code>if</code> com mensagem de erro (aula <a href="validar-entrada.html">Validar a Entrada</a>). O <code>assert</code> é para erros do <strong>programador</strong>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: static assertion failed: "…"</code></strong>
+<p><strong>O que significa:</strong> a regra que você (ou alguém) escreveu é falsa neste computador ou neste código. Não é defeito do compilador: é o <code>static_assert</code> fazendo o trabalho dele.</p>
+<p><strong>Como consertar:</strong> leia a mensagem e descubra o que mudou (um campo novo na struct, um nome a menos no array, outro computador). Conserte o código. Mudar o número da regra só para "passar" esconde o problema que ela devia mostrar.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expression in static assertion is not constant</code></strong>
+<p><strong>O que significa:</strong> a condição usa uma variável comum (ou <code>const</code>), cujo valor o compilador não conhece.</p>
+<p><strong>Como consertar:</strong> troque a variável por <code>constexpr</code>, um <code>enum</code> ou um <code>#define</code>. Se o valor só existe com o programa rodando, use <code>assert</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expected declaration specifiers or ‘...’ before ‘sizeof’</code></strong>
+<p><strong>O que significa:</strong> você compilou com <code>-std=c11</code> ou <code>-std=c17</code> e usou <code>static_assert</code> sem <code>#include &lt;assert.h&gt;</code>. Nesses padrões, o nome só existe como macro desse cabeçalho. No Clang: <code>expected parameter declarator</code>.</p>
+<p><strong>Como consertar:</strong> inclua <code>assert.h</code>, escreva <code>_Static_assert</code> ou compile em C23.</p>
+</div>
+
+<div class="cenario">
+<strong>A regra passa no gcc e falha em outro computador (ou ao contrário)</strong>
+<p><strong>O que significa:</strong> tamanhos de tipos mudam de máquina para máquina. <code>static_assert(sizeof(long) == 8)</code> passa no gcc do laboratório (Linux de 64 bits) e falha no editor do guia, onde <code>long</code> tem 4 bytes (veja <a href="simulador.html">O Editor do Guia</a>).</p>
+<p><strong>Como consertar:</strong> é exatamente esse o aviso que você queria. Se o código precisa de um tamanho exato, use os tipos de <code>stdint.h</code> (<code>int32_t</code>, <code>int64_t</code>, aula <a href="stdint.html">Inteiros de Tamanho Fixo</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>static_assert(cond, "msg");</code></td><td>Erro de compilação com <code>msg</code> se <code>cond</code> for falsa <span class="versao">C23</span> (no C11/C17, com <code>assert.h</code>)</td></tr>
+<tr><td><code>static_assert(cond);</code></td><td>O mesmo, sem mensagem <span class="versao">C23</span></td></tr>
+<tr><td><code>_Static_assert(cond, "msg");</code></td><td>A forma original, sem include <span class="versao">C11</span></td></tr>
+<tr><td><code>static_assert(sizeof(int) == 4);</code></td><td>Confere o tamanho de um tipo</td></tr>
+<tr><td><code>static_assert(sizeof(struct s) == 24, "…");</code></td><td>Protege um formato de arquivo ou de rede</td></tr>
+<tr><td><code>static_assert(sizeof v / sizeof v[0] == N, "…");</code></td><td>Confere quantos itens um array tem</td></tr>
+<tr><td><code>assert(cond);</code></td><td>Confere com o programa rodando; falha = "Abortado", código 134; some com <code>-DNDEBUG</code></td></tr>
+<tr><td>Onde pode ficar</td><td>Fora de funções, dentro de funções e dentro de <code>struct</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete a regra</h3>
+<p>Complete para conferir, na compilação, que <code>double</code> tem 8 bytes:</p>
+<div class="ex-code"><input data-answer="static_assert|_Static_assert" aria-label="palavra">(sizeof(double) == 8);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Quantos itens</h3>
+<p>Complete para calcular quantos itens tem o array <code>notas</code>:</p>
+<div class="ex-code">sizeof notas / <input data-answer="sizeof notas[0]|sizeof(notas[0])" aria-label="divisor"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Quando um <code>static_assert</code> falha, o que acontece?</p>
+<label><input type="radio" name="q3"> O programa roda e mostra a mensagem</label>
+<label><input type="radio" name="q3"> O programa roda e termina com código 134</label>
+<label><input type="radio" name="q3"> A compilação falha e o programa não é gerado</label>
+<label><input type="radio" name="q3"> O compilador mostra um aviso e gera o programa</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual destas condições <strong>não</strong> pode ir num <code>static_assert</code>?</p>
+<label><input type="radio" name="q4"> <code>sizeof(int) == 4</code></label>
+<label><input type="radio" name="q4"> <code>idade &gt;= 18</code>, com <code>int idade</code> lida pelo <code>scanf</code></label>
+<label><input type="radio" name="q4"> <code>TOTAL_DIAS == 7</code>, com <code>TOTAL_DIAS</code> de um <code>enum</code></label>
+<label><input type="radio" name="q4"> <code>MAX &lt;= 40</code>, com <code>#define MAX 35</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Em C23, qual destas linhas compila sem nenhum <code>#include</code>?</p>
+<label><input type="radio" name="q5"> Só <code>_Static_assert(sizeof(int) == 4, "x");</code></label>
+<label><input type="radio" name="q5"> Só <code>static_assert(sizeof(int) == 4, "x");</code></label>
+<label><input type="radio" name="q5"> Só <code>static_assert(sizeof(int) == 4);</code></label>
+<label><input type="radio" name="q5"> As três</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Você compila com <code>-DNDEBUG</code>. O que acontece com <code>assert</code> e <code>static_assert</code>?</p>
+<label><input type="radio" name="q6"> O <code>assert</code> some; o <code>static_assert</code> continua conferindo</label>
+<label><input type="radio" name="q6"> Os dois somem</label>
+<label><input type="radio" name="q6"> O <code>static_assert</code> some; o <code>assert</code> continua</label>
+<label><input type="radio" name="q6"> Nenhum dos dois muda</label>
+</div>
+
+<h3>Missão final: o domingo esquecido</h3>
+
+<div class="tryc" data-goal="out:6: domingo,src:static_assert\s*\(,semaviso">
+<p class="try-task"><strong>Missão:</strong> rode e leia o erro: o <code>static_assert</code> encontrou um nome faltando no array. Conserte o <strong>array</strong> (não mexa no <code>static_assert</code>) para o programa compilar e mostrar os sete dias, terminando em <code>6: domingo</code>.</p>
+<pre class="out">0: segunda
+1: terça
+2: quarta
+3: quinta
+4: sexta
+5: sábado
+6: domingo</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+enum dia { SEG, TER, QUA, QUI, SEX, SAB, DOM, TOTAL_DIAS };
+
+const char *nomes[] = { "segunda", "terça", "quarta", "quinta", "sexta", "sábado" };
+
+static_assert(sizeof nomes / sizeof nomes[0] == TOTAL_DIAS, "falta nome para algum dia");
+
+int main(void) {
+    for (int d = SEG; d &lt; TOTAL_DIAS; d++) {
+        printf("%d: %s\n", d, nomes[d]);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+enum dia { SEG, TER, QUA, QUI, SEX, SAB, DOM, TOTAL_DIAS };
+
+const char *nomes[] = { "segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo" };
+
+static_assert(sizeof nomes / sizeof nomes[0] == TOTAL_DIAS, "falta nome para algum dia");
+
+int main(void) {
+    for (int d = SEG; d &lt; TOTAL_DIAS; d++) {
+        printf("%d: %s\n", d, nomes[d]);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>static_assert(condição, "mensagem");</code> confere uma regra <strong>na compilação</strong>. Se for falsa: <code>error: static assertion failed</code> e nenhum programa é gerado.</li>
+  <li><span class="versao">C11</span>: <code>_Static_assert</code>, ou <code>static_assert</code> com <code>#include &lt;assert.h&gt;</code>, mensagem obrigatória. <span class="versao">C23</span>: <code>static_assert</code> é palavra-chave e a mensagem é opcional.</li>
+  <li>Usos clássicos: tamanho de tipos (<code>sizeof(int) == 4</code>), tamanho de structs gravadas em arquivo, um item do array para cada valor do <code>enum</code>.</li>
+  <li>A condição tem de ser constante: números, <code>sizeof</code>, <code>enum</code>, <code>#define</code>, <code>constexpr</code>. Variável comum ou <code>const</code> dá <code>not constant</code>.</li>
+  <li>O <code>assert</code> confere com o programa rodando, para com "Abortado" (código 134) e some com <code>-DNDEBUG</code>. Prefira o <code>static_assert</code> sempre que a regra puder ser conferida na compilação.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
