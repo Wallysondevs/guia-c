@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Structs e Ponteiros (-&gt;) — a seta, funções e malloc | Guia C</title>
+<meta name="description" content="Structs e ponteiros em C para quem nunca programou: a seta p-&gt;nota é o mesmo que (*p).nota, passar struct por ponteiro para a função mudar ou para não copiar, const struct Aluno *, struct com malloc(sizeof *p), array de structs dinâmico e a lista que cresce reescrita com struct, com os erros reais do gcc 15, valgrind e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Structs e Ponteiros (-&gt;)</span></h1>
+
+<p class="intro">Na aula de <a href="structs.html">Structs</a>, uma função que recebia um <code>struct Aluno</code> trabalhava numa <strong>cópia</strong>: o bônus na nota sumia quando ela terminava. Agora você vai juntar structs com <a href="ponteiros.html">ponteiros</a>. Com o endereço da struct, uma função consegue mudar a original, structs enormes deixam de ser copiadas a cada chamada, e dá para criar structs com <code>malloc</code>. Tudo isso com um operador novo, que você vai ver em praticamente todo programa C: a <strong>seta</strong>, <code>-&gt;</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como apontar para uma struct e acessar os campos com <code>(*p).nota</code> e com a seta <code>p-&gt;nota</code>.</li>
+  <li>Por que <code>*p.nota</code> não funciona (precedência).</li>
+  <li>Como uma função muda uma struct de fora recebendo <code>struct Aluno *</code>.</li>
+  <li>Por que passar structs grandes por ponteiro, e como <code>const struct Aluno *</code> protege a original.</li>
+  <li>Como criar structs com <code>malloc(sizeof *p)</code> e arrays de structs com <code>calloc</code>.</li>
+  <li>Como a lista que cresce, da aula <a href="array-dinamico.html">Array que Cresce</a>, fica bem mais limpa com uma struct.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. A struct de exemplo é a mesma da aula anterior: <code>struct Aluno { char nome[50]; int idade; double nota; };</code>.</p>
+
+<hr>
+
+<h2>A ideia: o número da gaveta</h2>
+<p>A secretaria da escola guarda as fichas dos alunos em gavetas numeradas. Quando a professora precisa <strong>ver</strong> a ficha da Ana, a secretaria pode tirar uma xerox (dá trabalho, e anotar na xerox não muda a ficha de verdade) ou simplesmente dizer: "está na gaveta 42". Com o número da gaveta, a professora lê a ficha original e, se puder, corrige a nota lá mesmo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na secretaria</th><th>Em C</th></tr>
+<tr><td>Tirar uma xerox da ficha</td><td>passar a struct por valor: <code>void f(struct Aluno a)</code></td></tr>
+<tr><td>Dar o número da gaveta</td><td>passar o endereço: <code>f(&amp;ana)</code>, com <code>void f(struct Aluno *a)</code></td></tr>
+<tr><td>Ir até a gaveta e ler o campo "Nota"</td><td><code>a-&gt;nota</code></td></tr>
+<tr><td>"Pode olhar, mas não escreva"</td><td><code>const struct Aluno *a</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Ponteiro para struct e a seta</h2>
+<p>Um ponteiro para struct funciona como qualquer ponteiro: guarda um endereço, que você pega com <code>&amp;</code>. Para chegar num campo, há duas escritas que fazem exatamente a mesma coisa:</p>
+
+<pre class="file" data-file="seta.c">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+int main(void) {
+    struct Aluno ana = {"Ana", 20, 8.5};
+    struct Aluno *p = &amp;ana;
+
+    printf("%s\n", (*p).nome);
+    printf("%s\n", p-&gt;nome);
+
+    p-&gt;nota = 10.0;
+    printf("Nota da Ana: %.1f\n", ana.nota);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>struct Aluno *p = &amp;ana;</dt><dd><code>p</code> é um "ponteiro para <code>struct Aluno</code>" e guarda o endereço da <code>ana</code>. O <code>*</code> na declaração diz "é um ponteiro".</dd>
+  <dt>(*p).nome</dt><dd>Primeiro <code>*p</code> segue o endereço e chega na struct <code>ana</code>; depois <code>.nome</code> pega o campo. Os parênteses são <strong>obrigatórios</strong>: o ponto é mais forte que o <code>*</code>.</dd>
+  <dt>p-&gt;nome</dt><dd>A <strong>seta</strong> (um hífen e um sinal de maior, sem espaço) é um atalho para <code>(*p).nome</code>. Mesma coisa, menos símbolos. É a forma que todo mundo usa.</dd>
+  <dt>p-&gt;nota = 10.0;</dt><dd>Muda o campo <strong>da própria <code>ana</code></strong>, porque <code>p</code> aponta para ela. Não existe cópia nenhuma aqui.</dd>
+</dl>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra seta.c -o seta
+$ ./seta
+Ana
+Ana
+Nota da Ana: 10.0</pre>
+
+<p>Regra para lembrar: <strong>tem a struct → ponto</strong> (<code>ana.nota</code>); <strong>tem um ponteiro para a struct → seta</strong> (<code>p-&gt;nota</code>).</p>
+
+<h3>Por que não <code>*p.nota</code>?</h3>
+<p>Sem os parênteses, o C lê <code>*p.nota</code> como <code>*(p.nota)</code>: "pegue o campo <code>nota</code> de <code>p</code> e siga esse endereço". Mas <code>p</code> é um ponteiro, não uma struct, e não tem campos:</p>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra semparen.c -o semparen
+semparen.c: In function ‘main’:
+semparen.c:12:24: error: ‘p’ is a pointer; did you mean to use ‘-&gt;’?
+   12 |     printf("%.1f\n", *p.nota);
+      |                        ^
+      |                        -&gt;
+«…»</pre>
+
+<p><em>‘p’ is a pointer; did you mean to use ‘-&gt;’?</em> = "<code>p</code> é um ponteiro; você quis usar <code>-&gt;</code>?". O gcc até mostra onde pôr a seta. Foi justamente para fugir dessa armadilha de precedência (veja <a href="precedencia.html">Precedência</a>) que a seta foi inventada.</p>
+
+<hr>
+
+<h2>2. Uma função que muda a struct</h2>
+<p>Agora o problema do bônus perdido tem solução. A função recebe o <strong>endereço</strong> da struct e mexe nela pela seta, como você viu com variáveis simples em <a href="passagem-ponteiro.html">Passar por Ponteiro</a>:</p>
+
+<pre class="file" data-file="bonus.c">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+void dar_bonus(struct Aluno *a, double pontos) {
+    a-&gt;nota += pontos;
+}
+
+void mostrar(const struct Aluno *a) {
+    printf("%s (%d anos): %.1f\n", a-&gt;nome, a-&gt;idade, a-&gt;nota);
+}
+
+int main(void) {
+    struct Aluno ana = {"Ana", 20, 6.5};
+    mostrar(&amp;ana);
+    dar_bonus(&amp;ana, 1.0);
+    mostrar(&amp;ana);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>void dar_bonus(struct Aluno *a, double pontos)</code></td><td>Recebe o endereço de uma struct. A função pode mudar a original.</td></tr>
+<tr><td><code>a-&gt;nota += pontos;</code></td><td>Soma os pontos na nota da struct de fora (a do <code>main</code>).</td></tr>
+<tr><td><code>void mostrar(const struct Aluno *a)</code></td><td>Também recebe o endereço (nada de copiar 64 bytes), mas o <code>const</code> promete só <strong>olhar</strong>. A seção 3 mostra o que o <code>const</code> impede.</td></tr>
+<tr><td><code>dar_bonus(&amp;ana, 1.0);</code></td><td>Na chamada, o <code>&amp;</code> pega o endereço da <code>ana</code>.</td></tr>
+</table>
+</div>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra bonus.c -o bonus
+$ ./bonus
+Ana (20 anos): 6.5
+Ana (20 anos): 7.5          « agora o bônus ficou</pre>
+
+<div class="tryc" data-goal="out:Ana agora tem 21 anos,src:-&gt;\s*idade">
+<p class="try-task"><strong>Missão:</strong> escreva o corpo da função <code>aniversario</code>, que soma 1 na idade do aluno recebido. Use a seta. A tela deve mostrar <code>Ana agora tem 21 anos</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+void aniversario(struct Aluno *a) {
+    /* some 1 na idade de a, usando a seta */
+}
+
+int main(void) {
+    struct Aluno ana = {"Ana", 20, 8.5};
+    aniversario(&amp;ana);
+    printf("%s agora tem %d anos\n", ana.nome, ana.idade);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+void aniversario(struct Aluno *a) {
+    a-&gt;idade++;
+}
+
+int main(void) {
+    struct Aluno ana = {"Ana", 20, 8.5};
+    aniversario(&amp;ana);
+    printf("%s agora tem %d anos\n", ana.nome, ana.idade);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Rodando o código inicial, o Clang avisa <code>unused parameter 'a'</code> ("parâmetro <code>a</code> não usado"): a função recebe o aluno e não faz nada com ele. E repare: <code>a-&gt;idade++</code> funciona sem parênteses, porque a seta é mais forte que o <code>++</code>.</p>
+
+<hr>
+
+<h2>3. Structs grandes e o <code>const</code></h2>
+<p>Passar uma struct por valor copia <strong>todos</strong> os bytes dela. Para um <code>Aluno</code> de 64 bytes, tudo bem. Mas structs podem ser enormes. Uma turma com 30 alunos dentro:</p>
+
+<pre class="file" data-file="grande.c">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+struct Turma {
+    char sala[10];
+    struct Aluno alunos[30];
+    int quantos;
+};
+
+double media_copia(struct Turma t) {
+    double soma = 0.0;
+    for (int i = 0; i &lt; t.quantos; i++) {
+        soma += t.alunos[i].nota;
+    }
+    return t.quantos &gt; 0 ? soma / t.quantos : 0.0;
+}
+
+double media(const struct Turma *t) {
+    double soma = 0.0;
+    for (int i = 0; i &lt; t-&gt;quantos; i++) {
+        soma += t-&gt;alunos[i].nota;
+    }
+    return t-&gt;quantos &gt; 0 ? soma / t-&gt;quantos : 0.0;
+}
+
+int main(void) {
+    struct Turma t = {.sala = "8A", .quantos = 3};
+    t.alunos[0] = (struct Aluno){"Ana", 20, 8.5};
+    t.alunos[1] = (struct Aluno){"Bruno", 19, 6.0};
+    t.alunos[2] = (struct Aluno){"Carla", 22, 9.5};
+
+    printf("Uma struct Turma ocupa %zu bytes\n", sizeof(struct Turma));
+    printf("Um ponteiro ocupa %zu bytes\n", sizeof(struct Turma *));
+    printf("Média (cópia):    %.2f\n", media_copia(t));
+    printf("Média (ponteiro): %.2f\n", media(&amp;t));
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra grande.c -o grande
+$ ./grande
+Uma struct Turma ocupa 1944 bytes
+Um ponteiro ocupa 8 bytes
+Média (cópia):    8.00
+Média (ponteiro): 8.00</pre>
+
+<p>As duas funções dão o mesmo resultado. Mas cada chamada de <code>media_copia</code> copia <strong>1944 bytes</strong>; cada chamada de <code>media</code> passa só <strong>8 bytes</strong> (um endereço). Num laço que chama a função milhares de vezes, a diferença aparece. Repare em <code>t-&gt;alunos[i].nota</code>: seta para entrar na turma (que é um ponteiro), colchetes para escolher o aluno e ponto para o campo (porque <code>alunos[i]</code> já é uma struct, não um ponteiro).</p>
+
+<div class="note">
+<strong>No editor do guia, o ponteiro tem 4 bytes</strong>
+<p>O editor roda em WebAssembly de 32 bits, onde endereços ocupam 4 bytes, e não 8 como no gcc de 64 bits. A ideia é a mesma: o ponteiro é minúsculo perto da struct.</p>
+</div>
+
+<h3>O <code>const</code> protege a original</h3>
+<p>Passar por ponteiro tem um risco: a função <em>pode</em> mudar a original, mesmo quando só devia ler. O <code>const</code> fecha essa porta. Se uma função recebe <code>const struct Aluno *</code> e tenta mudar um campo, o compilador barra:</p>
+
+<pre class="file" data-file="constmuda.c">void mostrar(const struct Aluno *a) {
+    a-&gt;nota = 10.0;
+    printf("%s: %.1f\n", a-&gt;nome, a-&gt;nota);
+}
+</pre>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra constmuda.c -o constmuda
+constmuda.c: In function ‘mostrar’:
+constmuda.c:10:13: error: assignment of member ‘nota’ in read-only object
+   10 |     a-&gt;nota = 10.0;
+      |             ^</pre>
+<p><em>assignment of member ‘nota’ in read-only object</em> = "atribuição ao campo <code>nota</code> de um objeto somente leitura". Se a função deve mudar a ficha, tire o <code>const</code>; se não deve, o erro acabou de achar um engano seu. A regra prática: <strong>struct que a função só lê → <code>const struct X *</code>; struct que a função muda → <code>struct X *</code></strong>. Mais detalhes em <a href="const-ponteiros.html">const e Ponteiros</a>.</p>
+
+<hr>
+
+<h2>4. Structs no heap: <code>malloc</code></h2>
+<p>Uma struct também pode morar no <a href="pilha-heap.html">heap</a>, reservada com <code>malloc</code>. É assim quando uma função precisa <strong>criar</strong> uma struct que continue existindo depois que ela termina. O resultado é um ponteiro, então tudo é com seta:</p>
+
+<pre class="file" data-file="novo.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+struct Aluno *novo_aluno(const char *nome, int idade, double nota) {
+    struct Aluno *a = malloc(sizeof *a);
+    if (a == NULL) {
+        return NULL;
+    }
+    snprintf(a-&gt;nome, sizeof a-&gt;nome, "%s", nome);
+    a-&gt;idade = idade;
+    a-&gt;nota = nota;
+    return a;
+}
+
+int main(void) {
+    struct Aluno *eva = novo_aluno("Eva", 18, 7.0);
+    if (eva == NULL) {
+        printf("Sem memória!\n");
+        return 1;
+    }
+    printf("%s, %d anos, nota %.1f\n", eva-&gt;nome, eva-&gt;idade, eva-&gt;nota);
+    free(eva);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>struct Aluno *a = malloc(sizeof *a);</dt><dd>Reserva espaço para <strong>uma struct</strong>. O <code>sizeof *a</code> quer dizer "o tamanho daquilo para onde <code>a</code> aponta", ou seja, <code>sizeof(struct Aluno)</code>. É o jeito preferido: se um dia o tipo de <code>a</code> mudar, o tamanho acompanha sozinho. (Cuidado: <code>sizeof a</code>, sem o <code>*</code>, é o tamanho do <strong>ponteiro</strong>; veja "Quando dá errado".)</dd>
+  <dt>if (a == NULL) return NULL;</dt><dd>Confira sempre o <code>malloc</code>.</dd>
+  <dt>snprintf(a-&gt;nome, sizeof a-&gt;nome, "%s", nome);</dt><dd>Copia o nome sem passar dos 50 bytes do campo.</dd>
+  <dt>return a;</dt><dd>Devolve o endereço. A struct continua viva no heap depois que a função termina, e quem recebeu é dono dela.</dd>
+  <dt>free(eva);</dt><dd>Um <code>malloc</code>, um <code>free</code>.</dd>
+</dl>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra -g novo.c -o novo
+$ ./novo
+Eva, 18 anos, nota 7.0
+$ valgrind --leak-check=full ./novo 2&gt;&amp;1 | grep -E "Eva|heap usage|All heap|ERROR SUM"
+Eva, 18 anos, nota 7.0
+==72414==   total heap usage: 2 allocs, 2 frees, 4,160 bytes allocated
+==72414== All heap blocks were freed -- no leaks are possible
+==72414== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<p>Dois blocos: os 64 bytes da Eva e o buffer de saída do <code>printf</code>. Os dois liberados, nenhum erro.</p>
+
+<h3>Um array de structs no heap</h3>
+<p>Para uma turma cujo tamanho só se sabe na hora, reserve <code>n</code> structs de uma vez. Com <code>calloc</code>, todas já nascem zeradas (veja <a href="calloc-realloc.html">calloc e realloc</a>):</p>
+
+<pre class="file" data-file="turma.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+int main(void) {
+    size_t n = 3;
+    struct Aluno *turma = calloc(n, sizeof *turma);
+    if (turma == NULL) {
+        return 1;
+    }
+    turma[0] = (struct Aluno){"Ana", 20, 8.5};
+    turma[1] = (struct Aluno){"Bruno", 19, 6.0};
+    (turma + 2)-&gt;nota = 9.5;
+    snprintf(turma[2].nome, sizeof turma[2].nome, "Carla");
+
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%s: %.1f\n", turma[i].nome, turma[i].nota);
+    }
+    free(turma);
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra turma.c -o turma
+$ ./turma
+Ana: 8.5
+Bruno: 6.0
+Carla: 9.5</pre>
+
+<p>Atenção a um detalhe que confunde: <code>turma</code> é um ponteiro, mas <code>turma[2]</code> já é uma <strong>struct</strong> (o colchete segue o endereço, veja <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>). Por isso é <code>turma[2].nome</code>, com ponto. A forma <code>(turma + 2)-&gt;nota</code> chega no mesmo lugar por outro caminho: <code>turma + 2</code> é o endereço do terceiro aluno, e a seta entra nele. Prefira os colchetes, que são mais fáceis de ler.</p>
+
+<hr>
+
+<h2>5. A lista que cresce, agora com struct</h2>
+<p>Na aula <a href="array-dinamico.html">Array que Cresce</a>, a lista de preços precisava de três variáveis soltas e de funções com parâmetros como <code>double **precos</code> e <code>(*precos)[*tamanho]</code>. Ficou prometido que a struct ia arrumar isso. Aqui está: as três variáveis viram uma <code>struct Lista</code>, e as funções recebem um ponteiro para ela.</p>
+
+<pre class="file" data-file="lista.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct Lista {
+    double *dados;
+    size_t tamanho;
+    size_t capacidade;
+};
+
+bool adicionar(struct Lista *l, double valor) {
+    if (l-&gt;tamanho == l-&gt;capacidade) {
+        size_t nova = (l-&gt;capacidade == 0) ? 4 : l-&gt;capacidade * 2;
+        double *maior = realloc(l-&gt;dados, nova * sizeof *maior);
+        if (maior == NULL) {
+            return false;
+        }
+        l-&gt;dados = maior;
+        l-&gt;capacidade = nova;
+    }
+    l-&gt;dados[l-&gt;tamanho] = valor;
+    l-&gt;tamanho++;
+    return true;
+}
+
+void liberar(struct Lista *l) {
+    free(l-&gt;dados);
+    *l = (struct Lista){0};
+}
+
+int main(void) {
+    struct Lista precos = {0};
+
+    double preco;
+    while (scanf("%lf", &amp;preco) == 1) {
+        if (!adicionar(&amp;precos, preco)) {
+            printf("Sem memória!\n");
+            break;
+        }
+    }
+
+    double total = 0.0;
+    for (size_t i = 0; i &lt; precos.tamanho; i++) {
+        total += precos.dados[i];
+    }
+    printf("%zu itens (capacidade %zu)\n", precos.tamanho, precos.capacidade);
+    printf("Total: R$ %.2f\n", total);
+
+    liberar(&amp;precos);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Antes (variáveis soltas)</th><th>Agora (struct)</th></tr>
+<tr><td><code>double *precos = NULL; size_t tamanho = 0; size_t capacidade = 0;</code></td><td><code>struct Lista precos = {0};</code></td></tr>
+<tr><td><code>adicionar(double **precos, size_t *tamanho, size_t *capacidade, double valor)</code></td><td><code>adicionar(struct Lista *l, double valor)</code></td></tr>
+<tr><td><code>(*precos)[*tamanho] = valor;</code></td><td><code>l-&gt;dados[l-&gt;tamanho] = valor;</code></td></tr>
+<tr><td><code>(*tamanho)++;</code></td><td><code>l-&gt;tamanho++;</code></td></tr>
+<tr><td><code>adicionar(&amp;precos, &amp;tamanho, &amp;capacidade, preco)</code></td><td><code>adicionar(&amp;precos, preco)</code></td></tr>
+<tr><td>Três linhas para zerar no <code>liberar</code></td><td><code>*l = (struct Lista){0};</code> (um literal composto zerado copiado por cima)</td></tr>
+</table>
+</div>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra -g lista.c -o lista
+$ ./lista &lt; compras.txt
+10 itens (capacidade 16)
+Total: R$ 72.73
+$ valgrind --leak-check=full ./lista &lt; compras.txt 2&gt;&amp;1 | tail -5
+==72473==
+==72473== All heap blocks were freed -- no leaks are possible
+==72473==
+==72473== For lists of detected and suppressed errors, rerun with: -s
+==72473== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<p>O <code>compras.txt</code> é o mesmo da aula Array que Cresce, com dez preços. A lógica é idêntica à da outra aula (começa em 4, dobra, confere o <code>realloc</code>, libera no fim); o resultado também. Mudou só a organização: <strong>o que anda junto fica junto</strong>. Esse padrão (uma struct com os dados e funções que recebem um ponteiro para ela) é o jeito C de criar "tipos com comportamento", e você vai usá-lo nas <a href="listas-ligadas.html">listas ligadas</a>, <a href="pilhas-filas.html">pilhas e filas</a> e em todo projeto maior.</p>
+
+<div class="tip">
+<strong>Uma struct que aponta para outra do mesmo tipo</strong>
+<p>Uma struct pode ter um campo que é ponteiro para o próprio tipo: <code>struct No { int valor; struct No *proximo; };</code>. Cada nó sabe onde está o próximo, como os vagões de um trem. Não pode ter uma <code>struct No</code> inteira dentro de si (ela teria tamanho infinito), mas um <strong>ponteiro</strong> para ela, sim. Essa é a base das <a href="listas-ligadas.html">Listas Ligadas</a>.</p>
+</div>
+
+<hr>
+
+<h2>Ponto ou seta? Por valor ou por ponteiro? Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você tem…</th><th>Use</th><th>Exemplo</th></tr>
+<tr><td>uma variável struct</td><td>ponto</td><td><code>ana.nota</code></td></tr>
+<tr><td>um ponteiro para struct</td><td>seta</td><td><code>p-&gt;nota</code></td></tr>
+<tr><td>um elemento de array de structs (mesmo que o array venha de <code>malloc</code>)</td><td>colchetes e ponto</td><td><code>turma[i].nota</code></td></tr>
+<tr><td>um ponteiro para struct que tem uma struct dentro</td><td>seta, depois ponto</td><td><code>p-&gt;nascimento.dia</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parâmetro</th><th>O que acontece</th><th>Quando usar</th></tr>
+<tr><td><code>const struct Aluno *a</code></td><td>A função olha a original, sem copiar e sem poder mudar.</td><td>O padrão para structs que a função só lê.</td></tr>
+<tr><td><code>struct Aluno *a</code></td><td>A função mexe na original.</td><td>Quando o objetivo é mudar (<code>dar_bonus</code>, <code>adicionar</code>).</td></tr>
+<tr><td><code>struct Aluno a</code></td><td>A função recebe uma cópia inteira.</td><td>Structs pequenas (uma <code>struct Data</code> de 12 bytes, um ponto <code>{x, y}</code>) quando a função quer uma cópia para mexer à vontade.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"‘p’ is a pointer; did you mean to use ‘-&gt;’?" e "invalid type argument of ‘-&gt;’"</strong>
+<pre class="file" data-file="pontoponteiro.c">    struct Aluno ana = {"Ana", 20, 8.5};
+    struct Aluno *p = &amp;ana;
+    printf("%.1f\n", p.nota);       /* ponto num ponteiro */
+    printf("%.1f\n", ana-&gt;nota);    /* seta numa struct */
+</pre>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra pontoponteiro.c -o pontoponteiro
+pontoponteiro.c: In function ‘main’:
+pontoponteiro.c:12:23: error: ‘p’ is a pointer; did you mean to use ‘-&gt;’?
+   12 |     printf("%.1f\n", p.nota);
+      |                       ^
+      |                       -&gt;
+pontoponteiro.c:13:25: error: invalid type argument of ‘-&gt;’ (have ‘struct Aluno’)
+   13 |     printf("%.1f\n", ana-&gt;nota);
+      |                         ^~
+«…»</pre>
+<p><strong>O que significa:</strong> o primeiro erro é o ponto usado num ponteiro (o gcc sugere a seta). O segundo é o contrário: <em>invalid type argument of ‘-&gt;’ (have ‘struct Aluno’)</em> = "argumento de tipo inválido para <code>-&gt;</code> (é uma <code>struct Aluno</code>)": a seta só funciona com ponteiros.</p>
+<p><strong>Como resolver:</strong> olhe a declaração da variável. Tem <code>*</code> (<code>struct Aluno *p</code>)? Seta. Não tem? Ponto.</p>
+</div>
+
+<div class="cenario">
+<strong>"assignment of member ‘nota’ in read-only object"</strong>
+<p><strong>O que aconteceu:</strong> a função recebeu <code>const struct Aluno *</code> e tentou mudar um campo (seção 3).</p>
+<p><strong>Como resolver:</strong> se a função deve mudar a struct, tire o <code>const</code> do parâmetro; se não deve, apague a linha que muda.</p>
+</div>
+
+<div class="cenario">
+<strong>Seta num ponteiro <code>NULL</code>: "Falha de segmentação"</strong>
+<pre class="file" data-file="nulo.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+struct Aluno *procurar(struct Aluno turma[], size_t n, const char *nome) {
+    for (size_t i = 0; i &lt; n; i++) {
+        if (strcmp(turma[i].nome, nome) == 0) {
+            return &amp;turma[i];
+        }
+    }
+    return NULL;
+}
+
+int main(void) {
+    struct Aluno turma[] = {{"Ana", 20, 8.5}, {"Bruno", 19, 6.0}};
+    struct Aluno *p = procurar(turma, 2, "Bruno");
+    printf("Nota do Bruno: %.1f\n", p-&gt;nota);
+    p = procurar(turma, 2, "Zeca");
+    printf("Nota do Zeca: %.1f\n", p-&gt;nota);
+    return 0;
+}
+</pre>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra -g nulo.c -o nulo
+$ ./nulo
+Nota do Bruno: 6.0
+Falha de segmentação     (imagem do núcleo gravada) ./nulo</pre>
+<p><strong>O que aconteceu:</strong> não existe Zeca na turma, e <code>procurar</code> devolveu <code>NULL</code>, o "endereço nenhum". O <code>p-&gt;nota</code> tentou ler um campo no endereço nenhum, e o sistema derrubou o programa. No editor do guia acontece o mesmo: <code>Falha de segmentação (imagem do núcleo gravada)</code>, código 139.</p>
+<p><strong>Como resolver:</strong> toda função que pode devolver <code>NULL</code> (<code>malloc</code>, <code>procurar</code>, <code>fopen</code>…) pede um <code>if (p == NULL)</code> antes da seta. Veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>malloc(sizeof a)</code>: "allocation of insufficient size"</strong>
+<pre class="file" data-file="tamanho.c">    struct Aluno *a = malloc(sizeof a);      /* faltou o * */
+</pre>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra -g tamanho.c -o tamanho
+tamanho.c: In function ‘novo_aluno’:
+tamanho.c:11:23: warning: allocation of insufficient size ‘8’ for type ‘struct Aluno’ with size ‘64’ [-Walloc-size]
+   11 |     struct Aluno *a = malloc(sizeof a);
+      |                       ^~~~~~
+$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address tamanho.c -o tamanho
+$ ./tamanho
+=================================================================
+==72752==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x7321299e0044 at pc 0x5913c9918362 bp 0x7ffc4dbffc20 sp 0x7ffc4dbffc10
+WRITE of size 4 at 0x7321299e0044 thread T0
+    #0 0x5913c9918361 in novo_aluno /home/ana/c/tamanho.c:16
+    #1 0x5913c99183d0 in main /home/ana/c/tamanho.c:22
+«…»
+0x7321299e0044 is located 44 bytes after 8-byte region [0x7321299e0010,0x7321299e0018)
+«…»</pre>
+<p><strong>O que significa:</strong> <code>sizeof a</code> é o tamanho do <strong>ponteiro</strong> <code>a</code> (8 bytes), não da struct (64). O gcc 15 percebe e avisa: <em>allocation of insufficient size ‘8’ for type ‘struct Aluno’ with size ‘64’</em> = "reserva de tamanho insuficiente: 8 bytes para um tipo de 64". O sanitizer mostra a consequência: a linha 16 (<code>a-&gt;idade = idade;</code>) escreveu 44 bytes depois do fim do bloco de 8. No editor do guia, o Clang dá o mesmo aviso (com <code>'4'</code>, o tamanho do ponteiro lá), e o programa pode até mostrar a Eva certinha: um estouro de memória calado.</p>
+<p><strong>Como resolver:</strong> <code>malloc(sizeof *a)</code>, com o asterisco: "o tamanho daquilo para onde <code>a</code> aponta". Ou <code>malloc(sizeof(struct Aluno))</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Significado</th></tr>
+<tr><td><code>struct Aluno *p = &amp;ana;</code></td><td>Ponteiro para uma struct que já existe.</td></tr>
+<tr><td><code>p-&gt;nota</code></td><td>Campo pela seta; o mesmo que <code>(*p).nota</code>.</td></tr>
+<tr><td><code>*p.nota</code></td><td>Erro: é lido como <code>*(p.nota)</code>.</td></tr>
+<tr><td><code>void f(struct Aluno *a)</code></td><td>A função pode mudar a struct de fora; chame com <code>f(&amp;ana)</code>.</td></tr>
+<tr><td><code>void f(const struct Aluno *a)</code></td><td>A função só lê, sem copiar.</td></tr>
+<tr><td><code>struct Aluno *a = malloc(sizeof *a);</code></td><td>Uma struct no heap (confira <code>NULL</code>; termine com <code>free(a)</code>).</td></tr>
+<tr><td><code>struct Aluno *t = calloc(n, sizeof *t);</code></td><td><code>n</code> structs zeradas no heap; acesse com <code>t[i].nota</code>.</td></tr>
+<tr><td><code>p-&gt;nascimento.dia</code></td><td>Struct dentro de struct, a partir de um ponteiro.</td></tr>
+<tr><td><code>*p = (struct Lista){0};</code></td><td>Zera a struct apontada inteira de uma vez.</td></tr>
+<tr><td><code>struct No { int valor; struct No *proximo; };</code></td><td>Struct com ponteiro para o próprio tipo (listas ligadas).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A seta</h3>
+<p><code>p</code> é um <code>struct Aluno *</code>. Complete com a seta para mostrar a idade:</p>
+<div class="ex-code">printf("%d\n", <input data-answer="p-&gt;idade|(*p).idade" aria-label="acesso à idade">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Sem a seta</h3>
+<p>Escreva <code>p-&gt;nota</code> da outra forma, com <code>*</code> e ponto:</p>
+<div class="ex-code"><input data-answer="(*p).nota|( *p ).nota" aria-label="forma com asterisco"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Reservar uma struct</h3>
+<p>Complete para reservar uma <code>struct Aluno</code> no heap, do jeito que acompanha o tipo do ponteiro:</p>
+<div class="ex-code">struct Aluno *novo = malloc(<input data-answer="sizeof *novo|sizeof(*novo)|sizeof(struct Aluno)" aria-label="tamanho">);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Uma função só precisa <strong>mostrar</strong> uma struct grande. Qual parâmetro é o melhor?</p>
+<label><input type="radio" name="q4"> <code>struct Turma t</code></label>
+<label><input type="radio" name="q4"> <code>struct Turma *t</code></label>
+<label><input type="radio" name="q4"> <code>const struct Turma *t</code></label>
+<label><input type="radio" name="q4"> <code>struct Turma **t</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. <code>turma</code> veio de <code>calloc(n, sizeof *turma)</code>. Como se lê o nome do primeiro aluno?</p>
+<label><input type="radio" name="q5"> <code>turma[0]-&gt;nome</code></label>
+<label><input type="radio" name="q5"> <code>turma[0].nome</code></label>
+<label><input type="radio" name="q5"> <code>turma.nome[0]</code></label>
+<label><input type="radio" name="q5"> <code>*turma.nome</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. O que <code>sizeof p</code> mede, quando <code>p</code> é um <code>struct Aluno *</code>?</p>
+<label><input type="radio" name="q6"> O tamanho de uma <code>struct Aluno</code>.</label>
+<label><input type="radio" name="q6"> A quantidade de campos da struct.</label>
+<label><input type="radio" name="q6"> O tamanho do nome do aluno.</label>
+<label><input type="radio" name="q6"> O tamanho do próprio ponteiro (8 bytes no gcc de 64 bits).</label>
+</div>
+
+<h3>Missão final: conserte a fábrica de alunos</h3>
+<div class="tryc" data-goal="out:Eva\, 18 anos\, nota 7.0,src:malloc,semaviso">
+<p class="try-task"><strong>Missão:</strong> a função <code>novo_aluno</code> devolve o endereço de uma variável <strong>local</strong>, que deixa de existir quando a função termina (o Clang avisa). No gcc, esse programa diz <code>Sem memória!</code>; no editor, parece funcionar por sorte. Conserte: reserve a struct com <code>malloc(sizeof *a)</code>, confira o <code>NULL</code> e preencha os campos com a seta. O programa deve mostrar <code>Eva, 18 anos, nota 7.0</code> e compilar <strong>sem nenhum aviso</strong>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+struct Aluno *novo_aluno(const char *nome, int idade, double nota) {
+    struct Aluno a = {0};
+    snprintf(a.nome, sizeof a.nome, "%s", nome);
+    a.idade = idade;
+    a.nota = nota;
+    return &amp;a;
+}
+
+int main(void) {
+    struct Aluno *eva = novo_aluno("Eva", 18, 7.0);
+    if (eva == NULL) {
+        printf("Sem memória!\n");
+        return 1;
+    }
+    printf("%s, %d anos, nota %.1f\n", eva-&gt;nome, eva-&gt;idade, eva-&gt;nota);
+    free(eva);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+struct Aluno *novo_aluno(const char *nome, int idade, double nota) {
+    struct Aluno *a = malloc(sizeof *a);
+    if (a == NULL) {
+        return NULL;
+    }
+    snprintf(a-&gt;nome, sizeof a-&gt;nome, "%s", nome);
+    a-&gt;idade = idade;
+    a-&gt;nota = nota;
+    return a;
+}
+
+int main(void) {
+    struct Aluno *eva = novo_aluno("Eva", 18, 7.0);
+    if (eva == NULL) {
+        printf("Sem memória!\n");
+        return 1;
+    }
+    printf("%s, %d anos, nota %.1f\n", eva-&gt;nome, eva-&gt;idade, eva-&gt;nota);
+    free(eva);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um ponteiro para struct guarda o endereço dela: <code>struct Aluno *p = &amp;ana;</code>.</li>
+  <li><code>p-&gt;nota</code> é o mesmo que <code>(*p).nota</code>. Sem parênteses, <code>*p.nota</code> é erro.</li>
+  <li>Variável struct → ponto; ponteiro para struct → seta; <code>turma[i]</code> já é struct → ponto.</li>
+  <li>Para uma função mudar a struct, passe o endereço: <code>void f(struct Aluno *a)</code> e <code>f(&amp;ana)</code>.</li>
+  <li>Para só ler sem copiar, use <code>const struct Aluno *</code>: o compilador barra qualquer mudança.</li>
+  <li>Structs no heap: <code>malloc(sizeof *p)</code> (com o <code>*</code>!), confira o <code>NULL</code>, termine com <code>free</code>.</li>
+  <li>Uma struct com os dados e funções que recebem um ponteiro para ela organiza o código: a lista que cresce virou <code>adicionar(&amp;lista, valor)</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
