@@ -1,0 +1,1244 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Projeto Calculadora — scanf, switch, laço e fgets passo a passo | Guia C</title>
+<meta name="description" content="Projeto passo a passo: uma calculadora de terminal em C que lê dois números e uma operação com scanf, escolhe a conta com switch, recusa a divisão por zero, repete até você sair e, na versão final, valida o que foi digitado com fgets e strtod. Quatro versões com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto <span class="hl">Calculadora</span></h1>
+
+<p class="intro">O primeiro projeto do guia: uma calculadora que roda no terminal. Ela pede um número, a operação e outro número, mostra o resultado e pergunta se você quer fazer outra conta. A conta em si é a parte fácil. O desafio é fazer o programa <strong>não se perder</strong> quando alguém divide por zero, escolhe uma operação que não existe ou digita "seis" no lugar de um número.</p>
+
+<div class="note">
+<strong>Você vai praticar</strong>
+<ul>
+  <li>Ler números e caracteres do teclado com <a href="scanf.html">scanf</a> (e o espaço mágico do <code>" %c"</code>).</li>
+  <li>Escolher a conta com <a href="else-if.html">else if</a> e depois com <a href="switch.html">switch</a>.</li>
+  <li>Recusar a divisão por zero com <a href="if-else.html">if</a>.</li>
+  <li>Repetir tudo com <a href="do-while.html">do while</a>.</li>
+  <li>Ler a linha inteira com <a href="fgets.html">fgets</a> e converter com <code>strtod</code> (<a href="string-numero.html">Texto ↔ Número</a>) para <a href="validar-entrada.html">validar a entrada</a>.</li>
+  <li>Separar o programa em <a href="funcoes.html">funções</a>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que vamos construir</h2>
+<p>Esta é a calculadora pronta, rodando na máquina da Ana. Tudo o que aparece depois dos dois-pontos nas perguntas foi digitado por ela:</p>
+
+<pre class="term" data-cwd="~/c/calculadora">$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 10
+Operação (+ - * /): +
+Segundo número: 5
+10 + 5 = 15
+Outra conta? (s/n): s
+Primeiro número: seis
+"seis" não é um número. Tente de novo.      « texto no lugar de número
+Primeiro número: 6
+Operação (+ - * /): %
+Operação desconhecida: %                    « operação que não existe
+Operação (+ - * /): *
+Segundo número: 1.5
+6 * 1.5 = 9
+Outra conta? (s/n): s
+Primeiro número: 2,5
+"2,5" não é um número. Tente de novo.       « no C, o decimal é com ponto
+Primeiro número: 2.5
+Operação (+ - * /): /
+Segundo número: 0
+Não dá para dividir por zero.               « divisão por zero
+Outra conta? (s/n): n
+Até logo!</pre>
+
+<p>Vamos chegar lá em quatro versões. No fim de cada uma, o programa compila e roda:</p>
+
+<ol class="passo">
+  <li><a href="#versao1">Dois números e um operador</a> (<code>scanf</code>, <code>double</code>, <code>char</code>, <code>else if</code>).</li>
+  <li><a href="#versao2">switch e divisão por zero</a>.</li>
+  <li><a href="#versao3">Repetir até a pessoa sair</a> (<code>do while</code>).</li>
+  <li><a href="#versao4">Validar a entrada</a> (<code>fgets</code>, <code>strtod</code> e funções).</li>
+</ol>
+
+<h3>Antes de começar</h3>
+<p>Você precisa saber criar, compilar e rodar um programa (<a href="primeiro-programa.html">Olá, Mundo</a> e <a href="compilar.html">Compilar com gcc</a>), conhecer <a href="ponto-flutuante.html">double</a> e <a href="char.html">char</a> e ter visto o básico do <a href="scanf.html">scanf</a>. Como fazer cada versão no editor ou no terminal está em <a href="projetos.html">Sobre os Projetos</a>. No seu computador, crie a pasta do projeto; o arquivo vai se chamar <code>calculadora.c</code>:</p>
+
+<pre class="term">$ mkdir -p c/calculadora
+$ cd c/calculadora</pre>
+
+<hr>
+
+<h2 id="versao1">Versão 1 · Dois números e um operador</h2>
+<p>A calculadora pede o primeiro número, a operação e o segundo número. Os números são <code>double</code> (com casas decimais), porque a Ana quer fazer contas como <code>7.5 / 2</code>. A operação é <strong>um</strong> caractere (<code>+</code>, <code>-</code>, <code>*</code> ou <code>/</code>), então cabe num <code>char</code>. Para escolher a conta, uma escada de <a href="else-if.html">else if</a>.</p>
+
+<pre class="file" data-file="calculadora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double a = 0.0;
+    double b = 0.0;
+    char op = ' ';
+
+    printf("=== Calculadora da Ana ===\n");
+    printf("Primeiro número: ");
+    scanf("%lf", &amp;a);
+    printf("Operação (+ - * /): ");
+    scanf(" %c", &amp;op);
+    printf("Segundo número: ");
+    scanf("%lf", &amp;b);
+
+    if (op == '+') {
+        printf("%g + %g = %g\n", a, b, a + b);
+    } else if (op == '-') {
+        printf("%g - %g = %g\n", a, b, a - b);
+    } else if (op == '*') {
+        printf("%g * %g = %g\n", a, b, a * b);
+    } else if (op == '/') {
+        printf("%g / %g = %g\n", a, b, a / b);
+    } else {
+        printf("Operação desconhecida: %c\n", op);
+    }
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>double a = 0.0;</code></td><td>Cria a variável do primeiro número, já com zero. Toda variável começa com um valor: em C, uma variável sem valor inicial guarda lixo (veja <a href="variaveis.html">Variáveis</a>).</td></tr>
+<tr><td><code>char op = ' ';</code></td><td>A operação, começando com um espaço. Caracteres vão entre aspas <strong>simples</strong>: <code>'+'</code>.</td></tr>
+<tr><td><code>printf("Primeiro número: ");</code></td><td>A pergunta <strong>sem</strong> <code>\n</code>: o cursor fica na mesma linha, e o que a pessoa digitar aparece logo depois dos dois-pontos.</td></tr>
+<tr><td><code>scanf("%lf", &amp;a);</code></td><td>Espera a pessoa digitar e apertar <kbd>Enter</kbd>, converte o texto num <code>double</code> e guarda em <code>a</code>. No <code>scanf</code>, <code>double</code> é <code>%lf</code> ("long float"); o <code>&amp;</code> entrega o <strong>endereço</strong> de <code>a</code>, para o <code>scanf</code> saber onde guardar (veja <a href="memoria.html">Memória e Endereços</a>).</td></tr>
+<tr><td><code>scanf(" %c", &amp;op);</code></td><td>Lê um caractere. O <strong>espaço antes do <code>%c</code></strong> manda pular espaços e <kbd>Enter</kbd> que sobraram na entrada. Sem ele, dá errado (veja o cenário abaixo).</td></tr>
+<tr><td><code>if (op == '+') { … } else if …</code></td><td>Compara a operação com cada possibilidade, em ordem, e faz a primeira que combinar. O último <code>else</code> pega o que não combinou com nada.</td></tr>
+<tr><td><code>printf("%g + %g = %g\n", a, b, a + b);</code></td><td><code>%g</code> mostra um <code>double</code> sem zeros inúteis: <code>15</code> em vez de <code>15.000000</code>, <code>3.75</code> em vez de <code>3.750000</code> (veja <a href="formatos-printf.html">Formatos do printf</a>).</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/calculadora">$ gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 10
+Operação (+ - * /): +
+Segundo número: 5
+10 + 5 = 15
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 7.5
+Operação (+ - * /): /
+Segundo número: 2
+7.5 / 2 = 3.75</pre>
+
+<div class="tip">
+<strong>Dá para digitar tudo numa linha</strong>
+<p>O <code>scanf</code> separa os valores por espaços, não por linhas. Se a Ana digitar <code>10 * 3</code> na primeira pergunta, os três valores ficam esperando na entrada, e as perguntas seguintes nem param:</p>
+<pre class="term" data-cwd="~/c/calculadora">$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 10 * 3
+Operação (+ - * /): Segundo número: 10 * 3 = 30</pre>
+</div>
+
+<div class="warning">
+<strong>No C, o decimal é com ponto, mesmo em português</strong>
+<p>O <code>scanf</code> lê números com <strong>ponto</strong>: <code>2.5</code>. Veja o que acontece quando a Ana digita <code>2,5</code>:</p>
+<pre class="term" data-cwd="~/c/calculadora">$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 2,5
+Operação (+ - * /): Segundo número: Operação desconhecida: ,</pre>
+<p>O <code>scanf("%lf", &amp;a)</code> leu o <code>2</code> e parou na vírgula, que não faz parte de um número. A vírgula e o <code>5</code> ficaram esperando na entrada. O <code>scanf(" %c", &amp;op)</code> pegou a vírgula como operação, e o segundo <code>scanf</code> pegou o <code>5</code>, sem esperar a Ana digitar. Na versão 4 a calculadora vai recusar o <code>2,5</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem o espaço no <code>" %c"</code>: a operação vira um <kbd>Enter</kbd></strong>
+<p class="warning" style="margin:6px 0">Este código tem um erro de propósito: <code>scanf("%c", &amp;op);</code>, sem o espaço.</p>
+<pre class="term" data-cwd="~/c/calculadora">$ gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 10
+Operação (+ - * /): Segundo número: +
+Operação desconhecida:
+</pre>
+<p><strong>O que aconteceu:</strong> quando a Ana digitou <code>10</code> e apertou <kbd>Enter</kbd>, a entrada recebeu <code>10\n</code>. O <code>%lf</code> leu o <code>10</code> e deixou o <code>\n</code> lá. O <code>%c</code> lê <strong>qualquer</strong> caractere, inclusive o <code>\n</code>, então a operação virou a quebra de linha, sem a Ana digitar nada. Depois, o <code>%lf</code> do segundo número encontrou o <code>+</code>, que não é número, e desistiu. A mensagem mostra a "operação" invisível: uma linha em branco.</p>
+<p><strong>Como consertar:</strong> um espaço antes do <code>%c</code>: <code>scanf(" %c", &amp;op);</code>. No <code>scanf</code>, um espaço no formato quer dizer "pule todos os espaços, tabs e <kbd>Enter</kbd> que vierem". O <code>%d</code> e o <code>%lf</code> já fazem isso sozinhos; o <code>%c</code> não. Mais em <a href="scanf.html">Entrada com scanf</a>.</p>
+</div>
+
+<div class="tryc" data-stdin="10\n-\n4\n" data-goal="out:10 - 4 = 6,src:scanf\s*\(\s*&quot;%lf&quot;\s*\,\s*&amp;b">
+<p class="try-task"><strong>Missão (versão 1):</strong> o programa ainda não lê o segundo número e não sabe subtrair. Peça e leia <code>b</code> com <code>scanf("%lf", &amp;b)</code> e acrescente o <code>else if</code> da subtração. A entrada da missão é <code>10</code>, <code>-</code>, <code>4</code>: o resultado deve ser <code>10 - 4 = 6</code>.</p>
+<pre class="script" data-file="calculadora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double a = 0.0;
+    double b = 0.0;
+    char op = ' ';
+
+    printf("=== Calculadora da Ana ===\n");
+    printf("Primeiro número: ");
+    scanf("%lf", &amp;a);
+    printf("Operação (+ - * /): ");
+    scanf(" %c", &amp;op);
+    // peça e leia o segundo número
+
+
+    if (op == '+') {
+        printf("%g + %g = %g\n", a, b, a + b);
+    } else if (op == '*') {
+        printf("%g * %g = %g\n", a, b, a * b);
+    } else if (op == '/') {
+        printf("%g / %g = %g\n", a, b, a / b);
+    } else {
+        printf("Operação desconhecida: %c\n", op);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="calculadora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double a = 0.0;
+    double b = 0.0;
+    char op = ' ';
+
+    printf("=== Calculadora da Ana ===\n");
+    printf("Primeiro número: ");
+    scanf("%lf", &amp;a);
+    printf("Operação (+ - * /): ");
+    scanf(" %c", &amp;op);
+    printf("Segundo número: ");
+    scanf("%lf", &amp;b);
+
+    if (op == '+') {
+        printf("%g + %g = %g\n", a, b, a + b);
+    } else if (op == '-') {
+        printf("%g - %g = %g\n", a, b, a - b);
+    } else if (op == '*') {
+        printf("%g * %g = %g\n", a, b, a * b);
+    } else if (op == '/') {
+        printf("%g / %g = %g\n", a, b, a / b);
+    } else {
+        printf("Operação desconhecida: %c\n", op);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao2">Versão 2 · switch e divisão por zero</h2>
+<p>O que acontece se a Ana dividir por zero na versão 1? Na matemática, não existe resposta. No C, com <code>double</code>, existe uma resposta estranha:</p>
+
+<pre class="term" data-cwd="~/c/calculadora">$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 1
+Operação (+ - * /): /
+Segundo número: 0
+1 / 0 = inf
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: -1
+Operação (+ - * /): /
+Segundo número: 0
+-1 / 0 = -inf</pre>
+
+<p><code>inf</code> é "infinito", um valor especial que o <code>double</code> sabe guardar. O programa não quebrou, mas a resposta não serve para a Ana. (Com <code>int</code> seria pior: dividir um inteiro por zero <strong>derruba</strong> o programa; veja <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>.) Então, antes de dividir, a calculadora confere se <code>b</code> é zero.</p>
+
+<p>Aproveitamos para trocar a escada de <code>else if</code> por um <a href="switch.html">switch</a>, que foi feito para isso: comparar <strong>uma</strong> variável com vários valores fixos. A conta vai para a variável <code>resultado</code>, e um único <code>printf</code> mostra qualquer operação.</p>
+
+<pre class="file" data-file="calculadora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double a = 0.0;
+    double b = 0.0;
+    char op = ' ';
+
+    printf("=== Calculadora da Ana ===\n");
+    printf("Primeiro número: ");
+    scanf("%lf", &amp;a);
+    printf("Operação (+ - * /): ");
+    scanf(" %c", &amp;op);
+    printf("Segundo número: ");
+    scanf("%lf", &amp;b);
+
+    double resultado = 0.0;
+    switch (op) {
+        case '+':
+            resultado = a + b;
+            break;
+        case '-':
+            resultado = a - b;
+            break;
+        case '*':
+            resultado = a * b;
+            break;
+        case '/':
+            if (b == 0) {
+                printf("Não dá para dividir por zero.\n");
+                return 1;
+            }
+            resultado = a / b;
+            break;
+        default:
+            printf("Operação desconhecida: %c\n", op);
+            return 1;
+    }
+    printf("%g %c %g = %g\n", a, op, b, resultado);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>switch (op)</dt><dd>"Conforme o valor de <code>op</code>…". O <code>switch</code> só aceita valores inteiros, e um <code>char</code> é um inteiro pequeno (o código do caractere).</dd>
+  <dt>case '+':</dt><dd>"…se for <code>'+'</code>, comece aqui."</dd>
+  <dt>break;</dt><dd>"Terminei, saia do <code>switch</code>." Sem ele, o programa continua no <code>case</code> seguinte (veja o cenário abaixo).</dd>
+  <dt>if (b == 0) { … return 1; }</dt><dd>Dentro do <code>case '/'</code>: se o divisor é zero, avisa e encerra o programa com o código de saída 1, que diz ao sistema que algo deu errado (0 é "tudo certo").</dd>
+  <dt>default:</dt><dd>"Se não for nenhum dos anteriores." Mostra o erro e também sai com 1.</dd>
+  <dt>printf("%g %c %g = %g\n", a, op, b, resultado);</dt><dd>Mostra a conta com a operação escolhida: <code>%c</code> é o formato de um <code>char</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/calculadora">$ gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 10
+Operação (+ - * /): /
+Segundo número: 4
+10 / 4 = 2.5
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 1
+Operação (+ - * /): /
+Segundo número: 0
+Não dá para dividir por zero.
+$ echo $?
+1                                « o código de saída do return 1
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 7
+Operação (+ - * /): %
+Segundo número: 2
+Operação desconhecida: %
+$ echo $?
+1</pre>
+
+<p>O <code>echo $?</code> é um comando do terminal que mostra o código de saída do último programa. Não se preocupe com ele; é só para você ver o <code>1</code> do <code>return 1</code> (mais em <a href="exit.html">Encerrar o Programa</a>).</p>
+
+<div class="cenario">
+<strong>Esqueceu o <code>break</code>: a conta "escorrega" para o próximo <code>case</code></strong>
+<p class="warning" style="margin:6px 0">Este código tem um erro de propósito: o <code>break</code> depois da soma foi apagado.</p>
+<pre class="file" data-file="calculadora.c">        case '+':
+            resultado = a + b;
+        case '-':
+            resultado = a - b;
+            break;</pre>
+<pre class="term" data-cwd="~/c/calculadora">$ gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora
+calculadora.c: In function ‘main’:
+calculadora.c:19:23: warning: this statement may fall through [-Wimplicit-fallthrough=]
+   19 |             resultado = a + b;
+      |             ~~~~~~~~~~^~~~~~~
+calculadora.c:20:9: note: here
+   20 |         case '-':
+      |         ^~~~
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 10
+Operação (+ - * /): +
+Segundo número: 5
+10 + 5 = 5</pre>
+<p><strong>O que significa:</strong> "esta instrução pode cair para o próximo" (<em>fall through</em>, "cair através"). Sem o <code>break</code>, depois de somar o programa continuou no <code>case '-'</code> e trocou o resultado por <code>10 - 5</code>. A conta "10 + 5 = 5" está errada e o programa rodou sem reclamar. Só o aviso do <code>-Wextra</code> denunciou o problema: por isso o guia sempre compila com ele (veja <a href="avisos.html">Avisos</a>).</p>
+<p><strong>Como consertar:</strong> um <code>break;</code> no fim de cada <code>case</code>. Veja mais em <a href="switch.html">switch</a>.</p>
+</div>
+
+<div class="tryc" data-stdin="1\n/\n0\n" data-goal="out:Não dá para dividir por zero.,exit:1,src:b\s*==\s*0">
+<p class="try-task"><strong>Missão (versão 2):</strong> esta versão divide por zero e mostra <code>1 / 0 = inf</code>. Dentro do <code>case '/'</code>, antes da conta, confira se <code>b == 0</code>: se for, mostre <code>Não dá para dividir por zero.</code> e saia com <code>return 1;</code>. A entrada da missão é <code>1</code>, <code>/</code>, <code>0</code>.</p>
+<pre class="script" data-file="calculadora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double a = 0.0;
+    double b = 0.0;
+    char op = ' ';
+
+    printf("=== Calculadora da Ana ===\n");
+    printf("Primeiro número: ");
+    scanf("%lf", &amp;a);
+    printf("Operação (+ - * /): ");
+    scanf(" %c", &amp;op);
+    printf("Segundo número: ");
+    scanf("%lf", &amp;b);
+
+    double resultado = 0.0;
+    switch (op) {
+        case '+':
+            resultado = a + b;
+            break;
+        case '-':
+            resultado = a - b;
+            break;
+        case '*':
+            resultado = a * b;
+            break;
+        case '/':
+            // antes de dividir, confira se b é zero
+            resultado = a / b;
+            break;
+        default:
+            printf("Operação desconhecida: %c\n", op);
+            return 1;
+    }
+    printf("%g %c %g = %g\n", a, op, b, resultado);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="calculadora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double a = 0.0;
+    double b = 0.0;
+    char op = ' ';
+
+    printf("=== Calculadora da Ana ===\n");
+    printf("Primeiro número: ");
+    scanf("%lf", &amp;a);
+    printf("Operação (+ - * /): ");
+    scanf(" %c", &amp;op);
+    printf("Segundo número: ");
+    scanf("%lf", &amp;b);
+
+    double resultado = 0.0;
+    switch (op) {
+        case '+':
+            resultado = a + b;
+            break;
+        case '-':
+            resultado = a - b;
+            break;
+        case '*':
+            resultado = a * b;
+            break;
+        case '/':
+            if (b == 0) {
+                printf("Não dá para dividir por zero.\n");
+                return 1;
+            }
+            resultado = a / b;
+            break;
+        default:
+            printf("Operação desconhecida: %c\n", op);
+            return 1;
+    }
+    printf("%g %c %g = %g\n", a, op, b, resultado);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao3">Versão 3 · Repetir até a pessoa sair</h2>
+<p>Até agora, a calculadora faz uma conta e termina. Para fazer outra, a Ana tem de rodar o programa de novo. A versão 3 pergunta "Outra conta?" e repete enquanto a resposta for <code>s</code>. Como a calculadora sempre faz <strong>pelo menos uma</strong> conta, o laço certo é o <a href="do-while.html">do while</a>: ele roda o bloco primeiro e testa a condição depois.</p>
+
+<p>Duas mudanças no <code>switch</code>: cada <code>case</code> mostra o seu resultado, e a divisão por zero não encerra mais o programa com <code>return 1</code> (isso pularia o "Outra conta?"). Ela só avisa, e o laço continua.</p>
+
+<pre class="file" data-file="calculadora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char continuar = 's';
+
+    printf("=== Calculadora da Ana ===\n");
+    do {
+        double a = 0.0;
+        double b = 0.0;
+        char op = ' ';
+
+        printf("Primeiro número: ");
+        scanf("%lf", &amp;a);
+        printf("Operação (+ - * /): ");
+        scanf(" %c", &amp;op);
+        printf("Segundo número: ");
+        scanf("%lf", &amp;b);
+
+        switch (op) {
+            case '+':
+                printf("%g + %g = %g\n", a, b, a + b);
+                break;
+            case '-':
+                printf("%g - %g = %g\n", a, b, a - b);
+                break;
+            case '*':
+                printf("%g * %g = %g\n", a, b, a * b);
+                break;
+            case '/':
+                if (b == 0) {
+                    printf("Não dá para dividir por zero.\n");
+                } else {
+                    printf("%g / %g = %g\n", a, b, a / b);
+                }
+                break;
+            default:
+                printf("Operação desconhecida: %c\n", op);
+        }
+
+        printf("Outra conta? (s/n): ");
+        if (scanf(" %c", &amp;continuar) != 1) {
+            continuar = 'n';  // a entrada acabou: sai do laço
+        }
+    } while (continuar == 's' || continuar == 'S');
+
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>do { … } while (continuar == 's' || continuar == 'S');</dt><dd>"Faça isto; depois, se a resposta for <code>s</code> ou <code>S</code>, faça de novo." O <code>||</code> é o "ou" (veja <a href="operadores-logicos.html">Operadores Lógicos</a>). Repare no <code>;</code> depois do <code>while (…)</code>: no <code>do while</code> ele é obrigatório.</dd>
+  <dt>double a = 0.0; (dentro do do)</dt><dd>As variáveis da conta agora nascem dentro do laço: cada conta começa do zero (veja <a href="escopo.html">Escopo</a>). Só <code>continuar</code> fica fora, porque o <code>while</code> lá embaixo precisa dela.</dd>
+  <dt>if (scanf(" %c", &amp;continuar) != 1)</dt><dd>O <code>scanf</code> devolve quantos valores conseguiu ler. Se a entrada acabou (a pessoa apertou <kbd>Ctrl</kbd>+<kbd>D</kbd>), ele devolve <code>EOF</code>, que não é 1: então o programa sai do laço em vez de repetir para sempre.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/calculadora">$ gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 10
+Operação (+ - * /): +
+Segundo número: 5
+10 + 5 = 15
+Outra conta? (s/n): s
+Primeiro número: 3
+Operação (+ - * /): *
+Segundo número: 4
+3 * 4 = 12
+Outra conta? (s/n): s
+Primeiro número: 1
+Operação (+ - * /): /
+Segundo número: 0
+Não dá para dividir por zero.
+Outra conta? (s/n): n
+Até logo!</pre>
+
+<div class="cenario">
+<strong>Texto no lugar de número: as perguntas são "atropeladas"</strong>
+<pre class="term" data-cwd="~/c/calculadora">$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: dez
+Operação (+ - * /): Segundo número: Operação desconhecida: d
+Outra conta? (s/n): Até logo!</pre>
+<p><strong>O que aconteceu:</strong> o <code>%lf</code> não conseguiu ler <code>dez</code> e <strong>deixou o texto na entrada</strong>; <code>a</code> ficou com 0. O <code>" %c"</code> da operação pegou o <code>d</code>. O <code>%lf</code> do segundo número esbarrou no <code>e</code> e também falhou. O <code>" %c"</code> do "Outra conta?" pegou o <code>e</code>, que não é <code>s</code>, e o programa terminou sem a Ana ter digitado nada além de <code>dez</code>.</p>
+<p><strong>Como consertar:</strong> o <code>scanf</code> lê "o que der" e deixa o resto. Para validar, é melhor ler a <strong>linha inteira</strong> e só depois ver se ela é um número. É a versão 4.</p>
+</div>
+
+<div class="tryc" data-stdin="10\n+\n5\ns\n3\n*\n4\nn\n" data-goal="out:10 + 5 = 15,out:3 * 4 = 12,out:Até logo!,src:do\s*\{,src:while\s*\(">
+<p class="try-task"><strong>Missão (versão 3):</strong> o programa faz uma conta, pergunta "Outra conta?", mas não repete. Coloque tudo, de <code>double a</code> até a leitura de <code>continuar</code>, dentro de <code>do { … } while (continuar == 's' || continuar == 'S');</code>. A entrada da missão faz <code>10 + 5</code>, responde <code>s</code>, faz <code>3 * 4</code> e responde <code>n</code>.</p>
+<pre class="script" data-file="calculadora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char continuar = 's';
+
+    printf("=== Calculadora da Ana ===\n");
+
+    double a = 0.0;
+    double b = 0.0;
+    char op = ' ';
+
+    printf("Primeiro número: ");
+    scanf("%lf", &amp;a);
+    printf("Operação (+ - * /): ");
+    scanf(" %c", &amp;op);
+    printf("Segundo número: ");
+    scanf("%lf", &amp;b);
+
+    switch (op) {
+        case '+':
+            printf("%g + %g = %g\n", a, b, a + b);
+            break;
+        case '-':
+            printf("%g - %g = %g\n", a, b, a - b);
+            break;
+        case '*':
+            printf("%g * %g = %g\n", a, b, a * b);
+            break;
+        case '/':
+            if (b == 0) {
+                printf("Não dá para dividir por zero.\n");
+            } else {
+                printf("%g / %g = %g\n", a, b, a / b);
+            }
+            break;
+        default:
+            printf("Operação desconhecida: %c\n", op);
+    }
+
+    printf("Outra conta? (s/n): ");
+    if (scanf(" %c", &amp;continuar) != 1) {
+        continuar = 'n';  // a entrada acabou
+    }
+    // coloque tudo, de "double a" até aqui, dentro de um do { ... } while
+
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="calculadora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char continuar = 's';
+
+    printf("=== Calculadora da Ana ===\n");
+    do {
+        double a = 0.0;
+        double b = 0.0;
+        char op = ' ';
+
+        printf("Primeiro número: ");
+        scanf("%lf", &amp;a);
+        printf("Operação (+ - * /): ");
+        scanf(" %c", &amp;op);
+        printf("Segundo número: ");
+        scanf("%lf", &amp;b);
+
+        switch (op) {
+            case '+':
+                printf("%g + %g = %g\n", a, b, a + b);
+                break;
+            case '-':
+                printf("%g - %g = %g\n", a, b, a - b);
+                break;
+            case '*':
+                printf("%g * %g = %g\n", a, b, a * b);
+                break;
+            case '/':
+                if (b == 0) {
+                    printf("Não dá para dividir por zero.\n");
+                } else {
+                    printf("%g / %g = %g\n", a, b, a / b);
+                }
+                break;
+            default:
+                printf("Operação desconhecida: %c\n", op);
+        }
+
+        printf("Outra conta? (s/n): ");
+        if (scanf(" %c", &amp;continuar) != 1) {
+            continuar = 'n';  // a entrada acabou: sai do laço
+        }
+    } while (continuar == 's' || continuar == 'S');
+
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao4">Versão 4 · Validar a entrada com fgets e strtod</h2>
+<p>A ideia da versão final: <strong>nunca</strong> ler o número direto do teclado. Primeiro, a calculadora lê a linha inteira que a pessoa digitou, como texto, com <a href="fgets.html">fgets</a>. Depois, tenta converter o texto em número com <code>strtod</code> ("string to double", texto para <code>double</code>). Se sobrar alguma coisa que não é número (<code>seis</code>, <code>2,5</code>, <code>12abc</code>), ela recusa e pergunta de novo.</p>
+
+<p>Como agora há três perguntas com o mesmo jeito de ler (número, operação, "outra conta?"), o código ficou repetitivo. Hora de criar <a href="funcoes.html">funções</a>: cada uma faz uma coisa e tem um nome que diz o quê.</p>
+
+<pre class="file" data-file="calculadora.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+// Mostra a pergunta e lê uma linha inteira em "linha".
+// Se a entrada acabou (Ctrl+D), encerra o programa.
+void ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        printf("\nAté logo!\n");
+        exit(0);
+    }
+    linha[strcspn(linha, "\n")] = '\0';  // tira o Enter do fim
+}
+
+// Repete a pergunta até a pessoa digitar um número válido.
+double ler_numero(const char *pergunta) {
+    char linha[100];
+    while (1) {
+        ler_linha(pergunta, linha, sizeof linha);
+        char *fim = NULL;
+        double numero = strtod(linha, &amp;fim);
+        if (fim != linha &amp;&amp; *fim == '\0') {
+            return numero;  // converteu tudo: é um número
+        }
+        printf("\"%s\" não é um número. Tente de novo.\n", linha);
+    }
+}
+
+// Repete a pergunta até a pessoa digitar + - * ou /.
+char ler_operacao(void) {
+    char linha[100];
+    while (1) {
+        ler_linha("Operação (+ - * /): ", linha, sizeof linha);
+        if (strlen(linha) == 1 &amp;&amp; strchr("+-*/", linha[0]) != NULL) {
+            return linha[0];
+        }
+        printf("Operação desconhecida: %s\n", linha);
+    }
+}
+
+int main(void) {
+    char resposta[100] = "s";
+
+    printf("=== Calculadora da Ana ===\n");
+    while (resposta[0] == 's' || resposta[0] == 'S') {
+        double a = ler_numero("Primeiro número: ");
+        char op = ler_operacao();
+        double b = ler_numero("Segundo número: ");
+
+        if (op == '/' &amp;&amp; b == 0) {
+            printf("Não dá para dividir por zero.\n");
+        } else {
+            double r = 0.0;
+            switch (op) {
+                case '+': r = a + b; break;
+                case '-': r = a - b; break;
+                case '*': r = a * b; break;
+                case '/': r = a / b; break;
+            }
+            printf("%g %c %g = %g\n", a, op, b, r);
+        }
+        ler_linha("Outra conta? (s/n): ", resposta, sizeof resposta);
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Trecho</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;stdlib.h&gt;</code> e <code>&lt;string.h&gt;</code></td><td><code>stdlib.h</code> traz <code>strtod</code> e <code>exit</code>; <code>string.h</code> traz <code>strcspn</code>, <code>strlen</code> e <code>strchr</code> (veja <a href="funcoes-string.html">Funções de String</a>).</td></tr>
+<tr><td><code>void ler_linha(const char *pergunta, char *linha, int tamanho)</code></td><td>Mostra a pergunta e lê uma linha em <code>linha</code>. Recebe o tamanho do array para o <code>fgets</code> nunca escrever além dele.</td></tr>
+<tr><td><code>fgets(linha, tamanho, stdin) == NULL</code></td><td>O <code>fgets</code> devolve <code>NULL</code> quando a entrada acabou (<kbd>Ctrl</kbd>+<kbd>D</kbd>). Aí a calculadora se despede e encerra com <code>exit(0)</code>.</td></tr>
+<tr><td><code>linha[strcspn(linha, "\n")] = '\0';</code></td><td>O <code>fgets</code> guarda o <kbd>Enter</kbd> (<code>\n</code>) no fim da linha. <code>strcspn</code> acha a posição do <code>\n</code>, e o <code>'\0'</code> corta a string ali.</td></tr>
+<tr><td><code>double numero = strtod(linha, &amp;fim);</code></td><td>Converte o começo da linha num <code>double</code> e aponta <code>fim</code> para o primeiro caractere que <strong>não</strong> entrou no número. Em <code>"12abc"</code>, <code>fim</code> aponta para o <code>a</code>.</td></tr>
+<tr><td><code>fim != linha &amp;&amp; *fim == '\0'</code></td><td>Duas condições: <code>fim != linha</code> = "converteu pelo menos um caractere" (em <code>"seis"</code>, <code>fim</code> fica no começo); <code>*fim == '\0'</code> = "não sobrou nada depois do número".</td></tr>
+<tr><td><code>while (1) { … return numero; … }</code></td><td>Um laço "para sempre", que só termina pelo <code>return</code>, quando o número é válido.</td></tr>
+<tr><td><code>strlen(linha) == 1 &amp;&amp; strchr("+-*/", linha[0]) != NULL</code></td><td>A operação tem de ser exatamente um caractere, e esse caractere tem de estar na string <code>"+-*/"</code>. O <code>strchr</code> procura um caractere numa string e devolve <code>NULL</code> se não achar.</td></tr>
+<tr><td><code>char resposta[100] = "s";</code></td><td>O "Outra conta?" também é lido com <code>fgets</code>. Começa com <code>"s"</code> para o <code>while</code> entrar na primeira vez.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Por que não misturar <code>scanf</code> e <code>fgets</code>?</strong>
+<p>O <code>scanf("%lf")</code> deixa o <kbd>Enter</kbd> na entrada. Se um <code>fgets</code> vier depois, ele lê esse <kbd>Enter</kbd> que sobrou e devolve uma linha vazia, sem esperar a pessoa. Por isso a versão 4 lê <strong>tudo</strong> com <code>fgets</code>: os números, a operação e o "Outra conta?". Mais em <a href="fgets.html">Ler uma Linha</a>.</p>
+</div>
+
+<pre class="term" data-cwd="~/c/calculadora">$ gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 10
+Operação (+ - * /): +
+Segundo número: 5
+10 + 5 = 15
+Outra conta? (s/n): s
+Primeiro número: seis
+"seis" não é um número. Tente de novo.
+Primeiro número: 6
+Operação (+ - * /): %
+Operação desconhecida: %
+Operação (+ - * /): *
+Segundo número: 1.5
+6 * 1.5 = 9
+Outra conta? (s/n): s
+Primeiro número: 12abc
+"12abc" não é um número. Tente de novo.     « sobrou "abc" depois do 12
+Primeiro número: 12
+Operação (+ - * /): x
+Operação desconhecida: x
+Operação (+ - * /): /
+Segundo número: 0
+Não dá para dividir por zero.
+Outra conta? (s/n): n
+Até logo!</pre>
+
+<div class="tryc" data-stdin="abc\n10\n+\n5\nn\n" data-goal="out:&quot;abc&quot; não é um número. Tente de novo.,out:10 + 5 = 15,src:fim\s*!=\s*linha">
+<p class="try-task"><strong>Missão (versão 4):</strong> a função <code>ler_numero</code> converte com <code>strtod</code>, mas aceita qualquer coisa: <code>abc</code> vira 0. Passe um <code>char *fim</code> para o <code>strtod</code> e só devolva o número se <code>fim != linha &amp;&amp; *fim == '\0'</code>; senão, mostre <code>"abc" não é um número. Tente de novo.</code> (com o texto digitado) e deixe o laço repetir a pergunta. A entrada da missão é <code>abc</code>, <code>10</code>, <code>+</code>, <code>5</code>, <code>n</code>.</p>
+<pre class="script" data-file="calculadora.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+// Mostra a pergunta e lê uma linha inteira em "linha".
+// Se a entrada acabou (Ctrl+D), encerra o programa.
+void ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        printf("\nAté logo!\n");
+        exit(0);
+    }
+    linha[strcspn(linha, "\n")] = '\0';  // tira o Enter do fim
+}
+
+// Repete a pergunta até a pessoa digitar um número válido.
+double ler_numero(const char *pergunta) {
+    char linha[100];
+    while (1) {
+        ler_linha(pergunta, linha, sizeof linha);
+        double numero = strtod(linha, NULL);
+        // confira se a linha inteira era um número;
+        // se não era, mostre a mensagem e repita a pergunta
+        return numero;
+    }
+}
+
+// Repete a pergunta até a pessoa digitar + - * ou /.
+char ler_operacao(void) {
+    char linha[100];
+    while (1) {
+        ler_linha("Operação (+ - * /): ", linha, sizeof linha);
+        if (strlen(linha) == 1 &amp;&amp; strchr("+-*/", linha[0]) != NULL) {
+            return linha[0];
+        }
+        printf("Operação desconhecida: %s\n", linha);
+    }
+}
+
+int main(void) {
+    char resposta[100] = "s";
+
+    printf("=== Calculadora da Ana ===\n");
+    while (resposta[0] == 's' || resposta[0] == 'S') {
+        double a = ler_numero("Primeiro número: ");
+        char op = ler_operacao();
+        double b = ler_numero("Segundo número: ");
+
+        if (op == '/' &amp;&amp; b == 0) {
+            printf("Não dá para dividir por zero.\n");
+        } else {
+            double r = 0.0;
+            switch (op) {
+                case '+': r = a + b; break;
+                case '-': r = a - b; break;
+                case '*': r = a * b; break;
+                case '/': r = a / b; break;
+            }
+            printf("%g %c %g = %g\n", a, op, b, r);
+        }
+        ler_linha("Outra conta? (s/n): ", resposta, sizeof resposta);
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="calculadora.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+// Mostra a pergunta e lê uma linha inteira em "linha".
+// Se a entrada acabou (Ctrl+D), encerra o programa.
+void ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        printf("\nAté logo!\n");
+        exit(0);
+    }
+    linha[strcspn(linha, "\n")] = '\0';  // tira o Enter do fim
+}
+
+// Repete a pergunta até a pessoa digitar um número válido.
+double ler_numero(const char *pergunta) {
+    char linha[100];
+    while (1) {
+        ler_linha(pergunta, linha, sizeof linha);
+        char *fim = NULL;
+        double numero = strtod(linha, &amp;fim);
+        if (fim != linha &amp;&amp; *fim == '\0') {
+            return numero;  // converteu tudo: é um número
+        }
+        printf("\"%s\" não é um número. Tente de novo.\n", linha);
+    }
+}
+
+// Repete a pergunta até a pessoa digitar + - * ou /.
+char ler_operacao(void) {
+    char linha[100];
+    while (1) {
+        ler_linha("Operação (+ - * /): ", linha, sizeof linha);
+        if (strlen(linha) == 1 &amp;&amp; strchr("+-*/", linha[0]) != NULL) {
+            return linha[0];
+        }
+        printf("Operação desconhecida: %s\n", linha);
+    }
+}
+
+int main(void) {
+    char resposta[100] = "s";
+
+    printf("=== Calculadora da Ana ===\n");
+    while (resposta[0] == 's' || resposta[0] == 'S') {
+        double a = ler_numero("Primeiro número: ");
+        char op = ler_operacao();
+        double b = ler_numero("Segundo número: ");
+
+        if (op == '/' &amp;&amp; b == 0) {
+            printf("Não dá para dividir por zero.\n");
+        } else {
+            double r = 0.0;
+            switch (op) {
+                case '+': r = a + b; break;
+                case '-': r = a - b; break;
+                case '*': r = a * b; break;
+                case '/': r = a / b; break;
+            }
+            printf("%g %c %g = %g\n", a, op, b, r);
+        }
+        ler_linha("Outra conta? (s/n): ", resposta, sizeof resposta);
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>O programa completo</h2>
+<p>Esta é a calculadora final, a mesma da versão 4. Copie, compile com <code>gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora</code> e use à vontade:</p>
+
+<pre class="file" data-file="calculadora.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+// Mostra a pergunta e lê uma linha inteira em "linha".
+// Se a entrada acabou (Ctrl+D), encerra o programa.
+void ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        printf("\nAté logo!\n");
+        exit(0);
+    }
+    linha[strcspn(linha, "\n")] = '\0';  // tira o Enter do fim
+}
+
+// Repete a pergunta até a pessoa digitar um número válido.
+double ler_numero(const char *pergunta) {
+    char linha[100];
+    while (1) {
+        ler_linha(pergunta, linha, sizeof linha);
+        char *fim = NULL;
+        double numero = strtod(linha, &amp;fim);
+        if (fim != linha &amp;&amp; *fim == '\0') {
+            return numero;  // converteu tudo: é um número
+        }
+        printf("\"%s\" não é um número. Tente de novo.\n", linha);
+    }
+}
+
+// Repete a pergunta até a pessoa digitar + - * ou /.
+char ler_operacao(void) {
+    char linha[100];
+    while (1) {
+        ler_linha("Operação (+ - * /): ", linha, sizeof linha);
+        if (strlen(linha) == 1 &amp;&amp; strchr("+-*/", linha[0]) != NULL) {
+            return linha[0];
+        }
+        printf("Operação desconhecida: %s\n", linha);
+    }
+}
+
+int main(void) {
+    char resposta[100] = "s";
+
+    printf("=== Calculadora da Ana ===\n");
+    while (resposta[0] == 's' || resposta[0] == 'S') {
+        double a = ler_numero("Primeiro número: ");
+        char op = ler_operacao();
+        double b = ler_numero("Segundo número: ");
+
+        if (op == '/' &amp;&amp; b == 0) {
+            printf("Não dá para dividir por zero.\n");
+        } else {
+            double r = 0.0;
+            switch (op) {
+                case '+': r = a + b; break;
+                case '-': r = a - b; break;
+                case '*': r = a * b; break;
+                case '/': r = a / b; break;
+            }
+            printf("%g %c %g = %g\n", a, op, b, r);
+        }
+        ler_linha("Outra conta? (s/n): ", resposta, sizeof resposta);
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+
+<p>Repare no que o projeto juntou: <a href="scanf.html">scanf</a>, <a href="else-if.html">else if</a>, <a href="switch.html">switch</a>, <a href="do-while.html">do while</a>, <a href="while.html">while</a>, <a href="fgets.html">fgets</a>, <a href="string-numero.html">strtod</a>, <a href="funcoes.html">funções</a> com <a href="parametros.html">parâmetros</a> e <a href="retorno.html">retorno</a>. Nenhum desses assuntos é difícil sozinho; o projeto mostra como eles se encaixam.</p>
+
+<h3>Rodando no laboratório</h3>
+<p>A sessão do começo da página, na máquina da Ana, com a versão final:</p>
+
+<pre class="term" data-cwd="~/c/calculadora">$ gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 10
+Operação (+ - * /): +
+Segundo número: 5
+10 + 5 = 15
+Outra conta? (s/n): s
+Primeiro número: seis
+"seis" não é um número. Tente de novo.
+Primeiro número: 6
+Operação (+ - * /): %
+Operação desconhecida: %
+Operação (+ - * /): *
+Segundo número: 1.5
+6 * 1.5 = 9
+Outra conta? (s/n): s
+Primeiro número: 2,5
+"2,5" não é um número. Tente de novo.
+Primeiro número: 2.5
+Operação (+ - * /): /
+Segundo número: 0
+Não dá para dividir por zero.
+Outra conta? (s/n): n
+Até logo!</pre>
+
+<hr>
+
+<h2>Desafios extras</h2>
+<ol>
+  <li><strong>Resto da divisão.</strong> Acrescente a operação <code>%</code>. Cuidado: o <code>%</code> do C só funciona com inteiros. Para <code>double</code>, use <code>fmod(a, b)</code>, do <code>&lt;math.h&gt;</code> (veja <a href="matematica.html">Matemática</a>). E o resto da divisão por zero também não existe.</li>
+  <li><strong>Potência.</strong> Acrescente <code>^</code> com <code>pow(a, b)</code>, também do <code>&lt;math.h&gt;</code>.</li>
+  <li><strong>Histórico.</strong> Guarde os resultados num array <code>double historico[100]</code> e mostre todos antes do "Até logo!" (veja <a href="arrays.html">Arrays</a>).</li>
+  <li><strong>Duas casas decimais.</strong> Mostre o resultado com <code>%.2f</code> no lugar de <code>%g</code> e compare <code>10 / 3</code> nos dois formatos.</li>
+  <li><strong>Números estranhos.</strong> O <code>strtod</code> aceita <code>1e3</code> (mil), <code>inf</code> e <code>nan</code>. Experimente na calculadora. Como você recusaria <code>inf</code> e <code>nan</code>? (Dica: <code>isfinite</code>, do <code>&lt;math.h&gt;</code>.)</li>
+</ol>
+
+<div class="cenario">
+<strong>O erro que aparece no desafio 1 (no terminal)</strong>
+<pre class="term" data-cwd="~/c/calculadora">$ gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccua0ZF3.o: na função "main":
+calculadora.c:(.text+0x39e): referência não definida para "fmod"
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora -lm
+$ ./calculadora
+=== Calculadora da Ana ===
+Primeiro número: 7.5
+Operação (+ - * /): %
+Segundo número: 2
+7.5 % 2 = 1.5
+Outra conta? (s/n): n
+Até logo!</pre>
+<p><strong>O que significa:</strong> o código compilou, mas o <strong>ligador</strong> (<code>ld</code>, a etapa que junta o seu programa com as bibliotecas) não achou a função <code>fmod</code>: "referência não definida" (em inglês, <em>undefined reference to</em>). No Linux, as funções de <code>math.h</code> ficam numa biblioteca separada, a <strong>libm</strong>, que o gcc não junta sozinho.</p>
+<p><strong>Como consertar:</strong> acrescente <code>-lm</code> ("link math", junte a biblioteca de matemática) <strong>no fim</strong> do comando. O editor do guia já junta a libm sozinho, por isso a missão abaixo funciona sem ele. Veja <a href="matematica.html">Matemática</a> e <a href="bibliotecas.html">Bibliotecas</a>.</p>
+</div>
+
+<div class="tryc" data-stdin="10\n%\n3\ns\n7.5\n%\n2\ns\n7\n%\n0\nn\n" data-goal="out:10 % 3 = 1,out:7.5 % 2 = 1.5,out:Não dá para dividir por zero.,src:fmod">
+<p class="try-task"><strong>Desafio 1 no editor:</strong> acrescente a operação <code>%</code> com <code>fmod</code>. Mude quatro lugares: o <code>#include &lt;math.h&gt;</code>, a string <code>"+-*/"</code> de <code>ler_operacao</code>, o <code>switch</code> e o <code>if</code> da divisão por zero (que agora vale para <code>/</code> e para <code>%</code>). Com a entrada da missão, a calculadora deve mostrar <code>10 % 3 = 1</code>, <code>7.5 % 2 = 1.5</code> e recusar <code>7 % 0</code>.</p>
+<pre class="script" data-file="calculadora.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+// Mostra a pergunta e lê uma linha inteira em "linha".
+// Se a entrada acabou (Ctrl+D), encerra o programa.
+void ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        printf("\nAté logo!\n");
+        exit(0);
+    }
+    linha[strcspn(linha, "\n")] = '\0';  // tira o Enter do fim
+}
+
+// Repete a pergunta até a pessoa digitar um número válido.
+double ler_numero(const char *pergunta) {
+    char linha[100];
+    while (1) {
+        ler_linha(pergunta, linha, sizeof linha);
+        char *fim = NULL;
+        double numero = strtod(linha, &amp;fim);
+        if (fim != linha &amp;&amp; *fim == '\0') {
+            return numero;  // converteu tudo: é um número
+        }
+        printf("\"%s\" não é um número. Tente de novo.\n", linha);
+    }
+}
+
+// Repete a pergunta até a pessoa digitar + - * ou /.
+char ler_operacao(void) {
+    char linha[100];
+    while (1) {
+        ler_linha("Operação (+ - * /): ", linha, sizeof linha);
+        if (strlen(linha) == 1 &amp;&amp; strchr("+-*/", linha[0]) != NULL) {
+            return linha[0];
+        }
+        printf("Operação desconhecida: %s\n", linha);
+    }
+}
+
+int main(void) {
+    char resposta[100] = "s";
+
+    printf("=== Calculadora da Ana ===\n");
+    while (resposta[0] == 's' || resposta[0] == 'S') {
+        double a = ler_numero("Primeiro número: ");
+        char op = ler_operacao();
+        double b = ler_numero("Segundo número: ");
+
+        if (op == '/' &amp;&amp; b == 0) {
+            printf("Não dá para dividir por zero.\n");
+        } else {
+            double r = 0.0;
+            switch (op) {
+                case '+': r = a + b; break;
+                case '-': r = a - b; break;
+                case '*': r = a * b; break;
+                case '/': r = a / b; break;
+            }
+            printf("%g %c %g = %g\n", a, op, b, r);
+        }
+        ler_linha("Outra conta? (s/n): ", resposta, sizeof resposta);
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="calculadora.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;math.h&gt;
+
+// Mostra a pergunta e lê uma linha inteira em "linha".
+// Se a entrada acabou (Ctrl+D), encerra o programa.
+void ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        printf("\nAté logo!\n");
+        exit(0);
+    }
+    linha[strcspn(linha, "\n")] = '\0';  // tira o Enter do fim
+}
+
+// Repete a pergunta até a pessoa digitar um número válido.
+double ler_numero(const char *pergunta) {
+    char linha[100];
+    while (1) {
+        ler_linha(pergunta, linha, sizeof linha);
+        char *fim = NULL;
+        double numero = strtod(linha, &amp;fim);
+        if (fim != linha &amp;&amp; *fim == '\0') {
+            return numero;  // converteu tudo: é um número
+        }
+        printf("\"%s\" não é um número. Tente de novo.\n", linha);
+    }
+}
+
+// Repete a pergunta até a pessoa digitar + - * ou /.
+char ler_operacao(void) {
+    char linha[100];
+    while (1) {
+        ler_linha("Operação (+ - * /): ", linha, sizeof linha);
+        if (strlen(linha) == 1 &amp;&amp; strchr("+-*/%", linha[0]) != NULL) {
+            return linha[0];
+        }
+        printf("Operação desconhecida: %s\n", linha);
+    }
+}
+
+int main(void) {
+    char resposta[100] = "s";
+
+    printf("=== Calculadora da Ana ===\n");
+    while (resposta[0] == 's' || resposta[0] == 'S') {
+        double a = ler_numero("Primeiro número: ");
+        char op = ler_operacao();
+        double b = ler_numero("Segundo número: ");
+
+        if ((op == '/' || op == '%') &amp;&amp; b == 0) {
+            printf("Não dá para dividir por zero.\n");
+        } else {
+            double r = 0.0;
+            switch (op) {
+                case '+': r = a + b; break;
+                case '-': r = a - b; break;
+                case '*': r = a * b; break;
+                case '/': r = a / b; break;
+                case '%': r = fmod(a, b); break;
+            }
+            printf("%g %c %g = %g\n", a, op, b, r);
+        }
+        ler_linha("Outra conta? (s/n): ", resposta, sizeof resposta);
+    }
+    printf("Até logo!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Por que a calculadora usa <code>scanf(" %c", &amp;op)</code>, com um espaço antes do <code>%c</code>?</p>
+<label><input type="radio" name="q1"> Para mostrar um espaço antes da operação.</label>
+<label><input type="radio" name="q1"> Para pular o <kbd>Enter</kbd> que o <code>%lf</code> anterior deixou na entrada.</label>
+<label><input type="radio" name="q1"> Porque o <code>%c</code> só funciona com espaço.</label>
+<label><input type="radio" name="q1"> Para aceitar operações com dois caracteres.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Na versão 2, a Ana apagou o <code>break</code> depois de <code>resultado = a * b;</code>. O que acontece com <code>6 * 2</code>?</p>
+<label><input type="radio" name="q2"> Erro de compilação.</label>
+<label><input type="radio" name="q2"> <code>6 * 2 = 12</code>, normalmente.</label>
+<label><input type="radio" name="q2"> O programa continua no <code>case '/'</code> e mostra <code>6 * 2 = 3</code> (o gcc avisa com <code>-Wextra</code>).</label>
+<label><input type="radio" name="q2"> O programa cai no <code>default</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. Com <code>strtod(linha, &amp;fim)</code> e <code>linha</code> igual a <code>"12abc"</code>, para onde aponta <code>fim</code>?</p>
+<label><input type="radio" name="q3"> Para o <code>a</code>, o primeiro caractere que não faz parte do número.</label>
+<label><input type="radio" name="q3"> Para o <code>1</code>, o começo da linha.</label>
+<label><input type="radio" name="q3"> Para o <code>'\0'</code> do fim.</label>
+<label><input type="radio" name="q3"> Fica <code>NULL</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Por que a versão 3 usa <code>do while</code> e não <code>while</code>?</p>
+<label><input type="radio" name="q4"> Porque o <code>while</code> não aceita <code>||</code>.</label>
+<label><input type="radio" name="q4"> Porque o <code>do while</code> é mais rápido.</label>
+<label><input type="radio" name="q4"> Porque o <code>while</code> não funciona com <code>char</code>.</label>
+<label><input type="radio" name="q4"> Porque a calculadora sempre faz pelo menos uma conta: o bloco roda antes do primeiro teste.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete o formato do <code>scanf</code> que lê um <code>double</code> na variável <code>a</code>:</p>
+<div class="ex-code">scanf("<input data-answer="%lf" aria-label="formato" size="4">", &amp;a);</div>
+</div>
+
+<div class="exercise">
+<p>6. No terminal, que opção você acrescenta ao fim do comando do gcc quando aparece <code>referência não definida para "fmod"</code>?</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra calculadora.c -o calculadora <input data-answer="-lm" aria-label="opção" size="5"></div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>scanf("%lf", &amp;a)</code> lê um <code>double</code>; <code>scanf(" %c", &amp;op)</code> lê um caractere, e o espaço pula o <kbd>Enter</kbd> que sobrou.</li>
+  <li>O <code>switch</code> compara uma variável com vários valores; cada <code>case</code> termina com <code>break</code>, e o <code>-Wextra</code> avisa quando falta.</li>
+  <li>Dividir um <code>double</code> por zero dá <code>inf</code>: confira o divisor antes.</li>
+  <li><code>do { … } while (…);</code> repete pelo menos uma vez; confira o retorno do <code>scanf</code> para não repetir para sempre quando a entrada acaba.</li>
+  <li>Para validar: leia a linha com <code>fgets</code>, converta com <code>strtod(linha, &amp;fim)</code> e aceite só se <code>fim != linha &amp;&amp; *fim == '\0'</code>.</li>
+  <li><code>fmod</code>, <code>pow</code> e as outras de <code>math.h</code> pedem <code>-lm</code> no gcc.</li>
+</ul>
+<p>Próximo projeto: <a href="projeto-adivinhacao.html">Jogo de Adivinhação</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
