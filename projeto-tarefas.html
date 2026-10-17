@@ -1,0 +1,2521 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Projeto Lista de Tarefas — lista ligada com malloc, free e valgrind | Guia C</title>
+<meta name="description" content="Projeto passo a passo: a lista de tarefas da Ana em C, numa lista ligada. Cada tarefa é um nó criado com malloc, com o título do tamanho exato; o menu adiciona, conclui, remove e limpa as feitas; a lista é salva num arquivo de texto; e o valgrind confirma que toda a memória foi liberada. Quatro versões com saídas reais do gcc 15 e do valgrind, o vazamento do título, o free na ordem errada e o nó usado depois do free.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto <span class="hl">Lista de Tarefas</span></h1>
+
+<p class="intro">A Ana anota o que precisa fazer na lojinha em papeizinhos colados na parede: comprar papel, pagar a luz, ligar para o fornecedor. Neste projeto, os papeizinhos viram uma <strong>lista ligada</strong> em C. Cada tarefa é criada com <code>malloc</code> quando a Ana a digita e destruída com <code>free</code> quando sai da lista, e a lista cresce e encolhe sem tamanho máximo. No fim, o <code>valgrind</code> confere que nenhum byte foi esquecido.</p>
+
+<div class="note">
+<strong>Você vai praticar</strong>
+<ul>
+  <li>Montar uma <a href="listas-ligadas.html">lista ligada</a> de structs com <a href="structs-ponteiros.html"><code>-&gt;</code></a>, inserindo no fim.</li>
+  <li>Reservar <strong>dois</strong> blocos por tarefa com <a href="malloc-free.html">malloc</a>: o nó e o título, do tamanho exato (<a href="strings-dinamicas.html">Strings Dinâmicas</a>).</li>
+  <li>Achar a tarefa pelo número, removê-la (inclusive a primeira) e remover várias numa passada só.</li>
+  <li>Liberar tudo, na ordem certa, e ler os relatórios do <a href="valgrind.html">valgrind</a>.</li>
+  <li>Guardar a lista num arquivo de texto e montá-la de novo ao abrir.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que vamos construir</h2>
+<p>O programa pronto, rodando dentro do <code>valgrind</code> na máquina da Ana. Ele carrega as tarefas salvas, a Ana conclui uma, acrescenta outra, remove uma terceira e limpa as feitas. No fim, o relatório: toda a memória foi devolvida.</p>
+
+<pre class="term" data-cwd="~/c/tarefas">$ valgrind --leak-check=full ./tarefas
+==452535== Memcheck, a memory error detector
+==452535== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==452535== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==452535== Command: ./tarefas
+==452535==
+=== Lista de Tarefas ===
+1. [ ] Comprar papel A4
+2. [ ] Ligar para o fornecedor
+3. [ ] Arrumar a vitrine
+4. [ ] Fazer o pedido de cadernos
+Pendentes: 4 de 4
+1) Listar  2) Adicionar  3) Concluir
+4) Remover  5) Limpar feitas  0) Sair
+
+Opção: 3
+Número da tarefa: 1
+Feito: Comprar papel A4
+
+Opção: 2
+Tarefa: Pagar o aluguel
+
+Opção: 4
+Número da tarefa: 2
+Removida: Ligar para o fornecedor
+
+Opção: 5
+Tarefas feitas removidas: 1
+
+Opção: 1
+1. [ ] Arrumar a vitrine
+2. [ ] Fazer o pedido de cadernos
+3. [ ] Pagar o aluguel
+Pendentes: 3 de 3
+
+Opção: 0
+
+Tarefas salvas em tarefas.txt. Até logo!
+==452535==
+==452535== HEAP SUMMARY:
+==452535==     in use at exit: 0 bytes in 0 blocks
+==452535==   total heap usage: 16 allocs, 16 frees, 11,406 bytes allocated
+==452535==
+==452535== All heap blocks were freed -- no leaks are possible
+==452535==
+==452535== For lists of detected and suppressed errors, rerun with: -s
+==452535== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<ol class="passo">
+  <li><a href="#versao1">A tarefa, a lista e o primeiro valgrind</a>.</li>
+  <li><a href="#versao2">O menu: adicionar e concluir</a>.</li>
+  <li><a href="#versao3">Remover e limpar as feitas</a>.</li>
+  <li><a href="#versao4">Guardar a lista num arquivo</a>.</li>
+</ol>
+
+<h3>Antes de começar</h3>
+<p>Este é o projeto mais avançado do guia. Você precisa ter visto <a href="listas-ligadas.html">Listas Ligadas</a> (inserir, percorrer, remover e liberar), <a href="malloc-free.html">malloc e free</a>, <a href="structs-ponteiros.html">Structs e Ponteiros</a> e <a href="valgrind.html">Valgrind</a>. Todos os programas foram compilados com <code>-g</code>, para o <code>valgrind</code> mostrar o arquivo e a linha de cada problema:</p>
+
+<pre class="term">$ mkdir -p c/tarefas
+$ cd c/tarefas</pre>
+
+<hr>
+
+<h2 id="versao1">Versão 1 · A tarefa, a lista e o primeiro valgrind</h2>
+<p>Imagine os papeizinhos da Ana presos por clipes, um atrás do outro: cada papel tem a tarefa e um clipe que segura o próximo. Para achar a terceira tarefa, você começa pelo primeiro papel e segue os clipes. Na lista ligada, o papel é uma <code>struct</code>, o clipe é um ponteiro (<code>prox</code>), e o último papel tem o clipe solto: <code>NULL</code>.</p>
+
+<figure>
+<pre class="term">lista ──► ┌──────────────────────┐    ┌──────────────────────┐    ┌──────────────────────┐
+          │ "Comprar papel A4"   │    │ "Pagar a conta de…"  │    │ "Ligar para o forn…" │
+          │ feita: false         │    │ feita: true          │    │ feita: false         │
+          │ prox ────────────────┼──► │ prox ────────────────┼──► │ prox: NULL           │
+          └──────────────────────┘    └──────────────────────┘    └──────────────────────┘</pre>
+</figure>
+
+<p>A diferença para a lista de números de <a href="listas-ligadas.html">Listas Ligadas</a> é o texto. Um título pode ter 5 letras ou 200. Em vez de reservar um array de 200 bytes em toda tarefa, o nó guarda um <strong>ponteiro</strong> para um texto criado com <code>malloc</code>, do tamanho exato. Assim, cada tarefa ocupa <strong>dois</strong> blocos de memória, e os dois têm de ser liberados.</p>
+
+<pre class="file" data-file="tarefas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct Tarefa {
+    char *titulo;           // texto do tamanho exato, criado com malloc
+    bool feita;
+    struct Tarefa *prox;    // a próxima tarefa (NULL na última)
+} Tarefa;
+
+// Cria uma tarefa nova, fora da lista. Encerra o programa se faltar memória.
+Tarefa *nova_tarefa(const char *titulo) {
+    Tarefa *t = malloc(sizeof *t);
+    char *copia = malloc(strlen(titulo) + 1);
+    if (t == NULL || copia == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    strcpy(copia, titulo);
+    t-&gt;titulo = copia;
+    t-&gt;feita = false;
+    t-&gt;prox = NULL;
+    return t;
+}
+
+// Põe a tarefa no fim da lista e devolve o começo da lista.
+Tarefa *adicionar(Tarefa *lista, Tarefa *t) {
+    if (lista == NULL) {
+        return t;
+    }
+    Tarefa *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = t;
+    return lista;
+}
+
+void apagar(Tarefa *t) {
+    free(t-&gt;titulo);        // primeiro o texto...
+    free(t);                // ...depois a tarefa
+}
+
+void listar(const Tarefa *lista) {
+    if (lista == NULL) {
+        printf("Nenhuma tarefa. Aproveite o dia!\n");
+        return;
+    }
+    int n = 0;
+    int pendentes = 0;
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        n++;
+        printf("%d. [%c] %s\n", n, p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+        if (!p-&gt;feita) {
+            pendentes++;
+        }
+    }
+    printf("Pendentes: %d de %d\n", pendentes, n);
+}
+
+void liberar(Tarefa *lista) {
+    while (lista != NULL) {
+        Tarefa *prox = lista-&gt;prox;
+        apagar(lista);
+        lista = prox;
+    }
+}
+
+int main(void) {
+    Tarefa *lista = NULL;           // a lista começa vazia
+    lista = adicionar(lista, nova_tarefa("Comprar papel A4"));
+    lista = adicionar(lista, nova_tarefa("Pagar a conta de luz"));
+    lista = adicionar(lista, nova_tarefa("Ligar para o fornecedor"));
+    lista-&gt;prox-&gt;feita = true;      // a segunda já foi feita
+
+    listar(lista);
+    liberar(lista);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>typedef struct Tarefa { … struct Tarefa *prox; } Tarefa;</code></td><td>A struct tem nome (<code>struct Tarefa</code>) porque precisa citar a si mesma no campo <code>prox</code>; o <code>typedef</code> deixa escrever só <code>Tarefa</code> no resto do programa (aula <a href="typedef.html">typedef</a>).</td></tr>
+<tr><td><code>malloc(sizeof *t)</code></td><td>Reserva um nó. <code>sizeof *t</code> é "o tamanho daquilo para que <code>t</code> aponta": 24 bytes no gcc do laboratório e 12 no editor do guia, que tem ponteiros de 4 bytes. Escrito assim, o tamanho está sempre certo.</td></tr>
+<tr><td><code>malloc(strlen(titulo) + 1)</code></td><td>Reserva o texto: as letras e mais 1 byte para o <code>'\0'</code>. Esquecer o <code>+ 1</code> é o erro mais comum com strings dinâmicas (aula <a href="strings-dinamicas.html">Strings Dinâmicas</a>).</td></tr>
+<tr><td><code>if (t == NULL || copia == NULL)</code></td><td>O <code>malloc</code> devolve <code>NULL</code> quando falta memória. Aqui o programa desiste com <code>exit(1)</code> (aula <a href="exit.html">exit</a>): numa lista de tarefas, não há o que fazer sem memória.</td></tr>
+<tr><td><code>strcpy(copia, titulo);</code></td><td>Copia o texto para o bloco novo. É seguro: o bloco foi reservado com o tamanho do próprio texto.</td></tr>
+<tr><td><code>Tarefa *adicionar(Tarefa *lista, Tarefa *t)</code></td><td>Anda até a última tarefa (a que tem <code>prox == NULL</code>) e prende a nova nela. Devolve o começo da lista, que só muda quando a lista estava vazia; por isso a chamada é <code>lista = adicionar(lista, …)</code>.</td></tr>
+<tr><td><code>void apagar(Tarefa *t)</code></td><td>Libera os dois blocos de uma tarefa: primeiro o título, depois o nó (veja os cenários).</td></tr>
+<tr><td><code>p-&gt;feita ? 'x' : ' '</code></td><td>Um <code>x</code> entre os colchetes se a tarefa foi feita, um espaço se não (aula <a href="ternario.html">Operador Ternário</a>). O <code>%c</code> mostra um caractere.</td></tr>
+<tr><td><code>Tarefa *prox = lista-&gt;prox;</code></td><td>Em <code>liberar</code>: guarda o endereço da próxima tarefa <strong>antes</strong> de apagar a atual. Depois do <code>free</code>, <code>lista-&gt;prox</code> não pode mais ser lido.</td></tr>
+<tr><td><code>lista-&gt;prox-&gt;feita = true;</code></td><td>Segue um clipe: a segunda tarefa. Só para o teste; a versão 2 terá um jeito de verdade.</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/tarefas">$ gcc -std=c23 -Wall -Wextra -g tarefas.c -o tarefas
+$ ./tarefas
+1. [ ] Comprar papel A4
+2. [x] Pagar a conta de luz
+3. [ ] Ligar para o fornecedor
+Pendentes: 2 de 3</pre>
+
+<p>O programa funciona, mas a saída não diz nada sobre a memória. Quem diz é o <code>valgrind</code>:</p>
+
+<pre class="term" data-cwd="~/c/tarefas">$ valgrind --leak-check=full ./tarefas
+==452466== Memcheck, a memory error detector
+==452466== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==452466== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==452466== Command: ./tarefas
+==452466==
+1. [ ] Comprar papel A4
+2. [x] Pagar a conta de luz
+3. [ ] Ligar para o fornecedor
+Pendentes: 2 de 3
+==452466==
+==452466== HEAP SUMMARY:
+==452466==     in use at exit: 0 bytes in 0 blocks
+==452466==   total heap usage: 7 allocs, 7 frees, 1,158 bytes allocated
+==452466==
+==452466== All heap blocks were freed -- no leaks are possible
+==452466==
+==452466== For lists of detected and suppressed errors, rerun with: -s
+==452466== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<dl class="anatomy">
+  <dt>in use at exit: 0 bytes in 0 blocks</dt><dd>Na saída do programa, nenhum bloco ficou reservado.</dd>
+  <dt>7 allocs, 7 frees</dt><dd>Sete <code>malloc</code>, sete <code>free</code>. Seis são nossos: 3 tarefas × 2 blocos (nó e título). O sétimo é do próprio <code>printf</code>, que reserva um <em>buffer</em> para a saída e o devolve sozinho no fim.</dd>
+  <dt>1,158 bytes allocated</dt><dd>3 nós de 24 bytes (72), os 3 títulos (17 + 21 + 24 = 62 bytes, contando os <code>'\0'</code>) e os 1024 bytes do buffer do terminal.</dd>
+  <dt>All heap blocks were freed -- no leaks are possible</dt><dd>"Todos os blocos foram liberados, não há vazamento possível." É a frase que você quer ver.</dd>
+  <dt>ERROR SUMMARY: 0 errors</dt><dd>Nenhum acesso errado à memória (leitura fora do bloco, uso depois do <code>free</code>).</dd>
+</dl>
+
+<div class="cenario">
+<strong><code>definitely lost: 62 bytes in 3 blocks</code></strong>
+<p>Na primeira versão do <code>apagar</code>, a Ana liberou só o nó: <code>free(t);</code>. O programa mostrou a lista igualzinha, sem erro nenhum. O <code>valgrind</code> não deixou passar:</p>
+<pre class="term" data-cwd="~/c/tarefas">$ valgrind --leak-check=full ./tarefas
+==452478== Memcheck, a memory error detector
+==452478== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==452478== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==452478== Command: ./tarefas
+==452478==
+1. [ ] Comprar papel A4
+2. [x] Pagar a conta de luz
+3. [ ] Ligar para o fornecedor
+Pendentes: 2 de 3
+==452478==
+==452478== HEAP SUMMARY:
+==452478==     in use at exit: 62 bytes in 3 blocks
+==452478==   total heap usage: 7 allocs, 4 frees, 1,158 bytes allocated
+==452478==
+==452478== 17 bytes in 1 blocks are definitely lost in loss record 1 of 3
+==452478==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==452478==    by 0x400125E: nova_tarefa (tarefas.c:14)
+==452478==    by 0x4001468: main (tarefas.c:70)
+==452478==
+==452478== 21 bytes in 1 blocks are definitely lost in loss record 2 of 3
+==452478==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==452478==    by 0x400125E: nova_tarefa (tarefas.c:14)
+==452478==    by 0x400148D: main (tarefas.c:71)
+==452478==
+==452478== 24 bytes in 1 blocks are definitely lost in loss record 3 of 3
+==452478==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==452478==    by 0x400125E: nova_tarefa (tarefas.c:14)
+==452478==    by 0x40014B2: main (tarefas.c:72)
+==452478==
+==452478== LEAK SUMMARY:
+==452478==    definitely lost: 62 bytes in 3 blocks
+==452478==    indirectly lost: 0 bytes in 0 blocks
+==452478==      possibly lost: 0 bytes in 0 blocks
+==452478==    still reachable: 0 bytes in 0 blocks
+==452478==         suppressed: 0 bytes in 0 blocks
+==452478==
+==452478== For lists of detected and suppressed errors, rerun with: -s
+==452478== ERROR SUMMARY: 3 errors from 3 contexts (suppressed: 0 from 0)</pre>
+<p><strong>O que significa:</strong> 7 <code>malloc</code> e só 4 <code>free</code>. Os três blocos perdidos têm 17, 21 e 24 bytes: os tamanhos de <code>"Comprar papel A4"</code>, <code>"Pagar a conta de luz"</code> e <code>"Ligar para o fornecedor"</code> mais o <code>'\0'</code>. Cada relatório diz onde o bloco nasceu: o <code>malloc</code> da linha 14 (o do título), chamado por <code>nova_tarefa</code>, chamada pelo <code>main</code> nas linhas 70, 71 e 72. "Definitely lost" (perdido com certeza) quer dizer que nenhum ponteiro aponta mais para eles: depois do <code>free(t)</code>, o endereço do título sumiu junto com o nó.</p>
+<p><strong>Como consertar:</strong> para cada <code>malloc</code>, um <code>free</code>. Quem reservou dois blocos em <code>nova_tarefa</code> libera dois em <code>apagar</code>. Num programa que roda o dia todo, cada tarefa removida vazaria o seu título, e a memória usada só cresceria (aula <a href="vazamentos.html">Vazamentos de Memória</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: pointer ‘t’ used after ‘free’</code> e <code>Invalid read of size 8</code></strong>
+<p>Depois, a Ana pôs os dois <code>free</code>, mas na ordem trocada: primeiro <code>free(t);</code>, depois <code>free(t-&gt;titulo);</code>. Desta vez o gcc percebeu:</p>
+<pre class="term" data-cwd="~/c/tarefas">$ gcc -std=c23 -Wall -Wextra -g tarefas.c -o tarefas
+tarefas.c: In function ‘apagar’:
+tarefas.c:41:11: warning: pointer ‘t’ used after ‘free’ [-Wuse-after-free]
+   41 |     free(t-&gt;titulo);
+      |          ~^~~~~~~~
+tarefas.c:40:5: note: call to ‘free’ here
+   40 |     free(t);
+      |     ^~~~~~~
+$ valgrind --leak-check=full ./tarefas
+==452486== Memcheck, a memory error detector
+==452486== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==452486== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==452486== Command: ./tarefas
+==452486==
+1. [ ] Comprar papel A4
+2. [x] Pagar a conta de luz
+3. [ ] Ligar para o fornecedor
+Pendentes: 2 de 3
+==452486== Invalid read of size 8
+==452486==    at 0x4001345: apagar (tarefas.c:41)
+==452486==    by 0x4001441: liberar (tarefas.c:64)
+==452486==    by 0x40014FB: main (tarefas.c:77)
+==452486==  Address 0x4a8e040 is 0 bytes inside a block of size 24 free'd
+==452486==    at 0x48538BF: free (vg_replace_malloc.c:990)
+==452486==    by 0x4001340: apagar (tarefas.c:40)
+==452486==    by 0x4001441: liberar (tarefas.c:64)
+==452486==    by 0x40014FB: main (tarefas.c:77)
+==452486==  Block was alloc'd at
+==452486==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==452486==    by 0x4001242: nova_tarefa (tarefas.c:13)
+==452486==    by 0x4001477: main (tarefas.c:71)
+==452486==
+==452486==
+==452486== HEAP SUMMARY:
+==452486==     in use at exit: 0 bytes in 0 blocks
+==452486==   total heap usage: 7 allocs, 7 frees, 1,158 bytes allocated
+==452486==
+==452486== All heap blocks were freed -- no leaks are possible
+==452486==
+==452486== For lists of detected and suppressed errors, rerun with: -s
+==452486== ERROR SUMMARY: 3 errors from 1 contexts (suppressed: 0 from 0)</pre>
+<p><strong>O que significa:</strong> o aviso do gcc diz que <code>t</code> foi usado depois do <code>free</code> da linha 40. O <code>valgrind</code> confirma ao rodar: na linha 41, o programa leu 8 bytes (o ponteiro <code>t-&gt;titulo</code>) de dentro de "um bloco de 24 bytes já liberado" (o nó, liberado na linha 40). Não há vazamento, porque os 7 blocos foram liberados, mas houve 3 leituras proibidas, uma por tarefa. Funcionou por sorte: a memória liberada ainda guardava o valor antigo. O Clang do editor não dá esse aviso, e o editor também não reclama ao rodar (a memória do WebAssembly é organizada de outro jeito); por isso este exemplo é do laboratório.</p>
+<p><strong>Como consertar:</strong> libere de dentro para fora. Primeiro o que o nó aponta (<code>free(t-&gt;titulo)</code>), depois o nó (<code>free(t)</code>). Depois do <code>free(t)</code>, não encoste mais em <code>t</code>.</p>
+</div>
+
+<div class="tryc" data-goal="out:1. [ ] Comprar papel A4,out:3. [ ] Ligar para o fornecedor">
+<p class="try-task"><strong>Missão (versão 1):</strong> este <code>adicionar</code> é o mais curto possível: põe a tarefa nova na <strong>frente</strong>. Rode e veja a lista de trás para frente, com a tarefa errada marcada. Reescreva-o para pôr a tarefa no <strong>fim</strong>: se a lista estiver vazia, a nova tarefa é a lista; senão, ande até a tarefa com <code>prox == NULL</code> e prenda a nova nela.</p>
+<pre class="script" data-file="tarefas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct Tarefa {
+    char *titulo;           // texto do tamanho exato, criado com malloc
+    bool feita;
+    struct Tarefa *prox;    // a próxima tarefa (NULL na última)
+} Tarefa;
+
+// Cria uma tarefa nova, fora da lista. Encerra o programa se faltar memória.
+Tarefa *nova_tarefa(const char *titulo) {
+    Tarefa *t = malloc(sizeof *t);
+    char *copia = malloc(strlen(titulo) + 1);
+    if (t == NULL || copia == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    strcpy(copia, titulo);
+    t-&gt;titulo = copia;
+    t-&gt;feita = false;
+    t-&gt;prox = NULL;
+    return t;
+}
+
+// Põe a tarefa no fim da lista e devolve o começo da lista.
+Tarefa *adicionar(Tarefa *lista, Tarefa *t) {
+    t-&gt;prox = lista;        // assim a tarefa nova entra na FRENTE
+    return t;
+}
+
+void apagar(Tarefa *t) {
+    free(t-&gt;titulo);        // primeiro o texto...
+    free(t);                // ...depois a tarefa
+}
+
+void listar(const Tarefa *lista) {
+    if (lista == NULL) {
+        printf("Nenhuma tarefa. Aproveite o dia!\n");
+        return;
+    }
+    int n = 0;
+    int pendentes = 0;
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        n++;
+        printf("%d. [%c] %s\n", n, p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+        if (!p-&gt;feita) {
+            pendentes++;
+        }
+    }
+    printf("Pendentes: %d de %d\n", pendentes, n);
+}
+
+void liberar(Tarefa *lista) {
+    while (lista != NULL) {
+        Tarefa *prox = lista-&gt;prox;
+        apagar(lista);
+        lista = prox;
+    }
+}
+
+int main(void) {
+    Tarefa *lista = NULL;           // a lista começa vazia
+    lista = adicionar(lista, nova_tarefa("Comprar papel A4"));
+    lista = adicionar(lista, nova_tarefa("Pagar a conta de luz"));
+    lista = adicionar(lista, nova_tarefa("Ligar para o fornecedor"));
+    lista-&gt;prox-&gt;feita = true;      // a segunda já foi feita
+
+    listar(lista);
+    liberar(lista);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="tarefas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct Tarefa {
+    char *titulo;           // texto do tamanho exato, criado com malloc
+    bool feita;
+    struct Tarefa *prox;    // a próxima tarefa (NULL na última)
+} Tarefa;
+
+// Cria uma tarefa nova, fora da lista. Encerra o programa se faltar memória.
+Tarefa *nova_tarefa(const char *titulo) {
+    Tarefa *t = malloc(sizeof *t);
+    char *copia = malloc(strlen(titulo) + 1);
+    if (t == NULL || copia == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    strcpy(copia, titulo);
+    t-&gt;titulo = copia;
+    t-&gt;feita = false;
+    t-&gt;prox = NULL;
+    return t;
+}
+
+// Põe a tarefa no fim da lista e devolve o começo da lista.
+Tarefa *adicionar(Tarefa *lista, Tarefa *t) {
+    if (lista == NULL) {
+        return t;
+    }
+    Tarefa *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = t;
+    return lista;
+}
+
+void apagar(Tarefa *t) {
+    free(t-&gt;titulo);        // primeiro o texto...
+    free(t);                // ...depois a tarefa
+}
+
+void listar(const Tarefa *lista) {
+    if (lista == NULL) {
+        printf("Nenhuma tarefa. Aproveite o dia!\n");
+        return;
+    }
+    int n = 0;
+    int pendentes = 0;
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        n++;
+        printf("%d. [%c] %s\n", n, p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+        if (!p-&gt;feita) {
+            pendentes++;
+        }
+    }
+    printf("Pendentes: %d de %d\n", pendentes, n);
+}
+
+void liberar(Tarefa *lista) {
+    while (lista != NULL) {
+        Tarefa *prox = lista-&gt;prox;
+        apagar(lista);
+        lista = prox;
+    }
+}
+
+int main(void) {
+    Tarefa *lista = NULL;           // a lista começa vazia
+    lista = adicionar(lista, nova_tarefa("Comprar papel A4"));
+    lista = adicionar(lista, nova_tarefa("Pagar a conta de luz"));
+    lista = adicionar(lista, nova_tarefa("Ligar para o fornecedor"));
+    lista-&gt;prox-&gt;feita = true;      // a segunda já foi feita
+
+    listar(lista);
+    liberar(lista);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao2">Versão 2 · O menu: adicionar e concluir</h2>
+<p>Agora a lista começa vazia e a Ana a monta pelo teclado. Para concluir uma tarefa, ela digita o <strong>número</strong> que aparece na listagem. Numa lista ligada não existe <code>lista[2]</code>: para chegar na tarefa 3, é preciso começar na primeira e seguir os clipes, contando. É o que faz a função <code>achar</code>. As funções de leitura são as mesmas da <a href="projeto-calculadora.html">Calculadora</a> e do <a href="projeto-estoque.html">Estoque</a>.</p>
+<p>As partes novas (as funções da versão 1 continuam iguais):</p>
+
+<pre class="file" data-file="tarefas.c">// Devolve a tarefa de número n (1, 2, 3...) ou NULL se ela não existe.
+Tarefa *achar(Tarefa *lista, int n) {
+    int i = 1;
+    for (Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        if (i == n) {
+            return p;
+        }
+        i++;
+    }
+    return NULL;
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número de 1 a 100000. Devolve -1 se não for um número assim.
+int ler_numero(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long n = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || n &lt; 1 || n &gt; 100000) {
+        return -1;
+    }
+    return (int)n;
+}
+
+int main(void) {
+    Tarefa *lista = NULL;
+    printf("=== Lista de Tarefas ===\n");
+    listar(lista);
+    mostrar_menu();
+
+    char linha[300];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(lista);
+        } else if (strcmp(linha, "2") == 0) {
+            if (ler_linha("Tarefa: ", linha, sizeof linha) &amp;&amp; linha[0] != '\0') {
+                lista = adicionar(lista, nova_tarefa(linha));
+            }
+        } else if (strcmp(linha, "3") == 0) {
+            Tarefa *t = achar(lista, ler_numero("Número da tarefa: "));
+            if (t == NULL) {
+                printf("Essa tarefa não existe.\n");
+            } else {
+                t-&gt;feita = true;
+                printf("Feito: %s\n", t-&gt;titulo);
+            }
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    liberar(lista);
+    printf("\nAté logo!\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>Tarefa *achar(Tarefa *lista, int n)</dt><dd>Percorre a lista contando 1, 2, 3… e devolve a tarefa de número <code>n</code>. Se a lista acabar antes (<code>p == NULL</code>), devolve <code>NULL</code>: a tarefa não existe. Com <code>n</code> igual a <code>-1</code> (resposta inválida), o <code>i == n</code> nunca acontece, e também devolve <code>NULL</code>.</dd>
+  <dt>int ler_numero(const char *pergunta)</dt><dd>Lê a linha e converte com <code>strtol</code>, recusando texto, números com sobra (<code>2a</code>) e números menores que 1. Devolve <code>-1</code> se a resposta não serve.</dd>
+  <dt>lista = adicionar(lista, nova_tarefa(linha));</dt><dd><code>nova_tarefa</code> copia o texto de <code>linha</code> para um bloco novo. Isso é essencial: <code>linha</code> é reaproveitada na próxima volta do menu, e se o nó guardasse o endereço de <code>linha</code>, todas as tarefas mostrariam o último texto digitado.</dd>
+  <dt>linha[0] != '\0'</dt><dd>Uma linha vazia (só Enter) não vira tarefa.</dd>
+  <dt>Tarefa *t = achar(…); if (t == NULL) …</dt><dd>Com o ponteiro para a tarefa, <code>t-&gt;feita = true</code> muda a tarefa <strong>dentro</strong> da lista: não é uma cópia.</dd>
+  <dt>liberar(lista);</dt><dd>Antes de sair, a lista inteira é devolvida. O sistema recuperaria a memória sozinho no fim do programa, mas sem o <code>liberar</code> o <code>valgrind</code> acusaria vazamento, e o hábito certo é sempre liberar.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/tarefas">$ gcc -std=c23 -Wall -Wextra -g tarefas.c -o tarefas
+$ ./tarefas
+=== Lista de Tarefas ===
+Nenhuma tarefa. Aproveite o dia!
+1) Listar  2) Adicionar  3) Concluir  0) Sair
+
+Opção: 1
+Nenhuma tarefa. Aproveite o dia!
+
+Opção: 2
+Tarefa: Comprar papel A4
+
+Opção: 2
+Tarefa: Pagar a conta de luz
+
+Opção: 2
+Tarefa: Ligar para o fornecedor
+
+Opção: 3
+Número da tarefa: 2
+Feito: Pagar a conta de luz
+
+Opção: 3
+Número da tarefa: 7
+Essa tarefa não existe.
+
+Opção: 3
+Número da tarefa: dois
+Essa tarefa não existe.
+
+Opção: 1
+1. [ ] Comprar papel A4
+2. [x] Pagar a conta de luz
+3. [ ] Ligar para o fornecedor
+Pendentes: 2 de 3
+
+Opção: 0
+
+Até logo!</pre>
+
+<div class="tryc" data-stdin="2\nComprar papel A4\n2\nPagar a conta de luz\n3\n2\n1\n0\n" data-goal="out:Feito: Pagar a conta de luz,out:2. [x] Pagar a conta de luz">
+<p class="try-task"><strong>Missão (versão 2):</strong> a função <code>achar</code> sempre devolve <code>NULL</code>, e nenhuma tarefa pode ser concluída. Escreva-a: percorra a lista com um ponteiro <code>p</code>, contando a partir de 1, e devolva <code>p</code> quando a conta chegar em <code>n</code>. A entrada da missão adiciona duas tarefas, conclui a 2 e lista.</p>
+<pre class="script" data-file="tarefas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct Tarefa {
+    char *titulo;           // texto do tamanho exato, criado com malloc
+    bool feita;
+    struct Tarefa *prox;    // a próxima tarefa (NULL na última)
+} Tarefa;
+
+// Cria uma tarefa nova, fora da lista. Encerra o programa se faltar memória.
+Tarefa *nova_tarefa(const char *titulo) {
+    Tarefa *t = malloc(sizeof *t);
+    char *copia = malloc(strlen(titulo) + 1);
+    if (t == NULL || copia == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    strcpy(copia, titulo);
+    t-&gt;titulo = copia;
+    t-&gt;feita = false;
+    t-&gt;prox = NULL;
+    return t;
+}
+
+// Põe a tarefa no fim da lista e devolve o começo da lista.
+Tarefa *adicionar(Tarefa *lista, Tarefa *t) {
+    if (lista == NULL) {
+        return t;
+    }
+    Tarefa *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = t;
+    return lista;
+}
+
+// Devolve a tarefa de número n (1, 2, 3...) ou NULL se ela não existe.
+Tarefa *achar(Tarefa *lista, int n) {
+    // ande pela lista contando 1, 2, 3... e devolva a tarefa de número n
+    return NULL;
+}
+
+void apagar(Tarefa *t) {
+    free(t-&gt;titulo);        // primeiro o texto...
+    free(t);                // ...depois a tarefa
+}
+
+void listar(const Tarefa *lista) {
+    if (lista == NULL) {
+        printf("Nenhuma tarefa. Aproveite o dia!\n");
+        return;
+    }
+    int n = 0;
+    int pendentes = 0;
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        n++;
+        printf("%d. [%c] %s\n", n, p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+        if (!p-&gt;feita) {
+            pendentes++;
+        }
+    }
+    printf("Pendentes: %d de %d\n", pendentes, n);
+}
+
+void liberar(Tarefa *lista) {
+    while (lista != NULL) {
+        Tarefa *prox = lista-&gt;prox;
+        apagar(lista);
+        lista = prox;
+    }
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número de 1 a 100000. Devolve -1 se não for um número assim.
+int ler_numero(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long n = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || n &lt; 1 || n &gt; 100000) {
+        return -1;
+    }
+    return (int)n;
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Adicionar  3) Concluir  0) Sair\n");
+}
+
+int main(void) {
+    Tarefa *lista = NULL;
+    printf("=== Lista de Tarefas ===\n");
+    listar(lista);
+    mostrar_menu();
+
+    char linha[300];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(lista);
+        } else if (strcmp(linha, "2") == 0) {
+            if (ler_linha("Tarefa: ", linha, sizeof linha) &amp;&amp; linha[0] != '\0') {
+                lista = adicionar(lista, nova_tarefa(linha));
+            }
+        } else if (strcmp(linha, "3") == 0) {
+            Tarefa *t = achar(lista, ler_numero("Número da tarefa: "));
+            if (t == NULL) {
+                printf("Essa tarefa não existe.\n");
+            } else {
+                t-&gt;feita = true;
+                printf("Feito: %s\n", t-&gt;titulo);
+            }
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    liberar(lista);
+    printf("\nAté logo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="tarefas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct Tarefa {
+    char *titulo;           // texto do tamanho exato, criado com malloc
+    bool feita;
+    struct Tarefa *prox;    // a próxima tarefa (NULL na última)
+} Tarefa;
+
+// Cria uma tarefa nova, fora da lista. Encerra o programa se faltar memória.
+Tarefa *nova_tarefa(const char *titulo) {
+    Tarefa *t = malloc(sizeof *t);
+    char *copia = malloc(strlen(titulo) + 1);
+    if (t == NULL || copia == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    strcpy(copia, titulo);
+    t-&gt;titulo = copia;
+    t-&gt;feita = false;
+    t-&gt;prox = NULL;
+    return t;
+}
+
+// Põe a tarefa no fim da lista e devolve o começo da lista.
+Tarefa *adicionar(Tarefa *lista, Tarefa *t) {
+    if (lista == NULL) {
+        return t;
+    }
+    Tarefa *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = t;
+    return lista;
+}
+
+// Devolve a tarefa de número n (1, 2, 3...) ou NULL se ela não existe.
+Tarefa *achar(Tarefa *lista, int n) {
+    int i = 1;
+    for (Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        if (i == n) {
+            return p;
+        }
+        i++;
+    }
+    return NULL;
+}
+
+void apagar(Tarefa *t) {
+    free(t-&gt;titulo);        // primeiro o texto...
+    free(t);                // ...depois a tarefa
+}
+
+void listar(const Tarefa *lista) {
+    if (lista == NULL) {
+        printf("Nenhuma tarefa. Aproveite o dia!\n");
+        return;
+    }
+    int n = 0;
+    int pendentes = 0;
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        n++;
+        printf("%d. [%c] %s\n", n, p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+        if (!p-&gt;feita) {
+            pendentes++;
+        }
+    }
+    printf("Pendentes: %d de %d\n", pendentes, n);
+}
+
+void liberar(Tarefa *lista) {
+    while (lista != NULL) {
+        Tarefa *prox = lista-&gt;prox;
+        apagar(lista);
+        lista = prox;
+    }
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número de 1 a 100000. Devolve -1 se não for um número assim.
+int ler_numero(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long n = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || n &lt; 1 || n &gt; 100000) {
+        return -1;
+    }
+    return (int)n;
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Adicionar  3) Concluir  0) Sair\n");
+}
+
+int main(void) {
+    Tarefa *lista = NULL;
+    printf("=== Lista de Tarefas ===\n");
+    listar(lista);
+    mostrar_menu();
+
+    char linha[300];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(lista);
+        } else if (strcmp(linha, "2") == 0) {
+            if (ler_linha("Tarefa: ", linha, sizeof linha) &amp;&amp; linha[0] != '\0') {
+                lista = adicionar(lista, nova_tarefa(linha));
+            }
+        } else if (strcmp(linha, "3") == 0) {
+            Tarefa *t = achar(lista, ler_numero("Número da tarefa: "));
+            if (t == NULL) {
+                printf("Essa tarefa não existe.\n");
+            } else {
+                t-&gt;feita = true;
+                printf("Feito: %s\n", t-&gt;titulo);
+            }
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    liberar(lista);
+    printf("\nAté logo!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao3">Versão 3 · Remover e limpar as feitas</h2>
+<p>Duas opções novas: <strong>4) Remover</strong> tira uma tarefa pelo número, e <strong>5) Limpar feitas</strong> tira todas as que já foram feitas, de uma vez. Remover de uma lista ligada é "soltar o clipe": a tarefa de antes passa a segurar a de depois, e a do meio fica livre para o <code>free</code>.</p>
+
+<figure>
+<pre class="term">antes:   [Comprar] ──► [Pagar] ──► [Ligar] ──► NULL
+                ant         p
+depois:  [Comprar] ─────────────► [Ligar] ──► NULL      ant-&gt;prox = p-&gt;prox;
+                        [Pagar]                         apagar(p);</pre>
+</figure>
+
+<p>E se a tarefa removida for a primeira? Não existe "tarefa de antes" (<code>ant</code> é <code>NULL</code>): quem muda é o próprio começo da lista, que passa a ser a segunda tarefa. Por isso <code>remover</code> devolve o começo da lista, como <code>adicionar</code>.</p>
+
+<pre class="file" data-file="tarefas.c">// Tira da lista a tarefa de número n e devolve o começo da lista.
+Tarefa *remover(Tarefa *lista, int n) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    for (int i = 1; p != NULL &amp;&amp; i &lt; n; i++) {
+        ant = p;
+        p = p-&gt;prox;
+    }
+    if (p == NULL || n &lt; 1) {
+        printf("Essa tarefa não existe.\n");
+        return lista;
+    }
+    if (ant == NULL) {
+        lista = p-&gt;prox;    // era a primeira: a lista começa na segunda
+    } else {
+        ant-&gt;prox = p-&gt;prox;
+    }
+    printf("Removida: %s\n", p-&gt;titulo);
+    apagar(p);
+    return lista;
+}
+
+// Tira da lista todas as tarefas feitas e devolve o começo da lista.
+Tarefa *limpar_feitas(Tarefa *lista) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    int removidas = 0;
+    while (p != NULL) {
+        Tarefa *prox = p-&gt;prox;     // guarde antes de apagar p
+        if (p-&gt;feita) {
+            if (ant == NULL) {
+                lista = prox;
+            } else {
+                ant-&gt;prox = prox;
+            }
+            apagar(p);
+            removidas++;
+        } else {
+            ant = p;
+        }
+        p = prox;
+    }
+    printf("Tarefas feitas removidas: %d\n", removidas);
+    return lista;
+}
+
+// no while do main, duas opções novas:
+        } else if (strcmp(linha, "4") == 0) {
+            lista = remover(lista, ler_numero("Número da tarefa: "));
+        } else if (strcmp(linha, "5") == 0) {
+            lista = limpar_feitas(lista);
+</pre>
+
+<dl class="anatomy">
+  <dt>for (int i = 1; p != NULL &amp;&amp; i &lt; n; i++) { ant = p; p = p-&gt;prox; }</dt><dd>Anda até a tarefa <code>n</code>, levando junto <code>ant</code>, um passo atrás. No fim, <code>p</code> é a tarefa a remover e <code>ant</code> a de antes (ou <code>NULL</code>, se <code>p</code> é a primeira).</dd>
+  <dt>if (p == NULL || n &lt; 1)</dt><dd>A lista acabou antes de chegar em <code>n</code>, ou o número é inválido: não remove nada.</dd>
+  <dt>lista = p-&gt;prox;</dt><dd>O caso da primeira tarefa: a lista passa a começar na segunda.</dd>
+  <dt>printf("Removida: %s\n", p-&gt;titulo); apagar(p);</dt><dd>O título é mostrado <strong>antes</strong> do <code>apagar</code>; depois dele, <code>p-&gt;titulo</code> já não existe.</dd>
+  <dt>Tarefa *prox = p-&gt;prox; // guarde antes de apagar p</dt><dd>Em <code>limpar_feitas</code>, o laço passa por todas as tarefas e pode apagar várias. Como em <code>liberar</code>, o endereço da próxima é guardado antes, porque depois do <code>apagar(p)</code> não dá mais para ler <code>p-&gt;prox</code>.</dd>
+  <dt>else { ant = p; }</dt><dd><code>ant</code> só anda quando a tarefa <strong>fica</strong> na lista. Se ela foi apagada, a "tarefa de antes" continua a mesma.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/tarefas">$ gcc -std=c23 -Wall -Wextra -g tarefas.c -o tarefas
+$ ./tarefas
+=== Lista de Tarefas ===
+Nenhuma tarefa. Aproveite o dia!
+1) Listar  2) Adicionar  3) Concluir
+4) Remover  5) Limpar feitas  0) Sair
+
+Opção: 2
+Tarefa: Comprar papel A4
+
+Opção: 2
+Tarefa: Pagar a conta de luz
+
+Opção: 2
+Tarefa: Ligar para o fornecedor
+
+Opção: 2
+Tarefa: Arrumar a vitrine
+
+Opção: 3
+Número da tarefa: 2
+Feito: Pagar a conta de luz
+
+Opção: 3
+Número da tarefa: 4
+Feito: Arrumar a vitrine
+
+Opção: 1
+1. [ ] Comprar papel A4
+2. [x] Pagar a conta de luz
+3. [ ] Ligar para o fornecedor
+4. [x] Arrumar a vitrine
+Pendentes: 2 de 4
+
+Opção: 5
+Tarefas feitas removidas: 2
+
+Opção: 1
+1. [ ] Comprar papel A4
+2. [ ] Ligar para o fornecedor
+Pendentes: 2 de 2
+
+Opção: 4
+Número da tarefa: 1
+Removida: Comprar papel A4
+
+Opção: 1
+1. [ ] Ligar para o fornecedor
+Pendentes: 1 de 1
+
+Opção: 4
+Número da tarefa: 5
+Essa tarefa não existe.
+
+Opção: 0
+
+Até logo!</pre>
+
+<p>Repare que os números mudam: depois da limpeza, <code>Ligar para o fornecedor</code> deixou de ser a 3 e virou a 2. O número não é guardado na tarefa; é só a posição na lista na hora de listar. A mesma sessão (sem as listagens) dentro do <code>valgrind</code>, para conferir as remoções:</p>
+
+<pre class="term" data-cwd="~/c/tarefas">$ valgrind --leak-check=full ./tarefas
+…                                        « a mesma sessão, cortada
+Opção: 5
+Tarefas feitas removidas: 2
+
+Opção: 4
+Número da tarefa: 1
+Removida: Comprar papel A4
+
+Opção: 0
+
+Até logo!
+==452963==
+==452963== HEAP SUMMARY:
+==452963==     in use at exit: 0 bytes in 0 blocks
+==452963==   total heap usage: 10 allocs, 10 frees, 2,224 bytes allocated
+==452963==
+==452963== All heap blocks were freed -- no leaks are possible
+==452963==
+==452963== For lists of detected and suppressed errors, rerun with: -s
+==452963== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<p>10 <code>malloc</code>: 4 tarefas × 2 e mais 2 buffers da biblioteca (um para a saída e um para a entrada, que agora o programa lê). As 3 tarefas removidas pelo menu e a que sobrou, liberada no fim: 10 <code>free</code>.</p>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> ao remover a primeira tarefa</strong>
+<p>A primeira versão do <code>remover</code> tinha só a linha do caso geral, <code>ant-&gt;prox = p-&gt;prox;</code>. Com a tarefa 2 funcionava. Com a 1:</p>
+<pre class="term" data-cwd="~/c/tarefas">$ gcc -std=c23 -Wall -Wextra -g tarefas.c -o tarefas
+$ ./tarefas
+=== Lista de Tarefas ===
+Nenhuma tarefa. Aproveite o dia!
+1) Listar  2) Adicionar  3) Concluir
+4) Remover  5) Limpar feitas  0) Sair
+
+Opção: 2
+Tarefa: Comprar papel A4
+
+Opção: 2
+Tarefa: Ligar para o fornecedor
+
+Opção: 4
+Número da tarefa: 1
+Falha de segmentação     (imagem do núcleo gravada) ./tarefas
+$ echo $?
+139</pre>
+<p><strong>O que significa:</strong> para a primeira tarefa, o laço nem anda, e <code>ant</code> continua <code>NULL</code>. <code>ant-&gt;prox</code> tenta escrever no endereço zero, e o sistema mata o programa (aula <a href="ponteiro-nulo.html">Ponteiro Nulo</a>). Pior: o programa morreu sem salvar nada. O editor do guia dá a mesma falha, com o código 139.</p>
+<p><strong>Como consertar:</strong> trate a primeira tarefa à parte: se <code>ant == NULL</code>, o começo da lista passa a ser <code>p-&gt;prox</code>. Em listas ligadas, teste sempre os três casos: o primeiro, um do meio e o último (e a lista vazia).</p>
+</div>
+
+<div class="cenario">
+<strong><code>Invalid read of size 8</code> ao limpar as feitas</strong>
+<p>Na primeira versão do <code>limpar_feitas</code>, a Ana não guardou o <code>prox</code> antes de apagar e terminou o laço com <code>p = p-&gt;prox;</code>, como num percurso comum:</p>
+<pre class="file" data-file="tarefas.c">// Tira da lista todas as tarefas feitas e devolve o começo da lista.
+Tarefa *limpar_feitas(Tarefa *lista) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    int removidas = 0;
+    while (p != NULL) {
+        if (p-&gt;feita) {
+            if (ant == NULL) {
+                lista = p-&gt;prox;
+            } else {
+                ant-&gt;prox = p-&gt;prox;
+            }
+            apagar(p);
+            removidas++;
+        } else {
+            ant = p;
+        }
+        p = p-&gt;prox;
+    }
+    printf("Tarefas feitas removidas: %d\n", removidas);
+    return lista;
+}
+
+</pre>
+<p>O programa parecia funcionar: limpou a tarefa feita e listou as outras. O <code>valgrind</code> mostrou o problema:</p>
+<pre class="term" data-cwd="~/c/tarefas">$ valgrind --leak-check=full ./tarefas
+…                                        « três tarefas, a 2 concluída
+Opção: 5
+==453156== Invalid read of size 8
+==453156==    at 0x4001581: limpar_feitas (tarefas.c:95)
+==453156==    by 0x4001A1F: main (tarefas.c:181)
+==453156==  Address 0x4a8e990 is 16 bytes inside a block of size 24 free'd
+==453156==    at 0x48538BF: free (vg_replace_malloc.c:990)
+==453156==    by 0x400143B: apagar (tarefas.c:53)
+==453156==    by 0x400156E: limpar_feitas (tarefas.c:90)
+==453156==    by 0x4001A1F: main (tarefas.c:181)
+==453156==  Block was alloc'd at
+==453156==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==453156==    by 0x40012E2: nova_tarefa (tarefas.c:13)
+==453156==    by 0x40018F5: main (tarefas.c:168)
+==453156==
+Tarefas feitas removidas: 1
+
+Opção: 1
+1. [ ] Comprar papel A4
+2. [ ] Ligar para o fornecedor
+Pendentes: 2 de 2
+
+Opção: 0
+
+Até logo!
+==453156==
+==453156== HEAP SUMMARY:
+==453156==     in use at exit: 0 bytes in 0 blocks
+==453156==   total heap usage: 8 allocs, 8 frees, 2,182 bytes allocated
+==453156==
+==453156== All heap blocks were freed -- no leaks are possible
+==453156==
+==453156== For lists of detected and suppressed errors, rerun with: -s
+==453156== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)</pre>
+<p><strong>O que significa:</strong> a linha 95 (<code>p = p-&gt;prox;</code>) leu 8 bytes "16 bytes para dentro de um bloco de 24 já liberado". Os 16 bytes são a posição do campo <code>prox</code> na struct (depois do <code>titulo</code>, 8 bytes, e do <code>feita</code> com o enchimento, mais 8), e o bloco é o nó da tarefa 2, liberado pelo <code>free</code> da linha 53 (em <code>apagar</code>), chamado pela linha 90. Deu certo por sorte, porque o <code>free</code> ainda não tinha reaproveitado aquela memória. Com outro <code>malloc</code> no meio, <code>p</code> poderia apontar para qualquer coisa. O editor do guia roda essa versão sem reclamar (o uso de memória liberada passa calado no WebAssembly); só o <code>valgrind</code> ou o <code>-fsanitize=address</code> (aula <a href="sanitizers.html">Sanitizers</a>) mostram o erro.</p>
+<p><strong>Como consertar:</strong> guarde <code>p-&gt;prox</code> numa variável <strong>antes</strong> de apagar <code>p</code>, e avance com ela: <code>Tarefa *prox = p-&gt;prox; … p = prox;</code>.</p>
+</div>
+
+<div class="tryc" data-stdin="2\nComprar papel A4\n2\nLigar para o fornecedor\n4\n1\n1\n0\n" data-goal="out:Removida: Comprar papel A4,out:1. [ ] Ligar para o fornecedor,out:Pendentes: 1 de 1">
+<p class="try-task"><strong>Missão (versão 3):</strong> é o <code>remover</code> do cenário: clique em Rodar e veja a <code>Falha de segmentação</code> ao remover a tarefa 1. Conserte-o com um <code>if (ant == NULL)</code>: nesse caso, a lista passa a começar em <code>p-&gt;prox</code>; senão, <code>ant-&gt;prox = p-&gt;prox;</code>.</p>
+<pre class="script" data-file="tarefas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct Tarefa {
+    char *titulo;           // texto do tamanho exato, criado com malloc
+    bool feita;
+    struct Tarefa *prox;    // a próxima tarefa (NULL na última)
+} Tarefa;
+
+// Cria uma tarefa nova, fora da lista. Encerra o programa se faltar memória.
+Tarefa *nova_tarefa(const char *titulo) {
+    Tarefa *t = malloc(sizeof *t);
+    char *copia = malloc(strlen(titulo) + 1);
+    if (t == NULL || copia == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    strcpy(copia, titulo);
+    t-&gt;titulo = copia;
+    t-&gt;feita = false;
+    t-&gt;prox = NULL;
+    return t;
+}
+
+// Põe a tarefa no fim da lista e devolve o começo da lista.
+Tarefa *adicionar(Tarefa *lista, Tarefa *t) {
+    if (lista == NULL) {
+        return t;
+    }
+    Tarefa *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = t;
+    return lista;
+}
+
+// Devolve a tarefa de número n (1, 2, 3...) ou NULL se ela não existe.
+Tarefa *achar(Tarefa *lista, int n) {
+    int i = 1;
+    for (Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        if (i == n) {
+            return p;
+        }
+        i++;
+    }
+    return NULL;
+}
+
+void apagar(Tarefa *t) {
+    free(t-&gt;titulo);        // primeiro o texto...
+    free(t);                // ...depois a tarefa
+}
+
+// Tira da lista a tarefa de número n e devolve o começo da lista.
+Tarefa *remover(Tarefa *lista, int n) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    for (int i = 1; p != NULL &amp;&amp; i &lt; n; i++) {
+        ant = p;
+        p = p-&gt;prox;
+    }
+    if (p == NULL || n &lt; 1) {
+        printf("Essa tarefa não existe.\n");
+        return lista;
+    }
+    ant-&gt;prox = p-&gt;prox;    // e se p for a primeira tarefa (ant == NULL)?
+    printf("Removida: %s\n", p-&gt;titulo);
+    apagar(p);
+    return lista;
+}
+
+// Tira da lista todas as tarefas feitas e devolve o começo da lista.
+Tarefa *limpar_feitas(Tarefa *lista) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    int removidas = 0;
+    while (p != NULL) {
+        Tarefa *prox = p-&gt;prox;     // guarde antes de apagar p
+        if (p-&gt;feita) {
+            if (ant == NULL) {
+                lista = prox;
+            } else {
+                ant-&gt;prox = prox;
+            }
+            apagar(p);
+            removidas++;
+        } else {
+            ant = p;
+        }
+        p = prox;
+    }
+    printf("Tarefas feitas removidas: %d\n", removidas);
+    return lista;
+}
+
+void listar(const Tarefa *lista) {
+    if (lista == NULL) {
+        printf("Nenhuma tarefa. Aproveite o dia!\n");
+        return;
+    }
+    int n = 0;
+    int pendentes = 0;
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        n++;
+        printf("%d. [%c] %s\n", n, p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+        if (!p-&gt;feita) {
+            pendentes++;
+        }
+    }
+    printf("Pendentes: %d de %d\n", pendentes, n);
+}
+
+void liberar(Tarefa *lista) {
+    while (lista != NULL) {
+        Tarefa *prox = lista-&gt;prox;
+        apagar(lista);
+        lista = prox;
+    }
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número de 1 a 100000. Devolve -1 se não for um número assim.
+int ler_numero(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long n = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || n &lt; 1 || n &gt; 100000) {
+        return -1;
+    }
+    return (int)n;
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Adicionar  3) Concluir\n");
+    printf("4) Remover  5) Limpar feitas  0) Sair\n");
+}
+
+int main(void) {
+    Tarefa *lista = NULL;
+    printf("=== Lista de Tarefas ===\n");
+    listar(lista);
+    mostrar_menu();
+
+    char linha[300];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(lista);
+        } else if (strcmp(linha, "2") == 0) {
+            if (ler_linha("Tarefa: ", linha, sizeof linha) &amp;&amp; linha[0] != '\0') {
+                lista = adicionar(lista, nova_tarefa(linha));
+            }
+        } else if (strcmp(linha, "3") == 0) {
+            Tarefa *t = achar(lista, ler_numero("Número da tarefa: "));
+            if (t == NULL) {
+                printf("Essa tarefa não existe.\n");
+            } else {
+                t-&gt;feita = true;
+                printf("Feito: %s\n", t-&gt;titulo);
+            }
+        } else if (strcmp(linha, "4") == 0) {
+            lista = remover(lista, ler_numero("Número da tarefa: "));
+        } else if (strcmp(linha, "5") == 0) {
+            lista = limpar_feitas(lista);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    liberar(lista);
+    printf("\nAté logo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="tarefas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct Tarefa {
+    char *titulo;           // texto do tamanho exato, criado com malloc
+    bool feita;
+    struct Tarefa *prox;    // a próxima tarefa (NULL na última)
+} Tarefa;
+
+// Cria uma tarefa nova, fora da lista. Encerra o programa se faltar memória.
+Tarefa *nova_tarefa(const char *titulo) {
+    Tarefa *t = malloc(sizeof *t);
+    char *copia = malloc(strlen(titulo) + 1);
+    if (t == NULL || copia == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    strcpy(copia, titulo);
+    t-&gt;titulo = copia;
+    t-&gt;feita = false;
+    t-&gt;prox = NULL;
+    return t;
+}
+
+// Põe a tarefa no fim da lista e devolve o começo da lista.
+Tarefa *adicionar(Tarefa *lista, Tarefa *t) {
+    if (lista == NULL) {
+        return t;
+    }
+    Tarefa *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = t;
+    return lista;
+}
+
+// Devolve a tarefa de número n (1, 2, 3...) ou NULL se ela não existe.
+Tarefa *achar(Tarefa *lista, int n) {
+    int i = 1;
+    for (Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        if (i == n) {
+            return p;
+        }
+        i++;
+    }
+    return NULL;
+}
+
+void apagar(Tarefa *t) {
+    free(t-&gt;titulo);        // primeiro o texto...
+    free(t);                // ...depois a tarefa
+}
+
+// Tira da lista a tarefa de número n e devolve o começo da lista.
+Tarefa *remover(Tarefa *lista, int n) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    for (int i = 1; p != NULL &amp;&amp; i &lt; n; i++) {
+        ant = p;
+        p = p-&gt;prox;
+    }
+    if (p == NULL || n &lt; 1) {
+        printf("Essa tarefa não existe.\n");
+        return lista;
+    }
+    if (ant == NULL) {
+        lista = p-&gt;prox;    // era a primeira: a lista começa na segunda
+    } else {
+        ant-&gt;prox = p-&gt;prox;
+    }
+    printf("Removida: %s\n", p-&gt;titulo);
+    apagar(p);
+    return lista;
+}
+
+// Tira da lista todas as tarefas feitas e devolve o começo da lista.
+Tarefa *limpar_feitas(Tarefa *lista) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    int removidas = 0;
+    while (p != NULL) {
+        Tarefa *prox = p-&gt;prox;     // guarde antes de apagar p
+        if (p-&gt;feita) {
+            if (ant == NULL) {
+                lista = prox;
+            } else {
+                ant-&gt;prox = prox;
+            }
+            apagar(p);
+            removidas++;
+        } else {
+            ant = p;
+        }
+        p = prox;
+    }
+    printf("Tarefas feitas removidas: %d\n", removidas);
+    return lista;
+}
+
+void listar(const Tarefa *lista) {
+    if (lista == NULL) {
+        printf("Nenhuma tarefa. Aproveite o dia!\n");
+        return;
+    }
+    int n = 0;
+    int pendentes = 0;
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        n++;
+        printf("%d. [%c] %s\n", n, p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+        if (!p-&gt;feita) {
+            pendentes++;
+        }
+    }
+    printf("Pendentes: %d de %d\n", pendentes, n);
+}
+
+void liberar(Tarefa *lista) {
+    while (lista != NULL) {
+        Tarefa *prox = lista-&gt;prox;
+        apagar(lista);
+        lista = prox;
+    }
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número de 1 a 100000. Devolve -1 se não for um número assim.
+int ler_numero(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long n = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || n &lt; 1 || n &gt; 100000) {
+        return -1;
+    }
+    return (int)n;
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Adicionar  3) Concluir\n");
+    printf("4) Remover  5) Limpar feitas  0) Sair\n");
+}
+
+int main(void) {
+    Tarefa *lista = NULL;
+    printf("=== Lista de Tarefas ===\n");
+    listar(lista);
+    mostrar_menu();
+
+    char linha[300];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(lista);
+        } else if (strcmp(linha, "2") == 0) {
+            if (ler_linha("Tarefa: ", linha, sizeof linha) &amp;&amp; linha[0] != '\0') {
+                lista = adicionar(lista, nova_tarefa(linha));
+            }
+        } else if (strcmp(linha, "3") == 0) {
+            Tarefa *t = achar(lista, ler_numero("Número da tarefa: "));
+            if (t == NULL) {
+                printf("Essa tarefa não existe.\n");
+            } else {
+                t-&gt;feita = true;
+                printf("Feito: %s\n", t-&gt;titulo);
+            }
+        } else if (strcmp(linha, "4") == 0) {
+            lista = remover(lista, ler_numero("Número da tarefa: "));
+        } else if (strcmp(linha, "5") == 0) {
+            lista = limpar_feitas(lista);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    liberar(lista);
+    printf("\nAté logo!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao4">Versão 4 · Guardar a lista num arquivo</h2>
+<p>Até agora, a lista morria com o programa. A versão 4 salva as tarefas ao sair e as carrega ao abrir. No <a href="projeto-estoque.html">Estoque da Lojinha</a>, o arquivo era binário e o <code>fwrite</code> copiava as structs inteiras. Aqui isso não funciona: o nó guarda <strong>endereços</strong> (o do título e o da próxima tarefa), que só valem nesta execução. Gravá-los seria gravar o "número da casa" de uma casa que vai ser demolida (o cenário "struct com ponteiro" de <a href="arquivos-binarios.html">Arquivos Binários</a>).</p>
+<p>A saída é um <strong>arquivo de texto</strong>, uma tarefa por linha, com a marca na frente. Ele tem uma vantagem a mais: a Ana pode ler e até editar o arquivo com qualquer editor.</p>
+
+<pre class="term">[ ] Comprar papel A4
+[x] Pagar a conta de luz
+[ ] Ligar para o fornecedor</pre>
+
+<pre class="file" data-file="tarefas.c">#define ARQUIVO "tarefas.txt"
+
+// Lê tarefas.txt: uma tarefa por linha, "[x] título" ou "[ ] título".
+Tarefa *carregar(void) {
+    FILE *f = fopen(ARQUIVO, "r");
+    if (f == NULL) {
+        return NULL;                // primeira vez: lista vazia
+    }
+    Tarefa *lista = NULL;
+    char linha[300];
+    while (fgets(linha, sizeof linha, f) != NULL) {
+        linha[strcspn(linha, "\n")] = '\0';
+        if (strlen(linha) &lt; 5 || linha[0] != '[' || linha[2] != ']') {
+            continue;               // linha em branco ou estranha: pula
+        }
+        Tarefa *t = nova_tarefa(linha + 4);
+        t-&gt;feita = (linha[1] == 'x');
+        lista = adicionar(lista, t);
+    }
+    fclose(f);
+    return lista;
+}
+
+bool salvar(const Tarefa *lista) {
+    FILE *f = fopen(ARQUIVO, "w");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        fprintf(f, "[%c] %s\n", p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+    }
+    return fclose(f) == 0;
+}
+
+int main(void) {
+    Tarefa *lista = carregar();
+    // ... o menu é igual ao da versão 3 ...
+
+    bool ok = salvar(lista);
+    liberar(lista);
+    if (!ok) {
+        return 1;
+    }
+    printf("\nTarefas salvas em %s. Até logo!\n", ARQUIVO);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>if (f == NULL) return NULL;</dt><dd>Na primeira vez, <code>tarefas.txt</code> não existe: a lista começa vazia, sem mensagem de erro.</dd>
+  <dt>while (fgets(linha, sizeof linha, f) != NULL)</dt><dd>Lê uma linha por vez até o fim do arquivo (aula <a href="ler-arquivos.html">Ler Arquivos</a>).</dd>
+  <dt>strlen(linha) &lt; 5 || linha[0] != '[' || linha[2] != ']'</dt><dd>Uma linha válida tem pelo menos <code>[ ] </code> e uma letra. Linhas em branco ou digitadas erradas são puladas, em vez de virarem tarefas estranhas.</dd>
+  <dt>nova_tarefa(linha + 4)</dt><dd><code>linha + 4</code> é o endereço do 5º caractere: o título começa depois de <code>[x] </code> (aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>).</dd>
+  <dt>t-&gt;feita = (linha[1] == 'x');</dt><dd>O caractere entre os colchetes diz se a tarefa foi feita.</dd>
+  <dt>fopen(ARQUIVO, "w")</dt><dd>Em <code>salvar</code>, o modo <code>"w"</code> recria o arquivo do zero: a lista inteira é escrita de novo a cada saída (aula <a href="escrever-arquivos.html">Escrever Arquivos</a>).</dd>
+  <dt>return fclose(f) == 0;</dt><dd>Um disco cheio pode aparecer só no <code>fclose</code>. O <code>main</code> libera a lista mesmo se salvar falhou, e só então sai com o código 1.</dd>
+</dl>
+
+<p>Primeiro dia: a Ana cadastra três tarefas, conclui uma e sai. O arquivo aparece:</p>
+
+<pre class="term" data-cwd="~/c/tarefas">$ gcc -std=c23 -Wall -Wextra -g tarefas.c -o tarefas
+$ ./tarefas
+=== Lista de Tarefas ===
+Nenhuma tarefa. Aproveite o dia!
+1) Listar  2) Adicionar  3) Concluir
+4) Remover  5) Limpar feitas  0) Sair
+
+Opção: 2
+Tarefa: Comprar papel A4
+
+Opção: 2
+Tarefa: Pagar a conta de luz
+
+Opção: 2
+Tarefa: Ligar para o fornecedor
+
+Opção: 3
+Número da tarefa: 2
+Feito: Pagar a conta de luz
+
+Opção: 0
+
+Tarefas salvas em tarefas.txt. Até logo!
+$ cat tarefas.txt
+[ ] Comprar papel A4
+[x] Pagar a conta de luz
+[ ] Ligar para o fornecedor</pre>
+
+<p>Segundo dia: a lista volta como estava, a Ana acrescenta uma tarefa e limpa a feita.</p>
+
+<pre class="term" data-cwd="~/c/tarefas">$ ./tarefas
+=== Lista de Tarefas ===
+1. [ ] Comprar papel A4
+2. [x] Pagar a conta de luz
+3. [ ] Ligar para o fornecedor
+Pendentes: 2 de 3
+1) Listar  2) Adicionar  3) Concluir
+4) Remover  5) Limpar feitas  0) Sair
+
+Opção: 2
+Tarefa: Arrumar a vitrine
+
+Opção: 5
+Tarefas feitas removidas: 1
+
+Opção: 1
+1. [ ] Comprar papel A4
+2. [ ] Ligar para o fornecedor
+3. [ ] Arrumar a vitrine
+Pendentes: 3 de 3
+
+Opção: 0
+
+Tarefas salvas em tarefas.txt. Até logo!
+$ cat tarefas.txt
+[ ] Comprar papel A4
+[ ] Ligar para o fornecedor
+[ ] Arrumar a vitrine</pre>
+
+<p>Como o arquivo é texto, dá até para acrescentar uma tarefa sem abrir o programa. O <code>&gt;&gt;</code> do terminal escreve no fim do arquivo:</p>
+
+<pre class="term" data-cwd="~/c/tarefas">$ echo '[ ] Fazer o pedido de cadernos' &gt;&gt; tarefas.txt
+$ ./tarefas
+=== Lista de Tarefas ===
+1. [ ] Comprar papel A4
+2. [ ] Ligar para o fornecedor
+3. [ ] Arrumar a vitrine
+4. [ ] Fazer o pedido de cadernos
+Pendentes: 4 de 4
+1) Listar  2) Adicionar  3) Concluir
+4) Remover  5) Limpar feitas  0) Sair
+
+Opção: 0
+
+Tarefas salvas em tarefas.txt. Até logo!</pre>
+
+<div class="tryc" data-stdin="0\n" data-goal="out:2. [x] Pagar a conta de luz,out:Pendentes: 2 de 3">
+<p class="try-task"><strong>Missão (versão 4):</strong> a aba <code>tarefas.txt</code> tem três tarefas, e a segunda está feita (<code>[x]</code>). Mas o <code>carregar</code> esqueceu de ler a marca, e todas aparecem pendentes. No lugar do comentário, faça <code>t-&gt;feita</code> valer verdadeiro quando <code>linha[1]</code> for <code>'x'</code>.</p>
+<pre class="script" data-file="tarefas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define ARQUIVO "tarefas.txt"
+
+typedef struct Tarefa {
+    char *titulo;           // texto do tamanho exato, criado com malloc
+    bool feita;
+    struct Tarefa *prox;    // a próxima tarefa (NULL na última)
+} Tarefa;
+
+// Cria uma tarefa nova, fora da lista. Encerra o programa se faltar memória.
+Tarefa *nova_tarefa(const char *titulo) {
+    Tarefa *t = malloc(sizeof *t);
+    char *copia = malloc(strlen(titulo) + 1);
+    if (t == NULL || copia == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    strcpy(copia, titulo);
+    t-&gt;titulo = copia;
+    t-&gt;feita = false;
+    t-&gt;prox = NULL;
+    return t;
+}
+
+// Põe a tarefa no fim da lista e devolve o começo da lista.
+Tarefa *adicionar(Tarefa *lista, Tarefa *t) {
+    if (lista == NULL) {
+        return t;
+    }
+    Tarefa *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = t;
+    return lista;
+}
+
+// Devolve a tarefa de número n (1, 2, 3...) ou NULL se ela não existe.
+Tarefa *achar(Tarefa *lista, int n) {
+    int i = 1;
+    for (Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        if (i == n) {
+            return p;
+        }
+        i++;
+    }
+    return NULL;
+}
+
+void apagar(Tarefa *t) {
+    free(t-&gt;titulo);        // primeiro o texto...
+    free(t);                // ...depois a tarefa
+}
+
+// Tira da lista a tarefa de número n e devolve o começo da lista.
+Tarefa *remover(Tarefa *lista, int n) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    for (int i = 1; p != NULL &amp;&amp; i &lt; n; i++) {
+        ant = p;
+        p = p-&gt;prox;
+    }
+    if (p == NULL || n &lt; 1) {
+        printf("Essa tarefa não existe.\n");
+        return lista;
+    }
+    if (ant == NULL) {
+        lista = p-&gt;prox;    // era a primeira: a lista começa na segunda
+    } else {
+        ant-&gt;prox = p-&gt;prox;
+    }
+    printf("Removida: %s\n", p-&gt;titulo);
+    apagar(p);
+    return lista;
+}
+
+// Tira da lista todas as tarefas feitas e devolve o começo da lista.
+Tarefa *limpar_feitas(Tarefa *lista) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    int removidas = 0;
+    while (p != NULL) {
+        Tarefa *prox = p-&gt;prox;     // guarde antes de apagar p
+        if (p-&gt;feita) {
+            if (ant == NULL) {
+                lista = prox;
+            } else {
+                ant-&gt;prox = prox;
+            }
+            apagar(p);
+            removidas++;
+        } else {
+            ant = p;
+        }
+        p = prox;
+    }
+    printf("Tarefas feitas removidas: %d\n", removidas);
+    return lista;
+}
+
+void listar(const Tarefa *lista) {
+    if (lista == NULL) {
+        printf("Nenhuma tarefa. Aproveite o dia!\n");
+        return;
+    }
+    int n = 0;
+    int pendentes = 0;
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        n++;
+        printf("%d. [%c] %s\n", n, p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+        if (!p-&gt;feita) {
+            pendentes++;
+        }
+    }
+    printf("Pendentes: %d de %d\n", pendentes, n);
+}
+
+void liberar(Tarefa *lista) {
+    while (lista != NULL) {
+        Tarefa *prox = lista-&gt;prox;
+        apagar(lista);
+        lista = prox;
+    }
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número de 1 a 100000. Devolve -1 se não for um número assim.
+int ler_numero(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long n = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || n &lt; 1 || n &gt; 100000) {
+        return -1;
+    }
+    return (int)n;
+}
+
+// Lê tarefas.txt: uma tarefa por linha, "[x] título" ou "[ ] título".
+Tarefa *carregar(void) {
+    FILE *f = fopen(ARQUIVO, "r");
+    if (f == NULL) {
+        return NULL;                // primeira vez: lista vazia
+    }
+    Tarefa *lista = NULL;
+    char linha[300];
+    while (fgets(linha, sizeof linha, f) != NULL) {
+        linha[strcspn(linha, "\n")] = '\0';
+        if (strlen(linha) &lt; 5 || linha[0] != '[' || linha[2] != ']') {
+            continue;               // linha em branco ou estranha: pula
+        }
+        Tarefa *t = nova_tarefa(linha + 4);
+        // a tarefa está feita se linha[1] for 'x'
+        lista = adicionar(lista, t);
+    }
+    fclose(f);
+    return lista;
+}
+
+bool salvar(const Tarefa *lista) {
+    FILE *f = fopen(ARQUIVO, "w");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        fprintf(f, "[%c] %s\n", p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+    }
+    return fclose(f) == 0;
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Adicionar  3) Concluir\n");
+    printf("4) Remover  5) Limpar feitas  0) Sair\n");
+}
+
+int main(void) {
+    Tarefa *lista = carregar();
+    printf("=== Lista de Tarefas ===\n");
+    listar(lista);
+    mostrar_menu();
+
+    char linha[300];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(lista);
+        } else if (strcmp(linha, "2") == 0) {
+            if (ler_linha("Tarefa: ", linha, sizeof linha) &amp;&amp; linha[0] != '\0') {
+                lista = adicionar(lista, nova_tarefa(linha));
+            }
+        } else if (strcmp(linha, "3") == 0) {
+            Tarefa *t = achar(lista, ler_numero("Número da tarefa: "));
+            if (t == NULL) {
+                printf("Essa tarefa não existe.\n");
+            } else {
+                t-&gt;feita = true;
+                printf("Feito: %s\n", t-&gt;titulo);
+            }
+        } else if (strcmp(linha, "4") == 0) {
+            lista = remover(lista, ler_numero("Número da tarefa: "));
+        } else if (strcmp(linha, "5") == 0) {
+            lista = limpar_feitas(lista);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    bool ok = salvar(lista);
+    liberar(lista);
+    if (!ok) {
+        return 1;
+    }
+    printf("\nTarefas salvas em %s. Até logo!\n", ARQUIVO);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="tarefas.txt">[ ] Comprar papel A4
+[x] Pagar a conta de luz
+[ ] Ligar para o fornecedor
+
+</pre>
+<pre class="solucao" data-file="tarefas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define ARQUIVO "tarefas.txt"
+
+typedef struct Tarefa {
+    char *titulo;           // texto do tamanho exato, criado com malloc
+    bool feita;
+    struct Tarefa *prox;    // a próxima tarefa (NULL na última)
+} Tarefa;
+
+// Cria uma tarefa nova, fora da lista. Encerra o programa se faltar memória.
+Tarefa *nova_tarefa(const char *titulo) {
+    Tarefa *t = malloc(sizeof *t);
+    char *copia = malloc(strlen(titulo) + 1);
+    if (t == NULL || copia == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    strcpy(copia, titulo);
+    t-&gt;titulo = copia;
+    t-&gt;feita = false;
+    t-&gt;prox = NULL;
+    return t;
+}
+
+// Põe a tarefa no fim da lista e devolve o começo da lista.
+Tarefa *adicionar(Tarefa *lista, Tarefa *t) {
+    if (lista == NULL) {
+        return t;
+    }
+    Tarefa *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = t;
+    return lista;
+}
+
+// Devolve a tarefa de número n (1, 2, 3...) ou NULL se ela não existe.
+Tarefa *achar(Tarefa *lista, int n) {
+    int i = 1;
+    for (Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        if (i == n) {
+            return p;
+        }
+        i++;
+    }
+    return NULL;
+}
+
+void apagar(Tarefa *t) {
+    free(t-&gt;titulo);        // primeiro o texto...
+    free(t);                // ...depois a tarefa
+}
+
+// Tira da lista a tarefa de número n e devolve o começo da lista.
+Tarefa *remover(Tarefa *lista, int n) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    for (int i = 1; p != NULL &amp;&amp; i &lt; n; i++) {
+        ant = p;
+        p = p-&gt;prox;
+    }
+    if (p == NULL || n &lt; 1) {
+        printf("Essa tarefa não existe.\n");
+        return lista;
+    }
+    if (ant == NULL) {
+        lista = p-&gt;prox;    // era a primeira: a lista começa na segunda
+    } else {
+        ant-&gt;prox = p-&gt;prox;
+    }
+    printf("Removida: %s\n", p-&gt;titulo);
+    apagar(p);
+    return lista;
+}
+
+// Tira da lista todas as tarefas feitas e devolve o começo da lista.
+Tarefa *limpar_feitas(Tarefa *lista) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    int removidas = 0;
+    while (p != NULL) {
+        Tarefa *prox = p-&gt;prox;     // guarde antes de apagar p
+        if (p-&gt;feita) {
+            if (ant == NULL) {
+                lista = prox;
+            } else {
+                ant-&gt;prox = prox;
+            }
+            apagar(p);
+            removidas++;
+        } else {
+            ant = p;
+        }
+        p = prox;
+    }
+    printf("Tarefas feitas removidas: %d\n", removidas);
+    return lista;
+}
+
+void listar(const Tarefa *lista) {
+    if (lista == NULL) {
+        printf("Nenhuma tarefa. Aproveite o dia!\n");
+        return;
+    }
+    int n = 0;
+    int pendentes = 0;
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        n++;
+        printf("%d. [%c] %s\n", n, p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+        if (!p-&gt;feita) {
+            pendentes++;
+        }
+    }
+    printf("Pendentes: %d de %d\n", pendentes, n);
+}
+
+void liberar(Tarefa *lista) {
+    while (lista != NULL) {
+        Tarefa *prox = lista-&gt;prox;
+        apagar(lista);
+        lista = prox;
+    }
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número de 1 a 100000. Devolve -1 se não for um número assim.
+int ler_numero(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long n = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || n &lt; 1 || n &gt; 100000) {
+        return -1;
+    }
+    return (int)n;
+}
+
+// Lê tarefas.txt: uma tarefa por linha, "[x] título" ou "[ ] título".
+Tarefa *carregar(void) {
+    FILE *f = fopen(ARQUIVO, "r");
+    if (f == NULL) {
+        return NULL;                // primeira vez: lista vazia
+    }
+    Tarefa *lista = NULL;
+    char linha[300];
+    while (fgets(linha, sizeof linha, f) != NULL) {
+        linha[strcspn(linha, "\n")] = '\0';
+        if (strlen(linha) &lt; 5 || linha[0] != '[' || linha[2] != ']') {
+            continue;               // linha em branco ou estranha: pula
+        }
+        Tarefa *t = nova_tarefa(linha + 4);
+        t-&gt;feita = (linha[1] == 'x');
+        lista = adicionar(lista, t);
+    }
+    fclose(f);
+    return lista;
+}
+
+bool salvar(const Tarefa *lista) {
+    FILE *f = fopen(ARQUIVO, "w");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        fprintf(f, "[%c] %s\n", p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+    }
+    return fclose(f) == 0;
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Adicionar  3) Concluir\n");
+    printf("4) Remover  5) Limpar feitas  0) Sair\n");
+}
+
+int main(void) {
+    Tarefa *lista = carregar();
+    printf("=== Lista de Tarefas ===\n");
+    listar(lista);
+    mostrar_menu();
+
+    char linha[300];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(lista);
+        } else if (strcmp(linha, "2") == 0) {
+            if (ler_linha("Tarefa: ", linha, sizeof linha) &amp;&amp; linha[0] != '\0') {
+                lista = adicionar(lista, nova_tarefa(linha));
+            }
+        } else if (strcmp(linha, "3") == 0) {
+            Tarefa *t = achar(lista, ler_numero("Número da tarefa: "));
+            if (t == NULL) {
+                printf("Essa tarefa não existe.\n");
+            } else {
+                t-&gt;feita = true;
+                printf("Feito: %s\n", t-&gt;titulo);
+            }
+        } else if (strcmp(linha, "4") == 0) {
+            lista = remover(lista, ler_numero("Número da tarefa: "));
+        } else if (strcmp(linha, "5") == 0) {
+            lista = limpar_feitas(lista);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    bool ok = salvar(lista);
+    liberar(lista);
+    if (!ok) {
+        return 1;
+    }
+    printf("\nTarefas salvas em %s. Até logo!\n", ARQUIVO);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>O programa completo</h2>
+<p>A versão final, igual à versão 4. Compile com <code>gcc -std=c23 -Wall -Wextra -g tarefas.c -o tarefas</code>:</p>
+
+<pre class="file" data-file="tarefas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define ARQUIVO "tarefas.txt"
+
+typedef struct Tarefa {
+    char *titulo;           // texto do tamanho exato, criado com malloc
+    bool feita;
+    struct Tarefa *prox;    // a próxima tarefa (NULL na última)
+} Tarefa;
+
+// Cria uma tarefa nova, fora da lista. Encerra o programa se faltar memória.
+Tarefa *nova_tarefa(const char *titulo) {
+    Tarefa *t = malloc(sizeof *t);
+    char *copia = malloc(strlen(titulo) + 1);
+    if (t == NULL || copia == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    strcpy(copia, titulo);
+    t-&gt;titulo = copia;
+    t-&gt;feita = false;
+    t-&gt;prox = NULL;
+    return t;
+}
+
+// Põe a tarefa no fim da lista e devolve o começo da lista.
+Tarefa *adicionar(Tarefa *lista, Tarefa *t) {
+    if (lista == NULL) {
+        return t;
+    }
+    Tarefa *p = lista;
+    while (p-&gt;prox != NULL) {
+        p = p-&gt;prox;
+    }
+    p-&gt;prox = t;
+    return lista;
+}
+
+// Devolve a tarefa de número n (1, 2, 3...) ou NULL se ela não existe.
+Tarefa *achar(Tarefa *lista, int n) {
+    int i = 1;
+    for (Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        if (i == n) {
+            return p;
+        }
+        i++;
+    }
+    return NULL;
+}
+
+void apagar(Tarefa *t) {
+    free(t-&gt;titulo);        // primeiro o texto...
+    free(t);                // ...depois a tarefa
+}
+
+// Tira da lista a tarefa de número n e devolve o começo da lista.
+Tarefa *remover(Tarefa *lista, int n) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    for (int i = 1; p != NULL &amp;&amp; i &lt; n; i++) {
+        ant = p;
+        p = p-&gt;prox;
+    }
+    if (p == NULL || n &lt; 1) {
+        printf("Essa tarefa não existe.\n");
+        return lista;
+    }
+    if (ant == NULL) {
+        lista = p-&gt;prox;    // era a primeira: a lista começa na segunda
+    } else {
+        ant-&gt;prox = p-&gt;prox;
+    }
+    printf("Removida: %s\n", p-&gt;titulo);
+    apagar(p);
+    return lista;
+}
+
+// Tira da lista todas as tarefas feitas e devolve o começo da lista.
+Tarefa *limpar_feitas(Tarefa *lista) {
+    Tarefa *ant = NULL;
+    Tarefa *p = lista;
+    int removidas = 0;
+    while (p != NULL) {
+        Tarefa *prox = p-&gt;prox;     // guarde antes de apagar p
+        if (p-&gt;feita) {
+            if (ant == NULL) {
+                lista = prox;
+            } else {
+                ant-&gt;prox = prox;
+            }
+            apagar(p);
+            removidas++;
+        } else {
+            ant = p;
+        }
+        p = prox;
+    }
+    printf("Tarefas feitas removidas: %d\n", removidas);
+    return lista;
+}
+
+void listar(const Tarefa *lista) {
+    if (lista == NULL) {
+        printf("Nenhuma tarefa. Aproveite o dia!\n");
+        return;
+    }
+    int n = 0;
+    int pendentes = 0;
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        n++;
+        printf("%d. [%c] %s\n", n, p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+        if (!p-&gt;feita) {
+            pendentes++;
+        }
+    }
+    printf("Pendentes: %d de %d\n", pendentes, n);
+}
+
+void liberar(Tarefa *lista) {
+    while (lista != NULL) {
+        Tarefa *prox = lista-&gt;prox;
+        apagar(lista);
+        lista = prox;
+    }
+}
+
+// Mostra a pergunta e lê uma linha, sem o Enter do fim.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_linha(const char *pergunta, char *linha, int tamanho) {
+    printf("%s", pergunta);
+    if (fgets(linha, tamanho, stdin) == NULL) {
+        return false;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+    return true;
+}
+
+// Lê um número de 1 a 100000. Devolve -1 se não for um número assim.
+int ler_numero(const char *pergunta) {
+    char linha[100];
+    if (!ler_linha(pergunta, linha, sizeof linha)) {
+        return -1;
+    }
+    char *fim = NULL;
+    long n = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || n &lt; 1 || n &gt; 100000) {
+        return -1;
+    }
+    return (int)n;
+}
+
+// Lê tarefas.txt: uma tarefa por linha, "[x] título" ou "[ ] título".
+Tarefa *carregar(void) {
+    FILE *f = fopen(ARQUIVO, "r");
+    if (f == NULL) {
+        return NULL;                // primeira vez: lista vazia
+    }
+    Tarefa *lista = NULL;
+    char linha[300];
+    while (fgets(linha, sizeof linha, f) != NULL) {
+        linha[strcspn(linha, "\n")] = '\0';
+        if (strlen(linha) &lt; 5 || linha[0] != '[' || linha[2] != ']') {
+            continue;               // linha em branco ou estranha: pula
+        }
+        Tarefa *t = nova_tarefa(linha + 4);
+        t-&gt;feita = (linha[1] == 'x');
+        lista = adicionar(lista, t);
+    }
+    fclose(f);
+    return lista;
+}
+
+bool salvar(const Tarefa *lista) {
+    FILE *f = fopen(ARQUIVO, "w");
+    if (f == NULL) {
+        perror(ARQUIVO);
+        return false;
+    }
+    for (const Tarefa *p = lista; p != NULL; p = p-&gt;prox) {
+        fprintf(f, "[%c] %s\n", p-&gt;feita ? 'x' : ' ', p-&gt;titulo);
+    }
+    return fclose(f) == 0;
+}
+
+void mostrar_menu(void) {
+    printf("1) Listar  2) Adicionar  3) Concluir\n");
+    printf("4) Remover  5) Limpar feitas  0) Sair\n");
+}
+
+int main(void) {
+    Tarefa *lista = carregar();
+    printf("=== Lista de Tarefas ===\n");
+    listar(lista);
+    mostrar_menu();
+
+    char linha[300];
+    while (ler_linha("\nOpção: ", linha, sizeof linha)) {
+        if (strcmp(linha, "1") == 0) {
+            listar(lista);
+        } else if (strcmp(linha, "2") == 0) {
+            if (ler_linha("Tarefa: ", linha, sizeof linha) &amp;&amp; linha[0] != '\0') {
+                lista = adicionar(lista, nova_tarefa(linha));
+            }
+        } else if (strcmp(linha, "3") == 0) {
+            Tarefa *t = achar(lista, ler_numero("Número da tarefa: "));
+            if (t == NULL) {
+                printf("Essa tarefa não existe.\n");
+            } else {
+                t-&gt;feita = true;
+                printf("Feito: %s\n", t-&gt;titulo);
+            }
+        } else if (strcmp(linha, "4") == 0) {
+            lista = remover(lista, ler_numero("Número da tarefa: "));
+        } else if (strcmp(linha, "5") == 0) {
+            lista = limpar_feitas(lista);
+        } else if (strcmp(linha, "0") == 0) {
+            break;
+        } else {
+            printf("Opção desconhecida: %s\n", linha);
+            mostrar_menu();
+        }
+    }
+
+    bool ok = salvar(lista);
+    liberar(lista);
+    if (!ok) {
+        return 1;
+    }
+    printf("\nTarefas salvas em %s. Até logo!\n", ARQUIVO);
+    return 0;
+}
+</pre>
+
+<p>O que o projeto juntou: <a href="listas-ligadas.html">listas ligadas</a>, <a href="structs-ponteiros.html">structs e ponteiros</a>, <a href="typedef.html">typedef</a>, <a href="malloc-free.html">malloc e free</a>, <a href="strings-dinamicas.html">strings dinâmicas</a>, <a href="fgets.html">fgets</a>, <a href="string-numero.html">strtol</a>, <a href="ler-arquivos.html">leitura</a> e <a href="escrever-arquivos.html">escrita</a> de arquivos de texto e o <a href="valgrind.html">valgrind</a>.</p>
+
+<h3>Rodando no laboratório</h3>
+<p>A sessão do começo da página é a versão final dentro do <code>valgrind</code>: 16 <code>malloc</code> e 16 <code>free</code>. Dez blocos são das tarefas: as 4 carregadas do arquivo e a nova, com 2 blocos cada uma. Os outros 6 são da biblioteca: os buffers da tela e do teclado e, para cada arquivo aberto (o <code>tarefas.txt</code> lido no começo e o gravado no fim), o <code>FILE</code> e o seu buffer. O <code>fclose</code> devolve esses dois; sem ele, o <code>valgrind</code> acusaria o vazamento. Depois da sessão, o arquivo ficou assim:</p>
+
+<pre class="term" data-cwd="~/c/tarefas">$ cat tarefas.txt
+[ ] Arrumar a vitrine
+[ ] Fazer o pedido de cadernos
+[ ] Pagar o aluguel</pre>
+
+<hr>
+
+<h2 id="formas">Formas diferentes</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Em vez de</th><th>Dá para usar</th><th>Quando vale a pena</th></tr>
+<tr><td><code>malloc(strlen(titulo) + 1)</code> e <code>strcpy</code></td><td><code>strdup(titulo)</code>, que faz as duas coisas <span class="versao">C23</span></td><td>Sempre que o compilador for C23 (no C17 e antes, o <code>strdup</code> era só do POSIX). O resultado também é liberado com <code>free</code>.</td></tr>
+<tr><td><code>char *titulo</code> com <code>malloc</code></td><td><code>char titulo[100]</code> dentro do nó</td><td>Um bloco só por tarefa e um <code>free</code> só, mas todo título ocupa 100 bytes e nenhum pode passar de 99 letras.</td></tr>
+<tr><td>andar até o fim em cada <code>adicionar</code></td><td>guardar também um ponteiro para a última tarefa</td><td>Listas com milhares de itens (veja <a href="listas-ligadas.html#formas">Listas Ligadas</a>). Com dezenas de tarefas, andar até o fim é instantâneo.</td></tr>
+<tr><td>devolver o começo (<code>lista = remover(lista, n)</code>)</td><td>receber <code>Tarefa **lista</code> e mudar o começo lá dentro</td><td>Quando a função já devolve outra coisa (aula <a href="ponteiro-ponteiro.html">Ponteiro para Ponteiro</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Desafios extras</h2>
+<ol>
+  <li><strong>Editar o título.</strong> Uma opção que troca o texto de uma tarefa. Cuidado com a memória: libere o título antigo e reserve um novo, do tamanho certo. Confira com o <code>valgrind</code>.</li>
+  <li><strong>Mover para o topo.</strong> Uma opção que leva a tarefa <code>n</code> para o começo da lista, sem criar nem apagar nós: só trocando ponteiros.</li>
+  <li><strong>Desmarcar.</strong> Concluir uma tarefa já feita desfaz a marca (<code>t-&gt;feita = !t-&gt;feita</code>).</li>
+  <li><strong>Prioridade.</strong> Acrescente <code>bool urgente</code> e grave <code>[!]</code> no arquivo para as urgentes; liste as urgentes primeiro.</li>
+  <li><strong>Desfazer a última remoção.</strong> Em vez de apagar o nó removido, guarde-o numa variável <code>lixeira</code> e ofereça "desfazer"; apague-o de verdade só quando outra remoção acontecer ou no fim do programa.</li>
+</ol>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. Cada tarefa da lista é criada com dois <code>malloc</code> (o nó e o título). Quantos <code>free</code> são precisos para apagar uma tarefa?</p>
+<label><input type="radio" name="q1"> Nenhum: o sistema libera no fim.</label>
+<label><input type="radio" name="q1"> Um: <code>free(t)</code> libera tudo o que está dentro.</label>
+<label><input type="radio" name="q1"> Dois: <code>free(t-&gt;titulo)</code> e depois <code>free(t)</code>.</label>
+<label><input type="radio" name="q1"> Dois: <code>free(t)</code> e depois <code>free(t-&gt;titulo)</code>.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Num laço que apaga nós, por que se guarda <code>Tarefa *prox = p-&gt;prox;</code> antes do <code>apagar(p)</code>?</p>
+<label><input type="radio" name="q2"> Para o laço ficar mais rápido.</label>
+<label><input type="radio" name="q2"> Porque depois do <code>free</code>, ler <code>p-&gt;prox</code> é ler memória liberada.</label>
+<label><input type="radio" name="q2"> Porque o <code>free</code> muda o valor de <code>p</code> para <code>NULL</code>.</label>
+<label><input type="radio" name="q2"> Porque o compilador exige.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Ao remover a <strong>primeira</strong> tarefa, o que muda?</p>
+<label><input type="radio" name="q3"> O campo <code>prox</code> da última tarefa.</label>
+<label><input type="radio" name="q3"> Nada: basta o <code>free</code>.</label>
+<label><input type="radio" name="q3"> O <code>ant-&gt;prox</code>.</label>
+<label><input type="radio" name="q3"> O próprio começo da lista, que passa a ser a segunda tarefa.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Por que a lista de tarefas é salva em texto, e não com <code>fwrite</code> das structs?</p>
+<label><input type="radio" name="q4"> Porque os nós guardam endereços de memória (do título e da próxima tarefa), que não valem mais na próxima execução.</label>
+<label><input type="radio" name="q4"> Porque o <code>fwrite</code> não grava <code>bool</code>.</label>
+<label><input type="radio" name="q4"> Porque arquivos binários não funcionam no Linux.</label>
+<label><input type="radio" name="q4"> Porque o arquivo de texto é sempre menor.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete o tamanho do bloco para guardar uma cópia do texto <code>titulo</code>:</p>
+<div class="ex-code">char *copia = malloc(strlen(titulo) + <input data-answer="1" aria-label="quanto somar" size="2">);</div>
+</div>
+
+<div class="exercise">
+<p>6. Complete a frase que o <code>valgrind</code> mostra quando nenhum bloco ficou sem <code>free</code>:</p>
+<div class="ex-code">All heap blocks were <input data-answer="freed" aria-label="palavra" size="6"> -- no leaks are possible</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Cada tarefa é um nó criado com <code>malloc</code>, ligado ao próximo por <code>prox</code>; a última aponta para <code>NULL</code>.</li>
+  <li>Um título de tamanho exato é um segundo bloco: <code>malloc(strlen(t) + 1)</code>. Dois <code>malloc</code>, dois <code>free</code>: primeiro o título, depois o nó.</li>
+  <li>Para achar a tarefa <code>n</code>, percorra contando; numa lista ligada não existe <code>lista[n]</code>.</li>
+  <li>Remover é ligar a anterior à seguinte; a primeira tarefa é um caso à parte, porque muda o começo da lista.</li>
+  <li>Num laço que apaga, guarde o <code>prox</code> antes do <code>free</code>.</li>
+  <li>Ponteiros não vão para arquivo: salve o conteúdo (aqui, em texto) e monte a lista de novo ao abrir.</li>
+  <li>O programa "funcionar" não prova nada sobre a memória: rode o <code>valgrind --leak-check=full</code> e procure <code>All heap blocks were freed</code> e <code>0 errors</code>.</li>
+</ul>
+<p>Você chegou ao fim dos projetos. Para rever a lista inteira, volte a <a href="projetos.html">Sobre os Projetos</a>; para consultar, siga para a <a href="ref-printf.html">Referência</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
