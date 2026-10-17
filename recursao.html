@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Recursão — funções que chamam a si mesmas | Guia C</title>
+<meta name="description" content="Recursão em C para quem nunca programou: caso base e passo recursivo, contagem regressiva, fatorial, o número em binário, a pilha de chamadas passo a passo, o custo escondido do Fibonacci, o estouro de pilha (infinite recursion detected, Falha de segmentação) e quando trocar por um laço, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Recursão</span></h1>
+
+<p class="intro">Na aula <a href="funcoes.html">Funções</a> você viu que uma função pode chamar outra. Ela também pode chamar <strong>a si mesma</strong>. Isso se chama <strong>recursão</strong>. Parece um truque de mágica (como uma função que ainda não terminou pode usar a si própria?), mas é só uma forma de resolver um problema grande com a versão menor do mesmo problema. Nesta aula você vai escrever suas primeiras funções recursivas, ver a "pilha de chamadas" crescer e encolher, descobrir quando a recursão fica lenta demais e ver o programa morrer quando ela não tem fim.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma função recursiva e as duas partes que ela sempre tem: o <strong>caso base</strong> e o <strong>passo recursivo</strong>.</li>
+  <li>Em que ordem as linhas rodam: o que vem antes da chamada roda na "ida", o que vem depois roda na "volta".</li>
+  <li>Como uma função recursiva devolve um valor (o fatorial) e como acompanhar a <strong>pilha de chamadas</strong>.</li>
+  <li>Por que o Fibonacci recursivo fica lento, contando as chamadas.</li>
+  <li>O que acontece sem caso base: o aviso <code>infinite recursion detected</code> e a <code>Falha de segmentação</code>.</li>
+  <li>Quando usar recursão e quando um laço é melhor.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Você pode repetir cada um no editor do guia.</p>
+
+<hr>
+
+<h2>A ideia: as bonecas russas</h2>
+<p>A Ana ganhou uma <strong>matriosca</strong>, aquela boneca russa que tem uma boneca menor dentro, que tem outra menor dentro, e assim por diante. Para chegar à bonequinha do centro, ela segue uma única regra:</p>
+<ul>
+  <li><strong>Se</strong> a boneca é a menorzinha (não abre mais), achei! Parei.</li>
+  <li><strong>Senão</strong>, abro a boneca e faço <strong>a mesma coisa</strong> com a boneca de dentro.</li>
+</ul>
+<p>Repare que a regra usa a si mesma ("faço a mesma coisa"), mas sempre com uma boneca <strong>menor</strong>. Por isso ela termina: uma hora chega a boneca que não abre. Toda função recursiva tem essas duas partes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Nas bonecas</th><th>Na função</th></tr>
+<tr><td><strong>Caso base</strong></td><td>A boneca menorzinha: não abre, a busca para</td><td>Um <code>if</code> que responde <strong>sem</strong> chamar a função de novo</td></tr>
+<tr><td><strong>Passo recursivo</strong></td><td>Abrir e repetir com a boneca de dentro</td><td>A função chama a si mesma com um problema <strong>menor</strong> (por exemplo, <code>n - 1</code>)</td></tr>
+</table>
+</div>
+
+<p>Esqueça o caso base, ou faça o problema não diminuir, e a função chama a si mesma para sempre (bom, quase: a seção 5 mostra como o programa morre).</p>
+
+<hr>
+
+<h2>1. A primeira função recursiva: contagem regressiva</h2>
+<p>A Ana quer uma contagem para a largada da corrida da escola: <code>3... 2... 1... Já!</code>. Com um laço seria fácil (<a href="for.html">for</a>). Com recursão, o raciocínio é: "contar a partir de 3 é mostrar 3 e depois contar a partir de 2".</p>
+
+<pre class="file" data-file="contagem.c">#include &lt;stdio.h&gt;
+
+void contagem(int n) {
+    if (n == 0) {
+        printf("Já!\n");
+        return;
+    }
+    printf("%d...\n", n);
+    contagem(n - 1);
+}
+
+int main(void) {
+    contagem(3);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>void contagem(int n)</dt><dd>Uma função comum, que recebe um número (<a href="parametros.html">Parâmetros</a>) e não devolve nada.</dd>
+  <dt>if (n == 0) { printf("Já!\n"); return; }</dt><dd>O <strong>caso base</strong>: quando a contagem chega a zero, a função mostra <code>Já!</code> e <strong>não</strong> chama mais ninguém. O <code>return;</code> sai da função na hora (<a href="retorno.html">Valor de Retorno</a>).</dd>
+  <dt>printf("%d...\n", n);</dt><dd>Mostra o número atual.</dd>
+  <dt>contagem(n - 1);</dt><dd>O <strong>passo recursivo</strong>: a função chama a si mesma com um número <strong>menor</strong>. Cada chamada chega mais perto do zero.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra contagem.c -o contagem
+$ ./contagem
+3...
+2...
+1...
+Já!</pre>
+
+<p>O que aconteceu, chamada por chamada:</p>
+<ol class="passo">
+  <li>O <code>main</code> chama <code>contagem(3)</code>. Como 3 não é 0, ela mostra <code>3...</code> e chama <code>contagem(2)</code>.</li>
+  <li><code>contagem(2)</code> mostra <code>2...</code> e chama <code>contagem(1)</code>.</li>
+  <li><code>contagem(1)</code> mostra <code>1...</code> e chama <code>contagem(0)</code>.</li>
+  <li><code>contagem(0)</code> cai no caso base: mostra <code>Já!</code> e retorna.</li>
+  <li>Então <code>contagem(1)</code> termina (não há mais nada depois da chamada), depois <code>contagem(2)</code>, depois <code>contagem(3)</code>, e o programa volta ao <code>main</code>.</li>
+</ol>
+
+<p>Um detalhe importante: <code>contagem(3)</code>, <code>contagem(2)</code>, <code>contagem(1)</code> e <code>contagem(0)</code> são <strong>quatro chamadas diferentes</strong>, e cada uma tem o <strong>seu próprio</strong> <code>n</code>. É como na aula <a href="escopo.html">Escopo</a>: a variável local nasce a cada chamada. O <code>n</code> que vale 3 continua lá, esperando, enquanto as chamadas de dentro rodam com os seus <code>n</code>.</p>
+
+<h3>A ida e a volta</h3>
+<p>Uma chamada recursiva divide a função em duas partes: o que vem <strong>antes</strong> dela roda na <strong>ida</strong> (abrindo as bonecas); o que vem <strong>depois</strong> só roda na <strong>volta</strong>, quando a chamada de dentro termina (fechando as bonecas). Veja com dois <code>printf</code>, um de cada lado:</p>
+
+<pre class="file" data-file="idavolta.c">#include &lt;stdio.h&gt;
+
+void boneca(int n) {
+    printf("abrindo a boneca %d\n", n);
+    if (n &gt; 1) {
+        boneca(n - 1);
+    }
+    printf("fechando a boneca %d\n", n);
+}
+
+int main(void) {
+    boneca(3);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra idavolta.c -o idavolta
+$ ./idavolta
+abrindo a boneca 3
+abrindo a boneca 2
+abrindo a boneca 1
+fechando a boneca 1      « a boneca 1 é o caso base: não abre outra
+fechando a boneca 2
+fechando a boneca 3</pre>
+
+<p>Aqui o caso base está escrito "ao contrário": em vez de <code>if (n == 1) return;</code>, a função só chama a si mesma <strong>se</strong> <code>n &gt; 1</code>. As duas formas são comuns. O que importa é que existe um valor de <code>n</code> em que a função não chama mais ninguém.</p>
+
+<p>Repare na ordem da volta: <strong>1, 2, 3</strong>. A última boneca aberta é a primeira a ser fechada. As chamadas se empilham como pratos: o último prato colocado na pilha é o primeiro a sair.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode o programa. Depois troque <code>boneca(3)</code> por <code>boneca(5)</code>. Por último, apague o <code>printf</code> de "fechando" e veja que só sobra a ida; volte com ele e apague o de "abrindo".</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void boneca(int n) {
+    printf("abrindo a boneca %d\n", n);
+    if (n &gt; 1) {
+        boneca(n - 1);
+    }
+    printf("fechando a boneca %d\n", n);
+}
+
+int main(void) {
+    boneca(3);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Devolver um valor: o fatorial</h2>
+<p>O <strong>fatorial</strong> de um número, escrito <code>n!</code>, é a multiplicação de todos os inteiros de 1 até ele: <code>4! = 4 × 3 × 2 × 1 = 24</code>. Ele responde, por exemplo, de quantas formas diferentes 4 pessoas podem formar uma fila. Repare que dentro de <code>4!</code> está escondido o <code>3!</code>:</p>
+<ul>
+  <li><code>4! = 4 × (3 × 2 × 1) = 4 × 3!</code></li>
+  <li>e, em geral, <code>n! = n × (n - 1)!</code>;</li>
+  <li>com o caso base <code>1! = 1</code> (e, por convenção da matemática, <code>0! = 1</code>).</li>
+</ul>
+<p>Essa definição vira código quase palavra por palavra:</p>
+
+<pre class="file" data-file="fatorial.c">#include &lt;stdio.h&gt;
+
+int fatorial(int n) {
+    if (n &lt;= 1) {
+        return 1;
+    }
+    return n * fatorial(n - 1);
+}
+
+int main(void) {
+    for (int i = 0; i &lt;= 5; i++) {
+        printf("%d! = %d\n", i, fatorial(i));
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int fatorial(int n)</dt><dd>Agora a função <strong>devolve</strong> um <code>int</code>: o resultado da conta.</dd>
+  <dt>if (n &lt;= 1) { return 1; }</dt><dd>O caso base: <code>0!</code> e <code>1!</code> valem 1. O <code>&lt;=</code> (em vez de <code>==</code>) cobre os dois de uma vez.</dd>
+  <dt>return n * fatorial(n - 1);</dt><dd>O passo recursivo. Para devolver o resultado, a função primeiro precisa saber quanto vale <code>fatorial(n - 1)</code>: ela chama a si mesma, <strong>espera</strong> a resposta, multiplica por <code>n</code> e só então devolve.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fatorial.c -o fatorial
+$ ./fatorial
+0! = 1
+1! = 1
+2! = 2
+3! = 6
+4! = 24
+5! = 120</pre>
+
+<h3>A pilha de chamadas, passo a passo</h3>
+<p>Como <code>fatorial(4)</code> chega a 24? Cada chamada fica "pendurada", esperando a resposta da chamada de dentro. O computador guarda as chamadas pendentes numa estrutura chamada <strong>pilha de chamadas</strong> (<em>call stack</em>): cada chamada ganha uma "bandeja" com as suas variáveis, empilhada em cima da anterior.</p>
+
+<figure>
+<svg viewBox="0 0 640 230" width="640" role="img" aria-label="Pilha de chamadas do fatorial(4): main embaixo, depois fatorial(4), fatorial(3), fatorial(2) e fatorial(1) no topo; as respostas 1, 2, 6 e 24 descem pela pilha" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><defs><marker id="rc-seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs><rect x="40" y="10" width="300" height="38" rx="5" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="190" y="34" text-anchor="middle" font-size="15" style="fill:var(--text)">fatorial(1)  n = 1  → 1</text><rect x="40" y="52" width="300" height="38" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="190" y="76" text-anchor="middle" font-size="15" style="fill:var(--text)">fatorial(2)  n = 2  espera</text><rect x="40" y="94" width="300" height="38" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="190" y="118" text-anchor="middle" font-size="15" style="fill:var(--text)">fatorial(3)  n = 3  espera</text><rect x="40" y="136" width="300" height="38" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="190" y="160" text-anchor="middle" font-size="15" style="fill:var(--text)">fatorial(4)  n = 4  espera</text><rect x="40" y="178" width="300" height="38" rx="5" style="fill:var(--sidebar-bg);stroke:var(--border);stroke-width:1.5"/><text x="190" y="202" text-anchor="middle" font-size="15" style="fill:var(--text)">main</text><path d="M350,30 C400,30 400,70 352,70" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#rc-seta)"/><text x="410" y="55" font-size="13" style="fill:var(--accent)">devolve 1</text><path d="M350,72 C400,72 400,112 352,112" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#rc-seta)"/><text x="410" y="97" font-size="13" style="fill:var(--accent)">devolve 2 × 1 = 2</text><path d="M350,114 C400,114 400,154 352,154" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#rc-seta)"/><text x="410" y="139" font-size="13" style="fill:var(--accent)">devolve 3 × 2 = 6</text><path d="M350,156 C400,156 400,196 352,196" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#rc-seta)"/><text x="410" y="181" font-size="13" style="fill:var(--accent)">devolve 4 × 6 = 24</text></svg>
+<figcaption>No momento mais fundo, há quatro chamadas de <code>fatorial</code> empilhadas, cada uma com o seu <code>n</code>. Só a de cima (o caso base) responde na hora; as respostas descem pela pilha.</figcaption>
+</figure>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Momento</th><th>O que acontece</th><th>Chamadas na pilha</th></tr>
+<tr><td>1</td><td><code>main</code> chama <code>fatorial(4)</code>, que precisa de <code>fatorial(3)</code></td><td>main, f(4)</td></tr>
+<tr><td>2</td><td><code>fatorial(3)</code> precisa de <code>fatorial(2)</code></td><td>main, f(4), f(3)</td></tr>
+<tr><td>3</td><td><code>fatorial(2)</code> precisa de <code>fatorial(1)</code></td><td>main, f(4), f(3), f(2)</td></tr>
+<tr><td>4</td><td><code>fatorial(1)</code> é o caso base: devolve <strong>1</strong></td><td>main, f(4), f(3), f(2), f(1)</td></tr>
+<tr><td>5</td><td><code>fatorial(2)</code> calcula <code>2 * 1</code> e devolve <strong>2</strong></td><td>main, f(4), f(3), f(2)</td></tr>
+<tr><td>6</td><td><code>fatorial(3)</code> calcula <code>3 * 2</code> e devolve <strong>6</strong></td><td>main, f(4), f(3)</td></tr>
+<tr><td>7</td><td><code>fatorial(4)</code> calcula <code>4 * 6</code> e devolve <strong>24</strong> ao <code>main</code></td><td>main, f(4)</td></tr>
+</table>
+</div>
+
+<p>A pilha de chamadas é a mesma <strong>pilha</strong> de memória onde moram as variáveis locais. Ela tem um tamanho limitado (no Linux, 8 MB), o que vai importar na seção 5. A aula <a href="pilha-heap.html">Pilha e Heap</a>, no Nível 2, mostra essa memória em detalhes.</p>
+
+<h3>O fatorial cresce rápido</h3>
+<p>O fatorial cresce tão depressa que estoura o <code>int</code> logo no 13. Com <code>long long</code> (<a href="inteiros.html">Inteiros</a>) vai até o 20:</p>
+
+<pre class="file" data-file="fatorial13.c">#include &lt;stdio.h&gt;
+
+int fatorial(int n) {
+    if (n &lt;= 1) {
+        return 1;
+    }
+    return n * fatorial(n - 1);
+}
+
+long long fatorial_ll(int n) {
+    if (n &lt;= 1) {
+        return 1;
+    }
+    return n * fatorial_ll(n - 1);
+}
+
+int main(void) {
+    printf("12! com int:       %d\n", fatorial(12));
+    printf("13! com int:       %d\n", fatorial(13));
+    printf("13! com long long: %lld\n", fatorial_ll(13));
+    printf("20! com long long: %lld\n", fatorial_ll(20));
+    printf("21! com long long: %lld\n", fatorial_ll(21));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fatorial13.c -o fatorial13
+$ ./fatorial13
+12! com int:       479001600
+13! com int:       1932053504               « errado: o certo é 6227020800
+13! com long long: 6227020800
+20! com long long: 2432902008176640000
+21! com long long: -4249290049419214848     « estourou até o long long</pre>
+
+<p>Nenhum aviso: o compilador não sabe com que números você vai chamar a função. O estouro de um inteiro com sinal é <a href="comportamento-indefinido.html">comportamento indefinido</a>; aqui ele apareceu como um número errado. Isso não é culpa da recursão: um laço daria os mesmos números. É só um lembrete de escolher um tipo que caiba o resultado.</p>
+
+<div class="tryc" data-goal="out:soma(4) = 10,out:soma(100) = 5050,src:soma\s*\(\s*n\s*-\s*1\s*\)">
+<p class="try-task"><strong>Missão:</strong> complete a função <code>soma</code>, que devolve <code>1 + 2 + … + n</code> usando recursão. O caso base já está pronto. Para o passo recursivo, pense como no fatorial: a soma até <code>n</code> é <code>n</code> mais a soma até <code>n - 1</code>.</p>
+<pre class="out">soma(1) = 1
+soma(4) = 10
+soma(100) = 5050</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int soma(int n) {
+    if (n == 1) {
+        return 1;
+    }
+    return 0;   // troque o 0 pelo passo recursivo
+}
+
+int main(void) {
+    printf("soma(1) = %d\n", soma(1));
+    printf("soma(4) = %d\n", soma(4));
+    printf("soma(100) = %d\n", soma(100));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int soma(int n) {
+    if (n == 1) {
+        return 1;
+    }
+    return n + soma(n - 1);
+}
+
+int main(void) {
+    printf("soma(1) = %d\n", soma(1));
+    printf("soma(4) = %d\n", soma(4));
+    printf("soma(100) = %d\n", soma(100));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Usar a volta: um número em binário</h2>
+<p>Às vezes a recursão é a forma <strong>mais simples</strong> de resolver o problema. Para escrever um número em binário (a base 2, explicada em <a href="operadores-bits.html">Operadores de Bits</a>), o jeito clássico é dividir por 2 várias vezes e anotar os restos. O problema: os restos saem <strong>de trás para a frente</strong>. Para 6: 6 % 2 = 0, 3 % 2 = 1, 1 % 2 = 1, e o binário de 6 é <code>110</code>, os restos lidos do último para o primeiro.</p>
+
+<p>Com recursão, a inversão sai de graça. A função primeiro escreve o resto do número (chamando a si mesma com <code>n / 2</code>) e <strong>só na volta</strong> escreve o último dígito:</p>
+
+<pre class="file" data-file="binario.c">#include &lt;stdio.h&gt;
+
+void binario(int n) {
+    if (n &gt;= 2) {
+        binario(n / 2);
+    }
+    printf("%d", n % 2);
+}
+
+int main(void) {
+    int numeros[] = {5, 6, 13, 255};
+    for (int i = 0; i &lt; 4; i++) {
+        printf("%3d em binário: ", numeros[i]);
+        binario(numeros[i]);
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>if (n &gt;= 2) { binario(n / 2); }</dt><dd>Se o número tem mais de um dígito em binário, escreva primeiro os dígitos da frente, que são o binário de <code>n / 2</code>. Quando <code>n</code> é 0 ou 1 (caso base), não há nada na frente.</dd>
+  <dt>printf("%d", n % 2);</dt><dd>Depois da chamada, na volta: escreve o último dígito, o resto da divisão por 2.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra binario.c -o binario
+$ ./binario
+  5 em binário: 101
+  6 em binário: 110
+ 13 em binário: 1101
+255 em binário: 11111111</pre>
+
+<p>Para <code>binario(6)</code>: a chamada com 6 chama a com 3, que chama a com 1. A com 1 escreve <code>1</code>; na volta, a com 3 escreve <code>3 % 2 = 1</code>; por último, a com 6 escreve <code>6 % 2 = 0</code>. Resultado: <code>110</code>. Troque a ordem (o <code>printf</code> antes do <code>if</code>) e os dígitos saem invertidos.</p>
+
+<hr>
+
+<h2>4. O custo escondido: Fibonacci</h2>
+<p>A sequência de <strong>Fibonacci</strong> começa com 0 e 1, e cada número seguinte é a soma dos dois anteriores: 0, 1, 1, 2, 3, 5, 8, 13, 21… A definição é recursiva, e o código parece perfeito:</p>
+
+<pre class="file" data-file="fib.c">#include &lt;stdio.h&gt;
+
+long long chamadas = 0;
+
+long long fib(int n) {
+    chamadas++;
+    if (n &lt; 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+int main(void) {
+    int testes[] = {10, 20, 30, 40};
+    for (int i = 0; i &lt; 4; i++) {
+        chamadas = 0;
+        long long r = fib(testes[i]);
+        printf("fib(%d) = %lld, com %lld chamadas\n", testes[i], r, chamadas);
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>long long chamadas = 0;</dt><dd>Uma variável global (<a href="escopo.html">Escopo</a>), só para medir: cada vez que <code>fib</code> roda, ela soma 1. Num programa de verdade evitaríamos a global; aqui ela serve de contador.</dd>
+  <dt>if (n &lt; 2) { return n; }</dt><dd>Dois casos base de uma vez: <code>fib(0)</code> é 0 e <code>fib(1)</code> é 1.</dd>
+  <dt>return fib(n - 1) + fib(n - 2);</dt><dd>Aqui está a novidade: <strong>duas</strong> chamadas recursivas. Cada uma delas, por sua vez, faz mais duas…</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fib.c -o fib
+$ time ./fib
+fib(10) = 55, com 177 chamadas
+fib(20) = 6765, com 21891 chamadas
+fib(30) = 832040, com 2692537 chamadas
+fib(40) = 102334155, com 331160281 chamadas
+
+real	0m1,064s
+user	0m1,042s
+sys	0m0,000s</pre>
+
+<p>Mais de <strong>331 milhões</strong> de chamadas para calcular <code>fib(40)</code>! (O <code>time</code> antes do comando mede quanto tempo o programa levou: <code>real</code> é o tempo no relógio, cerca de 1 segundo.) O motivo é que a função recalcula as mesmas coisas muitas vezes. <code>fib(5)</code> chama <code>fib(4)</code> e <code>fib(3)</code>; mas <code>fib(4)</code> também chama <code>fib(3)</code>. O <code>fib(3)</code> é calculado duas vezes, o <code>fib(2)</code> três vezes, e assim por diante:</p>
+
+<pre class="file" data-file="arvore.txt">fib(5)
+├── fib(4)
+│   ├── fib(3)
+│   │   ├── fib(2)
+│   │   │   ├── fib(1)
+│   │   │   └── fib(0)
+│   │   └── fib(1)
+│   └── fib(2)
+│       ├── fib(1)
+│       └── fib(0)
+└── fib(3)
+    ├── fib(2)
+    │   ├── fib(1)
+    │   └── fib(0)
+    └── fib(1)
+</pre>
+
+<p>Na saída acima, cada vez que <code>n</code> aumenta 10, o número de chamadas fica cerca de <strong>123 vezes</strong> maior (331 160 281 ÷ 2 692 537 ≈ 123). O <code>fib(50)</code> levaria uns dois minutos; o <code>fib(60)</code>, horas. Um laço que guarda só os dois últimos números faz a mesma conta num instante:</p>
+
+<pre class="file" data-file="fiblaco.c">#include &lt;stdio.h&gt;
+
+long long fib(int n) {
+    long long anterior = 0;
+    long long atual = 1;
+    if (n == 0) {
+        return 0;
+    }
+    for (int i = 2; i &lt;= n; i++) {
+        long long proximo = anterior + atual;
+        anterior = atual;
+        atual = proximo;
+    }
+    return atual;
+}
+
+int main(void) {
+    printf("fib(40) = %lld\n", fib(40));
+    printf("fib(90) = %lld\n", fib(90));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fiblaco.c -o fiblaco
+$ time ./fiblaco
+fib(40) = 102334155
+fib(90) = 2880067194370816120
+
+real	0m0,001s
+user	0m0,001s
+sys	0m0,000s</pre>
+
+<p>O laço fez 39 voltas para o <code>fib(40)</code>, contra 331 milhões de chamadas da versão recursiva. A lição não é "recursão é lenta", e sim: <strong>cuidado com a recursão que se divide em várias chamadas e repete trabalho</strong>. O fatorial e o binário fazem uma chamada só por vez e não têm esse problema.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode o Fibonacci recursivo no editor e veja o número de chamadas. Depois acrescente o 35 na lista (<code>{10, 20, 30, 35, 40}</code> e <code>i &lt; 5</code>). No editor ele também leva alguns segundos, porque o programa roda dentro do navegador.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+long long chamadas = 0;
+
+long long fib(int n) {
+    chamadas++;
+    if (n &lt; 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+int main(void) {
+    int testes[] = {10, 20, 30, 40};
+    for (int i = 0; i &lt; 4; i++) {
+        chamadas = 0;
+        long long r = fib(testes[i]);
+        printf("fib(%d) = %lld, com %lld chamadas\n", testes[i], r, chamadas);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Sem caso base: a pilha estoura</h2>
+<p>Cada chamada que ainda não terminou ocupa uma bandeja na pilha. Uma função que chama a si mesma <strong>sem parar</strong> empilha bandejas até a pilha (8 MB no Linux) acabar. Este programa desce os andares de um prédio sem fim e avisa a cada 50 000 andares:</p>
+
+<pre class="file" data-file="infinita.c">#include &lt;stdio.h&gt;
+
+void descer(int andar) {
+    if (andar % 50000 == 0) {
+        printf("andar %d\n", andar);
+    }
+    descer(andar + 1);
+}
+
+int main(void) {
+    descer(1);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra infinita.c -o infinita
+infinita.c: In function ‘descer’:
+infinita.c:3:6: warning: infinite recursion detected [-Winfinite-recursion]
+    3 | void descer(int andar) {
+      |      ^~~~~~
+infinita.c:7:5: note: recursive call
+    7 |     descer(andar + 1);
+      |     ^~~~~~~~~~~~~~~~~
+$ ./infinita
+andar 50000
+andar 100000
+andar 150000
+andar 200000
+andar 250000
+Falha de segmentação     (imagem do núcleo gravada) ./infinita
+$ echo $?
+139</pre>
+
+<dl class="anatomy">
+  <dt>warning: infinite recursion detected</dt><dd>"Recursão infinita detectada". O gcc percebeu que <strong>todo caminho</strong> pela função chama a função de novo: não há caso base. O <code>if</code> aqui só decide se mostra o andar; com ou sem <code>printf</code>, a chamada acontece.</dd>
+  <dt>note: recursive call</dt><dd>"Chamada recursiva": a linha que causa o problema.</dd>
+  <dt>andar 250000 … Falha de segmentação</dt><dd>Depois de mais de 250 mil chamadas empilhadas, a pilha acabou e o sistema matou o programa. É o <strong>estouro de pilha</strong> (<em>stack overflow</em>). O código 139 é o mesmo de qualquer falha de segmentação: a mensagem não diz que a culpa é da recursão.</dd>
+</dl>
+
+<p>No editor do guia, o Clang avisa com outras palavras: <code>warning: all paths through this function will call itself [-Winfinite-recursion]</code> ("todos os caminhos por esta função vão chamar a ela mesma"). O programa também morre com <code>Falha de segmentação (imagem do núcleo gravada)</code> e código 139, só que mais cedo, logo depois do <code>andar 50000</code>: no WebAssembly cada chamada ocupa mais espaço na pilha.</p>
+
+<h3>O caso base que nunca chega</h3>
+<p>Pior que esquecer o caso base é ter um que a função <strong>pula</strong>. A Ana fez uma contagem de 2 em 2:</p>
+
+<pre class="file" data-file="pula.c">#include &lt;stdio.h&gt;
+
+void contagem2(int n) {
+    if (n == 0) {
+        printf("Já!\n");
+        return;
+    }
+    printf("%d ", n);
+    contagem2(n - 2);
+}
+
+int main(void) {
+    contagem2(6);
+    contagem2(5);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pula.c -o pula     « nenhum aviso: existe um caso base
+$ ./pula
+6 4 2 Já!
+5 3 1 -1 -3 -5 -7 -9 -11 -13 -15 -17 -19 -21 -23 -25 -27 -29 -31 -33 -35 -37 -39
+                         « cortamos aqui: são mais de 260 mil números, tela após tela
+-523829 -523831 -523833 -523835 -523837 -5238Falha de segmentação     (imagem do núcleo gravada) ./pula
+$ echo $?
+139</pre>
+
+<p>Com 6 funcionou: 6, 4, 2, 0. Com 5, a contagem passou <strong>por cima</strong> do zero: 5, 3, 1, −1, −3… e nunca mais encontrou o <code>n == 0</code>. Ela seguiu pelos negativos até a pilha estourar, depois de mais de 260 mil chamadas. Desta vez o compilador não avisou (nem o gcc, nem o Clang do editor), porque existe um caminho que para; ele não tem como saber que esse caminho nunca vai ser usado. Repare no último número, cortado no meio (<code>-5238</code>): o resto estava no balde do <code>printf</code>, esperando um <code>\n</code>, e se perdeu quando o programa morreu.</p>
+
+<div class="tryc" data-goal="out:6 4 2 Já!,out:5 3 1 Já!,exit:0">
+<p class="try-task"><strong>Missão:</strong> rode o programa e veja a falha de segmentação. Depois conserte o <strong>caso base</strong> para que a contagem pare também quando passar do zero. Dica: troque o <code>==</code> por outro operador de comparação.</p>
+<pre class="out">6 4 2 Já!
+5 3 1 Já!</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void contagem2(int n) {
+    if (n == 0) {
+        printf("Já!\n");
+        return;
+    }
+    printf("%d ", n);
+    contagem2(n - 2);
+}
+
+int main(void) {
+    contagem2(6);
+    contagem2(5);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void contagem2(int n) {
+    if (n &lt;= 0) {
+        printf("Já!\n");
+        return;
+    }
+    printf("%d ", n);
+    contagem2(n - 2);
+}
+
+int main(void) {
+    contagem2(6);
+    contagem2(5);
+    return 0;
+}
+</pre>
+</div>
+
+<div class="tip">
+<strong>Confira o caso base com três perguntas</strong>
+<ol>
+  <li>Existe um caso que responde <strong>sem</strong> chamar a função de novo?</li>
+  <li>Cada chamada recursiva recebe um problema <strong>menor</strong> (mais perto do caso base)?</li>
+  <li>Dá para <strong>pular</strong> o caso base? Prefira <code>&lt;=</code> a <code>==</code> quando o número pode passar do ponto (de 2 em 2, ou um negativo vindo do usuário).</li>
+</ol>
+</div>
+
+<hr>
+
+<h2>Recursão × laço: qual usar</h2>
+<p>Tudo o que uma recursão faz, um laço também consegue (às vezes com mais trabalho). O fatorial, por exemplo:</p>
+
+<pre class="file" data-file="fatlaco.c">#include &lt;stdio.h&gt;
+
+int fatorial(int n) {
+    int resultado = 1;
+    for (int i = 2; i &lt;= n; i++) {
+        resultado = resultado * i;
+    }
+    return resultado;
+}
+
+int main(void) {
+    printf("5! = %d\n", fatorial(5));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fatlaco.c -o fatlaco
+$ ./fatlaco
+5! = 120</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Recursão</th><th>Laço (<code>for</code>, <code>while</code>)</th></tr>
+<tr><td>Memória</td><td>Uma bandeja na pilha por chamada; milhares de chamadas podem estourar a pilha</td><td>As mesmas poucas variáveis do começo ao fim</td></tr>
+<tr><td>Velocidade</td><td>Cada chamada tem um pequeno custo; com várias chamadas por vez (Fibonacci), pode repetir trabalho</td><td>Em geral, mais rápido</td></tr>
+<tr><td>Clareza</td><td>Fica curta e parecida com a definição quando o problema é "o mesmo problema, menor"</td><td>Mais clara para "repita N vezes" e "percorra a lista"</td></tr>
+<tr><td>Bons exemplos</td><td>Escrever em binário, MDC de Euclides, percorrer pastas dentro de pastas, árvores (<a href="listas-ligadas.html">estruturas ligadas</a>), ordenar dividindo ao meio</td><td>Somar uma lista, contar, ler linhas de um arquivo, Fibonacci</td></tr>
+</table>
+</div>
+
+<p><strong>Regra prática:</strong> se o laço é simples, use o laço. Use recursão quando o problema se divide naturalmente em pedaços menores do mesmo tipo e a profundidade é pequena (dezenas ou milhares de chamadas, não milhões). Duas funções que chamam uma à outra também são recursão; a aula <a href="prototipos.html">Protótipos</a> mostra um exemplo (par e ímpar) e por que ele precisa de protótipo.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> (código 139) numa função recursiva</strong>
+<p><strong>O que significa:</strong> provavelmente a pilha estourou: a função chamou a si mesma vezes demais. Ou não tem caso base (o gcc avisa <code>infinite recursion detected</code>; o Clang, <code>all paths through this function will call itself</code>), ou o caso base é pulado (sem aviso), ou o problema é grande demais para recursão.</p>
+<p><strong>Como consertar:</strong> confira as três perguntas do quadro da seção 5. Para ver até onde a função chegou, ponha um <code>printf("n = %d\n", n);</code> no começo dela (com <code>\n</code>, para a linha aparecer antes de o programa morrer). Se a profundidade for mesmo enorme, troque por um laço.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: control reaches end of non-void function</code> e <code>value computed is not used</code></strong>
+<pre class="file" data-file="semreturn.c">#include &lt;stdio.h&gt;
+
+int fatorial(int n) {
+    if (n &lt;= 1) {
+        return 1;
+    }
+    n * fatorial(n - 1);
+}
+
+int main(void) {
+    printf("5! = %d\n", fatorial(5));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semreturn.c -o semreturn
+semreturn.c: In function ‘fatorial’:
+semreturn.c:7:7: warning: value computed is not used [-Wunused-value]
+    7 |     n * fatorial(n - 1);
+      |     ~~^~~~~~~~~~~~~~~~~
+semreturn.c:8:1: warning: control reaches end of non-void function [-Wreturn-type]
+    8 | }
+      | ^
+$ ./semreturn
+5! = 1</pre>
+<p><strong>O que significa:</strong> faltou o <code>return</code> no passo recursivo. A conta <code>n * fatorial(n - 1)</code> é feita e jogada fora ("valor calculado não é usado"), e a função chega ao <code>}</code> sem devolver nada ("o controle chega ao fim de uma função não <code>void</code>"). O resultado é lixo: no gcc saiu 1; no editor, o Clang avisa <code>expression result unused</code> e <code>non-void function does not return a value in all control paths</code>, e o programa mostra <code>5! = 0</code>.</p>
+<p><strong>Como consertar:</strong> <code>return n * fatorial(n - 1);</code>. Numa função recursiva que devolve valor, <strong>todo</strong> caminho tem de terminar num <code>return</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa fica lento demais (e não dá erro)</strong>
+<p><strong>O que significa:</strong> a função faz duas (ou mais) chamadas recursivas e recalcula os mesmos valores, como o Fibonacci. O número de chamadas cresce de forma explosiva.</p>
+<p><strong>Como consertar:</strong> reescreva com um laço que guarda os resultados anteriores (como o <code>fiblaco.c</code>). Se o programa travou no terminal, <strong>Ctrl+C</strong> o interrompe.</p>
+</div>
+
+<div class="cenario">
+<strong>Resultado errado com números grandes, sem aviso</strong>
+<p><strong>O que significa:</strong> o resultado não coube no tipo. <code>13!</code> com <code>int</code> deu 1932053504, e <code>21!</code> com <code>long long</code> deu um número negativo.</p>
+<p><strong>Como consertar:</strong> use um tipo maior (<code>long long</code>) e saiba o limite dele (o <code>long long</code> aguenta até <code>20!</code>). Veja <a href="inteiros.html">Inteiros</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo ou código</th><th>O que é</th></tr>
+<tr><td>Função recursiva</td><td>Uma função que chama a si mesma</td></tr>
+<tr><td>Caso base</td><td>O caso que responde sem chamar a função de novo: <code>if (n &lt;= 1) return 1;</code></td></tr>
+<tr><td>Passo recursivo</td><td>A chamada com um problema menor: <code>return n * fatorial(n - 1);</code></td></tr>
+<tr><td>Código antes da chamada</td><td>Roda na ida (na ordem 3, 2, 1)</td></tr>
+<tr><td>Código depois da chamada</td><td>Roda na volta (na ordem 1, 2, 3)</td></tr>
+<tr><td>Pilha de chamadas</td><td>Onde ficam as chamadas pendentes, cada uma com as suas variáveis locais</td></tr>
+<tr><td>Estouro de pilha</td><td>Chamadas demais: <code>Falha de segmentação</code>, código 139</td></tr>
+<tr><td><code>-Winfinite-recursion</code></td><td>O aviso (ligado pelo <code>-Wall</code>) para uma função sem caso base</td></tr>
+<tr><td>Recursão mútua</td><td>A chama B, que chama A; precisa de <a href="prototipos.html">protótipo</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O caso base</h3>
+<p>Complete o caso base de uma função que calcula <code>2</code> elevado a <code>n</code> (lembre: qualquer número elevado a 0 vale 1):</p>
+<div class="ex-code">int potencia2(int n) { if (n == 0) { return <input data-answer="1" aria-label="valor do caso base">; } return 2 * potencia2(n - 1); }</div>
+</div>
+
+<div class="exercise">
+<h3>2. O passo recursivo</h3>
+<p>Complete o passo recursivo da contagem regressiva, para que cada chamada fique mais perto do zero:</p>
+<div class="ex-code">printf("%d...\n", n); contagem(<input data-answer="n - 1|n-1" aria-label="argumento">);</div>
+</div>
+
+<div class="exercise">
+<h3>3. Código de saída</h3>
+<p>Uma recursão sem fim estourou a pilha e o programa morreu com <code>Falha de segmentação</code>. Que número o <code>echo $?</code> mostra?</p>
+<div class="ex-code"><input data-answer="139" aria-label="código de saída"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Na função <code>void f(int n) { if (n &gt; 0) { f(n - 1); } printf("%d ", n); }</code>, o que <code>f(3)</code> mostra?</p>
+<label><input type="radio" name="q4"> <code>3 2 1 0</code></label>
+<label><input type="radio" name="q4"> <code>3</code></label>
+<label><input type="radio" name="q4"> <code>0 1 2 3</code>, porque o <code>printf</code> vem depois da chamada e roda na volta</label>
+<label><input type="radio" name="q4"> Nada: a recursão nunca termina</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Por que o <code>fib(40)</code> recursivo faz mais de 331 milhões de chamadas?</p>
+<label><input type="radio" name="q5"> Porque o <code>long long</code> é lento</label>
+<label><input type="radio" name="q5"> Porque cada chamada faz outras duas e os mesmos valores são recalculados muitas vezes</label>
+<label><input type="radio" name="q5"> Porque falta o caso base</label>
+<label><input type="radio" name="q5"> Porque o <code>-Wall</code> deixa o programa mais lento</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Uma contagem de 2 em 2 tem o caso base <code>if (n == 0)</code>. O que acontece com <code>contagem2(7)</code>?</p>
+<label><input type="radio" name="q6"> O gcc dá erro de compilação</label>
+<label><input type="radio" name="q6"> Mostra 7 5 3 1 e para</label>
+<label><input type="radio" name="q6"> O gcc avisa <code>infinite recursion detected</code></label>
+<label><input type="radio" name="q6"> Passa por cima do 0 e segue nos negativos até a pilha estourar, sem aviso do compilador</label>
+</div>
+
+<h3>Missão final: a soma dos dígitos</h3>
+
+<div class="tryc" data-goal="outre:^soma_digitos\(7\) = 7\nsoma_digitos\(2026\) = 10\nsoma_digitos\(9999\) = 36\n$,src:soma_digitos\s*\(\s*n\s*/\s*10\s*\),semaviso">
+<p class="try-task"><strong>Missão:</strong> escreva a função recursiva <code>soma_digitos</code>, que soma os algarismos de um número (2026 → 2 + 0 + 2 + 6 = 10). Use duas ideias da aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>: <code>n % 10</code> é o último algarismo (2026 % 10 = 6) e <code>n / 10</code> é o número sem ele (2026 / 10 = 202). A regra:</p>
+<ul class="try-task">
+  <li><strong>caso base:</strong> se <code>n &lt; 10</code>, o número tem um algarismo só, e a soma é o próprio <code>n</code>;</li>
+  <li><strong>passo recursivo:</strong> senão, a soma é o último algarismo mais a soma dos algarismos de <code>n / 10</code>.</li>
+</ul>
+<p class="try-task">A saída tem de ser exatamente esta, sem avisos:</p>
+<pre class="out">soma_digitos(7) = 7
+soma_digitos(2026) = 10
+soma_digitos(9999) = 36</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int soma_digitos(int n) {
+    // caso base: um algarismo só
+
+    // passo recursivo: último algarismo + soma dos outros
+    return 0;
+}
+
+int main(void) {
+    printf("soma_digitos(7) = %d\n", soma_digitos(7));
+    printf("soma_digitos(2026) = %d\n", soma_digitos(2026));
+    printf("soma_digitos(9999) = %d\n", soma_digitos(9999));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int soma_digitos(int n) {
+    if (n &lt; 10) {
+        return n;
+    }
+    return n % 10 + soma_digitos(n / 10);
+}
+
+int main(void) {
+    printf("soma_digitos(7) = %d\n", soma_digitos(7));
+    printf("soma_digitos(2026) = %d\n", soma_digitos(2026));
+    printf("soma_digitos(9999) = %d\n", soma_digitos(9999));
+    return 0;
+}
+</pre>
+</div>
+
+<p>Para <code>soma_digitos(2026)</code>, a pilha fica com quatro chamadas: 2026, 202, 20 e 2. A última é o caso base e devolve 2; na volta, as somas vão se acumulando: 2 + 0 = 2, 2 + 2 = 4, 4 + 6 = 10.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma função <strong>recursiva</strong> chama a si mesma. Ela sempre tem um <strong>caso base</strong> (responde sem chamar de novo) e um <strong>passo recursivo</strong> (chama com um problema menor).</li>
+  <li>Cada chamada tem as suas próprias variáveis locais. O código antes da chamada roda na ida; o código depois roda na volta, na ordem inversa.</li>
+  <li>As chamadas pendentes ficam na <strong>pilha de chamadas</strong>, que é limitada (8 MB no Linux). Recursão sem fim estoura a pilha: <code>Falha de segmentação</code>, código 139. O <code>-Wall</code> avisa quando não há caso base (<code>infinite recursion detected</code>), mas não quando o caso base é pulado.</li>
+  <li>Numa função que devolve valor, escreva <code>return</code> no passo recursivo: <code>return n * fatorial(n - 1);</code>.</li>
+  <li>Recursão com várias chamadas por vez (Fibonacci) pode repetir trabalho e ficar lentíssima; um laço resolve.</li>
+  <li>Se um laço simples resolve, prefira o laço. Use recursão quando o problema é "o mesmo problema, menor" e a profundidade é pequena.</li>
+  <li>Próxima aula: <a href="matematica.html">Matemática (math.h)</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
