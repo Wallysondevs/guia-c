@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C fseek e ftell — andar dentro de um arquivo | Guia C</title>
+<meta name="description" content="fseek, ftell e rewind em C para iniciantes: a posição de leitura de um arquivo, SEEK_SET, SEEK_CUR e SEEK_END, descobrir o tamanho de um arquivo, ler o registro N de um arquivo binário e atualizar um registro no lugar com r+b, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Posição no Arquivo</span> (fseek e ftell)</h1>
+
+<p class="intro">Quando você lê um arquivo, o C anda por ele como um dedo acompanhando as linhas de um livro: cada leitura começa onde a anterior parou. Até aqui, o dedo sempre andou para a frente, do começo ao fim. Nesta aula você vai aprender a <strong>perguntar onde o dedo está</strong> (<code>ftell</code>), a <strong>pular para qualquer lugar</strong> (<code>fseek</code>) e a voltar ao começo (<code>rewind</code>). Com isso, a Ana vai descobrir o tamanho do arquivo do estoque, ler direto o 3º produto e corrigir a quantidade de um produto sem regravar o arquivo inteiro.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é a <strong>posição</strong> de um arquivo aberto e como ela anda a cada leitura.</li>
+  <li>Como ver a posição com <code>ftell</code> e mudá-la com <code>fseek</code>, a partir do começo (<code>SEEK_SET</code>), do lugar atual (<code>SEEK_CUR</code>) ou do fim (<code>SEEK_END</code>).</li>
+  <li>Como descobrir o tamanho de um arquivo e voltar ao começo com <code>rewind</code>.</li>
+  <li>Como ler o registro número N de um arquivo binário com uma conta simples.</li>
+  <li>Como abrir com <code>"r+b"</code> e <strong>atualizar um registro no lugar</strong>.</li>
+  <li>Os erros clássicos: esquecer de voltar antes de gravar, abrir com <code>"w+b"</code> e apagar tudo, pular para fora do arquivo.</li>
+</ul>
+</div>
+
+<p>Os exemplos usam o <code>estoque.bin</code> da aula <a href="arquivos-binarios.html">Arquivos Binários</a>: 3 produtos de 32 bytes cada (Caderno, Caneta e Borracha), 96 bytes no total. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o marcador de páginas</h2>
+<p>Pense num livro com um <strong>marcador</strong>. Quando você abre o arquivo, o marcador está na página 1 (posição 0). Cada leitura avança o marcador o tanto que foi lido. Você pode:</p>
+<ul>
+  <li><strong>olhar</strong> em que página o marcador está (<code>ftell</code>, "file tell", diga a posição);</li>
+  <li><strong>mudar</strong> o marcador de lugar sem ler nada (<code>fseek</code>, "file seek", procure no arquivo);</li>
+  <li><strong>voltar</strong> o marcador para a primeira página (<code>rewind</code>, "rebobinar", como uma fita).</li>
+</ul>
+<p>No C, a posição é contada em <strong>bytes</strong> a partir do começo do arquivo. O primeiro byte é a posição 0. Num arquivo de 96 bytes, as posições vão de 0 a 95, e a posição 96 significa "logo depois do último byte", ou seja, o fim.</p>
+
+<hr>
+
+<h2>1. ftell: onde estou?</h2>
+<p>O programa abaixo mostra a posição logo depois de abrir, pula para o fim e volta ao começo:</p>
+
+<pre class="file" data-file="tamanho.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *f = fopen("estoque.bin", "rb");
+    if (f == NULL) {
+        printf("Não consegui abrir estoque.bin\n");
+        return 1;
+    }
+
+    printf("Ao abrir, a posição é %ld\n", ftell(f));
+
+    fseek(f, 0, SEEK_END);
+    long tamanho = ftell(f);
+    printf("No fim, a posição é %ld\n", tamanho);
+
+    rewind(f);
+    printf("Depois do rewind: %ld\n", ftell(f));
+
+    fclose(f);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>ftell(f)</dt><dd>Devolve a posição atual, em bytes, como um <code>long</code> (por isso o formato <code>%ld</code>). Se der erro, devolve <code>-1</code>.</dd>
+  <dt>fseek(f, 0, SEEK_END)</dt><dd>Leve o marcador para "0 bytes a partir do <strong>fim</strong>": exatamente o fim do arquivo.</dd>
+  <dt>long tamanho = ftell(f);</dt><dd>No fim, a posição é igual ao <strong>tamanho do arquivo</strong> em bytes. Esse é o jeito clássico de medir um arquivo em C.</dd>
+  <dt>rewind(f)</dt><dd>Volta para a posição 0. É o mesmo que <code>fseek(f, 0, SEEK_SET)</code>, e ainda limpa o indicador de erro do arquivo.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanho.c -o tamanho
+$ ./tamanho
+Ao abrir, a posição é 0
+No fim, a posição é 96
+Depois do rewind: 0
+$ ls -l estoque.bin
+-rw-rw-r-- 1 ana ana 96 out 17 10:33 estoque.bin       « o mesmo número</pre>
+
+<hr>
+
+<h2>2. A posição anda sozinha a cada leitura</h2>
+<p>Agora veja o marcador andando enquanto o programa lê os produtos um por um, e depois voltando um registro com <code>SEEK_CUR</code>:</p>
+
+<pre class="file" data-file="posicao.c">#include &lt;stdio.h&gt;
+
+typedef struct {
+    char nome[20];
+    int quantidade;
+    double preco;
+} Produto;
+
+int main(void) {
+    FILE *f = fopen("estoque.bin", "rb");
+    if (f == NULL) {
+        printf("Não consegui abrir estoque.bin\n");
+        return 1;
+    }
+
+    Produto p;
+    printf("posição %2ld: ", ftell(f));
+    while (fread(&amp;p, sizeof p, 1, f) == 1) {
+        printf("li %s\n", p.nome);
+        printf("posição %2ld: ", ftell(f));
+    }
+    printf("fim do arquivo\n");
+
+    fseek(f, -(long)sizeof p, SEEK_CUR);
+    printf("voltei um registro: posição %ld\n", ftell(f));
+    fread(&amp;p, sizeof p, 1, f);
+    printf("li de novo %s\n", p.nome);
+
+    fclose(f);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra posicao.c -o posicao
+$ ./posicao
+posição  0: li Caderno
+posição 32: li Caneta
+posição 64: li Borracha
+posição 96: fim do arquivo
+voltei um registro: posição 64
+li de novo Borracha</pre>
+
+<dl class="anatomy">
+  <dt>posição 0, 32, 64, 96</dt><dd>Cada <code>fread</code> de um <code>Produto</code> avançou 32 bytes, o <code>sizeof(Produto)</code>. Ninguém mexeu na posição: o próprio <code>fread</code> a empurra para a frente.</dd>
+  <dt>fseek(f, -(long)sizeof p, SEEK_CUR)</dt><dd>Ande <strong>32 bytes para trás</strong> a partir de onde está (<code>SEEK_CUR</code>, "current", atual). Deslocamento negativo = para trás; positivo = para a frente.</dd>
+  <dt>(long)</dt><dd>O <code>sizeof</code> dá um <code>size_t</code>, que não tem sinal. O <em>cast</em> para <code>long</code> (aula <a href="conversao-tipos.html">Conversão de Tipos</a>) vem <strong>antes</strong> do sinal de menos, para o resultado ser -32 mesmo.</dd>
+</dl>
+
+<h3>Os três pontos de partida</h3>
+<p>O <code>fseek</code> recebe três coisas: o arquivo, um <strong>deslocamento</strong> (quantos bytes) e o <strong>ponto de partida</strong> (a partir de onde contar):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ponto de partida</th><th>Conta a partir de</th><th>Exemplo</th><th>Resultado no <code>estoque.bin</code></th></tr>
+<tr><td><code>SEEK_SET</code></td><td>O começo do arquivo ("set", definir)</td><td><code>fseek(f, 64, SEEK_SET)</code></td><td>Posição 64: o 3º produto</td></tr>
+<tr><td><code>SEEK_CUR</code></td><td>A posição atual</td><td><code>fseek(f, -32, SEEK_CUR)</code></td><td>Volta um produto</td></tr>
+<tr><td><code>SEEK_END</code></td><td>O fim do arquivo</td><td><code>fseek(f, -32, SEEK_END)</code></td><td>Posição 64: o último produto</td></tr>
+</table>
+</div>
+
+<p>O <code>fseek</code> devolve <code>0</code> quando deu certo e um valor diferente de zero quando falhou (por exemplo, posição negativa). Os três nomes são constantes de <code>&lt;stdio.h&gt;</code>; não precisa de outro <code>#include</code>.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> o programa grava 5 notas e depois usa <code>fseek</code>/<code>ftell</code> para medir o arquivo e ler a nota da posição 2. Rode. Depois troque <code>n</code> para 4 e, em seguida, troque o <code>fseek</code> da leitura por <code>fseek(f, -(long)sizeof(int), SEEK_END)</code>: qual nota aparece?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 9, 6, 10, 8};
+
+    FILE *f = fopen("notas.bin", "wb");
+    if (f == NULL) {
+        printf("Não consegui criar notas.bin\n");
+        return 1;
+    }
+    fwrite(notas, sizeof(int), 5, f);
+    fclose(f);
+
+    f = fopen("notas.bin", "rb");
+    if (f == NULL) {
+        printf("Não consegui abrir notas.bin\n");
+        return 1;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long tamanho = ftell(f);
+    printf("notas.bin tem %ld bytes = %ld notas\n", tamanho, tamanho / (long)sizeof(int));
+
+    long n = 2;                                // a 3ª nota (começa em 0)
+    fseek(f, n * (long)sizeof(int), SEEK_SET);
+    int nota;
+    if (fread(&amp;nota, sizeof nota, 1, f) == 1) {
+        printf("Nota na posição %ld: %d\n", n, nota);
+    }
+
+    fclose(f);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Ler o registro N</h2>
+<p>Aqui está a grande vantagem de um arquivo binário com registros de <strong>tamanho fixo</strong>: para ler o produto número N, não precisa ler os anteriores. A posição é uma conta:</p>
+<p style="text-align:center"><code>posição = (N - 1) × sizeof(Produto)</code> &nbsp; (contando os produtos a partir de 1)</p>
+<p>O 1º produto começa no byte 0, o 2º no byte 32, o 3º no byte 64. É como achar a casa número 300 numa rua em que todos os terrenos têm a mesma largura: você não precisa contar as casas, só multiplicar.</p>
+
+<pre class="file" data-file="registro.c">#include &lt;stdio.h&gt;
+
+typedef struct {
+    char nome[20];
+    int quantidade;
+    double preco;
+} Produto;
+
+int main(void) {
+    FILE *f = fopen("estoque.bin", "rb");
+    if (f == NULL) {
+        printf("Não consegui abrir estoque.bin\n");
+        return 1;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long total = ftell(f) / (long)sizeof(Produto);
+
+    printf("Qual produto (1 a %ld)? ", total);
+    long n;
+    if (scanf("%ld", &amp;n) != 1 || n &lt; 1 || n &gt; total) {
+        printf("Número inválido.\n");
+        fclose(f);
+        return 1;
+    }
+
+    fseek(f, (n - 1) * (long)sizeof(Produto), SEEK_SET);
+    Produto p;
+    if (fread(&amp;p, sizeof p, 1, f) != 1) {
+        printf("Não consegui ler o produto %ld.\n", n);
+        fclose(f);
+        return 1;
+    }
+    printf("%s: %d unidades a R$ %.2f\n", p.nome, p.quantidade, p.preco);
+
+    fclose(f);
+    return 0;
+}
+</pre>
+
+<ol class="passo">
+  <li><strong>Quantos produtos existem?</strong> <code>fseek</code> até o fim, <code>ftell</code> dá 96, e 96 / 32 = 3.</li>
+  <li><strong>Pergunta e confere.</strong> O <code>scanf</code> precisa devolver 1 (leu um número) e o número tem de estar entre 1 e o total. Sem essa conferência, o programa pularia para fora do arquivo (veja <a href="#pg-fora">Quando dá errado</a>).</li>
+  <li><strong>Pula direto.</strong> Para o produto 3, <code>(3 - 1) * 32</code> = 64. O <code>SEEK_SET</code> conta a partir do começo.</li>
+  <li><strong>Lê um registro e confere o retorno.</strong></li>
+</ol>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra registro.c -o registro
+$ ./registro
+Qual produto (1 a 3)? 3
+Borracha: 25 unidades a R$ 1.75
+$ ./registro
+Qual produto (1 a 3)? 7
+Número inválido.
+$ ./registro
+Qual produto (1 a 3)? abc
+Número inválido.</pre>
+
+<p>Com 3 produtos isso parece pouca coisa, mas num arquivo com um milhão de registros a diferença é enorme: o programa lê <strong>32 bytes</strong>, e não 32 milhões.</p>
+
+<hr>
+
+<h2>4. Atualizar um registro no lugar ("r+b")</h2>
+<p>A Ana vendeu 15 canetas. Ela quer mudar só a quantidade do 2º produto, sem reescrever o arquivo todo. Para isso o arquivo precisa estar aberto para <strong>ler e escrever ao mesmo tempo</strong>, sem ser apagado: o modo <code>"r+b"</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Modo</th><th>Lê?</th><th>Grava?</th><th>Se o arquivo existe</th><th>Se não existe</th></tr>
+<tr><td><code>"rb"</code></td><td>sim</td><td>não</td><td>abre no começo</td><td>falha (<code>NULL</code>)</td></tr>
+<tr><td><code>"r+b"</code> (ou <code>"rb+"</code>)</td><td>sim</td><td>sim</td><td><strong>mantém</strong> o conteúdo, começa na posição 0</td><td>falha (<code>NULL</code>)</td></tr>
+<tr><td><code>"w+b"</code> (ou <code>"wb+"</code>)</td><td>sim</td><td>sim</td><td><strong>apaga tudo</strong></td><td>cria</td></tr>
+<tr><td><code>"a+b"</code> (ou <code>"ab+"</code>)</td><td>sim</td><td>só no fim</td><td>mantém; toda escrita vai para o fim</td><td>cria</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="atualizar.c">#include &lt;stdio.h&gt;
+
+typedef struct {
+    char nome[20];
+    int quantidade;
+    double preco;
+} Produto;
+
+int main(void) {
+    FILE *f = fopen("estoque.bin", "r+b");
+    if (f == NULL) {
+        printf("Não consegui abrir estoque.bin\n");
+        return 1;
+    }
+
+    long n = 1;                       // o 2º produto (a contagem começa em 0)
+    long pos = n * (long)sizeof(Produto);
+
+    Produto p;
+    fseek(f, pos, SEEK_SET);
+    if (fread(&amp;p, sizeof p, 1, f) != 1) {
+        printf("Produto não encontrado.\n");
+        fclose(f);
+        return 1;
+    }
+    printf("Antes:  %s, %d unidades\n", p.nome, p.quantidade);
+
+    p.quantidade -= 15;               // a Ana vendeu 15 canetas
+
+    fseek(f, pos, SEEK_SET);          // volta para o começo do registro
+    fwrite(&amp;p, sizeof p, 1, f);
+    printf("Depois: %s, %d unidades\n", p.nome, p.quantidade);
+
+    fclose(f);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>"r+b"</dt><dd>Leitura e escrita, binário, <strong>sem apagar</strong>. Se o arquivo não existir, o <code>fopen</code> devolve <code>NULL</code>.</dd>
+  <dt>long pos = n * (long)sizeof(Produto);</dt><dd>A posição do registro, guardada numa variável porque vamos precisar dela duas vezes.</dd>
+  <dt>fseek … fread</dt><dd>Pula até o registro e lê. Depois do <code>fread</code>, o marcador está em <code>pos + 32</code>: no começo do <strong>próximo</strong> produto.</dd>
+  <dt>fseek(f, pos, SEEK_SET); // volta</dt><dd>A linha mais importante: volta o marcador para o começo do registro lido. Sem ela, o <code>fwrite</code> gravaria por cima do produto seguinte.</dd>
+  <dt>fwrite(&amp;p, sizeof p, 1, f)</dt><dd>Grava os 32 bytes por cima dos antigos. O resto do arquivo não muda e o tamanho continua 96.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra atualizar.c -o atualizar
+$ cp estoque.bin backup.bin               « uma cópia, para poder repetir
+$ ./atualizar
+Antes:  Caneta, 40 unidades
+Depois: Caneta, 25 unidades
+$ ls -l estoque.bin
+-rw-rw-r-- 1 ana ana 96 out 17 10:37 estoque.bin      « continua com 96 bytes
+$ ./ler1
+Caderno     12 x R$ 15.90
+Caneta      25 x R$  2.50
+Borracha    25 x R$  1.75
+Valor do estoque: R$ 297.05
+$ xxd -s 32 -l 32 estoque.bin
+00000020: 4361 6e65 7461 0000 0000 0000 0000 0000  Caneta..........
+00000030: 0000 0000 1900 0000 0000 0000 0000 0440  ...............@</pre>
+
+<p>O <code>ler1</code> (da aula anterior) confirma a mudança. No <code>xxd</code>, as opções <code>-s 32</code> (<em>seek</em>, pule 32 bytes) e <code>-l 32</code> (<em>length</em>, mostre 32) são o <code>fseek</code> do terminal: mostram só o 2º registro. A quantidade, que era <code>28</code> (40), agora é <code>19</code> (25 em hexadecimal).</p>
+
+<div class="warning">
+<strong>Regra do C para os modos "+":</strong> depois de <strong>ler</strong>, chame <code>fseek</code> (ou <code>rewind</code>) antes de <strong>gravar</strong>; depois de <strong>gravar</strong>, chame <code>fseek</code> ou <code>fflush</code> antes de <strong>ler</strong>. Mesmo que você queira continuar na mesma posição, use <code>fseek(f, 0, SEEK_CUR)</code>. A biblioteca usa um <em>buffer</em> compartilhado para leitura e escrita, e o <code>fseek</code> é o momento em que ela arruma esse buffer. Sem ele, o resultado não é garantido pelo padrão.
+</div>
+
+<hr>
+
+<h2>Formas diferentes, e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para…</th><th>Forma</th><th>Observação</th></tr>
+<tr><td>Voltar ao começo</td><td><code>rewind(f)</code> ou <code>fseek(f, 0, SEEK_SET)</code></td><td><code>rewind</code> é mais curto, mas não devolve nada; o <code>fseek</code> permite conferir o retorno</td></tr>
+<tr><td>Ir para o fim (para acrescentar)</td><td><code>fseek(f, 0, SEEK_END)</code> ou abrir com <code>"ab"</code></td><td>Com <code>"ab"</code>, toda escrita vai para o fim automaticamente</td></tr>
+<tr><td>Saber o tamanho</td><td><code>fseek</code> até o fim + <code>ftell</code></td><td>Funciona em arquivos comuns. Em POSIX existe também <code>stat()</code>, que não precisa abrir o arquivo</td></tr>
+<tr><td>Guardar uma posição e voltar depois</td><td><code>long p = ftell(f);</code> … <code>fseek(f, p, SEEK_SET);</code></td><td>Para arquivos gigantes, <code>fgetpos</code>/<code>fsetpos</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Arquivos de texto e arquivos gigantes.</strong>
+<ul>
+  <li>Em arquivos abertos em <strong>modo texto</strong> (<code>"r"</code>), o padrão C só garante <code>fseek</code> para o início, o fim ou uma posição que veio de um <code>ftell</code> anterior. No Linux e no macOS a posição é sempre em bytes, mas no Windows a troca de <code>\n</code> por <code>\r\n</code> atrapalha as contas. Para pular por conta, use modo binário.</li>
+  <li>O <code>ftell</code> devolve <code>long</code>. Onde o <code>long</code> tem 4 bytes (Windows, e o editor do guia), o maior valor é 2147483647: arquivos de mais de 2 GB não cabem. Para eles, o POSIX oferece <code>fseeko</code>/<code>ftello</code> (com o tipo <code>off_t</code>), e o C padrão oferece <code>fgetpos</code>/<code>fsetpos</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario" id="pg-semvolta">
+<strong>Gravou por cima do produto seguinte: faltou voltar antes do <code>fwrite</code></strong>
+<p>A Ana apagou a linha <code>fseek(f, pos, SEEK_SET); // volta</code> do <code>atualizar.c</code> e rodou de novo, com o estoque original (Caneta com 40):</p>
+<pre class="term" data-cwd="~/c">$ cp backup.bin estoque.bin
+$ ./semvolta
+Antes:  Caneta, 40 unidades
+Depois: Caneta, 25 unidades
+$ ./ler1
+Caderno     12 x R$ 15.90
+Caneta      40 x R$  2.50
+Caneta      25 x R$  2.50
+Valor do estoque: R$ 353.30</pre>
+<p><strong>O que significa:</strong> o <code>fread</code> deixou o marcador no começo do 3º registro, e o <code>fwrite</code> gravou ali. A Borracha sumiu, a Caneta apareceu duas vezes e a original continua com 40. O programa não deu erro nenhum: só estragou o arquivo. (Além disso, gravar logo depois de ler, sem <code>fseek</code>, já desobedece à regra dos modos "+".)</p>
+<p><strong>Como consertar:</strong> antes de cada <code>fwrite</code> num registro que você acabou de ler, volte com <code>fseek(f, pos, SEEK_SET)</code> ou <code>fseek(f, -(long)sizeof p, SEEK_CUR)</code>. E faça uma cópia do arquivo antes de testar programas que gravam.</p>
+</div>
+
+<div class="cenario">
+<strong>"O arquivo tem 0 bytes": abriu com <code>"w+b"</code> no lugar de <code>"r+b"</code></strong>
+<pre class="file" data-file="apagou.c">    FILE *f = fopen("estoque.bin", "w+b");   // queria ler e escrever...
+    /* … */
+    fseek(f, 0, SEEK_END);
+    printf("O arquivo tem %ld bytes\n", ftell(f));
+</pre>
+<pre class="term" data-cwd="~/c">$ ./apagou
+O arquivo tem 0 bytes
+$ ls -l estoque.bin
+-rw-rw-r-- 1 ana ana 0 out 17 10:37 estoque.bin</pre>
+<p><strong>O que significa:</strong> todo modo com <code>w</code> <strong>apaga o arquivo</strong> no momento do <code>fopen</code>, com ou sem <code>+</code>. Os 96 bytes se foram antes de qualquer leitura.</p>
+<p><strong>Como consertar:</strong> para alterar um arquivo que já existe, use <code>"r+b"</code>. Ele falha se o arquivo não existir, o que é bom: você fica sabendo. Se perdeu o arquivo, só uma cópia salva o dia (<code>cp backup.bin estoque.bin</code>).</p>
+</div>
+
+<div class="cenario" id="pg-fora">
+<strong>Pulou para fora do arquivo: <code>fseek</code> não reclama de tudo</strong>
+<pre class="file" data-file="negativo.c">    int r = fseek(f, -32, SEEK_SET);
+    printf("fseek para -32 devolveu %d; posição: %ld\n", r, ftell(f));
+
+    r = fseek(f, 10 * 32, SEEK_SET);
+    printf("fseek para 320 devolveu %d; posição: %ld\n", r, ftell(f));
+    char buf[32];
+    size_t lidos = fread(buf, sizeof buf, 1, f);
+    printf("fread devolveu %zu\n", lidos);
+</pre>
+<pre class="term" data-cwd="~/c">$ ./negativo
+fseek para -32 devolveu -1; posição: 0
+fseek para 320 devolveu 0; posição: 320
+fread devolveu 0</pre>
+<p><strong>O que significa:</strong> uma posição <strong>negativa</strong> é impossível, e o <code>fseek</code> falha (devolve -1, e o motivo fica em <code>errno</code>: "Invalid argument"; veja <a href="errno.html">errno</a>). Já uma posição <strong>depois do fim</strong> é permitida: o <code>fseek</code> devolve 0, a posição vira 320 num arquivo de 96 bytes, e só o <code>fread</code> seguinte descobre que não há nada ali. Se você <strong>gravasse</strong> nessa posição, o arquivo cresceria até 352 bytes e o buraco no meio ficaria cheio de zeros.</p>
+<p><strong>Como consertar:</strong> confira o número do registro antes de pular, como o <code>registro.c</code> faz (<code>n &lt; 1 || n &gt; total</code>), e confira o retorno do <code>fread</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O registro N veio "torto": conta sem o <code>sizeof</code></strong>
+<pre class="file" data-file="torto.c">    long n = 2;
+    fseek(f, n, SEEK_SET);          // byte 2, e não registro 2!
+    Produto p;
+    if (fread(&amp;p, sizeof p, 1, f) == 1) {
+        printf("%s: %d unidades a R$ %.2f\n", p.nome, p.quantidade, p.preco);
+    }
+</pre>
+<pre class="term" data-cwd="~/c">$ ./torto
+derno: -858980352 unidades a R$ 33831004655561742192915845909075364043037996517412568492545798035386535233773788655356174056737560610406038487995706440750308981483203810083690603614203493220352.00</pre>
+<p><strong>O que significa:</strong> se você escreve <code>fseek(f, n, SEEK_SET)</code> pensando em "registro n", o <code>fseek</code> entende "byte n". Com <code>n = 2</code>, a leitura começou no 3º byte do Caderno: o nome saiu cortado ("derno") e a quantidade e o preço foram montados com pedaços de campos diferentes, como no exemplo <code>ler_errado</code> da aula <a href="arquivos-binarios.html">Arquivos Binários</a>.</p>
+<p><strong>Como consertar:</strong> o deslocamento é sempre em bytes: <code>n * (long)sizeof(Produto)</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>ftell(f)</code></td><td>Posição atual em bytes (<code>long</code>); <code>-1</code> se der erro</td></tr>
+<tr><td><code>fseek(f, desloc, SEEK_SET)</code></td><td>Vai para <code>desloc</code> bytes a partir do começo</td></tr>
+<tr><td><code>fseek(f, desloc, SEEK_CUR)</code></td><td>Anda <code>desloc</code> bytes a partir de onde está (negativo = para trás)</td></tr>
+<tr><td><code>fseek(f, desloc, SEEK_END)</code></td><td>Vai para <code>desloc</code> bytes a partir do fim (0 = o fim)</td></tr>
+<tr><td><code>rewind(f)</code></td><td>Volta para a posição 0 e limpa o indicador de erro</td></tr>
+<tr><td><code>fseek(f, 0, SEEK_END); long t = ftell(f);</code></td><td>Tamanho do arquivo em bytes</td></tr>
+<tr><td><code>t / (long)sizeof(Reg)</code></td><td>Quantos registros cabem no arquivo</td></tr>
+<tr><td><code>fseek(f, n * (long)sizeof(Reg), SEEK_SET)</code></td><td>Vai para o registro <code>n</code> (contando de 0)</td></tr>
+<tr><td><code>fopen(nome, "r+b")</code></td><td>Lê e grava sem apagar; exige <code>fseek</code> entre leitura e escrita</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Ir para o fim</h3>
+<p>Complete para levar o marcador ao fim do arquivo:</p>
+<div class="ex-code">fseek(f, 0, <input data-answer="SEEK_END" aria-label="ponto de partida">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. O registro 4</h3>
+<p>Cada registro tem 32 bytes e a contagem começa em 0. Em que posição começa o registro 4?</p>
+<div class="ex-code">byte <input data-answer="128" aria-label="posição"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Ler e gravar sem apagar</h3>
+<p>Complete o modo para abrir um arquivo binário existente para leitura <strong>e</strong> escrita, sem apagar o conteúdo:</p>
+<div class="ex-code">FILE *f = fopen("jogo.sav", "<input data-answer="r+b|rb+" aria-label="modo">");</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O arquivo tem 200 bytes. Depois de <code>fseek(f, -50, SEEK_END)</code>, quanto vale <code>ftell(f)</code>?</p>
+<label><input type="radio" name="q4"> -50</label>
+<label><input type="radio" name="q4"> 150</label>
+<label><input type="radio" name="q4"> 250</label>
+<label><input type="radio" name="q4"> 50</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O programa leu um registro com <code>fread</code>, mudou um campo e chamou <code>fwrite</code> logo em seguida. O que acontece?</p>
+<label><input type="radio" name="q5"> O registro lido é atualizado, como esperado</label>
+<label><input type="radio" name="q5"> O compilador dá erro</label>
+<label><input type="radio" name="q5"> A gravação cai no registro seguinte (e o padrão exige um <code>fseek</code> entre ler e gravar)</label>
+<label><input type="radio" name="q5"> O arquivo é apagado</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual chamada falha (devolve um valor diferente de 0)?</p>
+<label><input type="radio" name="q6"> <code>fseek(f, -10, SEEK_SET)</code></label>
+<label><input type="radio" name="q6"> <code>fseek(f, 1000, SEEK_SET)</code> num arquivo de 96 bytes</label>
+<label><input type="radio" name="q6"> <code>fseek(f, -10, SEEK_END)</code> num arquivo de 96 bytes</label>
+<label><input type="radio" name="q6"> <code>fseek(f, 0, SEEK_CUR)</code></label>
+</div>
+
+<h3>Missão final: corrigir a nota do Bruno</h3>
+
+<div class="tryc" data-goal="out:Bruno: 7.0,out:Carla: 8.0,out:Davi: 6.5,src:r\+b|rb\+,src:fseek\s*\(">
+<p class="try-task"><strong>Missão:</strong> a professora errou a nota do Bruno: é 7.0, e não 6.0. No trecho marcado, abra <code>turma.bin</code> com <code>"r+b"</code>, pule até o registro 1 com <code>fseek</code>, leia o aluno, troque a nota, <strong>volte</strong> para o começo do registro e grave. O resto do programa mostra a turma, que deve ficar assim:</p>
+<pre class="out">Ana: 9.5
+Bruno: 7.0
+Carla: 8.0
+Davi: 6.5</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+typedef struct {
+    char nome[16];
+    double nota;
+} Aluno;
+
+int main(void) {
+    Aluno turma[4] = {
+        {"Ana", 9.5}, {"Bruno", 6.0}, {"Carla", 8.0}, {"Davi", 6.5},
+    };
+    FILE *f = fopen("turma.bin", "wb");
+    if (f == NULL) {
+        printf("Não consegui criar turma.bin\n");
+        return 1;
+    }
+    fwrite(turma, sizeof(Aluno), 4, f);
+    fclose(f);
+
+    Aluno a;
+    // ---- corrija a nota do Bruno (registro 1) aqui ----
+
+    // ----------------------------------------------------
+
+    f = fopen("turma.bin", "rb");
+    if (f == NULL) {
+        printf("Não consegui abrir turma.bin\n");
+        return 1;
+    }
+    while (fread(&amp;a, sizeof a, 1, f) == 1) {
+        printf("%s: %.1f\n", a.nome, a.nota);
+    }
+    fclose(f);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+typedef struct {
+    char nome[16];
+    double nota;
+} Aluno;
+
+int main(void) {
+    Aluno turma[4] = {
+        {"Ana", 9.5}, {"Bruno", 6.0}, {"Carla", 8.0}, {"Davi", 6.5},
+    };
+    FILE *f = fopen("turma.bin", "wb");
+    if (f == NULL) {
+        printf("Não consegui criar turma.bin\n");
+        return 1;
+    }
+    fwrite(turma, sizeof(Aluno), 4, f);
+    fclose(f);
+
+    Aluno a;
+    // ---- corrija a nota do Bruno (registro 1) aqui ----
+    f = fopen("turma.bin", "r+b");
+    if (f == NULL) {
+        printf("Não consegui abrir turma.bin\n");
+        return 1;
+    }
+    long pos = 1 * (long)sizeof(Aluno);
+    fseek(f, pos, SEEK_SET);
+    if (fread(&amp;a, sizeof a, 1, f) == 1) {
+        a.nota = 7.0;
+        fseek(f, pos, SEEK_SET);
+        fwrite(&amp;a, sizeof a, 1, f);
+    }
+    fclose(f);
+    // ----------------------------------------------------
+
+    f = fopen("turma.bin", "rb");
+    if (f == NULL) {
+        printf("Não consegui abrir turma.bin\n");
+        return 1;
+    }
+    while (fread(&amp;a, sizeof a, 1, f) == 1) {
+        printf("%s: %.1f\n", a.nome, a.nota);
+    }
+    fclose(f);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Teste o erro de propósito: tire o segundo <code>fseek</code> da sua solução e rode. O Bruno continua com 6.0 e aparece um <strong>quinto</strong> aluno, "Bruno: 7.0", no fim da lista. No gcc do laboratório, o mesmo erro gravou por cima do registro seguinte (veja <a href="#pg-semvolta">Quando dá errado</a>). Duas bibliotecas, dois estragos diferentes para o mesmo código: é isso que "o padrão não garante o resultado" quer dizer na prática. A biblioteca do editor leu o arquivo inteiro para o <em>buffer</em> de uma vez, então, para o sistema, o marcador já estava no fim.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Todo arquivo aberto tem uma <strong>posição</strong> (em bytes, começando em 0) que cada leitura e escrita empurra para a frente.</li>
+  <li><code>ftell(f)</code> diz a posição; <code>fseek(f, deslocamento, origem)</code> muda, com origem <code>SEEK_SET</code> (começo), <code>SEEK_CUR</code> (atual) ou <code>SEEK_END</code> (fim); <code>rewind(f)</code> volta ao começo.</li>
+  <li>Tamanho do arquivo: <code>fseek(f, 0, SEEK_END)</code> e depois <code>ftell(f)</code>.</li>
+  <li>Registro N de tamanho fixo: <code>fseek(f, N * (long)sizeof(Reg), SEEK_SET)</code>. Confira se N existe antes.</li>
+  <li>Para alterar no lugar, abra com <code>"r+b"</code> (nunca <code>"w+b"</code>, que apaga) e volte com <code>fseek</code> antes de gravar o que acabou de ler.</li>
+  <li><code>fseek</code> para posição negativa falha; para depois do fim, não. Para arquivos de mais de 2 GB, use <code>fseeko</code>/<code>ftello</code> ou <code>fgetpos</code>/<code>fsetpos</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
