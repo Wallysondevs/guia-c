@@ -202,7 +202,7 @@ int main(void) {
 <pre class="term" data-cwd="~/c/testes">$ gcc -std=c23 -Wall -Wextra idade.c -o idade
 $ echo 29 | ./idade
 Idade: Ano que vem: 30
-$ gcc -std=c23 -Wall -Wextra -O2 -DNDEBUG idade.c -o idade
+$ gcc -std=c23 -Wall -Wextra -DNDEBUG idade.c -o idade
 $ echo 29 | ./idade
 Idade: Ano que vem: 1</pre>
 <p>Na versão com <code>-DNDEBUG</code>, o <code>scanf</code> sumiu junto com o <code>assert</code>: a idade nunca foi lida e ficou 0. O certo é ler fora e conferir com <code>if</code>: <code>if (scanf("%d", &amp;idade) != 1) { … }</code>.</p>
@@ -598,7 +598,16 @@ Total Test time (real) =   0.00 sec</pre>
 
 <div class="cenario">
 <strong>Esqueceu o <code>#include &lt;assert.h&gt;</code></strong>
-<pre class="term" data-cwd="~/c/testes">$ gcc -std=c23 -Wall -Wextra semassert.c -o semassert
+<pre class="term" data-cwd="~/c/testes">$ cat semassert.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int estoque = 0;
+    assert(estoque &gt; 0);
+    printf("Estoque: %d\n", estoque);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra semassert.c -o semassert
 semassert.c: In function ‘main’:
 semassert.c:5:5: error: implicit declaration of function ‘assert’ [-Wimplicit-function-declaration]
     5 |     assert(estoque &gt; 0);
@@ -624,8 +633,12 @@ semassert.c:2:1: note: ‘assert’ is defined in header ‘&lt;assert.h&gt;’;
 </div>
 
 <div class="cenario">
-<strong>Dois <code>main</code>: <code>definição múltipla de "main"</code></strong>
-<p><strong>O que aconteceu:</strong> você compilou o programa principal (<code>main.c</code>) junto com o de teste (<code>teste_datas.c</code>), e cada um tem o seu <code>main</code>. O ligador reclama (em inglês, <code>multiple definition of 'main'</code>).</p>
+<strong>Dois <code>main</code>: <code>múltiplas definições de "main"</code></strong>
+<pre class="term" data-cwd="~/c/testes">$ gcc -std=c23 -Wall -Wextra main.c teste_datas.c datas.c -o programa
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccH62o2w.o: na função "main":
+teste_datas.c:(.text+0x0): múltiplas definições de "main"; /tmp/ccHxhoAT.o:main.c:(.text+0x0): definido primeiro aqui
+collect2: error: ld returned 1 exit status</pre>
+<p><strong>O que aconteceu:</strong> você compilou o programa principal (<code>main.c</code>) junto com o de teste (<code>teste_datas.c</code>), e cada um tem o seu <code>main</code>. O ligador (<code>ld</code>) reclama: "múltiplas definições de <code>main</code>; definido primeiro aqui", no <code>main.c</code> (em inglês, <code>multiple definition of `main'</code>). Os nomes <code>/tmp/cc….o</code> são arquivos temporários e mudam a cada vez.</p>
 <p><strong>Como resolver:</strong> deixe as funções testáveis num arquivo sem <code>main</code> (<code>datas.c</code>) e faça dois executáveis: <code>gcc main.c datas.c -o programa</code> e <code>gcc teste_datas.c datas.c -o teste_datas</code>.</p>
 </div>
 
