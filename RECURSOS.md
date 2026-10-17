@@ -1,18 +1,40 @@
 # Regras de recursos para os agentes (leia antes de começar)
 
-Até 20 agentes trabalham ao mesmo tempo **na mesma máquina** (16 GB, a do dono do projeto). Ela é desligada à noite: o que não estiver no git se perde.
+**Todo o trabalho pesado roda na VPS, nunca no notebook.** O notebook do dono do projeto tem só 16 GB. Em 17/10/2026 o Ubuntu fechou o terminal por falta de memória, com 20 agentes rodando gcc, valgrind e o testador nele.
 
-1. **Um processo pesado por vez.** Nada de rodar vários `gcc`/`node`/`lab` em paralelo (`&`, `xargs -P`). Sempre com `timeout` (`timeout 60` para o lab, `timeout 3` para programas que podem travar, `timeout 300` para o testador).
-2. **Sem subagentes.** Você mesmo faz o trabalho.
-3. **Não varra o disco** (`find /`, `grep -r /home`). Leia só o que precisa: `~/guia-c`, `~/guia-cpp` (modelo), `~/guia-c-lab`.
-4. **Nunca `pkill`/`killall`.** Mata processos de outros agentes. Use `kill %1` ou `kill $!` no que você mesmo iniciou.
-5. **Rascunhos só em `SCRATCH/SEU-NOME/`** (o caminho do scratchpad está no seu pedido). Nunca em `/tmp` solto e nunca na pasta do guia.
-6. **Laboratório com o seu nome:** `~/guia-c-lab/lab -n SEU-NOME …`. Nunca use o nome de outro.
-7. **Commit cedo e sempre** — a cada página terminada (ou a cada ~20 min de trabalho):
+| Onde | O que fica lá |
+|---|---|
+| **VPS** (Debian 13, 8 núcleos, 31 GB) | O guia **de verdade**: `~/guia-c` (git), o laboratório `~/guia-c-lab/lab` (Ubuntu 26.04 com gcc 15.2 etc., saída idêntica à do notebook) e o Node 24. |
+| **Notebook** | Só o seu rascunho (`SCRATCH/SEU-NOME/`) e cópias **antigas, só para leitura**: `~/guia-c` (estado de 17/10 de manhã) e `~/guia-cpp` (modelo). |
+
+## Os 4 comandos (rodam no notebook, o trabalho acontece na VPS)
+
+| Comando | O que faz |
+|---|---|
+| `~/guia-c-lab/vps 'comando'` | Roda um comando na VPS (a pasta inicial é a home da VPS). Ex.: `~/guia-c-lab/vps 'cat ~/guia-c/arrays.html'` |
+| `~/guia-c-lab/vps '~/guia-c-lab/lab -n SEU-NOME -i' < cmds.txt` | Laboratório da Ana (o stdin passa pelo ssh). As opções são iguais às do CONTRIBUINDO §5: `-r`, `-i`, `-t`, `-N`, `--`. |
+| `~/guia-c-lab/enviar SCRATCH/SEU-NOME/pagina.html` | Copia a página para `~/guia-c/` na VPS. |
+| `~/guia-c-lab/testar [--nativo] pagina.html` | Testador de missões na VPS, com `timeout` incluso. |
+
+## Fluxo de uma página
+1. Escreva e edite a página **no rascunho**: `SCRATCH/SEU-NOME/pagina.html`, com Write/Edit. Nunca escreva em `~/guia-c` do notebook.
+2. Rode as saídas reais no lab da VPS.
+3. Mande a página com `enviar` e rode `testar` (e `testar --nativo`).
+4. Commit **na VPS**, só dos seus arquivos:
    ```bash
-   cd ~/guia-c && git add pagina.html && git commit -q -m "pagina: o que mudou" -- pagina.html
+   ~/guia-c-lab/vps 'cd ~/guia-c && git add pagina.html && git commit -q -m "pagina: aula nova" -- pagina.html'
    ```
-   - Faça commit **só dos seus arquivos** (sempre com `-- arquivos` no fim). Nunca `git add -A`, `git commit -a`, `git stash`, `git reset`, `git checkout -- .`, `git rebase`, `git push`.
-   - Se der `index.lock`, espere 2 s e tente de novo (outro agente está commitando). Não apague o lock.
-8. **Não edite arquivos dos outros.** `assets/site.js`, `assets/style.css`, `CONTRIBUINDO.md` e `tools/` são do coordenador e do agente do simulador. Achou um problema neles? Anote no fim do seu relatório.
-9. **Nada da máquina real** nas páginas: nenhum nome real, fuso real, MAC/IP real. Só a Ana (`/home/ana`, `notebook`).
+   - Faça commit a cada página pronta.
+   - Nunca use `git add -A`, `commit -a`, `stash`, `reset`, `checkout -- .`, `rebase` ou `push`.
+   - Se der `index.lock`, espere 2 s e tente de novo.
+5. Para corrigir, edite o rascunho, mande de novo e faça outro commit.
+
+## Regras
+1. **No notebook, nada pesado.** Nada de `gcc`, `node`, `valgrind` nem do lab local (`~/guia-c-lab/lab` sem `vps`). Lá, só ler, escrever no rascunho, usar `ssh`/`scp`, `grep` e `sed`.
+2. **Na VPS você pode trabalhar à vontade**, mas um processo pesado por vez, por agente, e sempre com `timeout` (`timeout 60` no lab, `timeout 3` em programas que podem travar).
+3. **Sem subagentes.**
+4. **Nunca `pkill`/`killall`**, nem na VPS, onde rodam outros serviços do dono. Use `kill %1`/`kill $!`.
+5. **Lab com o seu nome** (`-n SEU-NOME`).
+6. **Não edite arquivos dos outros.** `assets/`, `tools/`, `CONTRIBUINDO.md`, `RECURSOS.md` e as páginas de outros autores ficam com eles. Achou um problema? Anote no fim do relatório.
+7. **Nada de máquina real nas páginas.** Nenhum `ip-172-…`, o IP da VPS, nome real, fuso real, MAC ou IP real. Só a Ana (`/home/ana`, `notebook`). Nas saídas do valgrind, o PID (`==12345==`) e os endereços variam: pode deixar os da sua execução.
+8. **O core dump do lab da VPS** sai como no notebook: `Falha de segmentação (imagem do núcleo gravada)` no `-t`. A VPS manda o core para `/bin/true` e nenhum arquivo `core` aparece.
