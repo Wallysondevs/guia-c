@@ -205,6 +205,13 @@ Conferido com `tools/sim.js --nativo`. **Nas metas, use o que é igual nos dois*
 | `strdup` com `-std=c17` | funciona | `implicit declaration of function ‘strdup’; did you mean ‘strcmp’?` sem `#define _POSIX_C_SOURCE 200809L` (com `-std=c23` funciona) |
 | `char *p = strchr(texto_const, 'a')` com `-std=c23` | sem aviso | `initialization discards ‘const’ qualifier` (a glibc 2.43 devolve `const char *` no C23) |
 | `rand()` sem `srand` | o primeiro número é 0 | outro número |
+| `strndup`, `memccpy`, `strtok_r` | só com `#define _DEFAULT_SOURCE` antes dos includes (senão `use of undeclared identifier 'strndup'`) | funcionam direto |
+| `tmpfile`, `tmpnam`, `memset_explicit`, `char8_t` | não existem (`undefined symbol: tmpfile`) | existem |
+| `strlen(NULL)`; mudar string literal (`char *s = "ana"; s[0] = 'A';`) | passam calados | `Falha de segmentação`, 139 |
+| `a < b < c` | **erro** (`chained comparison 'X < Y < Z'…`) | só aviso |
+| `fclose` duas vezes | passa calado | `free(): double free detected in tcache 2`, 134 |
+| `perror` depois de `fprintf` num arquivo aberto com `"r"` | `Success` | `Bad file descriptor` |
+| Arquivos abertos ao mesmo tempo | sem limite | `Too many open files` depois de ~1021 |
 | Ordem de avaliação dos argumentos (não especificada pelo C) | `printf("%d %d\n", remove("b.txt"), remove("b.txt"))` dá `0 -1` (da esquerda para a direita) | dá `-1 0` (da direita para a esquerda) |
 
 Iguais nos dois: `int` com 4 bytes, `long long` com 8, `0.1 + 0.2` (`0.30000000000000004` com `%.17g`), a formatação do `printf` (`%5.2f`, `%-5d`, `%05d`, `%x`, `%o`, `%e`), `strtol`, `qsort` (só quando não há empates: a ordem dos itens empatados muda entre a musl e a glibc, então dê sempre um critério de desempate), as mensagens do `perror`, os códigos de saída (134, 136, 139), o estouro de `int` (`2147483647 + 1` = `-2147483648`) e a saída perdida do `printf` sem `\n` antes de um segfault.
@@ -240,6 +247,9 @@ printf '%s\n' 'mkdir -p c && cd c' "cat > ola.c <<'FIM'" '#include <stdio.h>' 'i
 - **O ligador (`ld`) e o `make` saem em português** no laboratório (`referência não definida para "main"`); mostre a saída real e cite o inglês (`undefined reference to`), que aparece em fóruns e no editor.
 - **As mensagens do gcc saem em inglês**, com aspas tipográficas ‘assim’: copie como saíram e explique em português.
 - **Saída com buffer:** quando o programa morre (segfault), o que estava no `printf` sem `\n`… ou mesmo com `\n` mas indo para um pipe, pode **não aparecer**. Com `-i` a saída vai para um pipe (buffer cheio); com `-t` é terminal (buffer de linha). Para mostrar o que o leitor vê no terminal dele, use `-t` (vale também antes de um `abort`, de um relatório do ASan ou do LeakSanitizer). Para mostrar a entrada digitada no `-t`, mande-a com atraso, senão ela não aparece na tela: `{ echo ./prog; sleep 2; echo 29; sleep 1; echo exit; } | ~/guia-c-lab/vps '~/guia-c-lab/lab -n SEUNOME -t'`.
+- **`-i` e stderr:** com `-i`, o stdout vai para um pipe e fica no buffer, então ele sai **fora de ordem** com o stderr (`perror`, `fprintf(stderr…)`). Se a ordem importa, use `-t`.
+- **`/etc` no lab é só leitura:** escrever lá dá `Read-only file system`, e não o `Permission denied` de um Ubuntu de verdade. Para mostrar `Permission denied`, use um arquivo seu com `chmod 444`.
+- **Abas de dados (`.txt`, `.csv`)** terminam com Enter no editor, como um arquivo de verdade (não precisa de linha em branco no fim).
 - **Links no `-t`:** com terminal de verdade, o gcc põe links (`ESC]8;;https://gcc.gnu.org/…`) nas opções `[-W…]`. Apague-os antes de copiar para a página (`sed 's/\x1b]8;;[^\x1b]*\x1b\\//g'`) ou copie as mensagens do gcc do `-i`.
 - **TAB no lab `-i`:** o readline engole o TAB que chega pelo stdin, então um Makefile escrito com heredoc fica sem TAB e dá `faltando o separador`. Escreva `@@` no começo da linha e troque depois: `sed -i 's/^@@/\t/' Makefile`. No editor, a tecla Tab insere 4 espaços: não dá para praticar Makefile numa caixa.
 - **Exercícios `.exercise`:** o site corta os espaços do começo e do fim da resposta (`data-answer=" %c"` aceita `%c`). Se o espaço importa, peça a resposta entre aspas.
