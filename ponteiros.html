@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Ponteiros — int *p, &amp;x e *p explicados do zero | Guia C</title>
+<meta name="description" content="Ponteiros em C para quem nunca programou: uma variável que guarda o endereço de outra, como declarar int *p, apontar com p = &amp;x, ler e escrever com *p, a diferença entre o * da declaração e o * do uso, por que o tipo do ponteiro importa e o perigo do ponteiro não inicializado, com mensagens reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Ponteiros</span></h1>
+
+<p class="intro">Na aula <a href="memoria.html">Memória e Endereços</a> você viu que toda variável mora numa gaveta numerada, e que <code>&amp;x</code> mostra o número dessa gaveta. Um <strong>ponteiro</strong> é só uma variável que <strong>guarda</strong> esse número. Parece pouco, e é: a ideia inteira cabe numa frase. O que confunde é o símbolo <code>*</code>, que aparece em dois papéis diferentes. Esta aula vai devagar, uma novidade por vez, com desenhos das gavetas em cada passo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um ponteiro, com uma comparação do dia a dia.</li>
+  <li>Como declarar um ponteiro (<code>int *p</code>) e fazê-lo apontar para uma variável (<code>p = &amp;x</code>).</li>
+  <li>Como <strong>ler</strong> e <strong>escrever</strong> na variável apontada com <code>*p</code>.</li>
+  <li>A diferença entre o <code>*</code> da declaração e o <code>*</code> do uso.</li>
+  <li>Por que o tipo do ponteiro importa.</li>
+  <li>Por que um ponteiro sem valor inicial é perigoso, com o aviso real do compilador e o programa morrendo.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados na máquina da Ana (um Linux de 64 bits), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Lembre: os endereços mudam a cada execução (ASLR); os seus serão outros.</p>
+
+<hr>
+
+<h2>A ideia: um bilhete com o número da gaveta</h2>
+<p>A Ana guarda as economias numa gaveta do arquivo do escritório, a gaveta 1000. Ela não quer espalhar o dinheiro, mas quer que o irmão consiga colocar mais dinheiro lá. Então ela escreve num <strong>bilhete</strong>: "gaveta 1000". O bilhete não tem dinheiro nenhum: tem só o <strong>número</strong> da gaveta onde o dinheiro está. Com o bilhete na mão, o irmão pode:</p>
+<ul>
+  <li><strong>olhar</strong> quanto tem na gaveta 1000;</li>
+  <li><strong>colocar</strong> um valor novo na gaveta 1000;</li>
+  <li>apagar o bilhete e escrever <strong>outro número</strong> nele, para cuidar de outra gaveta.</li>
+</ul>
+<p>Em C, o bilhete é o <strong>ponteiro</strong>. E o bilhete também é guardado numa gaveta: um ponteiro é uma variável como as outras, só que o que mora dentro dela é um endereço.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na história</th><th>Em C</th></tr>
+<tr><td>A gaveta com o dinheiro</td><td>Uma variável comum: <code>int economias = 50;</code></td></tr>
+<tr><td>O bilhete com "gaveta 1000"</td><td>Um ponteiro: <code>int *p = &amp;economias;</code></td></tr>
+<tr><td>Ir até a gaveta escrita no bilhete e olhar</td><td>Ler pelo ponteiro: <code>*p</code></td></tr>
+<tr><td>Ir até a gaveta e trocar o conteúdo</td><td>Escrever pelo ponteiro: <code>*p = 80;</code></td></tr>
+<tr><td>Escrever outro número no bilhete</td><td>Apontar para outra variável: <code>p = &amp;outra;</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Criar um ponteiro</h2>
+<p>O primeiro programa cria uma variável comum, <code>pontos</code>, e um ponteiro, <code>p</code>, que guarda o endereço dela:</p>
+
+<pre class="file" data-file="ponteiro.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 10;
+    int *p = &amp;pontos;
+
+    printf("pontos vale %d e mora em %p\n", pontos, (void *) &amp;pontos);
+    printf("p guarda      %p\n", (void *) p);
+    printf("*p vale %d\n", *p);
+    printf("p mora em %p\n", (void *) &amp;p);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ponteiro.c -o ponteiro
+$ ./ponteiro
+pontos vale 10 e mora em 0x7ffdcfd4b7ec
+p guarda      0x7ffdcfd4b7ec     « o mesmo número: o endereço de pontos
+*p vale 10                       « seguindo o endereço, chega-se ao 10
+p mora em 0x7ffdcfd4b7f0         « o próprio p tem a sua gaveta</pre>
+
+<p>A linha nova é uma só. Vamos desmontá-la:</p>
+
+<dl class="anatomy">
+  <dt>int</dt><dd>O tipo da variável <strong>apontada</strong>: "este ponteiro vai apontar para um <code>int</code>".</dd>
+  <dt>*</dt><dd>Na declaração, o <code>*</code> quer dizer "é um ponteiro". Junto com o <code>int</code>, forma o tipo <code>int *</code>, que se lê "ponteiro para <code>int</code>".</dd>
+  <dt>p</dt><dd>O nome do ponteiro. <code>p</code> é comum em exemplos curtos; em programas de verdade, prefira nomes que digam para onde ele aponta, como <code>p_pontos</code> ou <code>atual</code>.</dd>
+  <dt>= &amp;pontos</dt><dd>O valor inicial: o endereço de <code>pontos</code>. A partir daqui, dizemos que "<code>p</code> <strong>aponta para</strong> <code>pontos</code>".</dd>
+</dl>
+
+<p>E nas linhas do <code>printf</code>:</p>
+<ul>
+  <li><code>p</code> sozinho é o <strong>conteúdo do bilhete</strong>: o endereço guardado. Para mostrar, <code>%p</code> com <code>(void *)</code>, como qualquer endereço.</li>
+  <li><code>*p</code> é "vá até o endereço que está em <code>p</code> e pegue o que tem lá". Isso se chama <strong>desreferenciar</strong> o ponteiro (seguir a referência). Como lá está um <code>int</code>, o formato é <code>%d</code>.</li>
+  <li><code>&amp;p</code> é o endereço do <strong>próprio</strong> ponteiro. O bilhete também está guardado em algum lugar.</li>
+</ul>
+
+<figure>
+<svg viewBox="0 0 404 154" width="404" role="img" aria-label="pontos mora em …7ec e vale 10; p mora em …7f0 e guarda …7ec, apontando para pontos" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><defs><marker id="g9f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs><text x="85" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">…7ec</text><rect x="10" y="22" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="85" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">10</text><text x="280" y="15" text-anchor="middle" font-size="12" style="fill:var(--muted)">…7f0</text><rect x="166" y="22" width="228" height="46" rx="5" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="280" y="51" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">0x…7ec</text><path d="M12,76 v6 H158 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="85" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">pontos (int)</text><path d="M168,76 v6 H392 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="280" y="98" text-anchor="middle" font-size="14" style="fill:var(--text)">p (int *)</text><path d="M280,104 C280,142 85,142 85,104" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#g9f1)"/><text x="182.5" y="148" text-anchor="middle" font-size="12" style="fill:var(--accent)">aponta para</text></svg>
+<figcaption>As gavetas da execução acima. Dentro de <code>pontos</code> está o 10. Dentro de <code>p</code> não está o 10: está o <strong>número da gaveta</strong> de <code>pontos</code>. A seta é só o desenho dessa ligação; no computador, ela é aquele número.</figcaption>
+</figure>
+
+<p>Em forma de tabela "endereço → valor", do jeito que o computador enxerga:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Endereço</th><th>Nome</th><th>Tipo (tamanho)</th><th>O que está guardado</th></tr>
+<tr><td><code>0x7ffdcfd4b7ec</code></td><td><code>pontos</code></td><td><code>int</code> (4 bytes)</td><td><strong>10</strong></td></tr>
+<tr><td><code>0x7ffdcfd4b7f0</code></td><td><code>p</code></td><td><code>int *</code> (8 bytes)</td><td><strong>0x7ffdcfd4b7ec</strong></td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Como ler em voz alta</strong>
+<code>int *p = &amp;pontos;</code> → "p é um ponteiro para int que recebe o endereço de pontos".<br>
+<code>*p</code> → "o valor apontado por p" ou "conteúdo de p".
+</div>
+
+<hr>
+
+<h2>2. Escrever pelo ponteiro</h2>
+<p>O <code>*p</code> não serve só para ler. Do lado esquerdo do <code>=</code>, ele quer dizer "guarde este valor <strong>na gaveta para onde <code>p</code> aponta</strong>". A variável <code>pontos</code> muda sem que o nome dela apareça na linha:</p>
+
+<pre class="file" data-file="escrever.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 10;
+    int *p = &amp;pontos;
+
+    *p = 25;
+    printf("pontos = %d\n", pontos);
+
+    *p = *p + 5;
+    printf("pontos = %d\n", pontos);
+
+    pontos = 100;
+    printf("*p = %d\n", *p);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra escrever.c -o escrever
+$ ./escrever
+pontos = 25          « *p = 25 escreveu dentro de pontos
+pontos = 30          « leu 25 pelo ponteiro, somou 5, escreveu 30
+*p = 100             « mudou pontos pelo nome; o ponteiro vê a mudança</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que acontece</th><th>pontos</th></tr>
+<tr><td><code>int pontos = 10;</code></td><td>Cria a gaveta com 10.</td><td>10</td></tr>
+<tr><td><code>int *p = &amp;pontos;</code></td><td>Cria o bilhete com o endereço de <code>pontos</code>.</td><td>10</td></tr>
+<tr><td><code>*p = 25;</code></td><td>Vai até a gaveta anotada em <code>p</code> e guarda 25.</td><td>25</td></tr>
+<tr><td><code>*p = *p + 5;</code></td><td>Lê o que tem lá (25), soma 5, guarda lá (30).</td><td>30</td></tr>
+<tr><td><code>pontos = 100;</code></td><td>Muda pelo nome. <code>p</code> continua apontando para a mesma gaveta.</td><td>100</td></tr>
+</table>
+</div>
+
+<p>Não existem duas cópias do número: existe uma gaveta só, com dois jeitos de chegar até ela, pelo nome (<code>pontos</code>) e pelo endereço (<code>*p</code>). Por isso, mudar por um caminho aparece no outro. <code>*p += 5;</code> e <code>(*p)++;</code> também funcionam (os parênteses do <code>(*p)++</code> são necessários; veja <a href="precedencia.html">Precedência</a>).</p>
+
+<div class="tryc" data-goal="out:saldo = 100,src:^\s*\*\s*p\s*=[^=]">
+<p class="try-task"><strong>Missão:</strong> o ponteiro <code>p</code> já aponta para <code>saldo</code>. Usando o <code>p</code> (com <code>*p = …</code>), mude o saldo para 100. O <code>printf</code> mostra a variável <code>saldo</code>, que precisa mudar.</p>
+<pre class="out">saldo = 100</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int saldo = 50;
+    int *p = &amp;saldo;
+
+    // use o ponteiro p para guardar 100 em saldo
+
+    printf("saldo = %d\n", saldo);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int saldo = 50;
+    int *p = &amp;saldo;
+
+    *p = 100;
+
+    printf("saldo = %d\n", saldo);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Apontar para outra variável</h2>
+<p>O bilhete pode ser reescrito. Sem o <code>*</code>, uma atribuição muda o <strong>próprio ponteiro</strong> (o número anotado), e não a variável apontada:</p>
+
+<pre class="file" data-file="trocar-alvo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int ana = 7;
+    int bia = 9;
+    int *p = &amp;ana;
+
+    printf("p aponta para ana: *p = %d\n", *p);
+
+    p = &amp;bia;
+    printf("p aponta para bia: *p = %d\n", *p);
+
+    *p = 10;
+    printf("ana = %d, bia = %d\n", ana, bia);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra trocar-alvo.c -o trocar-alvo
+$ ./trocar-alvo
+p aponta para ana: *p = 7
+p aponta para bia: *p = 9
+ana = 7, bia = 10        « o *p = 10 foi para a bia, a gaveta atual do bilhete</pre>
+
+<figure>
+<svg viewBox="0 0 482 136" width="482" role="img" aria-label="Depois de p = &amp;bia, p guarda o endereço de bia e aponta para ela; ana fica sem ninguém apontando" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><defs><marker id="g9f2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs><rect x="10" y="4" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="85" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">7</text><rect x="166" y="4" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="241" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">10</text><rect x="322" y="4" width="150" height="46" rx="5" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="397" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">&amp;bia</text><path d="M12,58 v6 H158 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="85" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">ana</text><path d="M168,58 v6 H314 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="241" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">bia</text><path d="M324,58 v6 H470 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="397" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">p</text><path d="M397,86 C397,124 241,124 241,86" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#g9f2)"/><text x="319" y="130" text-anchor="middle" font-size="12" style="fill:var(--accent)">agora aponta para bia</text></svg>
+<figcaption>Depois de <code>p = &amp;bia;</code> e <code>*p = 10;</code>. A <code>ana</code> não mudou: o bilhete não fala mais dela.</figcaption>
+</figure>
+
+<p>Guarde a regra, que é o coração desta aula:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você escreve</th><th>Muda o quê</th><th>Na história</th></tr>
+<tr><td><code>p = &amp;bia;</code></td><td>O ponteiro (para onde ele aponta)</td><td>Reescreve o número no bilhete</td></tr>
+<tr><td><code>*p = 10;</code></td><td>A variável apontada</td><td>Vai até a gaveta e troca o conteúdo</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>4. O <code>*</code> da declaração × o <code>*</code> do uso</h2>
+<p>Esta é a confusão número um dos iniciantes, então vale uma seção só para ela. O mesmo símbolo <code>*</code> tem dois trabalhos, conforme o lugar:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde aparece</th><th>Exemplo</th><th>Quer dizer</th></tr>
+<tr><td>Numa <strong>declaração</strong> (com um tipo na frente)</td><td><code>int *p = &amp;x;</code></td><td>"<code>p</code> é um ponteiro para <code>int</code>". O <code>= &amp;x</code> inicializa o <strong><code>p</code></strong>, e não o <code>*p</code>.</td></tr>
+<tr><td>No <strong>uso</strong> (sem tipo na frente)</td><td><code>*p = 5;</code> ou <code>printf("%d", *p);</code></td><td>"A variável para onde <code>p</code> aponta". Desreferenciar.</td></tr>
+<tr><td>Entre dois valores</td><td><code>a * b</code></td><td>Multiplicação, como sempre.</td></tr>
+</table>
+</div>
+
+<p>A primeira linha engana: <code>int *p = &amp;x;</code> parece dizer "<code>*p</code> recebe <code>&amp;x</code>", mas quer dizer "<code>p</code> recebe <code>&amp;x</code>". Ela é o atalho das duas linhas abaixo:</p>
+
+<pre class="file">int *p;       // declara: p é um ponteiro para int
+p = &amp;x;       // usa: guarda em p o endereço de x (sem *)
+</pre>
+
+<p>Colocar o <code>*</code> na segunda linha é um erro comum, e o compilador recusa:</p>
+
+<pre class="file" data-file="estrela.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 10;
+    int *p;
+
+    *p = &amp;pontos;
+    printf("%d\n", *p);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estrela.c -o estrela
+estrela.c: In function ‘main’:
+estrela.c:7:8: error: assignment to ‘int’ from ‘int *’ makes integer from pointer without a cast [-Wint-conversion]
+    7 |     *p = &amp;pontos;
+      |        ^</pre>
+
+<p>"Atribuição a um <code>int</code> a partir de um <code>int *</code> transforma ponteiro em inteiro sem conversão". Traduzindo: <code>*p</code> é um <code>int</code> (a gaveta apontada), e você tentou guardar nele um endereço. O conserto é tirar o <code>*</code>: <code>p = &amp;pontos;</code>.</p>
+
+<h3>Onde fica o espaço: <code>int *p</code>, <code>int* p</code> ou <code>int * p</code>?</h3>
+<p>Para o compilador, as três formas são iguais. O costume mais comum em C (e o que este guia usa) é <code>int *p</code>, grudado no nome, por causa de uma armadilha: numa declaração com vírgula, o <code>*</code> vale <strong>só para o nome ao lado dele</strong>.</p>
+
+<pre class="file" data-file="virgula.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 1, b = 2;
+    int *p, q;
+
+    p = &amp;a;
+    q = &amp;b;
+    printf("%d %d\n", *p, *q);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra virgula.c -o virgula
+virgula.c: In function ‘main’:
+virgula.c:8:7: error: assignment to ‘int’ from ‘int *’ makes integer from pointer without a cast [-Wint-conversion]
+    8 |     q = &amp;b;
+      |       ^
+virgula.c:9:27: error: invalid type argument of unary ‘*’ (have ‘int’)
+    9 |     printf("%d %d\n", *p, *q);
+      |                           ^~</pre>
+
+<p>A linha <code>int *p, q;</code> criou <code>p</code> como ponteiro e <code>q</code> como <code>int</code> comum. Por isso <code>q</code> não pode guardar endereço, e <code>*q</code> não faz sentido ("argumento de tipo inválido para o <code>*</code>: é um <code>int</code>"). Escrevendo <code>int* p, q;</code>, o erro seria o mesmo, mas a aparência engana ainda mais. Para dois ponteiros: <code>int *p, *q;</code>. Melhor ainda: <strong>um ponteiro por linha</strong>.</p>
+
+<hr>
+
+<h2>5. O tipo do ponteiro importa</h2>
+<p>Todo endereço é só um número, então por que existe <code>int *</code>, <code>double *</code>, <code>char *</code>? Porque o endereço diz só onde a variável <strong>começa</strong>. Para ler <code>*p</code>, o programa precisa saber <strong>quantas gavetas</strong> ler a partir dali e como interpretá-las: 4 gavetas de <code>int</code>? 8 gavetas de <code>double</code>? 1 de <code>char</code>? É o tipo do ponteiro que diz.</p>
+
+<pre class="file" data-file="tipo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 10;
+    double *p = &amp;pontos;
+
+    printf("%f\n", *p);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipo.c -o tipo
+tipo.c: In function ‘main’:
+tipo.c:5:17: error: initialization of ‘double *’ from incompatible pointer type ‘int *’ [-Wincompatible-pointer-types]
+    5 |     double *p = &amp;pontos;
+      |                 ^</pre>
+
+<p>"Inicialização de um <code>double *</code> a partir de um tipo de ponteiro incompatível, <code>int *</code>". Se o compilador deixasse, o <code>*p</code> leria 8 gavetas a partir de <code>pontos</code>: as 4 do <code>int</code> e mais 4 de seja lá o que estiver depois, e ainda interpretaria tudo como <code>double</code>. Sairia lixo.</p>
+
+<div class="note">
+<strong>Erro, não aviso, no gcc 15</strong>
+Até o gcc 13, misturar tipos de ponteiro (e guardar um número comum num ponteiro) dava só um <em>aviso</em>, e o programa era gerado mesmo assim. Desde o gcc 14, é <strong>erro</strong>. O Clang do editor também recusa: <code>incompatible pointer types initializing 'double *' with an expression of type 'int *'</code>. Em cursos e tutoriais antigos, você pode ver esse código "funcionando" com um aviso. Não confie nele.
+</div>
+
+<p>Já o <strong>tamanho do ponteiro</strong> não depende do tipo apontado: <code>char *</code>, <code>int *</code> e <code>double *</code> ocupam todos 8 bytes no Linux de 64 bits (4 no editor), porque todos guardam a mesma coisa, um número de gaveta. Você viu isso no fim da aula <a href="memoria.html">Memória e Endereços</a>.</p>
+
+<hr>
+
+<h2>6. O ponteiro não inicializado: um bilhete com lixo</h2>
+<p>Uma variável local criada sem valor tem <strong>lixo</strong>: o que sobrou naquela gaveta de antes. Com um <code>int</code>, o lixo é um número qualquer, o que já é ruim. Com um ponteiro, é pior: o lixo é um <strong>endereço qualquer</strong>. É um bilhete com um número de gaveta rabiscado ao acaso. Escrever por ele é guardar um valor numa gaveta que pode ser de qualquer um:</p>
+
+<pre class="file" data-file="lixo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int *p;
+
+    printf("Vou escrever 5 onde p aponta...\n");
+    *p = 5;
+    printf("Escrevi!\n");
+    return 0;
+}
+</pre>
+
+<p>Primeiro, o compilador avisa (mais um motivo para nunca compilar sem <code>-Wall</code>):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lixo.c -o lixo
+lixo.c: In function ‘main’:
+lixo.c:7:8: warning: ‘p’ is used uninitialized [-Wuninitialized]
+    7 |     *p = 5;
+      |     ~~~^~~
+lixo.c:4:10: note: ‘p’ was declared here
+    4 |     int *p;
+      |          ^</pre>
+
+<p>"<code>p</code> é usado sem ter sido inicializado", e a nota mostra onde ele foi declarado. É só um aviso: o programa foi gerado. Rodando:</p>
+
+<pre class="term" data-cwd="~/c">$ ./lixo
+Vou escrever 5 onde p aponta...
+Falha de segmentação     (imagem do núcleo gravada) ./lixo
+$ echo $?
+139</pre>
+
+<p>O <code>Escrevi!</code> nunca apareceu. O endereço de lixo caiu numa região que não pertence ao programa, e o sistema o matou na hora com uma <strong>falha de segmentação</strong> (em inglês, <em>segmentation fault</em>, ou "segfault"). O código de saída <code>139</code> é a marca disso. No editor do guia, este programa também termina com <code>Falha de segmentação (imagem do núcleo gravada)</code> e <code>[código de saída: 139]</code>, e o Clang avisa antes: <code>variable 'p' is uninitialized when used here</code>.</p>
+
+<div class="warning">
+<strong>O perigo de verdade é quando NÃO dá erro</strong>
+Aqui o programa morreu, e isso foi sorte: você ficou sabendo do problema. Se o lixo fosse, por acaso, o endereço de uma gaveta do próprio programa, o <code>*p = 5</code> funcionaria "em silêncio" e estragaria outra variável qualquer. O programa seguiria rodando com um valor errado, e o defeito apareceria muito longe dali, em outro dia, em outro computador. Por isso: <strong>todo ponteiro nasce apontando para algum lugar</strong>, ou nasce <strong>nulo</strong>, que é o assunto da próxima aula, <a href="ponteiro-nulo.html">Ponteiro Nulo</a>.
+</div>
+
+<hr>
+
+<h2>Formas de declarar: qual usar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Comentário</th><th>Use?</th></tr>
+<tr><td><code>int *p = &amp;x;</code></td><td>Declara e já aponta. O ponteiro nunca existe com lixo.</td><td><strong>Sim</strong>, sempre que já souber para onde apontar.</td></tr>
+<tr><td><code>int *p = NULL;</code></td><td>Declara "apontando para nada", de propósito. Dá para testar antes de usar.</td><td><strong>Sim</strong>, quando ainda não souber (veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>).</td></tr>
+<tr><td><code>int *p;</code> e depois <code>p = &amp;x;</code></td><td>Funciona, mas entre as duas linhas o ponteiro tem lixo.</td><td>Só se o <code>p = &amp;x</code> vier logo em seguida.</td></tr>
+<tr><td><code>int* p;</code> ou <code>int * p;</code></td><td>Iguais a <code>int *p</code> para o compilador. Vários projetos usam <code>int*</code>.</td><td>Siga o estilo do projeto. Este guia usa <code>int *p</code>.</td></tr>
+<tr><td><code>int *p, *q;</code></td><td>Dois ponteiros numa linha (cada nome com o seu <code>*</code>).</td><td>Pode, mas um por linha é mais claro.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"makes pointer from integer without a cast": esqueceu o <code>&amp;</code></strong>
+<pre class="file" data-file="int2ptr.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 10;
+    int *p;
+
+    p = pontos;
+    printf("%d\n", *p);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra int2ptr.c -o int2ptr
+int2ptr.c: In function ‘main’:
+int2ptr.c:7:7: error: assignment to ‘int *’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
+    7 |     p = pontos;
+      |       ^</pre>
+<p><strong>O que significa:</strong> "atribuição a um <code>int *</code> a partir de um <code>int</code> transforma inteiro em ponteiro sem conversão". Você tentou anotar no bilhete o <strong>conteúdo</strong> da gaveta (10), e não o <strong>número</strong> dela. O 10 viraria o endereço 10, que não é de ninguém.</p>
+<p><strong>Como consertar:</strong> <code>p = &amp;pontos;</code>. O Clang do editor até sugere: <code>incompatible integer to pointer conversion assigning to 'int *' from 'int'; take the address with &amp;</code> ("pegue o endereço com <code>&amp;</code>").</p>
+</div>
+
+<div class="cenario">
+<strong>"makes integer from pointer without a cast": <code>*</code> sobrando</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estrela.c -o estrela
+estrela.c: In function ‘main’:
+estrela.c:7:8: error: assignment to ‘int’ from ‘int *’ makes integer from pointer without a cast [-Wint-conversion]
+    7 |     *p = &amp;pontos;
+      |        ^</pre>
+<p><strong>O que significa:</strong> o contrário do anterior. <code>*p</code> é a gaveta apontada (um <code>int</code>), e você tentou guardar nela um endereço.</p>
+<p><strong>Como consertar:</strong> para mudar <strong>para onde</strong> o ponteiro aponta, escreva sem <code>*</code>: <code>p = &amp;pontos;</code>. O <code>*</code> só vai na frente quando você quer mexer na variável apontada.</p>
+</div>
+
+<div class="cenario">
+<strong>"incompatible pointer type": tipos diferentes</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipo.c -o tipo
+tipo.c: In function ‘main’:
+tipo.c:5:17: error: initialization of ‘double *’ from incompatible pointer type ‘int *’ [-Wincompatible-pointer-types]
+    5 |     double *p = &amp;pontos;
+      |                 ^</pre>
+<p><strong>O que significa:</strong> um ponteiro para <code>double</code> não pode receber o endereço de um <code>int</code>.</p>
+<p><strong>Como consertar:</strong> o tipo antes do <code>*</code> tem de ser o tipo da variável: <code>int *p = &amp;pontos;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"‘p’ is used uninitialized" e depois "Falha de segmentação"</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lixo.c -o lixo
+lixo.c: In function ‘main’:
+lixo.c:7:8: warning: ‘p’ is used uninitialized [-Wuninitialized]
+    7 |     *p = 5;
+      |     ~~~^~~
+lixo.c:4:10: note: ‘p’ was declared here
+    4 |     int *p;
+      |          ^
+$ ./lixo
+Vou escrever 5 onde p aponta...
+Falha de segmentação     (imagem do núcleo gravada) ./lixo</pre>
+<p><strong>O que significa:</strong> o ponteiro foi usado com lixo dentro. Esse aviso nunca deve ser ignorado.</p>
+<p><strong>Como consertar:</strong> dê um valor ao ponteiro na mesma linha em que ele nasce: <code>int *p = &amp;alguma_variavel;</code> ou <code>int *p = NULL;</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que faz</th></tr>
+<tr><td><code>int *p;</code></td><td>Declara <code>p</code>, um ponteiro para <code>int</code> (sem valor: lixo).</td></tr>
+<tr><td><code>int *p = &amp;x;</code></td><td>Declara e já faz <code>p</code> apontar para <code>x</code>.</td></tr>
+<tr><td><code>p = &amp;y;</code></td><td>Faz <code>p</code> apontar para outra variável.</td></tr>
+<tr><td><code>*p</code></td><td>A variável apontada (desreferenciar). Lê: <code>printf("%d", *p)</code>.</td></tr>
+<tr><td><code>*p = 5;</code></td><td>Escreve 5 na variável apontada.</td></tr>
+<tr><td><code>(*p)++;</code> / <code>*p += 5;</code></td><td>Muda a variável apontada.</td></tr>
+<tr><td><code>printf("%p", (void *) p)</code></td><td>Mostra o endereço guardado em <code>p</code>.</td></tr>
+<tr><td><code>&amp;p</code></td><td>O endereço do próprio ponteiro.</td></tr>
+<tr><td><code>int *p, *q;</code></td><td>Dois ponteiros (cada um com o seu <code>*</code>).</td></tr>
+<tr><td><code>sizeof(int *)</code></td><td>8 no Linux de 64 bits; 4 no editor. Igual para qualquer tipo apontado.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Declarar</h3>
+<p>Complete para criar um ponteiro <code>pd</code> que aponta para a variável <code>double altura</code>:</p>
+<div class="ex-code"><input data-answer="double *pd|double* pd|double * pd" aria-label="declaração"> = &amp;altura;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Desreferenciar</h3>
+<p>O ponteiro <code>p</code> aponta para <code>vidas</code>. Complete para guardar 3 em <code>vidas</code> usando o ponteiro:</p>
+<div class="ex-code"><input data-answer="*p" aria-label="alvo"> = 3;</div>
+</div>
+
+<div class="exercise">
+<h3>3. Apontar</h3>
+<p>Complete para fazer o ponteiro <code>p</code> apontar para a variável <code>nota</code>:</p>
+<div class="ex-code">p = <input data-answer="&amp;nota|&amp; nota" aria-label="endereço">;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Depois de <code>int x = 4; int *p = &amp;x; *p = 9;</code>, quanto vale <code>x</code>?</p>
+<label><input type="radio" name="q4"> 4</label>
+<label><input type="radio" name="q4"> 9</label>
+<label><input type="radio" name="q4"> O endereço de <code>x</code></label>
+<label><input type="radio" name="q4"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Em <code>int *a, b;</code>, o que é <code>b</code>?</p>
+<label><input type="radio" name="q5"> Um ponteiro para <code>int</code></label>
+<label><input type="radio" name="q5"> Um ponteiro para ponteiro</label>
+<label><input type="radio" name="q5"> Um <code>int</code> comum: o <code>*</code> vale só para o <code>a</code></label>
+<label><input type="radio" name="q5"> Um erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual linha muda <strong>para onde</strong> o ponteiro <code>p</code> aponta?</p>
+<label><input type="radio" name="q6"> <code>p = &amp;y;</code></label>
+<label><input type="radio" name="q6"> <code>*p = y;</code></label>
+<label><input type="radio" name="q6"> <code>*p = &amp;y;</code></label>
+<label><input type="radio" name="q6"> <code>&amp;p = y;</code></label>
+</div>
+
+<h3>Missão final: um bilhete, dois cofrinhos</h3>
+
+<div class="tryc" data-goal="out:Ana: 60,out:Bia: 90,src:p\s*=\s*&amp;\s*cofre_bia">
+<p class="try-task"><strong>Missão:</strong> a Ana e a Bia têm um cofrinho cada. O ponteiro <code>p</code> começa apontando para o da Ana. Usando <strong>só o <code>p</code></strong>: some 10 ao cofrinho da Ana; depois faça <code>p</code> apontar para o cofrinho da Bia e some 10 a ele também.</p>
+<pre class="out">Ana: 60
+Bia: 90</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int cofre_ana = 50;
+    int cofre_bia = 80;
+    int *p = &amp;cofre_ana;
+
+    // 1. some 10 ao cofrinho para onde p aponta
+    // 2. faça p apontar para cofre_bia
+    // 3. some 10 de novo, pelo p
+
+    printf("Ana: %d\n", cofre_ana);
+    printf("Bia: %d\n", cofre_bia);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int cofre_ana = 50;
+    int cofre_bia = 80;
+    int *p = &amp;cofre_ana;
+
+    *p = *p + 10;
+    p = &amp;cofre_bia;
+    *p = *p + 10;
+
+    printf("Ana: %d\n", cofre_ana);
+    printf("Bia: %d\n", cofre_bia);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <strong>ponteiro</strong> é uma variável que guarda um <strong>endereço</strong>: um bilhete com o número de uma gaveta.</li>
+  <li><code>int *p = &amp;x;</code> cria um ponteiro para <code>int</code> que aponta para <code>x</code>.</li>
+  <li><code>*p</code> é a variável apontada: serve para ler (<code>printf("%d", *p)</code>) e para escrever (<code>*p = 5;</code>).</li>
+  <li><code>p = &amp;y;</code> (sem <code>*</code>) muda para onde o ponteiro aponta; <code>*p = …</code> muda a variável apontada.</li>
+  <li>Na declaração, <code>*</code> quer dizer "é ponteiro"; no uso, "siga o endereço". Em <code>int *p, q;</code>, só <code>p</code> é ponteiro.</li>
+  <li>O tipo do ponteiro tem de combinar com o da variável; no gcc 15, misturar é erro.</li>
+  <li>Ponteiro sem valor inicial guarda lixo: o compilador avisa, e usar pode dar <code>Falha de segmentação</code> (139) ou, pior, estragar outra variável em silêncio. Próxima aula: <a href="ponteiro-nulo.html">Ponteiro Nulo</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
