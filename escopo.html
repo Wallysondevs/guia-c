@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Escopo e Variáveis static — onde cada variável existe | Guia C</title>
+<meta name="description" content="Escopo em C para quem nunca programou: variáveis locais, de bloco e globais, por que a variável do laço não existe depois dele, sombreamento e o aviso -Wshadow, variáveis static que guardam o valor entre chamadas (contador de chamadas) e por que evitar globais, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Escopo e Variáveis static</span></h1>
+
+<p class="intro">Toda variável tem um <strong>território</strong>: um pedaço do código onde o nome dela existe. Fora dele, o compilador simplesmente não a conhece. Esse território se chama <strong>escopo</strong>. Nesta aula você vai entender por que a variável de uma função não aparece em outra, por que o <code>i</code> do <code>for</code> some depois do laço, o que acontece quando dois nomes iguais se sobrepõem e como uma variável <code>static</code> consegue <strong>lembrar</strong> o seu valor de uma chamada para a outra.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é <strong>escopo</strong> (onde o nome existe) e <strong>tempo de vida</strong> (quando a variável existe).</li>
+  <li>Variáveis <strong>locais</strong>: criadas dentro de uma função, invisíveis para as outras.</li>
+  <li>Variáveis de <strong>bloco</strong>: as que nascem dentro de <code>{ }</code>, como o <code>i</code> do <code>for</code>.</li>
+  <li>Variáveis <strong>globais</strong>: visíveis no arquivo inteiro, e por que elas causam problemas.</li>
+  <li><strong>Sombreamento</strong>: um nome que esconde outro, e o aviso <code>-Wshadow</code>.</li>
+  <li><code>static</code> dentro de uma função: a variável que guarda o valor entre chamadas.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana, na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: os cômodos da casa</h2>
+<p>Imagine a casa da Ana. Cada cômodo tem as suas coisas: a panela fica na cozinha, a escova de dentes no banheiro. Quem está no quarto não alcança a panela sem ir até a cozinha. E se a cozinha e a churrasqueira têm, cada uma, uma "faca", são duas facas diferentes, com o mesmo nome.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na casa</th><th>Em C</th></tr>
+<tr><td>Um cômodo</td><td>Uma função, ou um bloco <code>{ }</code> dentro dela</td></tr>
+<tr><td>A panela da cozinha</td><td>Uma variável <strong>local</strong>: só existe dentro daquela função</td></tr>
+<tr><td>Uma gaveta dentro da cozinha</td><td>Um <strong>bloco</strong> (<code>if</code>, <code>for</code>): o que está ali só existe ali dentro</td></tr>
+<tr><td>O quadro de avisos no corredor, que todo mundo vê e rabisca</td><td>Uma variável <strong>global</strong></td></tr>
+<tr><td>A agenda que fica na gaveta da cozinha e não é jogada fora</td><td>Uma variável <code>static</code> dentro da função</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Variáveis locais: só existem dentro da função</h2>
+<p>Uma variável declarada dentro de uma função é <strong>local</strong> a ela. O <code>main</code> não enxerga a variável de outra função:</p>
+
+<pre class="file" data-file="local1.c">#include &lt;stdio.h&gt;
+
+void vender(void) {
+    int vendidos = 3;
+    printf("Vendidos hoje: %d\n", vendidos);
+}
+
+int main(void) {
+    vender();
+    printf("No main: %d\n", vendidos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra local1.c -o local1
+local1.c: In function ‘main’:
+local1.c:10:29: error: ‘vendidos’ undeclared (first use in this function)
+   10 |     printf("No main: %d\n", vendidos);
+      |                             ^~~~~~~~
+local1.c:10:29: note: each undeclared identifier is reported only once for each function it appears in</pre>
+
+<dl class="anatomy">
+  <dt>‘vendidos’ undeclared (first use in this function)</dt><dd>"<code>vendidos</code> não declarada (primeiro uso nesta função)". Para o <code>main</code>, esse nome não existe: ele pertence a <code>vender</code>.</dd>
+  <dt>note: each undeclared identifier is reported only once…</dt><dd>"Cada identificador não declarado é informado uma vez só por função". Se <code>vendidos</code> aparecesse mais vezes no <code>main</code>, o gcc não repetiria o erro.</dd>
+</dl>
+
+<p>No editor, o Clang diz <code>use of undeclared identifier 'vendidos'</code>. Para o <code>main</code> receber o valor, a função tem de <strong>devolvê-lo</strong> (<a href="retorno.html">Valor de Retorno</a>). Os <strong>parâmetros</strong> também são variáveis locais: só existem dentro da sua função (<a href="parametros.html">Parâmetros</a>).</p>
+
+<h3>O lado bom: nomes iguais não se misturam</h3>
+<p>Como cada função tem o seu território, duas funções podem usar o mesmo nome sem confusão:</p>
+
+<pre class="file" data-file="mesmonome2.c">#include &lt;stdio.h&gt;
+
+void manha(void) {
+    int vendas = 4;
+    printf("Vendas da manhã: %d\n", vendas);
+}
+
+void tarde(void) {
+    int vendas = 7;
+    printf("Vendas da tarde: %d\n", vendas);
+}
+
+int main(void) {
+    manha();
+    tarde();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra mesmonome2.c -o mesmonome2
+$ ./mesmonome2
+Vendas da manhã: 4
+Vendas da tarde: 7</pre>
+
+<p>São duas variáveis <code>vendas</code>, em lugares diferentes da memória. Isso é ótimo: quem escreve <code>tarde</code> não precisa saber quais nomes <code>manha</code> usou.</p>
+
+<h3>Tempo de vida: a local nasce e morre a cada chamada</h3>
+<p>Além de <strong>onde</strong> o nome vale (escopo), existe <strong>quando</strong> a variável existe (tempo de vida). Uma variável local é criada quando a função começa e destruída quando ela termina. Na próxima chamada, ela nasce de novo, do zero:</p>
+
+<pre class="file" data-file="semstatic.c">#include &lt;stdio.h&gt;
+
+void tocar_campainha(void) {
+    int vezes = 0;
+    vezes = vezes + 1;
+    printf("Plim! (campainha tocada %d vez(es))\n", vezes);
+}
+
+int main(void) {
+    tocar_campainha();
+    tocar_campainha();
+    tocar_campainha();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semstatic.c -o semstatic
+$ ./semstatic
+Plim! (campainha tocada 1 vez(es))
+Plim! (campainha tocada 1 vez(es))
+Plim! (campainha tocada 1 vez(es))     « a contagem nunca passa de 1</pre>
+
+<p>A Ana queria contar quantas vezes a campainha tocou, mas <code>vezes</code> é recriada valendo 0 a cada chamada. A seção 5 mostra o conserto.</p>
+
+<hr>
+
+<h2>2. Variáveis de bloco</h2>
+<p>Um <strong>bloco</strong> é qualquer trecho entre <code>{</code> e <code>}</code>: o corpo de um <code>if</code>, de um <code>for</code>, de um <code>while</code>. Uma variável declarada dentro de um bloco só existe dentro dele. Isso inclui a variável declarada no <strong>cabeçalho</strong> do <code>for</code>:</p>
+
+<pre class="file" data-file="bloco.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 1; i &lt;= 3; i++) {
+        int dobro = i * 2;
+        printf("%d ", dobro);
+    }
+    printf("\nÚltimo i: %d\n", i);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra bloco.c -o bloco
+bloco.c: In function ‘main’:
+bloco.c:8:32: error: ‘i’ undeclared (first use in this function)
+    8 |     printf("\nÚltimo i: %d\n", i);
+      |                                ^
+bloco.c:8:32: note: each undeclared identifier is reported only once for each function it appears in</pre>
+
+<p>O <code>i</code> nasceu no <code>for (int i = 1; …)</code> e morreu no <code>}</code> que fecha o laço. O mesmo vale para <code>dobro</code>, que é recriada a cada volta. Se você precisa do valor depois do laço, declare a variável <strong>antes</strong> dele:</p>
+
+<pre class="file" data-file="trecho.c">int i = 1;
+for (; i &lt;= 3; i++) {     // o for usa o i que já existe
+    printf("%d ", i * 2);
+}
+printf("\nÚltimo i: %d\n", i);     // mostra 4
+</pre>
+
+<div class="note">
+<strong>Uma variável no cabeçalho do <code>for</code> <span class="versao">C99</span></strong>
+<p>Declarar a variável dentro do <code>for (int i = …)</code> chegou no C99. Em código muito antigo (C89), você vai ver <code>int i;</code> lá no começo da função e <code>for (i = 0; …)</code>. Prefira o jeito novo: quanto menor o território de uma variável, menos chance de alguém mexer nela por engano.</p>
+</div>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e leia o erro. Depois conserte de dois jeitos: (1) apague a linha do <code>Último i</code>; (2) declare <code>int i = 1;</code> antes do laço e use <code>for (; i &lt;= 3; i++)</code>. Que valor o <code>Último i</code> mostra, e por quê?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 1; i &lt;= 3; i++) {
+        int dobro = i * 2;
+        printf("%d ", dobro);
+    }
+    printf("\nÚltimo i: %d\n", i);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Variáveis globais (e por que evitar)</h2>
+<p>Uma variável declarada <strong>fora</strong> de todas as funções é <strong>global</strong>: vale do ponto da declaração até o fim do arquivo, em todas as funções, e existe durante o programa inteiro.</p>
+
+<pre class="file" data-file="global.c">#include &lt;stdio.h&gt;
+
+int clientes = 0;
+
+void atender(void) {
+    clientes = clientes + 1;
+    printf("Atendendo o cliente %d\n", clientes);
+}
+
+int main(void) {
+    atender();
+    atender();
+    atender();
+    printf("Total de clientes: %d\n", clientes);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra global.c -o global
+$ ./global
+Atendendo o cliente 1
+Atendendo o cliente 2
+Atendendo o cliente 3
+Total de clientes: 3</pre>
+
+<p>Funciona: <code>atender</code> e <code>main</code> enxergam a mesma <code>clientes</code>, e ela não some entre as chamadas. Uma diferença importante: uma global sem valor inicial começa valendo <strong>zero</strong> (as locais, não: começam com lixo, veja <a href="variaveis.html">Variáveis</a>):</p>
+
+<pre class="file" data-file="globalzero.c">#include &lt;stdio.h&gt;
+
+int pontos;
+
+int main(void) {
+    static int vidas;
+    printf("pontos = %d, vidas = %d\n", pontos, vidas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra globalzero.c -o globalzero
+$ ./globalzero
+pontos = 0, vidas = 0</pre>
+
+<p>(O <code>static int vidas</code> também começa em zero; ele é o assunto da seção 5.)</p>
+
+<h3>O problema das globais</h3>
+<p>Uma global é o quadro de avisos do corredor: <strong>qualquer</strong> função pode rabiscar nele, e quando algo dá errado ninguém sabe quem foi. Veja um erro clássico: duas funções usam a mesma global <code>i</code> como contador de laço.</p>
+
+<pre class="file" data-file="globali.c">#include &lt;stdio.h&gt;
+
+int i;
+
+void estrelas(void) {
+    for (i = 0; i &lt; 5; i++) {
+        printf("*");
+    }
+    printf("\n");
+}
+
+int main(void) {
+    for (i = 0; i &lt; 3; i++) {
+        estrelas();
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra globali.c -o globali
+$ ./globali
+*****                           « a Ana queria 3 linhas de estrelas; saiu 1</pre>
+
+<ol class="passo">
+  <li>O <code>main</code> começa o laço com <code>i = 0</code> e chama <code>estrelas</code>.</li>
+  <li><code>estrelas</code> usa o <strong>mesmo</strong> <code>i</code>: conta de 0 a 5 e termina com <code>i</code> valendo 5.</li>
+  <li>De volta ao <code>main</code>, o <code>i++</code> faz <code>i</code> valer 6. Como 6 &lt; 3 é falso, o laço acaba depois de uma volta só.</li>
+</ol>
+<p>Nenhum aviso: para o compilador, está tudo certo. Com <code>for (int i = 0; …)</code> em cada função (duas locais independentes), o programa mostraria as três linhas. É por isso que a regra geral é: <strong>prefira variáveis locais e parâmetros</strong>; use global só quando o valor é realmente do programa inteiro, e mesmo assim com cuidado. A palavra <code>static</code> aplicada a uma global (para escondê-la dos outros arquivos) e o <code>extern</code> ficam para <a href="static-extern.html">static e extern</a>.</p>
+
+<hr>
+
+<h2>4. Sombreamento: quando um nome esconde outro</h2>
+<p>Num bloco de dentro, você pode declarar uma variável com o <strong>mesmo nome</strong> de uma de fora. A de dentro <strong>esconde</strong> (faz sombra sobre) a de fora, até o fim do bloco:</p>
+
+<pre class="file" data-file="sombra.c">#include &lt;stdio.h&gt;
+
+int total = 100;
+
+int main(void) {
+    int total = 5;
+    printf("total = %d\n", total);
+    {
+        int total = 7;
+        printf("dentro do bloco: total = %d\n", total);
+    }
+    printf("depois do bloco: total = %d\n", total);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sombra.c -o sombra
+$ ./sombra
+total = 5
+dentro do bloco: total = 7
+depois do bloco: total = 5</pre>
+
+<p>Existem <strong>três</strong> variáveis <code>total</code>: a global (100), a do <code>main</code> (5) e a do bloco (7). Em cada ponto, vale a mais próxima. A global nunca aparece: está escondida o tempo todo. O <code>-Wall -Wextra</code> não disse nada, mas existe uma opção que avisa, o <code>-Wshadow</code> ("sombra"):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -Wshadow sombra.c -o sombra
+sombra.c: In function ‘main’:
+sombra.c:6:9: warning: declaration of ‘total’ shadows a global declaration [-Wshadow]
+    6 |     int total = 5;
+      |         ^~~~~
+sombra.c:3:5: note: shadowed declaration is here
+    3 | int total = 100;
+      |     ^~~~~
+sombra.c:9:13: warning: declaration of ‘total’ shadows a previous local [-Wshadow]
+    9 |         int total = 7;
+      |             ^~~~~
+sombra.c:6:9: note: shadowed declaration is here
+    6 |     int total = 5;
+      |         ^~~~~</pre>
+
+<dl class="anatomy">
+  <dt>declaration of ‘total’ shadows a global declaration</dt><dd>"A declaração de <code>total</code> faz sombra sobre uma declaração global".</dd>
+  <dt>shadows a previous local</dt><dd>"Faz sombra sobre uma local anterior": a do bloco esconde a do <code>main</code>.</dd>
+  <dt>note: shadowed declaration is here</dt><dd>"A declaração escondida está aqui".</dd>
+</dl>
+
+<p>O sombreamento é permitido, mas quase sempre é um engano: você acha que está mudando a variável de fora e está mudando outra. O Clang, com a mesma opção, escreve <code>declaration shadows a variable in the global scope</code> e <code>declaration shadows a local variable</code>. Use nomes diferentes e, em projetos seus, ligue o <code>-Wshadow</code> (aula <a href="avisos.html">Avisos</a>).</p>
+
+<hr>
+
+<h2>5. <code>static</code> dentro da função: a variável que lembra</h2>
+<p>Volte à campainha da seção 1: a contagem nunca passava de 1. Com uma palavra a mais, <code>static</code>, a variável passa a viver o programa inteiro, mas continua visível só dentro da função:</p>
+
+<pre class="file" data-file="contador.c">#include &lt;stdio.h&gt;
+
+void tocar_campainha(void) {
+    static int vezes = 0;
+    vezes = vezes + 1;
+    printf("Plim! (campainha tocada %d vez(es))\n", vezes);
+}
+
+int main(void) {
+    tocar_campainha();
+    tocar_campainha();
+    tocar_campainha();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra contador.c -o contador
+$ ./contador
+Plim! (campainha tocada 1 vez(es))
+Plim! (campainha tocada 2 vez(es))
+Plim! (campainha tocada 3 vez(es))</pre>
+
+<dl class="anatomy">
+  <dt>static int vezes = 0;</dt><dd><code>static</code> ("estático", que fica parado) muda o <strong>tempo de vida</strong>: a variável é criada uma vez, quando o programa começa, e só é destruída quando ele termina.</dd>
+  <dt>= 0 (roda uma vez só)</dt><dd>A inicialização acontece <strong>uma única vez</strong>, antes da primeira chamada. Nas chamadas seguintes, essa linha não zera nada: <code>vezes</code> continua com o valor que tinha.</dd>
+  <dt>vezes = vezes + 1;</dt><dd>Soma 1 ao valor guardado da chamada anterior: 1, 2, 3…</dd>
+  <dt>Escopo continua local</dt><dd>O <code>main</code> não enxerga <code>vezes</code> (daria <code>‘vezes’ undeclared</code>). Só <code>tocar_campainha</code> pode mexer nela: é a vantagem sobre uma global.</dd>
+</dl>
+
+<p>Compare as três escolhas para a contagem:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Local comum</th><th><code>static</code> local</th><th>Global</th></tr>
+<tr><td>Quem enxerga</td><td>Só a função</td><td>Só a função</td><td>Todas as funções do arquivo</td></tr>
+<tr><td>Quando existe</td><td>Durante cada chamada</td><td>O programa inteiro</td><td>O programa inteiro</td></tr>
+<tr><td>Guarda o valor entre chamadas</td><td>Não</td><td>Sim</td><td>Sim</td></tr>
+<tr><td>Valor inicial se você não der um</td><td>Lixo</td><td>Zero</td><td>Zero</td></tr>
+<tr><td>Contagem da campainha</td><td>Sempre 1</td><td>1, 2, 3 (certo, e protegido)</td><td>1, 2, 3 (certo, mas qualquer um pode estragar)</td></tr>
+</table>
+</div>
+
+<h3>O valor inicial de uma <code>static</code> tem de ser constante</h3>
+<p>Como a inicialização acontece antes de o programa começar a rodar, ela não pode depender de uma conta feita em tempo de execução, como o resultado de uma função:</p>
+
+<pre class="file" data-file="staticvar.c">#include &lt;stdio.h&gt;
+
+int ler(void) { return 5; }
+
+void f(void) {
+    static int x = ler();
+    printf("%d\n", x);
+}
+
+int main(void) {
+    f();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra staticvar.c -o staticvar
+staticvar.c: In function ‘f’:
+staticvar.c:6:20: error: initializer element is not constant
+    6 |     static int x = ler();
+      |                    ^~~</pre>
+
+<p><em>Initializer element is not constant</em> = "o valor inicial não é constante". Use um número (ou uma conta só com números) na declaração e, se precisar, atribua o valor calculado depois. No editor: <code>initializer element is not a compile-time constant</code>. As globais seguem a mesma regra.</p>
+
+<div class="tryc" data-goal="outre:^Senha 1\nSenha 2\nSenha 3\n$,src:static\s+int,semaviso">
+<p class="try-task"><strong>Missão:</strong> a fila da lojinha distribui senhas, mas toda chamada devolve a senha 1. Conserte a função <code>proxima_senha</code> com <strong>uma palavra</strong>, para que ela devolva 1, 2, 3…</p>
+<pre class="out">Senha 1
+Senha 2
+Senha 3</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int proxima_senha(void) {
+    int senha = 0;
+    senha++;
+    return senha;
+}
+
+int main(void) {
+    printf("Senha %d\n", proxima_senha());
+    printf("Senha %d\n", proxima_senha());
+    printf("Senha %d\n", proxima_senha());
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int proxima_senha(void) {
+    static int senha = 0;
+    senha++;
+    return senha;
+}
+
+int main(void) {
+    printf("Senha %d\n", proxima_senha());
+    printf("Senha %d\n", proxima_senha());
+    printf("Senha %d\n", proxima_senha());
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Um valor usado só dentro de uma função, numa chamada</td><td>Variável <strong>local</strong> (a escolha padrão)</td></tr>
+<tr><td>Um valor usado só dentro de um laço ou <code>if</code></td><td>Variável de <strong>bloco</strong>, declarada ali dentro</td></tr>
+<tr><td>Um valor que vem de quem chama</td><td><strong>Parâmetro</strong> (<a href="parametros.html">Parâmetros</a>)</td></tr>
+<tr><td>Um resultado que vai para quem chamou</td><td><code>return</code> (<a href="retorno.html">Valor de Retorno</a>)</td></tr>
+<tr><td>Uma função que precisa lembrar algo entre chamadas (contador, "já fiz isso?")</td><td><strong><code>static</code> local</strong></td></tr>
+<tr><td>Um valor que o programa inteiro precisa e que quase nunca muda</td><td>Global, de preferência <code>const</code> (<a href="constantes.html">Constantes</a>)</td></tr>
+<tr><td>Dados que várias funções mudam</td><td>Evite global: passe por parâmetro (com ponteiro, <a href="passagem-ponteiro.html">Passar por Ponteiro</a>) ou junte numa struct (<a href="structs.html">Structs</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: ‘x’ undeclared (first use in this function)</code></strong>
+<p><strong>O que significa:</strong> nesse ponto, o nome não existe. Ou a variável é de outra função, ou de um bloco que já fechou (como o <code>i</code> do <code>for</code>), ou foi declarada mais abaixo, ou o nome está escrito diferente. No editor: <code>use of undeclared identifier 'x'</code>.</p>
+<p><strong>Como consertar:</strong> para usar o valor em outra função, passe por parâmetro ou devolva com <code>return</code>. Para usar depois de um bloco, declare a variável antes dele.</p>
+</div>
+
+<div class="cenario">
+<strong>Mudei a variável, mas o valor "de fora" continua o mesmo</strong>
+<p><strong>O que significa:</strong> provavelmente um sombreamento: você declarou de novo (<code>int total = …</code>) num bloco de dentro e mudou essa outra variável. Ou mudou um parâmetro, que é uma cópia.</p>
+<p><strong>Como consertar:</strong> compile com <code>-Wshadow</code>; para mudar a variável existente, escreva sem o tipo (<code>total = 7;</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: declaration of ‘x’ shadows a previous local</code> / <code>a global declaration</code></strong>
+<p><strong>O que significa:</strong> (só com <code>-Wshadow</code>) um nome de dentro esconde outro de fora.</p>
+<p><strong>Como consertar:</strong> dê outro nome a uma das variáveis.</p>
+</div>
+
+<div class="cenario">
+<strong>O contador volta para o começo a cada chamada</strong>
+<p><strong>O que significa:</strong> a variável é local comum: nasce de novo, com o valor inicial, em toda chamada.</p>
+<p><strong>Como consertar:</strong> declare-a como <code>static</code> dentro da função.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: initializer element is not constant</code></strong>
+<p><strong>O que significa:</strong> o valor inicial de uma <code>static</code> (ou de uma global) depende de algo calculado com o programa rodando, como uma chamada de função ou outra variável.</p>
+<p><strong>Como consertar:</strong> inicialize com um número e faça a atribuição depois, dentro do código.</p>
+</div>
+
+<div class="cenario">
+<strong>Um laço roda menos vezes do que deveria, sem nenhum aviso</strong>
+<p><strong>O que significa:</strong> pode ser uma global compartilhada, como o <code>i</code> do <code>globali.c</code>: outra função mudou o valor no meio do laço.</p>
+<p><strong>Como consertar:</strong> use <code>for (int i = 0; …)</code>, com uma variável de bloco em cada laço.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde é declarada</th><th>Escopo (onde o nome vale)</th><th>Tempo de vida</th><th>Valor inicial padrão</th></tr>
+<tr><td>Dentro de uma função</td><td>Da declaração até o <code>}</code> da função</td><td>Uma chamada</td><td>Lixo</td></tr>
+<tr><td>Dentro de um bloco <code>{ }</code> ou no <code>for (int i…)</code></td><td>Até o <code>}</code> do bloco</td><td>Uma passagem pelo bloco</td><td>Lixo</td></tr>
+<tr><td>Parâmetro</td><td>A função inteira</td><td>Uma chamada</td><td>O argumento</td></tr>
+<tr><td><code>static</code> dentro de uma função</td><td>Até o <code>}</code> da função</td><td>O programa inteiro</td><td>Zero</td></tr>
+<tr><td>Fora de todas as funções (global)</td><td>Da declaração até o fim do arquivo</td><td>O programa inteiro</td><td>Zero</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A palavra que faz lembrar</h3>
+<p>Complete para que <code>contagem</code> guarde o valor entre as chamadas da função:</p>
+<div class="ex-code"><input data-answer="static" aria-label="palavra"> int contagem = 0;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A opção de aviso</h3>
+<p>Qual opção do gcc avisa quando uma variável esconde outra com o mesmo nome?</p>
+<div class="ex-code"><input data-answer="-Wshadow" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>3. O valor inicial</h3>
+<p>Uma variável global <code>int erros;</code>, sem valor na declaração, começa valendo quanto?</p>
+<div class="ex-code"><input data-answer="0" aria-label="valor"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que acontece com <code>for (int k = 0; k &lt; 3; k++) { } printf("%d", k);</code>?</p>
+<label><input type="radio" name="q4"> Mostra 3</label>
+<label><input type="radio" name="q4"> Mostra 2</label>
+<label><input type="radio" name="q4"> Erro: <code>‘k’ undeclared</code>, porque <code>k</code> só existe dentro do <code>for</code></label>
+<label><input type="radio" name="q4"> Mostra lixo</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. O que este programa mostra? <code>int x = 1; int main(void) { int x = 2; { int x = 3; } printf("%d", x); }</code></p>
+<label><input type="radio" name="q5"> 1</label>
+<label><input type="radio" name="q5"> 2</label>
+<label><input type="radio" name="q5"> 3</label>
+<label><input type="radio" name="q5"> Não compila: o nome <code>x</code> está repetido</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual a vantagem de um contador <code>static</code> dentro da função sobre um contador global?</p>
+<label><input type="radio" name="q6"> Só aquela função consegue mexer nele</label>
+<label><input type="radio" name="q6"> Ele é mais rápido</label>
+<label><input type="radio" name="q6"> Ele começa com lixo</label>
+<label><input type="radio" name="q6"> Ele some no fim de cada chamada</label>
+</div>
+
+<h3>Missão final: os pedidos da lojinha</h3>
+
+<div class="tryc" data-goal="outre:^Pedido 1: R\$ 12\.50 \(total do dia: R\$ 12\.50\)\nPedido 2: R\$ 3\.00 \(total do dia: R\$ 15\.50\)\nPedido 3: R\$ 7\.25 \(total do dia: R\$ 22\.75\)\n$,src:static\s+int,src:static\s+double,semaviso">
+<p class="try-task"><strong>Missão:</strong> complete a função <code>registrar_pedido</code>. Ela deve ter <strong>duas</strong> variáveis <code>static</code>: um <code>int</code> com o número de pedidos e um <code>double</code> com o total do dia. A cada chamada, some 1 ao número, some o valor ao total e mostre a linha no formato abaixo (use <code>%.2f</code>). Nada de variáveis globais.</p>
+<pre class="out">Pedido 1: R$ 12.50 (total do dia: R$ 12.50)
+Pedido 2: R$ 3.00 (total do dia: R$ 15.50)
+Pedido 3: R$ 7.25 (total do dia: R$ 22.75)</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void registrar_pedido(double valor) {
+    // suas variáveis static aqui
+
+    // atualize e mostre
+}
+
+int main(void) {
+    registrar_pedido(12.50);
+    registrar_pedido(3.00);
+    registrar_pedido(7.25);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void registrar_pedido(double valor) {
+    static int pedidos = 0;
+    static double total = 0.0;
+
+    pedidos++;
+    total = total + valor;
+    printf("Pedido %d: R$ %.2f (total do dia: R$ %.2f)\n", pedidos, valor, total);
+}
+
+int main(void) {
+    registrar_pedido(12.50);
+    registrar_pedido(3.00);
+    registrar_pedido(7.25);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Escopo</strong> é onde o nome vale; <strong>tempo de vida</strong> é quando a variável existe.</li>
+  <li>Variável <strong>local</strong>: só dentro da sua função, nasce e morre a cada chamada, começa com lixo se você não der valor. Nomes iguais em funções diferentes não se misturam.</li>
+  <li>Variável de <strong>bloco</strong>: só até o <code>}</code> do bloco. O <code>i</code> de <code>for (int i…)</code> não existe depois do laço (<code>‘i’ undeclared</code>).</li>
+  <li>Variável <strong>global</strong>: visível no arquivo todo, vive o programa inteiro, começa em zero. Qualquer função pode estragá-la; prefira locais e parâmetros.</li>
+  <li><strong>Sombreamento</strong>: um nome de dentro esconde o de fora. É permitido, mas costuma ser engano; o <code>-Wshadow</code> (fora do <code>-Wall</code>) avisa.</li>
+  <li><code>static</code> dentro da função: escopo local, vida longa. É inicializada uma vez (com constante) e guarda o valor entre chamadas: ideal para contadores. O <code>static</code> fora das funções fica para <a href="static-extern.html">static e extern</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
