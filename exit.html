@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C exit e atexit — encerrar o programa e o código de saída | Guia C</title>
+<meta name="description" content="Encerrar um programa em C para iniciantes: o código de saída e o echo $?, return no main, exit de dentro de uma função, EXIT_SUCCESS e EXIT_FAILURE, os valores de 0 a 255, o que o exit faz antes de sair (e o _Exit e o abort, que não fazem), atexit e a ordem inversa, e o atributo [[noreturn]] do C23, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Encerrar o Programa: exit e atexit</span></h1>
+
+<p class="intro">Todo programa termina, e ao terminar ele deixa um <strong>recado</strong> para quem o chamou: um número que diz "deu certo" ou "deu errado". É esse número que você vem escrevendo no <code>return 0;</code> do <code>main</code>. Nesta aula você vai ver quem lê esse recado, como encerrar o programa de <strong>qualquer lugar</strong> com <code>exit</code>, o que acontece com os arquivos e com a saída no momento do fim, e como deixar uma função de "fechar a loja" que roda sozinha quando o programa termina, com <code>atexit</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o <strong>código de saída</strong> e como vê-lo no terminal com <code>echo $?</code>.</li>
+  <li>Por que <code>return 1;</code> no <code>main</code> e <code>exit(1);</code> são a mesma coisa, e quando só o <code>exit</code> resolve.</li>
+  <li><code>EXIT_SUCCESS</code>, <code>EXIT_FAILURE</code> e os valores de 0 a 255.</li>
+  <li>O que o <code>exit</code> faz antes de sair, e o que se perde com <code>_Exit</code> e <code>abort</code>.</li>
+  <li>Como registrar funções de limpeza com <code>atexit</code>, e em que ordem elas rodam.</li>
+  <li>O atributo <code>[[noreturn]]</code> <span class="versao">C23</span> para funções que nunca voltam.</li>
+</ul>
+</div>
+
+<p>Você vai precisar de <a href="funcoes.html">Funções</a>, <a href="argc-argv.html">Argumentos da Linha de Comando</a> e <a href="arquivos.html">Arquivos</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o recado no fim do expediente</h2>
+<p>Quando a funcionária da lojinha vai embora, ela deixa um bilhete para a Ana: "tudo certo" ou "faltou troco no caixa". A Ana não precisa saber de tudo o que aconteceu no dia; basta o bilhete para decidir o que fazer amanhã. E, antes de sair, a funcionária segue um ritual: apaga as luzes, fecha o caixa, tranca a porta.</p>
+<p>Um programa faz o mesmo. O bilhete é o <strong>código de saída</strong> (um número: 0 = tudo certo, outro número = algo deu errado). O ritual são as tarefas de fim: esvaziar o que ainda não foi escrito na tela, fechar os arquivos e rodar as funções que você pediu com <code>atexit</code>.</p>
+
+<hr>
+
+<h2>1. O código de saída e o <code>echo $?</code></h2>
+<p>Este programa confere se um arquivo existe e devolve um código diferente para cada situação:</p>
+
+<pre class="file" data-file="existe.c">#include &lt;stdio.h&gt;
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Uso: %s ARQUIVO\n", argv[0]);
+        return 2;
+    }
+    FILE *f = fopen(argv[1], "r");
+    if (f == NULL) {
+        printf("%s: não encontrei\n", argv[1]);
+        return 1;
+    }
+    fclose(f);
+    printf("%s: existe\n", argv[1]);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>return 2;</dt><dd>Chamado do jeito errado (faltou o nome do arquivo). Muitos comandos do Linux usam 2 para "uso errado".</dd>
+  <dt>return 1;</dt><dd>O arquivo não existe: deu errado.</dd>
+  <dt>return 0;</dt><dd>Tudo certo. <strong>0 é sucesso</strong>, ao contrário do que a intuição diz: há um jeito só de dar certo e muitos de dar errado, e cada um pode ganhar seu número.</dd>
+</dl>
+
+<p>O terminal guarda o código do último programa numa variável especial do shell, a <code>$?</code>. O comando <code>echo $?</code> mostra o valor:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra existe.c -o existe
+$ ./existe lista.txt
+lista.txt: existe
+$ echo $?
+0
+$ ./existe compras.txt
+compras.txt: não encontrei
+$ echo $?
+1
+$ ./existe
+Uso: ./existe ARQUIVO
+$ echo $?
+2</pre>
+
+<p>Quem lê o código não é a pessoa, é <strong>outro programa</strong>: o shell, um script, o <code>make</code>. No Bash, <code>&amp;&amp;</code> quer dizer "se o anterior deu certo (0), rode este" e <code>||</code>, "se deu errado, rode este":</p>
+
+<pre class="term" data-cwd="~/c">$ ./existe lista.txt &amp;&amp; echo "Pode abrir."
+lista.txt: existe
+Pode abrir.
+$ ./existe compras.txt &amp;&amp; echo "Pode abrir."
+compras.txt: não encontrei                       « deu 1: o echo não rodou
+$ ./existe compras.txt || echo "Crie o arquivo primeiro."
+compras.txt: não encontrei
+Crie o arquivo primeiro.</pre>
+
+<p>É assim que o <code>make</code> sabe que o <code>gcc</code> falhou e para tudo (aula <a href="make.html">Makefile</a>), e é por isso que um programa que deu errado <strong>não deve</strong> terminar com 0, mesmo que já tenha mostrado a mensagem de erro.</p>
+
+<div class="note">
+<strong>No editor do guia,</strong> o código de saída aparece na última linha da caixa: <code>[código de saída: 1]</code>. Não há <code>echo $?</code>, porque não há um shell de verdade.
+</div>
+
+<hr>
+
+<h2>2. <code>exit</code>: encerrar de dentro de uma função</h2>
+<p>O <code>return</code> sai da <strong>função</strong> em que está. No <code>main</code>, sair da função é sair do programa. Mas, numa função qualquer, o <code>return</code> só volta para quem chamou, e o programa continua. Quando um erro é tão grave que não faz sentido continuar, use <code>exit</code> (do <code>stdlib.h</code>), que encerra o <strong>programa inteiro</strong>, de qualquer lugar:</p>
+
+<pre class="file" data-file="config.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int ler_volume(const char *arquivo) {
+    FILE *f = fopen(arquivo, "r");
+    if (f == NULL) {
+        perror(arquivo);
+        exit(EXIT_FAILURE);
+    }
+    int volume = 0;
+    if (fscanf(f, "volume=%d", &amp;volume) != 1) {
+        fprintf(stderr, "%s: formato errado\n", arquivo);
+        fclose(f);
+        exit(EXIT_FAILURE);
+    }
+    fclose(f);
+    return volume;
+}
+
+int main(void) {
+    int volume = ler_volume("config.txt");
+    printf("Volume: %d\n", volume);
+    return EXIT_SUCCESS;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;stdlib.h&gt;</dt><dd>Onde moram <code>exit</code>, <code>EXIT_SUCCESS</code> e <code>EXIT_FAILURE</code>.</dd>
+  <dt>perror(arquivo);</dt><dd>Mostra o motivo da falha do <code>fopen</code> (aula <a href="errno.html">errno e perror</a>).</dd>
+  <dt>exit(EXIT_FAILURE);</dt><dd>Encerra o programa aqui mesmo, com o código de "falhou". O <code>main</code> nunca recebe um volume inventado, e o <code>printf("Volume…")</code> não roda.</dd>
+  <dt>fclose(f); exit(EXIT_FAILURE);</dt><dd>O <code>exit</code> fecharia o arquivo sozinho (seção 4), mas fechar o que você abriu é um bom hábito.</dd>
+  <dt>return EXIT_SUCCESS;</dt><dd>O mesmo que <code>return 0;</code>, com um nome que diz o que significa.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra config.c -o config
+$ ./config
+config.txt: No such file or directory
+$ echo $?
+1
+$ echo 'volume=7' &gt; config.txt
+$ ./config
+Volume: 7
+$ echo $?
+0
+$ echo 'vol 7' &gt; config.txt
+$ ./config
+config.txt: formato errado
+$ echo $?
+1</pre>
+
+<p><code>EXIT_SUCCESS</code> e <code>EXIT_FAILURE</code> são constantes do <code>stdlib.h</code>. No Linux, no Windows, no macOS e no editor do guia, valem 0 e 1:</p>
+
+<pre class="file" data-file="valores.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    printf("EXIT_SUCCESS = %d\n", EXIT_SUCCESS);
+    printf("EXIT_FAILURE = %d\n", EXIT_FAILURE);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra valores.c -o valores
+$ ./valores
+EXIT_SUCCESS = 0
+EXIT_FAILURE = 1</pre>
+
+<p>E no <code>main</code>? Lá, <code>return N;</code> e <code>exit(N);</code> fazem a mesma coisa: o C define que voltar do <code>main</code> é chamar <code>exit</code> com o valor devolvido. E se o <code>main</code> chega ao <code>}</code> sem <code>return</code>, é como <code>return 0;</code> <span class="versao">C99</span> (aula <a href="retorno.html">Retorno</a>). Use <code>return</code> no <code>main</code> e <code>exit</code> fora dele.</p>
+
+<div class="tryc" data-goal="exit:1,out:No such file or directory,src:exit\s*\(">
+<p class="try-task"><strong>Missão:</strong> esta caixa não tem o <code>config.txt</code>, então o <code>fopen</code> falha. Mas a função faz <code>return 0;</code> e o programa segue mostrando <code>Volume: 0</code>, terminando com código 0 como se estivesse tudo bem. Troque esse <code>return 0;</code> por <code>exit(EXIT_FAILURE);</code> e rode: a última linha deve ser <code>[código de saída: 1]</code>, sem o "Volume".</p>
+<pre class="script" data-file="config.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int ler_volume(const char *arquivo) {
+    FILE *f = fopen(arquivo, "r");
+    if (f == NULL) {
+        perror(arquivo);
+        return 0;
+    }
+    int volume = 0;
+    if (fscanf(f, "volume=%d", &amp;volume) != 1) {
+        volume = 0;
+    }
+    fclose(f);
+    return volume;
+}
+
+int main(void) {
+    int volume = ler_volume("config.txt");
+    printf("Volume: %d\n", volume);
+    return EXIT_SUCCESS;
+}
+</pre>
+<pre class="solucao" data-file="config.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int ler_volume(const char *arquivo) {
+    FILE *f = fopen(arquivo, "r");
+    if (f == NULL) {
+        perror(arquivo);
+        exit(EXIT_FAILURE);
+    }
+    int volume = 0;
+    if (fscanf(f, "volume=%d", &amp;volume) != 1) {
+        volume = 0;
+    }
+    fclose(f);
+    return volume;
+}
+
+int main(void) {
+    int volume = ler_volume("config.txt");
+    printf("Volume: %d\n", volume);
+    return EXIT_SUCCESS;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Os valores: de 0 a 255</h2>
+<p>O código de saída é um <code>int</code> no C, mas o Linux só guarda <strong>um byte</strong> dele: de 0 a 255. Valores maiores "dão a volta" (o resto da divisão por 256):</p>
+
+<pre class="file" data-file="codigos.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        return 2;
+    }
+    int n = atoi(argv[1]);
+    exit(n);
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra codigos.c -o codigos
+$ ./codigos 255; echo $?
+255
+$ ./codigos 256; echo $?
+0                « 256 deu a volta e virou "sucesso"!
+$ ./codigos 300; echo $?
+44               « 300 - 256
+$ ./codigos -1; echo $?
+255</pre>
+
+<p>O <code>;</code> no terminal só separa dois comandos na mesma linha. Repare no perigo do <code>256</code>: um programa que devolvesse "a quantidade de erros" diria "sucesso" com 256 erros. Por isso, use números pequenos. As convenções do Linux:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Quem usa</th><th>Significado</th></tr>
+<tr><td>0</td><td>Todos</td><td>Deu certo</td></tr>
+<tr><td>1</td><td>A maioria dos programas</td><td>Erro geral</td></tr>
+<tr><td>2</td><td>Muitos comandos (<code>ls</code>, <code>grep</code>, o Bash)</td><td>Uso errado ou problema sério</td></tr>
+<tr><td>126, 127</td><td>O shell</td><td>O programa não pôde rodar / não foi encontrado</td></tr>
+<tr><td>128 + N</td><td>O shell</td><td>O programa morreu pelo sinal N: 134 = 128 + 6 (<code>abort</code>), 139 = 128 + 11 (falha de segmentação)</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c">$ ls /nao-existe; echo $?
+ls: não foi possível acessar '/nao-existe': Arquivo ou diretório inexistente
+2
+$ nao-existe; echo $?
+bash: nao-existe: comando não encontrado
+127</pre>
+
+<div class="tryc" data-args="300">
+<p class="try-task"><strong>Experimente:</strong> o campo <strong>Argumentos</strong> começa com <code>300</code>. Rode e veja o <code>[código de saída: 44]</code>. Depois tente <code>256</code>, <code>-1</code>, <code>255</code> e <code>1000</code>. O editor faz a mesma conta que o Linux.</p>
+<pre class="script" data-file="codigos.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        return 2;
+    }
+    int n = atoi(argv[1]);
+    exit(n);
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. O que o <code>exit</code> faz antes de sair</h2>
+<p>O <code>exit</code> não "desliga a tomada". Ele segue um ritual, nesta ordem:</p>
+<ol class="passo">
+  <li>Roda as funções registradas com <code>atexit</code> (seção 5), da última para a primeira.</li>
+  <li><strong>Esvazia os buffers</strong>: tudo o que o <code>printf</code> e o <code>fprintf</code> guardaram e ainda não escreveram vai para a tela ou para o arquivo.</li>
+  <li><strong>Fecha</strong> todos os arquivos abertos.</li>
+  <li>Entrega o código de saída ao sistema.</li>
+</ol>
+
+<p>O passo 2 importa porque o <code>printf</code> não escreve na hora: ele junta o texto num <em>buffer</em> (uma área de espera) e escreve de uma vez, no <code>\n</code> ou quando o buffer enche (aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>). Para ver o ritual funcionando, compare <code>exit</code> com <code>_Exit</code> <span class="versao">C99</span>, que sai <strong>sem</strong> ritual nenhum:</p>
+
+<pre class="file" data-file="fechar.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    FILE *f = fopen("vendas.txt", "w");
+    if (f == NULL) {
+        perror("vendas.txt");
+        return 1;
+    }
+    fprintf(f, "3 pães\n");
+    printf("Venda anotada");
+    exit(0);
+}
+</pre>
+
+<p>O programa não fecha o arquivo e o <code>printf</code> não tem <code>\n</code>: os dois textos ainda estão nos buffers quando o <code>exit</code> é chamado. O <code>fechar2.c</code> é igual, com <code>_Exit(0);</code> na última linha.</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fechar.c -o fechar
+$ ./fechar; echo; cat vendas.txt
+Venda anotada
+3 pães
+$ rm vendas.txt
+$ gcc -std=c23 -Wall -Wextra fechar2.c -o fechar2
+$ ./fechar2; echo; wc -c vendas.txt
+                       « nada na tela
+0 vendas.txt           « o arquivo foi criado, mas ficou com 0 bytes</pre>
+
+<dl class="anatomy">
+  <dt>./fechar; echo; cat vendas.txt</dt><dd>Roda o programa, pula uma linha (o <code>echo</code> sozinho só escreve um Enter, porque o <code>printf</code> não tinha <code>\n</code>) e mostra o arquivo.</dd>
+  <dt>exit(0)</dt><dd>Esvaziou os dois buffers: o "Venda anotada" apareceu e o "3 pães" foi gravado.</dd>
+  <dt>_Exit(0)</dt><dd>Saiu na hora. O que estava nos buffers <strong>se perdeu</strong>: nem a tela nem o arquivo receberam nada. <code>wc -c</code> conta os bytes do arquivo.</dd>
+</dl>
+
+<p>O <code>abort()</code> também sai sem ritual, e ainda avisa o sistema de que o programa morreu de propósito, por um erro grave (é o que o <code>assert</code> usa quando falha; aula <a href="testes.html">Testes</a>). O código é 134:</p>
+
+<pre class="file" data-file="aborta.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void tchau(void) {
+    printf("Até logo!\n");
+}
+
+int main(void) {
+    atexit(tchau);
+    printf("Algo muito errado aconteceu.\n");
+    abort();
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aborta.c -o aborta
+$ ./aborta
+Algo muito errado aconteceu.
+Abortado                   (imagem do núcleo gravada) ./aborta
+$ echo $?
+134</pre>
+
+<p>O "Até logo!" registrado com <code>atexit</code> não apareceu: o <code>abort</code> não roda o ritual. O mesmo vale quando o programa morre sozinho (falha de segmentação, divisão por zero): nenhuma função de <code>atexit</code> roda.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Como termina</th><th>Roda o <code>atexit</code>?</th><th>Esvazia buffers e fecha arquivos?</th><th>Código</th></tr>
+<tr><td><code>return N;</code> no <code>main</code></td><td>Sim</td><td>Sim</td><td>N</td></tr>
+<tr><td><code>exit(N);</code></td><td>Sim</td><td>Sim</td><td>N</td></tr>
+<tr><td><code>_Exit(N);</code> <span class="versao">C99</span></td><td>Não</td><td>Não</td><td>N</td></tr>
+<tr><td><code>abort();</code></td><td>Não</td><td>Não</td><td>134</td></tr>
+<tr><td>Falha de segmentação</td><td>Não</td><td>Não</td><td>139</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. <code>atexit</code>: o ritual de fim do expediente</h2>
+<p><code>atexit</code> = "at exit", "na saída". Você passa o <strong>nome de uma função</strong>, e o C guarda esse nome para chamá-la quando o programa terminar normalmente (pelo <code>return</code> do <code>main</code> ou por um <code>exit</code>, de onde for):</p>
+
+<pre class="file" data-file="ordem.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void apagar_luzes(void) {
+    printf("Luzes apagadas.\n");
+}
+
+void fechar_caixa(void) {
+    printf("Caixa fechado.\n");
+}
+
+void trancar_porta(void) {
+    printf("Porta trancada.\n");
+}
+
+int main(void) {
+    atexit(trancar_porta);
+    atexit(fechar_caixa);
+    atexit(apagar_luzes);
+    printf("Lojinha aberta.\n");
+    printf("Fim do expediente.\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>void apagar_luzes(void)</dt><dd>Uma função de <code>atexit</code> tem sempre essa forma: <strong>não recebe nada e não devolve nada</strong>.</dd>
+  <dt>atexit(trancar_porta);</dt><dd>Registra a função, <strong>sem parênteses</strong> depois do nome: você não está chamando <code>trancar_porta</code> agora, está entregando a função para ser chamada depois (um ponteiro para função, aula <a href="ponteiros-funcao.html">Ponteiros para Função</a>).</dd>
+  <dt>return 0;</dt><dd>Ao terminar, o C chama as funções registradas na <strong>ordem inversa</strong>: a última registrada roda primeiro.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ordem.c -o ordem
+$ ./ordem
+Lojinha aberta.
+Fim do expediente.
+Luzes apagadas.
+Caixa fechado.
+Porta trancada.</pre>
+
+<p>Por que de trás para a frente? Pense numa pilha de pratos: o último que você pôs é o primeiro que tira. Na vida real, quem abre a loja destranca a porta, depois abre o caixa, depois acende as luzes; para fechar, desfaz na ordem contrária. O <code>atexit</code> segue essa lógica: o que foi preparado por último é desfeito primeiro.</p>
+
+<div class="note">
+<strong>Quando usar.</strong> O <code>atexit</code> é útil para limpezas que precisam acontecer <strong>por qualquer caminho</strong> de saída: salvar um arquivo de estado, apagar um arquivo temporário, mostrar um resumo. Se o programa tem dez <code>exit</code> espalhados, você não precisa lembrar da limpeza em cada um. O C garante pelo menos 32 registros. Como a função não recebe parâmetros, o que ela usa costuma ficar numa variável global (aula <a href="escopo.html">Escopo</a>).
+</div>
+
+<div class="tryc" data-goal="outre:Luzes apagadas\.\nCaixa fechado\.\nPorta trancada\.\n$,src:atexit\s*\(">
+<p class="try-task"><strong>Missão:</strong> a Ana registrou as funções na ordem em que pensou nelas, e o fim saiu ao contrário: a porta foi trancada com as luzes ainda acesas. Mude a ordem dos três <code>atexit</code> para que o programa termine com <code>Luzes apagadas.</code>, <code>Caixa fechado.</code> e <code>Porta trancada.</code>, nessa ordem.</p>
+<pre class="script" data-file="ordem.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void apagar_luzes(void) {
+    printf("Luzes apagadas.\n");
+}
+
+void fechar_caixa(void) {
+    printf("Caixa fechado.\n");
+}
+
+void trancar_porta(void) {
+    printf("Porta trancada.\n");
+}
+
+int main(void) {
+    atexit(apagar_luzes);
+    atexit(fechar_caixa);
+    atexit(trancar_porta);
+    printf("Lojinha aberta.\n");
+    printf("Fim do expediente.\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="ordem.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void apagar_luzes(void) {
+    printf("Luzes apagadas.\n");
+}
+
+void fechar_caixa(void) {
+    printf("Caixa fechado.\n");
+}
+
+void trancar_porta(void) {
+    printf("Porta trancada.\n");
+}
+
+int main(void) {
+    atexit(trancar_porta);
+    atexit(fechar_caixa);
+    atexit(apagar_luzes);
+    printf("Lojinha aberta.\n");
+    printf("Fim do expediente.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>6. <code>[[noreturn]]</code>: a função que nunca volta</h2>
+<p>É comum criar uma função "erro fatal" que mostra a mensagem e chama <code>exit</code>. O compilador, porém, não sabe que ela nunca volta, e reclama de quem a usa:</p>
+
+<pre class="file" data-file="fatal.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void erro_fatal(const char *msg) {
+    fprintf(stderr, "Erro: %s\n", msg);
+    exit(EXIT_FAILURE);
+}
+
+int dividir(int a, int b) {
+    if (b != 0) {
+        return a / b;
+    }
+    erro_fatal("divisão por zero");
+}
+
+int main(void) {
+    printf("10 / 2 = %d\n", dividir(10, 2));
+    printf("10 / 0 = %d\n", dividir(10, 0));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fatal.c -o fatal
+fatal.c: In function ‘dividir’:
+fatal.c:14:1: warning: control reaches end of non-void function [-Wreturn-type]
+   14 | }
+      | ^</pre>
+
+<p>"O controle chega ao fim de uma função que não é <code>void</code>": o gcc acha que, depois do <code>erro_fatal</code>, a <code>dividir</code> termina sem devolver nada. Para contar a verdade ao compilador, marque a função com o atributo <code>[[noreturn]]</code> <span class="versao">C23</span> ("não volta"; aula <a href="atributos.html">Atributos</a>):</p>
+
+<pre class="file" data-file="fatal2.c">[[noreturn]] void erro_fatal(const char *msg) {
+    fprintf(stderr, "Erro: %s\n", msg);
+    exit(EXIT_FAILURE);
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fatal2.c -o fatal2
+$ ./fatal2
+10 / 2 = 5
+Erro: divisão por zero
+$ echo $?
+1</pre>
+
+<p>Sem aviso. O próprio <code>exit</code> é declarado assim no <code>stdlib.h</code>: se a <code>dividir</code> chamasse <code>exit(EXIT_FAILURE);</code> direto, no lugar do <code>erro_fatal</code>, o gcc também não reclamaria. Antes do C23, escrevia-se <code>_Noreturn void erro_fatal(…)</code> <span class="versao">C11</span>, ou <code>noreturn</code> com <code>#include &lt;stdnoreturn.h&gt;</code>; essas formas ainda funcionam.</p>
+
+<hr>
+
+<h2>Formas diferentes, e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>return 0;</code> / <code>return 1;</code> no <code>main</code></td><td>O jeito normal de terminar</td></tr>
+<tr><td><code>return EXIT_SUCCESS;</code> / <code>EXIT_FAILURE</code></td><td>O mesmo, com nomes que se explicam; comum em código que quer ser portátil</td></tr>
+<tr><td><code>exit(EXIT_FAILURE);</code> numa função</td><td>Erro grave, longe do <code>main</code>, em que não faz sentido continuar</td></tr>
+<tr><td>Devolver um código de erro e deixar o <code>main</code> decidir</td><td>Funções que outros programas vão reaproveitar (uma biblioteca não deve encerrar o programa de quem a usa)</td></tr>
+<tr><td><code>atexit(funcao);</code></td><td>Limpeza que tem de acontecer por qualquer caminho de saída</td></tr>
+<tr><td><code>_Exit(N);</code></td><td>Raro: sair sem limpar nada (por exemplo, num processo filho depois de um <code>fork</code>)</td></tr>
+<tr><td><code>abort();</code></td><td>Um erro "impossível", do programador: melhor morrer na hora e deixar o rastro (o <code>assert</code> faz isso)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘exit’</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semstdlib.c -o semstdlib
+semstdlib.c: In function ‘main’:
+semstdlib.c:5:5: error: implicit declaration of function ‘exit’ [-Wimplicit-function-declaration]
+    5 |     exit(1);
+      |     ^~~~
+semstdlib.c:2:1: note: include ‘&lt;stdlib.h&gt;’ or provide a declaration of ‘exit’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;stdlib.h&gt;
+    2 |
+semstdlib.c:5:5: warning: incompatible implicit declaration of built-in function ‘exit’ [-Wbuiltin-declaration-mismatch]
+    5 |     exit(1);
+      |     ^~~~
+semstdlib.c:5:5: note: include ‘&lt;stdlib.h&gt;’ or provide a declaration of ‘exit’</pre>
+<p><strong>O que significa:</strong> o programa usa <code>exit</code> sem o <code>#include &lt;stdlib.h&gt;</code>. O próprio gcc mostra onde pôr a linha (o <code>+++ |+</code>). No editor, o Clang diz <code>call to undeclared library function 'exit'</code> e <code>include the header &lt;stdlib.h&gt;</code>.</p>
+<p><strong>Como consertar:</strong> <code>#include &lt;stdlib.h&gt;</code> no topo. O mesmo vale para <code>atexit</code>, <code>_Exit</code>, <code>abort</code> e as constantes <code>EXIT_…</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: passing argument 1 of ‘atexit’ from incompatible pointer type</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra assinatura.c -o assinatura
+assinatura.c: In function ‘main’:
+assinatura.c:9:12: error: passing argument 1 of ‘atexit’ from incompatible pointer type [-Wincompatible-pointer-types]
+    9 |     atexit(tchau);
+      |            ^~~~~
+      |            |
+      |            void (*)(int)
+In file included from assinatura.c:2:
+/usr/include/stdlib.h:756:27: note: expected ‘void (*)(void)’ but argument is of type ‘void (*)(int)’
+  756 | extern int atexit (void (*__func) (void)) __THROW __nonnull ((1));
+      |                    ~~~~~~~^~~~~~~~~~~~~~
+assinatura.c:4:6: note: ‘tchau’ declared here
+    4 | void tchau(int codigo) {
+      |      ^~~~~</pre>
+<p><strong>O que significa:</strong> a função <code>tchau</code> recebe um <code>int</code>, e o <code>atexit</code> só aceita funções <code>void f(void)</code>. O <code>void (*)(void)</code> da nota é "ponteiro para função que não recebe nada e não devolve nada".</p>
+<p><strong>Como consertar:</strong> escreva a função como <code>void tchau(void)</code>. Se ela precisa de um valor, guarde-o numa variável global antes do <code>exit</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: invalid use of void expression</code> no <code>atexit</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra parenteses.c -o parenteses
+parenteses.c: In function ‘main’:
+parenteses.c:9:12: error: invalid use of void expression
+    9 |     atexit(tchau());
+      |            ^~~~~~~</pre>
+<p><strong>O que significa:</strong> "uso inválido de uma expressão <code>void</code>". com os parênteses, você <strong>chamou</strong> a <code>tchau</code> agora e tentou passar o resultado dela (que é <code>void</code>, nada) para o <code>atexit</code>.</p>
+<p><strong>Como consertar:</strong> <code>atexit(tchau);</code>, só o nome.</p>
+</div>
+
+<div class="cenario">
+<strong>O texto do <code>printf</code> sumiu</strong>
+<p><strong>O que significa:</strong> o programa terminou com <code>_Exit</code> ou <code>abort</code> (ou morreu por um erro) enquanto o texto ainda estava no buffer. Foi o que aconteceu com o <code>fechar2</code>: nem a tela nem o <code>vendas.txt</code> receberam nada.</p>
+<p><strong>Como consertar:</strong> termine com <code>return</code> ou <code>exit</code>. Se precisa mesmo sair sem ritual, chame <code>fflush(stdout);</code> e <code>fclose</code> antes.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘noreturn’ function does return</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra noreturnerr.c -o noreturnerr
+noreturnerr.c: In function ‘erro_fatal’:
+noreturnerr.c:6:1: warning: ‘noreturn’ function does return
+    6 | }
+      | ^
+$ ./noreturnerr
+Erro: teste
+Instrução ilegal         (imagem do núcleo gravada) ./noreturnerr
+$ echo $?
+132</pre>
+<p><strong>O que significa:</strong> a função foi marcada <code>[[noreturn]]</code>, mas esqueceram o <code>exit</code> dentro dela. Voltar de uma função <code>[[noreturn]]</code> é comportamento indefinido: o gcc confiou na promessa, não preparou a volta e pôs uma "instrução ilegal" no lugar. No editor do guia, o mesmo programa morre com <code>Falha de segmentação</code> (139), e o Clang avisa com <code>function declared 'noreturn' should not return</code>.</p>
+<p><strong>Como consertar:</strong> toda função <code>[[noreturn]]</code> tem de terminar com <code>exit</code>, <code>abort</code> ou um laço infinito.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa mostrou o erro, mas o <code>make</code> (ou o script) continuou como se estivesse tudo bem</strong>
+<p><strong>O que significa:</strong> depois da mensagem de erro, o programa terminou com 0 (esqueceram o <code>return 1;</code>, ou o <code>main</code> chegou ao fim). Quem chama só olha o código.</p>
+<p><strong>Como consertar:</strong> todo caminho de erro termina com um código diferente de 0. Teste com <code>./programa; echo $?</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O segundo <code>echo $?</code> mostrou 0</strong>
+<pre class="term" data-cwd="~/c">$ ./existe compras.txt
+compras.txt: não encontrei
+$ echo $?
+1
+$ echo $?
+0</pre>
+<p><strong>O que significa:</strong> o <code>$?</code> guarda o código do <strong>último</strong> comando, e o último foi o primeiro <code>echo</code>, que deu certo.</p>
+<p><strong>Como consertar:</strong> olhe o <code>$?</code> logo depois do programa, ou guarde-o: <code>./existe x; codigo=$?</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Cabeçalho</th><th>O que faz</th></tr>
+<tr><td><code>return N;</code> no <code>main</code></td><td>—</td><td>Termina o programa com o código N (o mesmo que <code>exit(N)</code>)</td></tr>
+<tr><td><code>exit(N);</code></td><td><code>stdlib.h</code></td><td>Termina de qualquer lugar: roda o <code>atexit</code>, esvazia buffers, fecha arquivos</td></tr>
+<tr><td><code>EXIT_SUCCESS</code>, <code>EXIT_FAILURE</code></td><td><code>stdlib.h</code></td><td>0 e 1 (os códigos portáteis de sucesso e falha)</td></tr>
+<tr><td><code>atexit(f);</code></td><td><code>stdlib.h</code></td><td>Registra <code>void f(void)</code> para o fim; ordem inversa; devolve 0 se deu certo</td></tr>
+<tr><td><code>_Exit(N);</code> <span class="versao">C99</span></td><td><code>stdlib.h</code></td><td>Termina na hora, sem ritual</td></tr>
+<tr><td><code>abort();</code></td><td><code>stdlib.h</code></td><td>Termina por erro grave, sem ritual; código 134</td></tr>
+<tr><td><code>quick_exit(N);</code>, <code>at_quick_exit(f);</code> <span class="versao">C11</span></td><td><code>stdlib.h</code></td><td>Saída rápida que roda só as funções de <code>at_quick_exit</code> (raro)</td></tr>
+<tr><td><code>[[noreturn]] void f(…)</code> <span class="versao">C23</span></td><td>—</td><td>Promete que a função nunca volta</td></tr>
+<tr><td><code>echo $?</code></td><td>(shell)</td><td>Mostra o código de saída do último comando</td></tr>
+<tr><td><code>prog &amp;&amp; outro</code> / <code>prog || outro</code></td><td>(shell)</td><td>Roda <code>outro</code> se <code>prog</code> deu certo / deu errado</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Sucesso</h3>
+<p>Qual código de saída quer dizer "deu certo"?</p>
+<div class="ex-code"><input data-answer="0|EXIT_SUCCESS" aria-label="código"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Sair de dentro da função</h3>
+<p>Complete para encerrar o <strong>programa</strong> com o código de falha, de dentro de uma função qualquer:</p>
+<div class="ex-code"><input data-answer="exit" aria-label="função">(EXIT_FAILURE);</div>
+</div>
+
+<div class="exercise">
+<h3>3. Dando a volta</h3>
+<p>Qual valor o <code>echo $?</code> mostra depois de um programa que fez <code>exit(260);</code>?</p>
+<div class="ex-code"><input data-answer="4" aria-label="valor"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O programa fez <code>atexit(a); atexit(b); atexit(c);</code> e terminou com <code>return 0;</code>. Em que ordem as funções rodam?</p>
+<label><input type="radio" name="q4"> a, b, c</label>
+<label><input type="radio" name="q4"> c, b, a</label>
+<label><input type="radio" name="q4"> Nenhuma: só rodam com <code>exit</code></label>
+<label><input type="radio" name="q4"> Em qualquer ordem</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Qual destas saídas <strong>não</strong> roda as funções do <code>atexit</code>?</p>
+<label><input type="radio" name="q5"> <code>return 1;</code> no <code>main</code></label>
+<label><input type="radio" name="q5"> <code>exit(1);</code> numa função</label>
+<label><input type="radio" name="q5"> <code>abort();</code></label>
+<label><input type="radio" name="q5"> O <code>main</code> chegar ao <code>}</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual é a forma certa de uma função para o <code>atexit</code>?</p>
+<label><input type="radio" name="q6"> <code>void limpar(void)</code></label>
+<label><input type="radio" name="q6"> <code>int limpar(int codigo)</code></label>
+<label><input type="radio" name="q6"> <code>void limpar(int codigo)</code></label>
+<label><input type="radio" name="q6"> Qualquer uma</label>
+</div>
+
+<h3>Missão final: o caixa da lojinha</h3>
+
+<div class="tryc" data-goal="out:Estoque insuficiente para 3 pães.,out:Sobraram no estoque: 1,exit:3,src:atexit\s*\(\s*relatorio\s*\)">
+<p class="try-task"><strong>Missão:</strong> o caixa vende pães de um estoque de 10. Quando um pedido é maior que o estoque, a função <code>vender</code> deve mostrar o erro e <strong>encerrar o programa com o código 3</strong> (hoje ela continua e o estoque fica negativo). E o <code>relatorio</code> tem de rodar no fim, por qualquer caminho: registre-o com <code>atexit</code> no começo do <code>main</code>. A saída deve ser:</p>
+<pre class="out">Vendi 4. Restam 6.
+Vendi 5. Restam 1.
+Estoque insuficiente para 3 pães.
+Sobraram no estoque: 1</pre>
+<pre class="script" data-file="caixa.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int estoque = 10;
+
+void relatorio(void) {
+    printf("Sobraram no estoque: %d\n", estoque);
+}
+
+void vender(int qtd) {
+    if (qtd &gt; estoque) {
+        fprintf(stderr, "Estoque insuficiente para %d pães.\n", qtd);
+        // encerre o programa com o código 3
+    }
+    estoque -= qtd;
+    printf("Vendi %d. Restam %d.\n", qtd, estoque);
+}
+
+int main(void) {
+    // registre o relatorio para rodar no fim
+    vender(4);
+    vender(5);
+    vender(3);
+    vender(1);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="caixa.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int estoque = 10;
+
+void relatorio(void) {
+    printf("Sobraram no estoque: %d\n", estoque);
+}
+
+void vender(int qtd) {
+    if (qtd &gt; estoque) {
+        fprintf(stderr, "Estoque insuficiente para %d pães.\n", qtd);
+        exit(3);
+    }
+    estoque -= qtd;
+    printf("Vendi %d. Restam %d.\n", qtd, estoque);
+}
+
+int main(void) {
+    atexit(relatorio);
+    vender(4);
+    vender(5);
+    vender(3);
+    vender(1);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que o <code>vender(1)</code> nunca roda: o <code>exit(3)</code> encerrou o programa no meio do <code>vender(3)</code>, e mesmo assim o relatório apareceu. No laboratório:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra caixa.c -o caixa
+$ ./caixa
+Vendi 4. Restam 6.
+Vendi 5. Restam 1.
+Estoque insuficiente para 3 pães.
+Sobraram no estoque: 1
+$ echo $?
+3</pre>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Todo programa termina com um <strong>código de saída</strong>: 0 = deu certo, outro valor = deu errado. No terminal, <code>echo $?</code> mostra o último; <code>&amp;&amp;</code> e <code>||</code> decidem por ele.</li>
+  <li>No <code>main</code>, <code>return N;</code> é o mesmo que <code>exit(N);</code>. Fora dele, só o <code>exit</code> (do <code>stdlib.h</code>) encerra o programa.</li>
+  <li><code>EXIT_SUCCESS</code> e <code>EXIT_FAILURE</code> valem 0 e 1. O Linux guarda só de 0 a 255: <code>exit(256)</code> vira 0.</li>
+  <li>O <code>exit</code> roda o <code>atexit</code>, esvazia os buffers e fecha os arquivos. <code>_Exit</code>, <code>abort</code> e as mortes por erro não fazem nada disso.</li>
+  <li><code>atexit(f)</code> registra <code>void f(void)</code> para o fim; as funções rodam na ordem inversa do registro.</li>
+  <li><code>[[noreturn]]</code> <span class="versao">C23</span> diz ao compilador que a função nunca volta; ela precisa mesmo nunca voltar.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
