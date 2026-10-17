@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C goto — rótulos, saltos e o bloco de limpeza | Guia C</title>
+<meta name="description" content="O goto em C, para quem nunca programou: rótulos e saltos, por que pular para trás é má ideia (use do while), o uso aceito em código profissional (o bloco de limpeza no fim da função, que fecha arquivos e libera memória em todos os caminhos de erro, conferido com valgrind), as regras (só dentro da função, não pular para dentro de um VLA, cuidado com a inicialização pulada), o rótulo no fim do bloco do C23, o break com nome do C2y, e os erros reais do gcc 15 e do Clang.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">goto</span></h1>
+
+<p class="intro">O <code>goto</code> ("vá para") é o comando mais simples e mais polêmico do C: ele faz o programa <strong>pular</strong> para outra linha da mesma função, marcada com um nome. Em 1968, o cientista Edsger Dijkstra escreveu uma carta famosa, "<em>Go To Statement Considered Harmful</em>" ("o goto é considerado nocivo"), e desde então muita gente ensina que ele nunca deve ser usado. Mesmo assim, ele aparece milhares de vezes no código do Linux. Nesta aula você vai ver como ele funciona, por que ele tem má fama e qual é o uso em que ele é a melhor ferramenta: <strong>a limpeza no fim de uma função</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A escrever um <strong>rótulo</strong> e um <code>goto</code>.</li>
+  <li>Por que pular para <strong>trás</strong> é má ideia, e o que usar no lugar.</li>
+  <li>O uso aceito: o <strong>bloco de limpeza</strong>, que fecha arquivos e libera memória em todos os caminhos de erro (conferido com o <code>valgrind</code>).</li>
+  <li>As regras: o <code>goto</code> não sai da função, não entra no escopo de um VLA e pode pular uma inicialização.</li>
+  <li>O rótulo no fim do bloco <span class="versao">C23</span> e o <code>break</code> com nome <span class="versao">C2y</span>.</li>
+  <li>Os erros reais: <code>label used but not defined</code>, <code>duplicate label</code>, <code>jump into scope of identifier with variably modified type</code>.</li>
+</ul>
+</div>
+
+<p>Você já viu um <code>goto</code> na aula <a href="lacos-aninhados.html">Laços Aninhados</a>, para sair de dois laços de uma vez. Aqui está o resto da história. Os comandos rodaram na máquina fictícia da Ana, na pasta <code>~/c/goto</code>, com o <strong>gcc 15.2</strong>.</p>
+
+<hr>
+
+<h2>A ideia: o mapa do tesouro</h2>
+<p>Pense num livro de aventura em que cada página termina com "se você abrir a porta, vá para a página 47; se fugir, vá para a página 112". O leitor pula para frente e para trás. Com dez páginas, é divertido. Com mil, ninguém mais sabe por onde passou nem como chegou numa página: é preciso voltar o livro inteiro para descobrir.</p>
+
+<p>O <code>goto</code> é o "vá para a página 47". O <code>if</code>, o <code>for</code>, o <code>while</code> e as funções são pulos <strong>organizados</strong>: você olha para o código e vê o começo e o fim de cada bloco. O <code>goto</code> é um pulo livre, e é aí que mora o perigo. A regra prática deste guia:</p>
+
+<ul>
+  <li><strong>Pule só para a frente</strong>, nunca para trás.</li>
+  <li>Use-o só para <strong>sair</strong>: de vários laços de uma vez, ou de uma função com erro, passando pela limpeza.</li>
+</ul>
+
+<hr>
+
+<h2>1. Rótulo e <code>goto</code></h2>
+<p>A Ana procura um produto nas prateleiras da lojinha. Quando acha, quer parar a busca inteira, e não só o laço de dentro:</p>
+
+<pre class="file" data-file="prateleira.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *prateleiras[3][4] = {
+        {"arroz", "feijão", "açúcar", "sal"},
+        {"caderno", "lápis", "borracha", "régua"},
+        {"sabão", "esponja", "vassoura", "balde"},
+    };
+    const char *procurado = "borracha";
+
+    for (int p = 0; p &lt; 3; p++) {
+        for (int i = 0; i &lt; 4; i++) {
+            if (strcmp(prateleiras[p][i], procurado) == 0) {
+                printf("%s: prateleira %d, posição %d\n", procurado, p + 1, i + 1);
+                goto fim;
+            }
+        }
+    }
+    printf("%s: não temos\n", procurado);
+fim:
+    printf("Busca encerrada.\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>fim:</dt><dd>Um <strong>rótulo</strong> (<em>label</em>): um nome, com as mesmas regras dos nomes de variáveis, seguido de dois-pontos. Ele não faz nada sozinho; só marca a linha. Costuma ficar encostado na margem esquerda, para chamar a atenção.</dd>
+  <dt>goto fim;</dt><dd>"Vá para o rótulo <code>fim</code>": o programa salta para lá na hora, saindo dos dois <code>for</code>. O <code>printf("… não temos")</code> fica para trás.</dd>
+  <dt>printf("%s: não temos\n", …)</dt><dd>Só roda se os laços terminarem sem achar. Depois dele, o programa segue normalmente e também passa pelo <code>fim:</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra prateleira.c -o prateleira
+$ ./prateleira
+borracha: prateleira 2, posição 3
+Busca encerrada.</pre>
+
+<p>Com <code>procurado = "pão"</code>, os laços vão até o fim, e o programa passa pelas duas linhas finais:</p>
+
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra prateleira.c -o prateleira &amp;&amp; ./prateleira
+pão: não temos
+Busca encerrada.</pre>
+
+<div class="tryc" data-goal="erro:/undeclared label|used but not defined/">
+<p class="try-task"><strong>Missão:</strong> rode e depois troque o <code>procurado</code> por <code>"vassoura"</code> e por <code>"pão"</code>. Por fim, provoque o erro mais comum: escreva o rótulo errado no <code>goto</code> (por exemplo, <code>goto fin;</code>) e rode. O Clang responde <code>use of undeclared label 'fin'</code> ("uso de rótulo não declarado"); o gcc, <code>label ‘fin’ used but not defined</code>.</p>
+<pre class="script" data-file="prateleira.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *prateleiras[3][4] = {
+        {"arroz", "feijão", "açúcar", "sal"},
+        {"caderno", "lápis", "borracha", "régua"},
+        {"sabão", "esponja", "vassoura", "balde"},
+    };
+    const char *procurado = "borracha";
+
+    for (int p = 0; p &lt; 3; p++) {
+        for (int i = 0; i &lt; 4; i++) {
+            if (strcmp(prateleiras[p][i], procurado) == 0) {
+                printf("%s: prateleira %d, posição %d\n", procurado, p + 1, i + 1);
+                goto fim;
+            }
+        }
+    }
+    printf("%s: não temos\n", procurado);
+fim:
+    printf("Busca encerrada.\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="prateleira.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *prateleiras[3][4] = {
+        {"arroz", "feijão", "açúcar", "sal"},
+        {"caderno", "lápis", "borracha", "régua"},
+        {"sabão", "esponja", "vassoura", "balde"},
+    };
+    const char *procurado = "borracha";
+
+    for (int p = 0; p &lt; 3; p++) {
+        for (int i = 0; i &lt; 4; i++) {
+            if (strcmp(prateleiras[p][i], procurado) == 0) {
+                printf("%s: prateleira %d, posição %d\n", procurado, p + 1, i + 1);
+                goto fin;
+            }
+        }
+    }
+    printf("%s: não temos\n", procurado);
+fim:
+    printf("Busca encerrada.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Pular para trás: dá, mas não faça</h2>
+<p>O <code>goto</code> também pula para cima. Com isso dá para fazer uma repetição sem nenhum laço. Este programa pede o código de um produto até receber um entre 1 e 99:</p>
+
+<pre class="file" data-file="codigo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int tentativas = 0;
+    int codigo = 0;
+
+de_novo:
+    tentativas++;
+    printf("Código do produto (1 a 99): ");
+    if (scanf("%d", &amp;codigo) != 1) {
+        return 1;
+    }
+    if (codigo &lt; 1 || codigo &gt; 99) {
+        printf("Inválido.\n");
+        goto de_novo;
+    }
+    printf("Produto %d, na tentativa %d.\n", codigo, tentativas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra codigo.c -o codigo
+$ ./codigo
+Código do produto (1 a 99): 150
+Inválido.
+Código do produto (1 a 99): 0
+Inválido.
+Código do produto (1 a 99): 42
+Produto 42, na tentativa 3.</pre>
+
+<p>Funciona. Mas, para descobrir que há uma repetição ali, você tem de achar o <code>goto de_novo</code> lá embaixo e subir procurando o rótulo. Num programa maior, com dois ou três rótulos assim, ninguém mais consegue seguir o caminho: é o "código espaguete". O C tem um laço feito exatamente para "faça, e repita se não deu certo", o <a href="do-while.html">do while</a>:</p>
+
+<pre class="file" data-file="codigo2.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int tentativas = 0;
+    int codigo = 0;
+
+    do {
+        tentativas++;
+        printf("Código do produto (1 a 99): ");
+        if (scanf("%d", &amp;codigo) != 1) {
+            return 1;
+        }
+        if (codigo &lt; 1 || codigo &gt; 99) {
+            printf("Inválido.\n");
+        }
+    } while (codigo &lt; 1 || codigo &gt; 99);
+    printf("Produto %d, na tentativa %d.\n", codigo, tentativas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra codigo2.c -o codigo2
+$ ./codigo2
+Código do produto (1 a 99): 150
+Inválido.
+Código do produto (1 a 99): 0
+Inválido.
+Código do produto (1 a 99): 42
+Produto 42, na tentativa 3.</pre>
+
+<p>A mesma saída, e agora o <code>do {</code> avisa logo na primeira linha: "isto se repete", e o <code>}</code> mostra onde a repetição termina. Todo <code>goto</code> para trás pode virar um laço, e o laço é sempre mais fácil de ler.</p>
+
+<hr>
+
+<h2>3. O uso aceito: o bloco de limpeza</h2>
+<p>Uma função que pega <strong>recursos</strong> (abre um arquivo, reserva memória) tem de devolvê-los em todos os caminhos: no caminho feliz e em cada erro. Veja a função que lê os preços de um arquivo e mostra o total. Ela tem três jeitos de dar errado: o arquivo não abre, a memória não vem, ou o arquivo não tem nenhum preço.</p>
+
+<pre class="file" data-file="vaza.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int relatorio(const char *nome) {
+    FILE *f = fopen(nome, "r");
+    if (f == nullptr) {
+        perror(nome);
+        return -1;
+    }
+
+    int *precos = malloc(100 * sizeof *precos);
+    if (precos == nullptr) {
+        printf("Sem memória\n");
+        fclose(f);
+        return -1;
+    }
+
+    int n = 0;
+    while (n &lt; 100 &amp;&amp; fscanf(f, "%d", &amp;precos[n]) == 1) {
+        n++;
+    }
+    if (n == 0) {
+        printf("%s: nenhum preço\n", nome);
+        return -1;
+    }
+
+    int total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += precos[i];
+    }
+    printf("%s: %d preços, total R$ %d\n", nome, n, total);
+
+    free(precos);
+    fclose(f);
+    return 0;
+}
+
+int main(void) {
+    relatorio("precos.txt");
+    relatorio("vazio.txt");
+    relatorio("sumiu.txt");
+    return 0;
+}
+</pre>
+
+<p>O <code>precos.txt</code> tem <code>12 3 25 8</code>; o <code>vazio.txt</code> está vazio; o <code>sumiu.txt</code> não existe. A saída parece certa:</p>
+
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra -g vaza.c -o vaza
+$ ./vaza
+precos.txt: 4 preços, total R$ 48
+vazio.txt: nenhum preço
+sumiu.txt: No such file or directory</pre>
+
+<p>Mas o <code>return -1</code> do "nenhum preço" esqueceu o <code>free</code> e o <code>fclose</code>. O <a href="valgrind.html">valgrind</a> mostra:</p>
+
+<pre class="term" data-cwd="~/c/goto">$ valgrind --leak-check=full ./vaza
+==445219== Memcheck, a memory error detector
+==445219== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==445219== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==445219== Command: ./vaza
+==445219==
+precos.txt: 4 preços, total R$ 48
+vazio.txt: nenhum preço
+sumiu.txt: No such file or directory
+==445219==
+==445219== HEAP SUMMARY:
+==445219==     in use at exit: 872 bytes in 2 blocks
+==445219==   total heap usage: 12 allocs, 10 frees, 12,950 bytes allocated
+==445219==
+==445219== 400 bytes in 1 blocks are definitely lost in loss record 1 of 2
+==445219==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==445219==    by 0x4001279: relatorio (vaza.c:11)
+==445219==    by 0x40013B0: main (vaza.c:40)
+==445219==
+==445219== LEAK SUMMARY:
+==445219==    definitely lost: 400 bytes in 1 blocks
+==445219==    indirectly lost: 0 bytes in 0 blocks
+==445219==      possibly lost: 0 bytes in 0 blocks
+==445219==    still reachable: 472 bytes in 1 blocks
+==445219==         suppressed: 0 bytes in 0 blocks
+==445219== Reachable blocks (those to which a pointer was found) are not shown.
+==445219== To see them, rerun with: --leak-check=full --show-leak-kinds=all
+==445219==
+==445219== For lists of detected and suppressed errors, rerun with: -s
+==445219== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)</pre>
+
+<p>Os 400 bytes perdidos são os 100 <code>int</code> do <code>malloc</code> da linha 11; os 472 bytes "ainda alcançáveis" são o <code>FILE</code> do <code>vazio.txt</code>, que nunca foi fechado. Cada <code>return</code> no meio da função é um lugar onde a limpeza pode ser esquecida, e quanto mais recursos, mais cópias da limpeza você tem de manter em dia.</p>
+
+<h3>Uma saída só, com <code>goto</code></h3>
+<p>O padrão usado no Linux, no Git e em muitos outros projetos em C: a limpeza fica <strong>uma vez só</strong>, no fim da função, em rótulos na ordem <strong>inversa</strong> da reserva. Cada erro pula para o rótulo que desfaz só o que já foi feito:</p>
+
+<pre class="file" data-file="limpeza.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int relatorio(const char *nome) {
+    int resultado = -1;
+    int *precos = nullptr;
+
+    FILE *f = fopen(nome, "r");
+    if (f == nullptr) {
+        perror(nome);
+        goto fim;
+    }
+
+    precos = malloc(100 * sizeof *precos);
+    if (precos == nullptr) {
+        printf("Sem memória\n");
+        goto fecha_arquivo;
+    }
+
+    int n = 0;
+    while (n &lt; 100 &amp;&amp; fscanf(f, "%d", &amp;precos[n]) == 1) {
+        n++;
+    }
+    if (n == 0) {
+        printf("%s: nenhum preço\n", nome);
+        goto libera_precos;
+    }
+
+    int total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += precos[i];
+    }
+    printf("%s: %d preços, total R$ %d\n", nome, n, total);
+    resultado = 0;
+
+libera_precos:
+    free(precos);
+fecha_arquivo:
+    fclose(f);
+fim:
+    return resultado;
+}
+
+int main(void) {
+    relatorio("precos.txt");
+    relatorio("vazio.txt");
+    relatorio("sumiu.txt");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int resultado = -1;</dt><dd>Começa como "deu errado". Só no fim do caminho feliz vira <code>0</code>. Assim, todo <code>goto</code> de erro já sai com o valor certo.</dd>
+  <dt>int *precos = nullptr;</dt><dd>Declarado no começo, antes do primeiro <code>goto</code>, para nenhum pulo passar por cima dele (veja a seção 4).</dd>
+  <dt>goto fim;</dt><dd>O arquivo nem abriu: não há nada para desfazer.</dd>
+  <dt>goto fecha_arquivo;</dt><dd>O arquivo abriu, a memória não: só fecha o arquivo.</dd>
+  <dt>goto libera_precos;</dt><dd>Os dois deram certo: libera a memória e fecha o arquivo.</dd>
+  <dt>libera_precos: … fecha_arquivo: … fim:</dt><dd>Os rótulos ficam em <strong>escada</strong>, na ordem inversa da reserva (o último reservado é o primeiro devolvido). O caminho feliz também desce por eles: depois do <code>resultado = 0;</code>, o programa continua e passa pelos três.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra -g limpeza.c -o limpeza
+$ ./limpeza
+precos.txt: 4 preços, total R$ 48
+vazio.txt: nenhum preço
+sumiu.txt: No such file or directory
+$ valgrind --leak-check=full ./limpeza
+==445234== Memcheck, a memory error detector
+==445234== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==445234== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==445234== Command: ./limpeza
+==445234==
+precos.txt: 4 preços, total R$ 48
+vazio.txt: nenhum preço
+sumiu.txt: No such file or directory
+==445234==
+==445234== HEAP SUMMARY:
+==445234==     in use at exit: 0 bytes in 0 blocks
+==445234==   total heap usage: 12 allocs, 12 frees, 12,950 bytes allocated
+==445234==
+==445234== All heap blocks were freed -- no leaks are possible
+==445234==
+==445234== For lists of detected and suppressed errors, rerun with: -s
+==445234== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<p>"Todos os blocos foram liberados: nenhum vazamento é possível." Acrescentar um quarto erro amanhã é uma linha: <code>goto libera_precos;</code>. A limpeza não é copiada de novo.</p>
+
+<h3>E sem <code>goto</code>?</h3>
+<p>Dá para escrever a mesma função só com <code>if</code>, um dentro do outro. O <code>escada.c</code> abaixo (com os mesmos <code>#include</code> e o mesmo <code>main</code>) dá a mesma saída:</p>
+
+<pre class="file" data-file="escada.c">int relatorio(const char *nome) {
+    int resultado = -1;
+    FILE *f = fopen(nome, "r");
+    if (f != nullptr) {
+        int *precos = malloc(100 * sizeof *precos);
+        if (precos != nullptr) {
+            int n = 0;
+            while (n &lt; 100 &amp;&amp; fscanf(f, "%d", &amp;precos[n]) == 1) {
+                n++;
+            }
+            if (n &gt; 0) {
+                int total = 0;
+                for (int i = 0; i &lt; n; i++) {
+                    total += precos[i];
+                }
+                printf("%s: %d preços, total R$ %d\n", nome, n, total);
+                resultado = 0;
+            } else {
+                printf("%s: nenhum preço\n", nome);
+            }
+            free(precos);
+        } else {
+            printf("Sem memória\n");
+        }
+        fclose(f);
+    } else {
+        perror(nome);
+    }
+    return resultado;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra escada.c -o escada
+$ ./escada
+precos.txt: 4 preços, total R$ 48
+vazio.txt: nenhum preço
+sumiu.txt: No such file or directory</pre>
+
+<p>Também está certo, e não usa <code>goto</code>. Mas cada recurso empurra o código um nível para a direita, e a mensagem de cada erro fica longe do teste que a causou (o <code>perror</code> do <code>fopen</code> está lá no fim). Com dois recursos, as duas formas se equivalem; com quatro ou cinco, a escada fica difícil de ler, e o bloco de limpeza ganha. Escolha a que ficar mais clara, e use o <code>valgrind</code> para conferir as duas.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> o mesmo <code>limpeza.c</code>, com os arquivos nas abas. Ponha um <code>printf("  (liberei os preços)\n");</code> depois do <code>free</code> e um <code>printf("  (fechei %s)\n", nome);</code> depois do <code>fclose</code>, e rode: veja por quais rótulos cada chamada passa. Depois apague o conteúdo da aba <code>precos.txt</code>.</p>
+<pre class="script" data-file="limpeza.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int relatorio(const char *nome) {
+    int resultado = -1;
+    int *precos = nullptr;
+
+    FILE *f = fopen(nome, "r");
+    if (f == nullptr) {
+        perror(nome);
+        goto fim;
+    }
+
+    precos = malloc(100 * sizeof *precos);
+    if (precos == nullptr) {
+        printf("Sem memória\n");
+        goto fecha_arquivo;
+    }
+
+    int n = 0;
+    while (n &lt; 100 &amp;&amp; fscanf(f, "%d", &amp;precos[n]) == 1) {
+        n++;
+    }
+    if (n == 0) {
+        printf("%s: nenhum preço\n", nome);
+        goto libera_precos;
+    }
+
+    int total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += precos[i];
+    }
+    printf("%s: %d preços, total R$ %d\n", nome, n, total);
+    resultado = 0;
+
+libera_precos:
+    free(precos);
+fecha_arquivo:
+    fclose(f);
+fim:
+    return resultado;
+}
+
+int main(void) {
+    relatorio("precos.txt");
+    relatorio("vazio.txt");
+    relatorio("sumiu.txt");
+    return 0;
+}
+</pre>
+<pre class="script" data-file="precos.txt">12 3 25 8
+</pre>
+<pre class="script" data-file="vazio.txt"></pre>
+</div>
+
+<hr>
+
+<h2>4. As regras do <code>goto</code></h2>
+
+<h3>Só dentro da mesma função</h3>
+<p>Um rótulo vale na função inteira em que está (antes ou depois do <code>goto</code>, em qualquer bloco), e só nela. Não dá para pular de uma função para outra:</p>
+
+<pre class="file" data-file="outrafunc.c">#include &lt;stdio.h&gt;
+
+void procurar(void) {
+    goto fim;
+}
+
+int main(void) {
+    procurar();
+fim:
+    printf("Fim\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra outrafunc.c -o outrafunc
+outrafunc.c: In function ‘procurar’:
+outrafunc.c:4:5: error: label ‘fim’ used but not defined
+    4 |     goto fim;
+      |     ^~~~
+outrafunc.c: In function ‘main’:
+outrafunc.c:9:1: warning: label ‘fim’ defined but not used [-Wunused-label]
+    9 | fim:
+      | ^~~</pre>
+
+<p>Para o <code>procurar</code>, o <code>fim</code> não existe ("rótulo usado, mas não definido"); para o <code>main</code>, ele existe e ninguém o usa ("definido, mas não usado"). Para sair de uma função, use <code>return</code>. Para voltar de várias funções de uma vez existe o <code>longjmp</code>, assunto da próxima aula, <a href="setjmp.html">setjmp e longjmp</a>.</p>
+
+<h3>Um nome, um rótulo</h3>
+<pre class="file" data-file="dupl.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    goto fim;
+fim:
+    printf("um\n");
+fim:
+    printf("dois\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra dupl.c -o dupl
+dupl.c: In function ‘main’:
+dupl.c:7:1: error: duplicate label ‘fim’
+    7 | fim:
+      | ^~~
+dupl.c:5:1: note: previous definition of ‘fim’ with type ‘void’
+    5 | fim:
+      | ^~~</pre>
+<p>"Rótulo duplicado". O Clang, no editor, diz <code>redefinition of label 'fim'</code>. Como o rótulo vale na função inteira, nem em blocos diferentes dá para repetir o nome. Em outra função, pode.</p>
+
+<h3>Não pule para dentro de um VLA</h3>
+<p>Um array de tamanho variável (VLA, aula <a href="arrays.html">Arrays</a>) é criado quando o programa passa pela declaração. Pular para depois dela, dentro do bloco, deixaria o array sem existir:</p>
+
+<pre class="file" data-file="vla.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 3;
+    goto dentro;
+    {
+        int notas[n];
+    dentro:
+        notas[0] = 10;
+        printf("%d\n", notas[0]);
+    }
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra vla.c -o vla
+vla.c: In function ‘main’:
+vla.c:5:5: error: jump into scope of identifier with variably modified type
+    5 |     goto dentro;
+      |     ^~~~
+vla.c:8:5: note: label ‘dentro’ defined here
+    8 |     dentro:
+      |     ^~~~~~
+vla.c:7:13: note: ‘notas’ declared here
+    7 |         int notas[n];
+      |             ^~~~~</pre>
+<p>"Salto para dentro do escopo de um identificador com tipo variável." O Clang diz <code>cannot jump from this goto statement to its label</code> e <code>jump bypasses initialization of variable length array</code> ("o salto passa por cima da criação do array de tamanho variável").</p>
+
+<h3>Cuidado: pular por cima de uma inicialização</h3>
+<p>Com uma variável comum, o C <strong>deixa</strong> pular por cima da declaração. A variável existe, mas o valor inicial nunca é guardado:</p>
+
+<pre class="file" data-file="pulainit.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    goto mostrar;
+    int estoque = 12;
+mostrar:
+    printf("Estoque: %d\n", estoque);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra pulainit.c -o pulainit &amp;&amp; ./pulainit
+pulainit.c: In function ‘main’:
+pulainit.c:7:5: warning: ‘estoque’ is used uninitialized [-Wuninitialized]
+    7 |     printf("Estoque: %d\n", estoque);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+pulainit.c:5:9: note: ‘estoque’ was declared here
+    5 |     int estoque = 12;
+      |         ^~~~~~~
+Estoque: 0</pre>
+
+<p>Compilou (é só um aviso), e o estoque saiu 0, não 12: o valor é lixo, que desta vez foi zero. Aqui o gcc percebeu porque o caso é simples. Para ele avisar sobre <strong>todo</strong> pulo por cima de uma inicialização, existe a opção <code>-Wjump-misses-init</code>, que não vem no <code>-Wall</code>:</p>
+
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra -Wjump-misses-init pulainit.c -o pulainit
+pulainit.c: In function ‘main’:
+pulainit.c:4:5: warning: jump skips variable initialization [-Wjump-misses-init]
+    4 |     goto mostrar;
+      |     ^~~~
+pulainit.c:6:1: note: label ‘mostrar’ defined here
+    6 | mostrar:
+      | ^~~~~~~
+pulainit.c:5:9: note: ‘estoque’ declared here
+    5 |     int estoque = 12;
+      |         ^~~~~~~
+pulainit.c:7:5: warning: ‘estoque’ is used uninitialized [-Wuninitialized]
+    7 |     printf("Estoque: %d\n", estoque);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+pulainit.c:5:9: note: ‘estoque’ was declared here
+    5 |     int estoque = 12;
+      |         ^~~~~~~</pre>
+
+<p>"O salto pula a inicialização da variável." É por isso que, no <code>limpeza.c</code>, as variáveis que a limpeza usa (<code>resultado</code>, <code>precos</code>, <code>f</code>) são declaradas <strong>antes</strong> do primeiro <code>goto</code>. (Em C++, este programa nem compila; em C, é responsabilidade sua.)</p>
+
+<h3>O rótulo no fim do bloco <span class="versao">C23</span></h3>
+<p>Até o C17, um rótulo tinha de vir antes de um comando. No fim de um bloco, logo antes do <code>}</code>, era preciso escrever um comando vazio (<code>proximo: ;</code>). O C23 tirou essa exigência:</p>
+
+<pre class="file" data-file="finalbloco.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 0; i &lt; 3; i++) {
+        if (i == 1) {
+            goto proximo;
+        }
+        printf("%d\n", i);
+    proximo:
+    }
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c23 -Wall -Wextra finalbloco.c -o finalbloco &amp;&amp; ./finalbloco
+0
+2
+$ gcc -std=c17 -Wall -Wextra -pedantic finalbloco.c -o finalbloco
+finalbloco.c: In function ‘main’:
+finalbloco.c:9:5: warning: label at end of compound statement [-Wfree-labels]
+    9 |     proximo:
+      |     ^~~~~~~</pre>
+
+<p>Com <code>-std=c17</code>, o gcc só avisa se você pedir o rigor do padrão (<code>-pedantic</code>); o Clang avisa sempre: <code>label at end of compound statement is a C23 extension</code>. Este <code>goto proximo</code>, aliás, é só um <code>continue</code> disfarçado (aula <a href="break-continue.html">break e continue</a>): prefira o <code>continue</code>.</p>
+
+<hr>
+
+<h2>5. O futuro: <code>break</code> com nome <span class="versao">C2y</span></h2>
+<p>O uso mais comum do <code>goto</code> fora da limpeza é sair de vários laços. A próxima versão do C, o <strong>C2y</strong>, traz um jeito sem <code>goto</code>: dar nome ao laço e escrever <code>break nome;</code>. O gcc 15 e o Clang 22 já aceitam com <code>-std=c2y</code>:</p>
+
+<pre class="file" data-file="nomeado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    busca: for (int a = 1; a &lt;= 20; a++) {
+        for (int b = a; b &lt;= 20; b++) {
+            if (a * b == 36 &amp;&amp; a + b == 13) {
+                printf("Achei: %d e %d\n", a, b);
+                break busca;
+            }
+        }
+    }
+    printf("Busca encerrada.\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/goto">$ gcc -std=c2y -Wall -Wextra nomeado.c -o nomeado &amp;&amp; ./nomeado
+Achei: 4 e 9
+Busca encerrada.
+$ gcc -std=c23 -Wall -Wextra -pedantic nomeado.c -o nomeado
+nomeado.c: In function ‘main’:
+nomeado.c:8:23: warning: ISO C does not support ‘break’ statement with an identifier operand before C2Y [-Wpedantic]
+    8 |                 break busca;
+      |                       ^~~~~</pre>
+
+<dl class="anatomy">
+  <dt>busca: for (…)</dt><dd>O nome vai antes do laço, com a mesma cara de um rótulo.</dd>
+  <dt>break busca;</dt><dd>Sai do laço chamado <code>busca</code>, com o de dentro junto. Existe também <code>continue busca;</code>, que pula para a próxima volta do laço de fora.</dd>
+</dl>
+
+<p>Com <code>-std=c23</code>, o gcc 15 aceita sem dizer nada (só avisa com <code>-pedantic</code>, como acima), mas o Clang recusa: <code>error: named 'break' is only supported in C2y</code>. Como o C2y ainda não saiu, use isto só para conhecer; em código de hoje, fique com a bandeira, a função com <code>return</code> ou o <code>goto</code>.</p>
+
+<div class="tryc" data-flags="-std=c2y -Wall -Wextra" data-goal="out:depois de 63 voltas.,src:break\s+busca\s*;">
+<p class="try-task"><strong>Missão:</strong> esta caixa compila com <code>-std=c2y</code>. O programa conta quantas voltas o laço de dentro deu. Rode: com o <code>break;</code> comum, só o laço de dentro para, o de fora continua até <code>a = 20</code>, e são 199 voltas (o Clang ainda avisa <code>unused label 'busca'</code>). Troque por <code>break busca;</code> para encerrar a busca no par certo: devem sobrar 63 voltas.</p>
+<pre class="script" data-file="nomeado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int voltas = 0;
+    busca: for (int a = 1; a &lt;= 20; a++) {
+        for (int b = a; b &lt;= 20; b++) {
+            voltas++;
+            if (a * b == 36 &amp;&amp; a + b == 13) {
+                printf("Achei: %d e %d\n", a, b);
+                break;
+            }
+        }
+    }
+    printf("Busca encerrada depois de %d voltas.\n", voltas);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="nomeado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int voltas = 0;
+    busca: for (int a = 1; a &lt;= 20; a++) {
+        for (int b = a; b &lt;= 20; b++) {
+            voltas++;
+            if (a * b == 36 &amp;&amp; a + b == 13) {
+                printf("Achei: %d e %d\n", a, b);
+                break busca;
+            }
+        }
+    }
+    printf("Busca encerrada depois de %d voltas.\n", voltas);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th></tr>
+<tr><td>Repetir enquanto não der certo</td><td><code>while</code> ou <code>do while</code>, nunca <code>goto</code> para trás</td></tr>
+<tr><td>Pular o resto de uma volta do laço</td><td><code>continue</code></td></tr>
+<tr><td>Sair de um laço</td><td><code>break</code></td></tr>
+<tr><td>Sair de vários laços de uma vez</td><td>Pôr os laços numa função e usar <code>return</code>; ou uma bandeira; ou <code>goto</code> para a frente (no futuro, <code>break nome;</code>)</td></tr>
+<tr><td>Sair de uma função com erro, devolvendo o que ela reservou</td><td><code>goto</code> para o bloco de limpeza, com os rótulos em escada (ou <code>if</code> aninhados, se forem poucos recursos)</td></tr>
+<tr><td>Voltar de várias funções de uma vez</td><td>Códigos de retorno, ou <a href="setjmp.html">setjmp e longjmp</a></td></tr>
+</table>
+</div>
+
+<p><strong>Regra de bolso:</strong> todo <code>goto</code> deve pular <strong>para a frente</strong> e para um rótulo <strong>perto do fim</strong> da função. Se você precisa desenhar setas para explicar um <code>goto</code>, troque-o por um laço ou por uma função.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: label ‘fin’ used but not defined</code></strong>
+<p><strong>O que significa:</strong> o <code>goto</code> aponta para um rótulo que não existe nesta função: o nome está escrito diferente, ou o rótulo está em outra função. No editor: <code>use of undeclared label 'fin'</code>.</p>
+<p><strong>Como consertar:</strong> confira o nome (maiúsculas contam). Se o rótulo está em outra função, use <code>return</code> para sair desta.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: label ‘fim’ defined but not used [-Wunused-label]</code></strong>
+<p><strong>O que significa:</strong> nenhum <code>goto</code> aponta para este rótulo. Ou sobrou de uma versão antiga, ou o <code>goto</code> que devia usá-lo tem o nome errado (veja o erro de cima). No editor: <code>unused label 'fim'</code>.</p>
+<p><strong>Como consertar:</strong> apague o rótulo, ou conserte o nome no <code>goto</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: duplicate label ‘fim’</code></strong>
+<p><strong>O que significa:</strong> dois rótulos com o mesmo nome na mesma função. No editor: <code>redefinition of label 'fim'</code>.</p>
+<p><strong>Como consertar:</strong> dê nomes que digam o que o rótulo faz: <code>fecha_arquivo</code>, <code>libera_precos</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: jump into scope of identifier with variably modified type</code></strong>
+<p><strong>O que significa:</strong> o <code>goto</code> pula para dentro do bloco de um VLA, depois da declaração dele. No editor: <code>cannot jump from this goto statement to its label</code>.</p>
+<p><strong>Como consertar:</strong> ponha o rótulo fora do bloco do VLA (ou declare o array antes do <code>goto</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>O valor saiu 0 (ou lixo) e há <code>‘x’ is used uninitialized</code></strong>
+<p><strong>O que significa:</strong> um <code>goto</code> pulou a linha que dava o valor inicial. A variável existe, mas o valor nunca foi guardado.</p>
+<p><strong>Como consertar:</strong> declare e inicialize as variáveis antes do primeiro <code>goto</code>. Para o gcc avisar sempre, compile com <code>-Wjump-misses-init</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Vazamento no <code>valgrind</code> numa função com vários <code>return</code></strong>
+<p><strong>O que significa:</strong> um dos caminhos de erro saiu sem <code>free</code> ou sem <code>fclose</code>.</p>
+<p><strong>Como consertar:</strong> troque os <code>return</code> do meio por <code>goto</code> para os rótulos de limpeza, em escada, e deixe um <code>return</code> só, no fim.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrito</th><th>O que é</th></tr>
+<tr><td><code>nome:</code></td><td>Rótulo: marca uma linha. Vale na função inteira</td></tr>
+<tr><td><code>goto nome;</code></td><td>Pula para o rótulo, na mesma função</td></tr>
+<tr><td><code>libera: free(p); fecha: fclose(f); fim: return r;</code></td><td>Bloco de limpeza, na ordem inversa da reserva</td></tr>
+<tr><td><code>nome: }</code></td><td>Rótulo no fim do bloco <span class="versao">C23</span> (antes: <code>nome: ; }</code>)</td></tr>
+<tr><td><code>nome: for (…) { … break nome; }</code></td><td><code>break</code>/<code>continue</code> com nome <span class="versao">C2y</span></td></tr>
+<tr><td><code>-Wjump-misses-init</code></td><td>Opção do gcc: avisa todo pulo por cima de uma inicialização</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O rótulo</h3>
+<p>Complete a linha do rótulo para onde vai o <code>goto fecha_arquivo;</code>:</p>
+<div class="ex-code"><input data-answer="fecha_arquivo:" aria-label="rótulo"><br>&nbsp;&nbsp;&nbsp;&nbsp;fclose(f);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Sem pulo para trás</h3>
+<p>Um <code>goto</code> para trás que repete um pedido até a resposta ser válida deve virar qual laço? Escreva as duas palavras:</p>
+<div class="ex-code"><input data-answer="do while|do-while|do ... while|do…while" aria-label="laço"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Uma função abre um arquivo e depois reserva memória. Em que ordem ficam os rótulos de limpeza no fim?</p>
+<label><input type="radio" name="q3"> Tanto faz</label>
+<label><input type="radio" name="q3"> Primeiro <code>fclose</code>, depois <code>free</code></label>
+<label><input type="radio" name="q3"> Primeiro <code>free</code>, depois <code>fclose</code>: o último reservado é o primeiro devolvido</label>
+<label><input type="radio" name="q3"> Um rótulo só, com os dois</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O <code>goto</code> pode pular para um rótulo de outra função?</p>
+<label><input type="radio" name="q4"> Sim, se o rótulo vier depois</label>
+<label><input type="radio" name="q4"> Não: dá <code>label used but not defined</code></label>
+<label><input type="radio" name="q4"> Sim, mas só no C23</label>
+<label><input type="radio" name="q4"> Só se a outra função for <code>static</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. <code>goto mostrar; int estoque = 12; mostrar: printf("%d", estoque);</code> faz o quê?</p>
+<label><input type="radio" name="q5"> Erro de compilação</label>
+<label><input type="radio" name="q5"> Mostra 12</label>
+<label><input type="radio" name="q5"> Falha de segmentação</label>
+<label><input type="radio" name="q5"> Compila com aviso e mostra um valor qualquer: a inicialização foi pulada</label>
+</div>
+
+<h3>Missão final: tape os vazamentos</h3>
+
+<div class="tryc" data-goal="outre:^precos\.txt: 4 preços\, o maior é R\$ 25\n  \(liberei a memória\)\n  \(fechei precos\.txt\)\nvazio\.txt: nenhum preço\n  \(liberei a memória\)\n  \(fechei vazio\.txt\)\nerro\.txt: preço suspeito \(R\$ 3000\)\n  \(liberei a memória\)\n  \(fechei erro\.txt\)\nsumiu\.txt: não abriu\n$,src:goto\s+\w+\s*;">
+<p class="try-task"><strong>Missão:</strong> a função <code>maior_preco</code> tem dois <code>return -1</code> que esquecem de liberar a memória e de fechar o arquivo (as funções <code>liberar</code> e <code>fechar</code> avisam na tela quando são chamadas). Reescreva a função com um <strong>bloco de limpeza</strong>: um <code>int resultado = -1;</code> no começo, <code>goto</code> nos erros, rótulos em escada no fim e um <code>return resultado;</code> só. Todo arquivo aberto tem de ser fechado, e toda memória, liberada:</p>
+<pre class="out">precos.txt: 4 preços, o maior é R$ 25
+  (liberei a memória)
+  (fechei precos.txt)
+vazio.txt: nenhum preço
+  (liberei a memória)
+  (fechei vazio.txt)
+erro.txt: preço suspeito (R$ 3000)
+  (liberei a memória)
+  (fechei erro.txt)
+sumiu.txt: não abriu</pre>
+<pre class="script" data-file="maior.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void fechar(FILE *f, const char *nome) {
+    fclose(f);
+    printf("  (fechei %s)\n", nome);
+}
+
+void liberar(int *p) {
+    free(p);
+    printf("  (liberei a memória)\n");
+}
+
+int maior_preco(const char *nome) {
+    FILE *f = fopen(nome, "r");
+    if (f == nullptr) {
+        printf("%s: não abriu\n", nome);
+        return -1;
+    }
+
+    int *precos = malloc(100 * sizeof *precos);
+    if (precos == nullptr) {
+        printf("Sem memória\n");
+        fechar(f, nome);
+        return -1;
+    }
+
+    int n = 0;
+    while (n &lt; 100 &amp;&amp; fscanf(f, "%d", &amp;precos[n]) == 1) {
+        n++;
+    }
+    if (n == 0) {
+        printf("%s: nenhum preço\n", nome);
+        return -1;
+    }
+
+    int maior = precos[0];
+    for (int i = 1; i &lt; n; i++) {
+        if (precos[i] &gt; maior) {
+            maior = precos[i];
+        }
+    }
+    if (maior &gt; 1000) {
+        printf("%s: preço suspeito (R$ %d)\n", nome, maior);
+        return -1;
+    }
+    printf("%s: %d preços, o maior é R$ %d\n", nome, n, maior);
+
+    liberar(precos);
+    fechar(f, nome);
+    return maior;
+}
+
+int main(void) {
+    maior_preco("precos.txt");
+    maior_preco("vazio.txt");
+    maior_preco("erro.txt");
+    maior_preco("sumiu.txt");
+    return 0;
+}
+</pre>
+<pre class="script" data-file="precos.txt">12 3 25 8
+</pre>
+<pre class="script" data-file="vazio.txt"></pre>
+<pre class="script" data-file="erro.txt">12 3000 8
+</pre>
+<pre class="solucao" data-file="maior.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void fechar(FILE *f, const char *nome) {
+    fclose(f);
+    printf("  (fechei %s)\n", nome);
+}
+
+void liberar(int *p) {
+    free(p);
+    printf("  (liberei a memória)\n");
+}
+
+int maior_preco(const char *nome) {
+    int resultado = -1;
+    int *precos = nullptr;
+
+    FILE *f = fopen(nome, "r");
+    if (f == nullptr) {
+        printf("%s: não abriu\n", nome);
+        goto fim;
+    }
+
+    precos = malloc(100 * sizeof *precos);
+    if (precos == nullptr) {
+        printf("Sem memória\n");
+        goto fecha_arquivo;
+    }
+
+    int n = 0;
+    while (n &lt; 100 &amp;&amp; fscanf(f, "%d", &amp;precos[n]) == 1) {
+        n++;
+    }
+    if (n == 0) {
+        printf("%s: nenhum preço\n", nome);
+        goto libera_precos;
+    }
+
+    int maior = precos[0];
+    for (int i = 1; i &lt; n; i++) {
+        if (precos[i] &gt; maior) {
+            maior = precos[i];
+        }
+    }
+    if (maior &gt; 1000) {
+        printf("%s: preço suspeito (R$ %d)\n", nome, maior);
+        goto libera_precos;
+    }
+    printf("%s: %d preços, o maior é R$ %d\n", nome, n, maior);
+    resultado = maior;
+
+libera_precos:
+    liberar(precos);
+fecha_arquivo:
+    fechar(f, nome);
+fim:
+    return resultado;
+}
+
+int main(void) {
+    maior_preco("precos.txt");
+    maior_preco("vazio.txt");
+    maior_preco("erro.txt");
+    maior_preco("sumiu.txt");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>goto nome;</code> pula para o rótulo <code>nome:</code>, que vale na função inteira e só nela.</li>
+  <li>Pular para trás cria "código espaguete": use <code>while</code>, <code>do while</code>, <code>break</code> e <code>continue</code>.</li>
+  <li>O uso aceito: <strong>sair</strong> para a frente. Para sair de vários laços (ou, melhor, pôr os laços numa função e usar <code>return</code>) e, principalmente, para o <strong>bloco de limpeza</strong>: rótulos em escada no fim da função, na ordem inversa da reserva, e um <code>return</code> só. O <code>valgrind</code> confere que nenhum caminho vaza.</li>
+  <li>Não dá para pular para dentro do escopo de um VLA. Pular por cima de uma inicialização é permitido, mas deixa a variável com lixo: declare tudo antes do primeiro <code>goto</code> (e <code>-Wjump-misses-init</code> avisa).</li>
+  <li>No C23, um rótulo pode ficar no fim do bloco. No C2y, <code>break nome;</code> vai sair de vários laços sem <code>goto</code>.</li>
+  <li>Próxima aula: <a href="setjmp.html">setjmp e longjmp</a>, o "goto" que atravessa funções, e por que ele é ainda mais perigoso.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
