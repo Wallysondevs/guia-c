@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Matemática (math.h) — raiz, potência, arredondar e o -lm | Guia C</title>
+<meta name="description" content="A biblioteca math.h do C para quem nunca programou: sqrt, pow, abs e fabs, round, floor, ceil e trunc, fmod, hypot, o π sem M_PI, seno e cosseno em radianos, NaN e infinito, e por que o gcc pede -lm (referência não definida para sqrt), com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Matemática (math.h)</span></h1>
+
+<p class="intro">Os operadores <code>+ - * / %</code> (<a href="operadores-aritmeticos.html">Operadores Aritméticos</a>) fazem as quatro operações. Para raiz quadrada, potência, arredondamento ou seno, o C tem uma caixa de funções prontas: a biblioteca de matemática, que você abre com <code>#include &lt;math.h&gt;</code>. Nesta aula você vai usar as funções mais comuns, entender por que o gcc às vezes exige uma opção a mais (<code>-lm</code>) e ver o que acontece quando a conta não tem resposta, como a raiz de um número negativo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Calcular raiz quadrada (<code>sqrt</code>) e potência (<code>pow</code>).</li>
+  <li>Por que o gcc mostra <code>referência não definida para "sqrt"</code> e como o <code>-lm</code> resolve.</li>
+  <li>A diferença entre <code>abs</code> (inteiros) e <code>fabs</code> (números com vírgula).</li>
+  <li>Arredondar de quatro jeitos: <code>round</code>, <code>floor</code>, <code>ceil</code> e <code>trunc</code>.</li>
+  <li>O resto com vírgula (<code>fmod</code>), a distância entre dois pontos (<code>hypot</code>) e o π.</li>
+  <li>Seno e cosseno trabalham em <strong>radianos</strong>, não em graus.</li>
+  <li>O que são <code>nan</code> e <code>inf</code>, e como testá-los com <code>isnan</code> e <code>isinf</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia, <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>, mais o <code>-lm</code> no fim, que a seção 1 explica.</p>
+
+<hr>
+
+<h2>A ideia: a calculadora científica</h2>
+<p>A calculadora comum da Ana faz as quatro operações. Para a lição de geometria, ela pega a <strong>calculadora científica</strong>, que tem as teclas <code>√</code>, <code>xʸ</code>, <code>sin</code>, <code>cos</code> e <code>π</code>. Em C é parecido:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na calculadora</th><th>Em C</th></tr>
+<tr><td>As quatro operações, sempre à mão</td><td>Os operadores <code>+ - * /</code>, que fazem parte da linguagem</td></tr>
+<tr><td>Pegar a calculadora científica na gaveta</td><td><code>#include &lt;math.h&gt;</code> no topo do arquivo</td></tr>
+<tr><td>Apertar a tecla <code>√</code> e digitar 49</td><td>Chamar a função: <code>sqrt(49.0)</code></td></tr>
+</table>
+</div>
+
+<p>As funções de <code>math.h</code> recebem e devolvem <code>double</code> (<a href="ponto-flutuante.html">float e double</a>). Você pode passar um <code>int</code>: o C converte sozinho (<a href="conversao-tipos.html">Conversão de Tipos</a>). Mas o resultado é sempre um <code>double</code>, e por isso é mostrado com <code>%f</code>, nunca com <code>%d</code>.</p>
+
+<hr>
+
+<h2>1. Raiz quadrada: <code>sqrt</code> e o <code>-lm</code></h2>
+<p>A Ana quer cercar um canteiro quadrado de 49 m². Qual é o tamanho de cada lado? É a <strong>raiz quadrada</strong> da área: <code>sqrt</code> ("square root", raiz quadrada).</p>
+
+<pre class="file" data-file="raiz.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double area = 49.0;
+    double lado = sqrt(area);
+
+    printf("Um quadrado de %.1f m² tem lado de %.1f m\n", area, lado);
+    printf("Raiz de 2: %.6f\n", sqrt(2.0));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;math.h&gt;</dt><dd>Traz as <strong>declarações</strong> das funções de matemática: o compilador fica sabendo que <code>sqrt</code> existe, que recebe um <code>double</code> e devolve um <code>double</code>.</dd>
+  <dt>double lado = sqrt(area);</dt><dd>Chama a função com o valor de <code>area</code> e guarda o resultado, 7.0.</dd>
+  <dt>sqrt(2.0)</dt><dd>A raiz de 2 não é exata (1,41421356…). O <code>%.6f</code> mostra seis casas.</dd>
+</dl>
+
+<p>Compilando com o comando de sempre, vem uma surpresa:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra raiz.c -o raiz
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccPawk0J.o: na função "main":
+raiz.c:(.text+0x23): referência não definida para "sqrt"
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra raiz.c -o raiz -lm
+$ ./raiz
+Um quadrado de 49.0 m² tem lado de 7.0 m
+Raiz de 2: 1.414214</pre>
+
+<p>O erro não veio do compilador, e sim do <strong>ligador</strong> (<code>ld</code>), a etapa final que junta o seu programa com as bibliotecas (<a href="como-funciona.html">Como o C Funciona</a>). <em>Referência não definida para "sqrt"</em> (em inglês, <code>undefined reference to `sqrt'</code>) quer dizer: "o seu código usa <code>sqrt</code>, mas eu não achei o corpo dessa função em lugar nenhum".</p>
+
+<p>O <code>#include &lt;math.h&gt;</code> só <strong>apresenta</strong> a função ao compilador. O código dela mora num arquivo à parte, a biblioteca de matemática (<code>libm</code>, "lib" de biblioteca e "m" de matemática). Por uma tradição antiga do Unix, o gcc no Linux junta sozinho a biblioteca principal do C (a do <code>printf</code>), mas <strong>não</strong> a de matemática. A opção <code>-lm</code> pede: "ligue (<code>-l</code>) a biblioteca <code>m</code>".</p>
+
+<div class="warning">
+<strong>O <code>-lm</code> vai no fim</strong>
+<p>O ligador lê o comando da esquerda para a direita. Se a biblioteca vem <strong>antes</strong> do arquivo que a usa, ele ainda não sabe que vai precisar dela e a descarta. O mesmo erro volta:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -lm raiz.c -o raiz
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cckch8md.o: na função "main":
+raiz.c:(.text+0x23): referência não definida para "sqrt"
+collect2: error: ld returned 1 exit status</pre>
+<p>Regra: os arquivos <code>.c</code> primeiro, as bibliotecas (<code>-lm</code>) depois.</p>
+</div>
+
+<h3>Por que às vezes funciona sem <code>-lm</code>?</h3>
+<p>Você pode encontrar programas com <code>sqrt</code> que compilam sem o <code>-lm</code>. Este, por exemplo:</p>
+
+<pre class="file" data-file="constante.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    printf("Raiz de 49: %.1f\n", sqrt(49.0));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra constante.c -o constante     « sem -lm, e compilou
+$ ./constante
+Raiz de 49: 7.0</pre>
+
+<p>Aqui o número está escrito no código (<code>49.0</code>), e o gcc é esperto: ele mesmo calcula a raiz <strong>durante a compilação</strong> e escreve <code>7.0</code> no programa. Ninguém precisa chamar a <code>sqrt</code> de verdade, e o ligador não procura a biblioteca. O mesmo acontece com o <code>fabs</code> (seção 3), que o gcc troca por uma instrução do processador. Com uma variável, como no <code>raiz.c</code>, a conta só pode ser feita quando o programa roda, e aí a biblioteca é necessária. Para não ter de pensar nisso: <strong>usou <code>math.h</code>, ponha <code>-lm</code></strong>.</p>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>O editor já junta a biblioteca de matemática sozinho: as caixas desta aula funcionam sem <code>-lm</code>. No Linux, com o gcc, ele é necessário.</p>
+</div>
+
+<hr>
+
+<h2>2. Potência: <code>pow</code></h2>
+<p>O C não tem operador de potência. O <code>^</code> existe, mas é outra coisa: o "ou exclusivo" de <a href="operadores-bits.html">Operadores de Bits</a>. O engano é tão comum que o gcc 15 avisa:</p>
+
+<pre class="term" data-cwd="~/c">$ cat xor.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%d\n", 2 ^ 10);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra xor.c -o xor
+xor.c: In function ‘main’:
+xor.c:4:22: warning: result of ‘2^10’ is 8; did you mean ‘1 &lt;&lt; 10’ (1024)? [-Wxor-used-as-pow]
+    4 |     printf("%d\n", 2 ^ 10);
+      |                      ^
+      |                    -
+      |                    1 &lt;&lt;
+xor.c:4:20: note: you can silence this warning by using a hexadecimal constant (0x2 rather than 2)
+    4 |     printf("%d\n", 2 ^ 10);
+      |                    ^
+      |                    0x2
+$ ./xor
+8</pre>
+
+<p>"O resultado de <code>2^10</code> é 8; você quis dizer <code>1 &lt;&lt; 10</code> (1024)?" (o <code>&lt;&lt;</code> também é de <a href="operadores-bits.html">Operadores de Bits</a>, e só serve para potências de 2). Para elevar um número qualquer a outro, use <code>pow(base, expoente)</code> ("power", potência):</p>
+
+<pre class="file" data-file="potencia.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    printf("2 elevado a 10 = %.0f\n", pow(2, 10));
+    printf("1.5 ao quadrado = %.2f\n", pow(1.5, 2));
+    printf("raiz cúbica de 27 = %.1f\n", pow(27, 1.0 / 3));
+
+    double guardado = 1000.0;
+    double depois = guardado * pow(1.01, 12);
+    printf("R$ %.2f a 1%% ao mês, depois de 12 meses: R$ %.2f\n", guardado, depois);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>pow(2, 10)</dt><dd>2<sup>10</sup> = 1024. Os <code>int</code> 2 e 10 viram <code>double</code> na entrada; o resultado é o <code>double</code> 1024.0, mostrado com <code>%.0f</code> (zero casas).</dd>
+  <dt>pow(27, 1.0 / 3)</dt><dd>Elevar a 1/3 é tirar a raiz cúbica. Repare no <code>1.0</code>: <code>1 / 3</code> seria divisão inteira e daria 0 (<a href="ponto-flutuante.html">float e double</a>), e <code>pow(27, 0)</code> é 1.</dd>
+  <dt>guardado * pow(1.01, 12)</dt><dd>Juros compostos: 1% ao mês é multiplicar por 1,01 a cada mês; doze meses são 1,01<sup>12</sup>.</dd>
+  <dt>1%%</dt><dd>Dentro do <code>printf</code>, <code>%%</code> mostra um <code>%</code> (<a href="formatos-printf.html">Formatos do printf</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra potencia.c -o potencia -lm
+$ ./potencia
+2 elevado a 10 = 1024
+1.5 ao quadrado = 2.25
+raiz cúbica de 27 = 3.0
+R$ 1000.00 a 1% ao mês, depois de 12 meses: R$ 1126.83</pre>
+
+<h3>O resultado é <code>double</code></h3>
+<p>O engano mais comum com <code>pow</code> é mostrar o resultado com <code>%d</code>:</p>
+
+<pre class="file" data-file="powd.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    printf("%d\n", pow(2, 10));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra powd.c -o powd -lm
+powd.c: In function ‘main’:
+powd.c:5:14: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’ [-Wformat=]
+    5 |     printf("%d\n", pow(2, 10));
+      |             ~^     ~~~~~~~~~~
+      |              |     |
+      |              int   double
+      |             %f
+$ ./powd
+1293164760</pre>
+
+<p>"O formato <code>%d</code> espera um <code>int</code>, mas o argumento é <code>double</code>". O gcc até sugere o <code>%f</code>. Ignorando o aviso, o programa mostra lixo: um <code>double</code> é guardado de um jeito totalmente diferente de um <code>int</code>, e o <code>printf</code> leu o lugar errado. No editor, o mesmo programa mostra <code>0</code>. Se você quer um inteiro, converta com um cast: <code>int casas = (int) pow(2, 10);</code>.</p>
+
+<div class="tip">
+<strong>Para um quadrado, multiplique</strong>
+<p><code>x * x</code> é mais simples e mais rápido que <code>pow(x, 2)</code>, e funciona com <code>int</code> sem conversão. Deixe o <code>pow</code> para expoentes grandes ou com vírgula.</p>
+</div>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> mude os juros para 2% ao mês (<code>1.02</code>) e o prazo para 24 meses. Depois tente calcular a raiz quadrada de 2 com <code>pow</code> (que expoente dá a raiz quadrada?) e compare com <code>sqrt(2.0)</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double guardado = 1000.0;
+    double depois = guardado * pow(1.01, 12);
+    printf("Depois de 12 meses: R$ %.2f\n", depois);
+
+    printf("sqrt(2.0) = %.6f\n", sqrt(2.0));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Valor absoluto: <code>abs</code> e <code>fabs</code></h2>
+<p>O <strong>valor absoluto</strong> é o número sem o sinal: o absoluto de −35 é 35, e o de 35 também. Serve para medir distâncias e diferenças ("errou o palpite por quanto?"). O C tem uma função para cada tipo:</p>
+
+<pre class="file" data-file="absoluto.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    int saldo = -35;
+    double temperatura = -2.5;
+
+    printf("abs(%d) = %d\n", saldo, abs(saldo));
+    printf("fabs(%.1f) = %.1f\n", temperatura, fabs(temperatura));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra absoluto.c -o absoluto -lm
+$ ./absoluto
+abs(-35) = 35
+fabs(-2.5) = 2.5</pre>
+
+<dl class="anatomy">
+  <dt>abs</dt><dd>"Absolute", absoluto, para <code>int</code>. Mora no <code>&lt;stdlib.h&gt;</code>, <strong>não</strong> no <code>math.h</code>. Para <code>long</code> e <code>long long</code>, existem <code>labs</code> e <code>llabs</code>.</dd>
+  <dt>fabs</dt><dd>"Floating absolute", absoluto de ponto flutuante, para <code>double</code>. Mora no <code>&lt;math.h&gt;</code>.</dd>
+</dl>
+
+<p>Trocar uma pela outra é um erro silencioso: <code>abs</code> com um <code>double</code> joga fora a parte depois da vírgula. O <code>-Wextra</code> avisa:</p>
+
+<pre class="file" data-file="abserrado.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    double temperatura = -2.5;
+    printf("%d\n", abs(temperatura));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra abserrado.c -o abserrado
+abserrado.c: In function ‘main’:
+abserrado.c:6:20: warning: using integer absolute value function ‘abs’ when argument is of floating-point type ‘double’ [-Wabsolute-value]
+    6 |     printf("%d\n", abs(temperatura));
+      |                    ^~~
+$ ./abserrado
+2</pre>
+
+<p>"Usando a função de valor absoluto de <strong>inteiros</strong>, <code>abs</code>, com um argumento de ponto flutuante". O −2.5 virou −2 na entrada, e o resultado foi 2, não 2.5. O Clang do editor dá o mesmo aviso e ainda sugere: <code>note: use function 'fabs' instead</code> ("use a função <code>fabs</code>").</p>
+
+<hr>
+
+<h2>4. Arredondar: <code>round</code>, <code>floor</code>, <code>ceil</code> e <code>trunc</code></h2>
+<p>"Arredondar" pode querer dizer quatro coisas diferentes. Veja as quatro funções com os mesmos números:</p>
+
+<pre class="file" data-file="arredondar.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double valores[] = {2.4, 2.5, 2.6, -2.4, -2.5, -2.6};
+
+    printf("valor   round  floor   ceil  trunc\n");
+    for (int i = 0; i &lt; 6; i++) {
+        double x = valores[i];
+        printf("%5.1f  %5.1f  %5.1f  %5.1f  %5.1f\n",
+               x, round(x), floor(x), ceil(x), trunc(x));
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra arredondar.c -o arredondar -lm
+$ ./arredondar
+valor   round  floor   ceil  trunc
+  2.4    2.0    2.0    3.0    2.0
+  2.5    3.0    2.0    3.0    2.0
+  2.6    3.0    2.0    3.0    2.0
+ -2.4   -2.0   -3.0   -2.0   -2.0
+ -2.5   -3.0   -3.0   -2.0   -2.0
+ -2.6   -3.0   -3.0   -2.0   -2.0</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Nome</th><th>O que faz</th><th>2.5</th><th>−2.5</th></tr>
+<tr><td><code>round</code></td><td>"arredondar"</td><td>Para o inteiro mais próximo; o meio (,5) vai para longe do zero</td><td>3</td><td>−3</td></tr>
+<tr><td><code>floor</code></td><td>"chão"</td><td>Sempre para baixo (o inteiro menor ou igual)</td><td>2</td><td>−3</td></tr>
+<tr><td><code>ceil</code></td><td>"ceiling", teto</td><td>Sempre para cima (o inteiro maior ou igual)</td><td>3</td><td>−2</td></tr>
+<tr><td><code>trunc</code></td><td>"truncar", cortar</td><td>Corta a parte depois da vírgula (vai em direção ao zero)</td><td>2</td><td>−2</td></tr>
+</table>
+</div>
+
+<p>Repare nos negativos: <code>floor(-2.4)</code> é −3, porque −3 é menor que −2.4. Já o <code>trunc</code> faz o mesmo que um cast <code>(int)</code>: só corta. Todas devolvem <code>double</code> (por isso o <code>3.0</code>). Para receber um inteiro, existe o <code>lround</code>, que devolve <code>long</code> (aula <a href="conversao-tipos.html">Conversão de Tipos</a>).</p>
+
+<h3>Quando usar cada um: as caixas de ovos</h3>
+<p>A Ana tem 40 ovos e cada caixa leva 12. Quantas caixas ela precisa? 40 / 12 = 3,33…, e 3 caixas não bastam: sobram ovos. Aqui o certo é o <code>ceil</code>, sempre para cima. Mas cuidado com a divisão:</p>
+
+<pre class="file" data-file="caixas.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    int ovos = 40;
+    int por_caixa = 12;
+
+    int caixas = (int) ceil((double) ovos / por_caixa);
+    int errado = (int) ceil(ovos / por_caixa);
+
+    printf("Caixas necessárias: %d\n", caixas);
+    printf("Com divisão inteira: %d\n", errado);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra caixas.c -o caixas -lm
+$ ./caixas
+Caixas necessárias: 4
+Com divisão inteira: 3</pre>
+
+<p>Na segunda conta, <code>ovos / por_caixa</code> é uma divisão de dois <code>int</code>: dá 3, sem vírgula, <strong>antes</strong> de o <code>ceil</code> receber o valor. Não há o que arredondar. O <code>(double)</code> na primeira conta faz a divisão ser com vírgula (3,33…), e o <code>ceil</code> leva a 4. O <code>(int)</code> da frente converte o resultado (<code>4.0</code>) para guardar num <code>int</code>.</p>
+
+<h3>Arredondar com duas casas decimais</h3>
+<p>As funções arredondam para o inteiro. Para arredondar a média 7,4567 em duas casas, multiplique por 100, arredonde e divida de volta:</p>
+
+<pre class="file" data-file="casas.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double media = 7.4567;
+    double arredondada = round(media * 100) / 100;
+
+    printf("Média guardada: %.4f\n", media);
+    printf("Arredondada:    %.4f\n", arredondada);
+    printf("Só na tela:     %.2f\n", media);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra casas.c -o casas -lm
+$ ./casas
+Média guardada: 7.4567
+Arredondada:    7.4600
+Só na tela:     7.46</pre>
+
+<p>7,4567 × 100 = 745,67; arredondado, 746; dividido por 100, 7,46. Se você só quer <strong>mostrar</strong> com duas casas, o <code>%.2f</code> já arredonda na tela, sem mudar o valor guardado. Use o <code>round</code> quando o valor arredondado for usado em outras contas.</p>
+
+<hr>
+
+<h2>5. Resto com vírgula: <code>fmod</code></h2>
+<p>O <code>%</code> só funciona com inteiros. Com <code>double</code>, o gcc recusa:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra restoerr.c -o restoerr
+restoerr.c: In function ‘main’:
+restoerr.c:5:27: error: invalid operands to binary % (have ‘double’ and ‘double’)
+    5 |     printf("%.1f\n", fita % 3.0);
+      |                           ^</pre>
+
+<p>"Operandos inválidos para o <code>%</code> (recebeu <code>double</code> e <code>double</code>)". Para o resto com vírgula, use <code>fmod</code> ("floating modulo"). A Ana tem 10 m de fita e corta pedaços de 3 m:</p>
+
+<pre class="file" data-file="resto.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double fita = 10.0;
+    double pedaco = 3.0;
+
+    printf("Pedaços inteiros: %.0f\n", floor(fita / pedaco));
+    printf("Sobra: %.1f m\n", fmod(fita, pedaco));
+    printf("Sobra de 7.5 / 2: %.1f\n", fmod(7.5, 2.0));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra resto.c -o resto -lm
+$ ./resto
+Pedaços inteiros: 3
+Sobra: 1.0 m
+Sobra de 7.5 / 2: 1.5</pre>
+
+<p>Três pedaços de 3 m usam 9 m e sobra 1 m. E 7,5 = 3 × 2 + 1,5. No editor, a mensagem do Clang para o <code>%</code> com <code>double</code> é <code>invalid operands to binary expression ('double' and 'double')</code>.</p>
+
+<hr>
+
+<h2>6. Distância entre dois pontos: <code>sqrt</code> e <code>hypot</code></h2>
+<p>No mapa do bairro, a casa da Ana fica no ponto (1, 2) e a escola no ponto (4, 6), em quarteirões. Em linha reta, qual é a distância? É o teorema de Pitágoras: a raiz de (diferença em x)² + (diferença em y)².</p>
+
+<pre class="file" data-file="distancia.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double x1 = 1.0, y1 = 2.0;
+    double x2 = 4.0, y2 = 6.0;
+
+    double dx = x2 - x1;
+    double dy = y2 - y1;
+
+    printf("Com sqrt:  %.2f\n", sqrt(dx * dx + dy * dy));
+    printf("Com hypot: %.2f\n", hypot(dx, dy));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra distancia.c -o distancia -lm
+$ ./distancia
+Com sqrt:  5.00
+Com hypot: 5.00</pre>
+
+<p><code>dx</code> é 3 e <code>dy</code> é 4: 3² + 4² = 9 + 16 = 25, e a raiz de 25 é 5. A função <code>hypot</code> ("hypotenuse", hipotenusa) faz a mesma conta de uma vez e, com números muito grandes ou muito pequenos, perde menos precisão.</p>
+
+<div class="tryc" data-goal="out:Distância: 13.00,src:sqrt\s*\(|hypot\s*\(">
+<p class="try-task"><strong>Missão:</strong> a pracinha fica no ponto (2, 3) e a sorveteria no ponto (14, 8). Complete o cálculo da distância em linha reta, com <code>sqrt</code> ou <code>hypot</code>.</p>
+<pre class="out">Distância: 13.00</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double x1 = 2.0, y1 = 3.0;
+    double x2 = 14.0, y2 = 8.0;
+
+    double dx = x2 - x1;
+    double dy = y2 - y1;
+    double d = dx + dy;   // troque pela conta certa
+
+    printf("Distância: %.2f\n", d);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double x1 = 2.0, y1 = 3.0;
+    double x2 = 14.0, y2 = 8.0;
+
+    double dx = x2 - x1;
+    double dy = y2 - y1;
+    double d = sqrt(dx * dx + dy * dy);
+
+    printf("Distância: %.2f\n", d);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>7. O número π</h2>
+<p>Muita gente escreve <code>M_PI</code> para o π, e muitos tutoriais usam. Com o comando padrão do guia, o gcc não reconhece:</p>
+
+<pre class="file" data-file="pi.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double raio = 2.0;
+    printf("Área: %.2f\n", M_PI * raio * raio);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pi.c -o pi -lm
+pi.c: In function ‘main’:
+pi.c:6:28: error: ‘M_PI’ undeclared (first use in this function)
+    6 |     printf("Área: %.2f\n", M_PI * raio * raio);
+      |                            ^~~~
+pi.c:6:28: note: each undeclared identifier is reported only once for each function it appears in
+$ gcc -Wall -Wextra pi.c -o pi -lm          « sem o -std=c23
+$ ./pi
+Área: 12.57</pre>
+
+<p>O <code>M_PI</code> <strong>não faz parte do C padrão</strong>: é um extra do Unix. Com <code>-std=c23</code> (C padrão, sem extras), o <code>math.h</code> não o define. Sem o <code>-std</code>, o gcc usa o "C23 com extras do GNU" e ele aparece. No editor, o Clang também recusa: <code>use of undeclared identifier 'M_PI'</code>. Para um programa que compila em qualquer lugar, defina o seu π com <code>constexpr</code> (<a href="constantes.html">Constantes</a>):</p>
+
+<pre class="file" data-file="pi2.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+constexpr double PI = 3.14159265358979323846;
+
+int main(void) {
+    double raio = 3.0;
+    printf("Área do canteiro: %.2f m²\n", PI * raio * raio);
+    printf("Comprimento da borda: %.2f m\n", 2 * PI * raio);
+    printf("acos(-1) = %.15f\n", acos(-1.0));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pi2.c -o pi2 -lm
+$ ./pi2
+Área do canteiro: 28.27 m²
+Comprimento da borda: 18.85 m
+acos(-1) = 3.141592653589793</pre>
+
+<dl class="anatomy">
+  <dt>constexpr double PI = 3.14159265358979323846;</dt><dd>Uma constante de verdade <span class="versao">C23</span>, com mais casas do que um <code>double</code> consegue guardar (ele guarda umas 16). Em C antigo, escreva <code>#define PI 3.14159265358979323846</code>.</dd>
+  <dt>acos(-1.0)</dt><dd>Outro jeito clássico de obter o π: o arco cujo cosseno é −1 mede π radianos (meia volta). Mostra que o π calculado bate com o escrito.</dd>
+</dl>
+
+<hr>
+
+<h2>8. Seno e cosseno: em radianos</h2>
+<p>As funções <code>sin</code> (seno), <code>cos</code> (cosseno) e <code>tan</code> (tangente) recebem o ângulo em <strong>radianos</strong>, não em graus. Uma volta inteira tem 360 graus, ou 2π radianos. Para converter: <code>radianos = graus × π / 180</code>.</p>
+
+<pre class="file" data-file="trig.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+constexpr double PI = 3.14159265358979323846;
+
+int main(void) {
+    double graus = 30.0;
+    double rad = graus * PI / 180.0;
+
+    printf("sin(30 graus) = %.4f\n", sin(rad));
+    printf("cos(60 graus) = %.4f\n", cos(60.0 * PI / 180.0));
+    printf("sin(30) sem converter = %.4f\n", sin(30.0));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra trig.c -o trig -lm
+$ ./trig
+sin(30 graus) = 0.5000
+cos(60 graus) = 0.5000
+sin(30) sem converter = -0.9880     « o seno de 30 radianos, não de 30 graus</pre>
+
+<p>O seno de 30 graus é 0,5, como na escola. Sem converter, <code>sin(30.0)</code> calcula o seno de 30 <strong>radianos</strong> (quase 5 voltas), e o resultado não tem nada a ver. O compilador não avisa: para ele, 30.0 é só um número.</p>
+
+<hr>
+
+<h2>9. Quando a conta não tem resposta: <code>nan</code> e <code>inf</code></h2>
+<p>Não existe raiz quadrada (real) de um número negativo, nem logaritmo de zero. Em vez de travar, as funções devolvem valores especiais do <code>double</code>:</p>
+
+<pre class="file" data-file="nan.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double x = -4.0;
+    double zero = 0.0;
+    double r = sqrt(x);
+
+    printf("sqrt(-4) = %f\n", r);
+    printf("log(0)   = %f\n", log(zero));
+    printf("1 / 0.0  = %f\n", 1.0 / zero);
+
+    if (isnan(r)) {
+        printf("r não é um número (NaN)\n");
+    }
+    if (isinf(log(zero))) {
+        printf("log(0) é infinito\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nan.c -o nan -lm
+$ ./nan
+sqrt(-4) = -nan
+log(0)   = -inf
+1 / 0.0  = inf
+r não é um número (NaN)
+log(0) é infinito</pre>
+
+<dl class="anatomy">
+  <dt>nan</dt><dd>"Not a number", não é um número: o resultado de uma conta impossível. Qualquer conta com um <code>nan</code> dá <code>nan</code>, e ele "contamina" o resto do programa. (O sinal de menos em <code>-nan</code> não tem significado prático.)</dd>
+  <dt>inf</dt><dd>"Infinity", infinito. <code>log(0)</code> é menos infinito; <code>1.0 / 0.0</code> é mais infinito. Com <code>double</code>, dividir por zero não derruba o programa (com <code>int</code>, derruba: veja <a href="ponto-flutuante.html">float e double</a>).</dd>
+  <dt>isnan(r), isinf(x)</dt><dd>Perguntam "é <code>nan</code>?" e "é infinito?". Não dá para testar com <code>r == NAN</code>: um <code>nan</code> não é igual a nada, nem a ele mesmo.</dd>
+</dl>
+
+<p>Melhor que testar depois é evitar a conta impossível antes: <code>if (x &gt;= 0) { … sqrt(x) … }</code>. É o que a missão final faz.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma conta</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Conta</th><th>Formas</th><th>Qual usar</th></tr>
+<tr><td>Quadrado</td><td><code>x * x</code> ou <code>pow(x, 2)</code></td><td><code>x * x</code>: mais simples, e funciona com <code>int</code></td></tr>
+<tr><td>Raiz quadrada</td><td><code>sqrt(x)</code> ou <code>pow(x, 0.5)</code></td><td><code>sqrt</code>: mais clara e mais precisa</td></tr>
+<tr><td>Raiz cúbica</td><td><code>cbrt(x)</code> ou <code>pow(x, 1.0 / 3)</code></td><td><code>cbrt</code> ("cube root"): funciona também com negativos (<code>pow(-27, 1.0/3)</code> dá <code>nan</code>)</td></tr>
+<tr><td>Hipotenusa</td><td><code>sqrt(a*a + b*b)</code> ou <code>hypot(a, b)</code></td><td><code>hypot</code>, que não estoura com números enormes</td></tr>
+<tr><td>Maior de dois <code>double</code></td><td><code>a &gt; b ? a : b</code> (<a href="ternario.html">ternário</a>) ou <code>fmax(a, b)</code></td><td><code>fmax</code>/<code>fmin</code> (do <code>math.h</code>) deixam a intenção clara; para <code>int</code>, use o ternário</td></tr>
+<tr><td>Mostrar com 2 casas</td><td><code>%.2f</code> ou <code>round(x * 100) / 100</code></td><td><code>%.2f</code>, se é só para a tela</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>referência não definida para "sqrt"</code> (<code>undefined reference to `sqrt'</code>)</strong>
+<p><strong>O que significa:</strong> o ligador não achou o código da função. Faltou o <code>-lm</code>, ou ele está antes do arquivo <code>.c</code> no comando. O mesmo vale para <code>pow</code>, <code>round</code>, <code>floor</code> e as outras.</p>
+<p><strong>Como consertar:</strong> <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa -lm</code>, com o <code>-lm</code> no fim. No <a href="make.html">Makefile</a>, a biblioteca vai em <code>LDLIBS = -lm</code>; no <a href="cmake.html">CMake</a>, em <code>target_link_libraries(programa m)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘sqrt’</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semmath.c -o semmath
+semmath.c: In function ‘main’:
+semmath.c:5:28: error: implicit declaration of function ‘sqrt’ [-Wimplicit-function-declaration]
+    5 |     printf("Lado: %.1f\n", sqrt(area));
+      |                            ^~~~
+semmath.c:2:1: note: include ‘&lt;math.h&gt;’ or provide a declaration of ‘sqrt’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;math.h&gt;
+    2 |
+semmath.c:5:28: warning: incompatible implicit declaration of built-in function ‘sqrt’ [-Wbuiltin-declaration-mismatch]
+    5 |     printf("Lado: %.1f\n", sqrt(area));
+      |                            ^~~~
+semmath.c:5:28: note: include ‘&lt;math.h&gt;’ or provide a declaration of ‘sqrt’</pre>
+<p><strong>O que significa:</strong> faltou o <code>#include &lt;math.h&gt;</code>. O gcc até mostra onde pôr a linha (o <code>+++ |+</code>). No editor: <code>call to undeclared library function 'sqrt'</code> e <code>include the header &lt;math.h&gt;</code>.</p>
+<p><strong>Como consertar:</strong> <code>#include &lt;math.h&gt;</code> no topo. Para <code>abs</code>, o include é <code>&lt;stdlib.h&gt;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’</code></strong>
+<p><strong>O que significa:</strong> as funções de <code>math.h</code> devolvem <code>double</code>, e o <code>%d</code> é para <code>int</code>. O programa mostra lixo.</p>
+<p><strong>Como consertar:</strong> use <code>%f</code> (ou <code>%.0f</code>, <code>%.2f</code>), ou converta: <code>(int) pow(2, 10)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: using integer absolute value function ‘abs’ when argument is of floating-point type</code></strong>
+<p><strong>O que significa:</strong> <code>abs</code> é para <code>int</code>; com <code>double</code>, a parte depois da vírgula se perde.</p>
+<p><strong>Como consertar:</strong> <code>fabs(x)</code>, com <code>#include &lt;math.h&gt;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: invalid operands to binary % (have ‘double’ and ‘double’)</code></strong>
+<p><strong>O que significa:</strong> o <code>%</code> só aceita inteiros.</p>
+<p><strong>Como consertar:</strong> <code>fmod(a, b)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: ‘M_PI’ undeclared</code></strong>
+<p><strong>O que significa:</strong> o <code>M_PI</code> não é do C padrão, e com <code>-std=c23</code> ele não existe.</p>
+<p><strong>Como consertar:</strong> <code>constexpr double PI = 3.14159265358979323846;</code> (ou <code>#define</code>, em C antigo).</p>
+</div>
+
+<div class="cenario">
+<strong>Seno, cosseno ou divisão "errados", sem aviso</strong>
+<p><strong>O que significa:</strong> provavelmente o ângulo está em graus (as funções esperam radianos), ou uma divisão entre dois <code>int</code> perdeu a vírgula antes de chegar à função (<code>ceil(40 / 12)</code> é <code>ceil(3)</code>).</p>
+<p><strong>Como consertar:</strong> converta graus com <code>* PI / 180</code>; garanta um <code>double</code> na divisão (<code>40.0 / 12</code> ou <code>(double) ovos / por_caixa</code>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<p>Todas recebem e devolvem <code>double</code> e estão no <code>&lt;math.h&gt;</code>, menos as marcadas. Existem versões para <code>float</code> e <code>long double</code> com <code>f</code> e <code>l</code> no fim (<code>sqrtf</code>, <code>sqrtl</code>).</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que calcula</th><th>Exemplo</th></tr>
+<tr><td><code>sqrt(x)</code></td><td>Raiz quadrada</td><td><code>sqrt(49.0)</code> → 7</td></tr>
+<tr><td><code>cbrt(x)</code></td><td>Raiz cúbica</td><td><code>cbrt(27.0)</code> → 3</td></tr>
+<tr><td><code>pow(b, e)</code></td><td>b elevado a e</td><td><code>pow(2, 10)</code> → 1024</td></tr>
+<tr><td><code>fabs(x)</code></td><td>Valor absoluto de <code>double</code></td><td><code>fabs(-2.5)</code> → 2.5</td></tr>
+<tr><td><code>abs(n)</code>, <code>labs</code>, <code>llabs</code></td><td>Valor absoluto de inteiro (<code>&lt;stdlib.h&gt;</code>)</td><td><code>abs(-35)</code> → 35</td></tr>
+<tr><td><code>round(x)</code></td><td>Inteiro mais próximo (,5 para longe do zero)</td><td><code>round(2.5)</code> → 3</td></tr>
+<tr><td><code>lround(x)</code></td><td>Como <code>round</code>, mas devolve <code>long</code></td><td><code>lround(2.5)</code> → 3</td></tr>
+<tr><td><code>floor(x)</code></td><td>Para baixo</td><td><code>floor(-2.4)</code> → −3</td></tr>
+<tr><td><code>ceil(x)</code></td><td>Para cima</td><td><code>ceil(3.1)</code> → 4</td></tr>
+<tr><td><code>trunc(x)</code></td><td>Corta a parte depois da vírgula</td><td><code>trunc(-2.6)</code> → −2</td></tr>
+<tr><td><code>fmod(a, b)</code></td><td>Resto da divisão com vírgula</td><td><code>fmod(7.5, 2.0)</code> → 1.5</td></tr>
+<tr><td><code>hypot(a, b)</code></td><td>√(a² + b²)</td><td><code>hypot(3, 4)</code> → 5</td></tr>
+<tr><td><code>fmin(a, b)</code>, <code>fmax(a, b)</code></td><td>Menor e maior de dois</td><td><code>fmax(-5.0, 0.0)</code> → 0</td></tr>
+<tr><td><code>sin</code>, <code>cos</code>, <code>tan</code></td><td>Seno, cosseno, tangente (em radianos)</td><td><code>sin(PI / 6)</code> → 0.5</td></tr>
+<tr><td><code>asin</code>, <code>acos</code>, <code>atan</code>, <code>atan2(y, x)</code></td><td>Os inversos (devolvem radianos)</td><td><code>acos(-1.0)</code> → π</td></tr>
+<tr><td><code>exp(x)</code>, <code>log(x)</code></td><td>e<sup>x</sup> e logaritmo natural</td><td><code>log(exp(2.0))</code> → 2</td></tr>
+<tr><td><code>log10(x)</code>, <code>log2(x)</code></td><td>Logaritmo na base 10 e na base 2</td><td><code>log10(1000.0)</code> → 3</td></tr>
+<tr><td><code>isnan(x)</code>, <code>isinf(x)</code></td><td>É "não número"? É infinito?</td><td><code>isnan(sqrt(-1.0))</code> → verdadeiro</td></tr>
+<tr><td><code>-lm</code></td><td>Opção do gcc que liga a biblioteca de matemática (no fim do comando)</td><td><code>gcc a.c -o a -lm</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A raiz</h3>
+<p>Complete para guardar em <code>r</code> a raiz quadrada de <code>x</code>:</p>
+<div class="ex-code">double r = <input data-answer="sqrt(x)" aria-label="chamada">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A opção do gcc</h3>
+<p>Complete o comando para o ligador encontrar a <code>sqrt</code>:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra raiz.c -o raiz <input data-answer="-lm" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Sempre para cima</h3>
+<p>Que função dá o número de ônibus necessários para levar 130 alunos em ônibus de 40 lugares (<code>130.0 / 40</code> = 3,25 → 4)?</p>
+<div class="ex-code"><input data-answer="ceil" aria-label="função">(130.0 / 40)</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que <code>floor(-2.5)</code> devolve?</p>
+<label><input type="radio" name="q4"> −2.0</label>
+<label><input type="radio" name="q4"> −2.5</label>
+<label><input type="radio" name="q4"> −3.0, porque o <code>floor</code> vai sempre para o inteiro menor</label>
+<label><input type="radio" name="q4"> 3.0</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Por que <code>gcc -lm raiz.c -o raiz</code> dá <code>referência não definida para "sqrt"</code>?</p>
+<label><input type="radio" name="q5"> Porque faltou o <code>#include &lt;math.h&gt;</code></label>
+<label><input type="radio" name="q5"> Porque o <code>-lm</code> veio antes do arquivo que usa a biblioteca</label>
+<label><input type="radio" name="q5"> Porque o <code>sqrt</code> não existe no C23</label>
+<label><input type="radio" name="q5"> Porque faltou o <code>-Wall</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual linha mostra o resultado de <code>pow(2, 10)</code> corretamente?</p>
+<label><input type="radio" name="q6"> <code>printf("%.0f\n", pow(2, 10));</code></label>
+<label><input type="radio" name="q6"> <code>printf("%d\n", pow(2, 10));</code></label>
+<label><input type="radio" name="q6"> <code>printf("%d\n", 2 ^ 10);</code></label>
+<label><input type="radio" name="q6"> <code>printf("%s\n", pow(2, 10));</code></label>
+</div>
+
+<h3>Missão final: as raízes da equação</h3>
+
+<div class="tryc" data-goal="outre:^x² - 5x \+ 6: x1 = 3\.00\, x2 = 2\.00\n2x² \+ 4x - 6: x1 = 1\.00\, x2 = -3\.00\nx² \+ 2x \+ 5: sem raízes reais\n$,src:sqrt\s*\(,semaviso">
+<p class="try-task"><strong>Missão:</strong> a lição de casa da Ana é achar as raízes de equações do 2º grau (<code>ax² + bx + c = 0</code>) com a fórmula de Bhaskara. Complete a função <code>raizes</code>, que já calcula o <code>delta</code> (b² − 4ac):</p>
+<ul class="try-task">
+  <li>se <code>delta &lt; 0</code>, mostre <code>sem raízes reais</code> (não chame a <code>sqrt</code> com número negativo);</li>
+  <li>senão, calcule <code>x1 = (-b + √delta) / (2a)</code> e <code>x2 = (-b - √delta) / (2a)</code> e mostre <code>x1 = …, x2 = …</code>, com duas casas.</li>
+</ul>
+<p class="try-task">A saída tem de ser exatamente esta, sem avisos:</p>
+<pre class="out">x² - 5x + 6: x1 = 3.00, x2 = 2.00
+2x² + 4x - 6: x1 = 1.00, x2 = -3.00
+x² + 2x + 5: sem raízes reais</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+void raizes(double a, double b, double c) {
+    double delta = b * b - 4 * a * c;
+    // se delta &lt; 0: mostre "sem raízes reais"
+    // senão: calcule x1 e x2 e mostre "x1 = ..., x2 = ..."
+}
+
+int main(void) {
+    printf("x² - 5x + 6: ");
+    raizes(1, -5, 6);
+    printf("2x² + 4x - 6: ");
+    raizes(2, 4, -6);
+    printf("x² + 2x + 5: ");
+    raizes(1, 2, 5);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+void raizes(double a, double b, double c) {
+    double delta = b * b - 4 * a * c;
+    if (delta &lt; 0) {
+        printf("sem raízes reais\n");
+        return;
+    }
+    double x1 = (-b + sqrt(delta)) / (2 * a);
+    double x2 = (-b - sqrt(delta)) / (2 * a);
+    printf("x1 = %.2f, x2 = %.2f\n", x1, x2);
+}
+
+int main(void) {
+    printf("x² - 5x + 6: ");
+    raizes(1, -5, 6);
+    printf("2x² + 4x - 6: ");
+    raizes(2, 4, -6);
+    printf("x² + 2x + 5: ");
+    raizes(1, 2, 5);
+    return 0;
+}
+</pre>
+</div>
+
+<p>No terminal do Linux, este programa precisa do <code>-lm</code>, porque a <code>sqrt</code> recebe uma variável (<code>delta</code>). Repare também no <code>(2 * a)</code> entre parênteses: sem eles, <code>/ 2 * a</code> dividiria por 2 e depois multiplicaria por <code>a</code> (<a href="precedencia.html">Precedência</a>).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>#include &lt;math.h&gt;</code> traz as funções de matemática. Elas recebem e devolvem <code>double</code>: mostre com <code>%f</code>.</li>
+  <li>No Linux, o gcc precisa de <code>-lm</code> <strong>no fim</strong> do comando; sem ele, <code>referência não definida para "sqrt"</code>. Com números fixos o gcc às vezes calcula sozinho e o erro some, mas não conte com isso. O editor não precisa de <code>-lm</code>.</li>
+  <li><code>sqrt</code> (raiz), <code>pow</code> (potência; o <code>^</code> não é potência), <code>fabs</code> (absoluto de <code>double</code>; <code>abs</code> é para <code>int</code>, no <code>stdlib.h</code>).</li>
+  <li>Arredondar: <code>round</code> (mais próximo), <code>floor</code> (para baixo), <code>ceil</code> (para cima), <code>trunc</code> (corta). Cuidado com a divisão inteira antes da função.</li>
+  <li><code>fmod</code> é o resto com vírgula; <code>hypot</code>, a distância; seno e cosseno usam radianos.</li>
+  <li>O <code>M_PI</code> não é padrão: use <code>constexpr double PI = 3.14159265358979323846;</code>.</li>
+  <li>Conta impossível dá <code>nan</code> ou <code>inf</code>; teste com <code>isnan</code>/<code>isinf</code> ou, melhor, evite a conta antes.</li>
+  <li>Próxima aula: <a href="aleatorios.html">Números Aleatórios (rand)</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
