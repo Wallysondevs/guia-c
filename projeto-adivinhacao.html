@@ -1,0 +1,1055 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Projeto Jogo de Adivinhação — rand, srand, laços e funções | Guia C</title>
+<meta name="description" content="Projeto passo a passo: um jogo de adivinhação em C. O computador sorteia um número de 1 a 100 com rand e srand, diz se o palpite é maior ou menor, conta as tentativas, tem limite de tentativas, recorde e jogar de novo. Quatro versões com saídas reais do gcc 15 e missões no editor que não dependem do número sorteado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto <span class="hl">Jogo de Adivinhação</span></h1>
+
+<p class="intro">O computador pensa num número de 1 a 100 e você tenta adivinhar. A cada palpite, ele diz "é maior" ou "é menor". É o projeto clássico de quem está aprendendo a programar, porque junta quase tudo do Nível 1 num programa curto e divertido: decisões, laços, contadores, números aleatórios e funções.</p>
+
+<div class="note">
+<strong>Você vai praticar</strong>
+<ul>
+  <li>Comparar o palpite com o número secreto com <a href="if-else.html">if</a> e <a href="else-if.html">else if</a>.</li>
+  <li>Repetir até acertar com <a href="while.html">while</a> e contar as tentativas com <a href="incremento.html">++</a>.</li>
+  <li>Sortear números com <code>rand</code> e <code>srand</code> (<a href="aleatorios.html">Números Aleatórios</a>).</li>
+  <li>Limitar as tentativas com <a href="for.html">for</a> e uma constante <code>#define</code> (<a href="constantes.html">Constantes</a>).</li>
+  <li>Separar uma partida numa <a href="funcoes.html">função</a> que devolve um <a href="retorno.html">valor</a>.</li>
+  <li>Testar um programa que sorteia números (sem depender da sorte).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que vamos construir</h2>
+<p>Este é o jogo pronto, na máquina da Ana. Ela jogou três partidas: na primeira e na terceira, foi esperta e sempre chutou o meio do intervalo que sobrava; na segunda, chutou de 10 em 10 e perdeu.</p>
+
+<pre class="term" data-cwd="~/c/adivinhacao">$ ./adivinhacao
+=== Jogo de Adivinhação ===
+
+Pensei num número de 1 a 100. Você tem 7 tentativas.
+Tentativa 1: 50
+É maior.
+Tentativa 2: 75
+É maior.
+Tentativa 3: 88
+É menor.
+Tentativa 4: 81
+É maior.
+Tentativa 5: 84
+É maior.
+Tentativa 6: 86
+Acertou em 6 tentativa(s)!
+Novo recorde: 6 tentativa(s)!
+Jogar de novo? (s/n): s
+
+Pensei num número de 1 a 100. Você tem 7 tentativas.
+Tentativa 1: 90
+É menor.
+Tentativa 2: 80
+É menor.
+Tentativa 3: 70
+É menor.
+Tentativa 4: 60
+É menor.
+Tentativa 5: 55
+É menor.
+Tentativa 6: 52
+É menor.
+Tentativa 7: 51
+É menor.
+Suas tentativas acabaram. O número era 1.      « perdeu: o número era o menor possível
+Jogar de novo? (s/n): s
+
+Pensei num número de 1 a 100. Você tem 7 tentativas.
+Tentativa 1: 50
+É maior.
+Tentativa 2: 75
+É menor.
+Tentativa 3: 62
+É menor.
+Tentativa 4: 56
+Acertou em 4 tentativa(s)!
+Novo recorde: 4 tentativa(s)!
+Jogar de novo? (s/n): n
+Seu recorde: 4 tentativa(s).
+Até a próxima!</pre>
+
+<p>Se você rodar, os números serão outros: a cada execução o jogo sorteia um número novo. Vamos chegar lá em quatro versões:</p>
+
+<ol class="passo">
+  <li><a href="#versao1">Um palpite contra um número fixo</a> (<code>scanf</code>, <code>if</code>/<code>else if</code>).</li>
+  <li><a href="#versao2">Repetir até acertar e contar as tentativas</a> (<code>while</code>, <code>++</code>).</li>
+  <li><a href="#versao3">Sortear o número</a> (<code>rand</code>, <code>srand</code>, <code>time</code>).</li>
+  <li><a href="#versao4">Limite, recorde e jogar de novo</a> (<code>#define</code>, <code>for</code>, uma função).</li>
+</ol>
+
+<h3>Antes de começar</h3>
+<p>Você precisa saber compilar e rodar um programa (<a href="compilar.html">Compilar com gcc</a>), ler um inteiro com <a href="scanf.html">scanf</a> e conhecer <a href="if-else.html">if e else</a>. A pasta do projeto e o arquivo <code>adivinhacao.c</code> (sem acento e sem ç: nomes de arquivo com acento dão trabalho no terminal):</p>
+
+<pre class="term">$ mkdir -p c/adivinhacao
+$ cd c/adivinhacao</pre>
+
+<hr>
+
+<h2 id="versao1">Versão 1 · Um palpite contra um número fixo</h2>
+<p>Antes de sortear, vamos fazer o jogo funcionar com um número <strong>fixo</strong>: 42. Assim dá para testar sabendo a resposta. A pessoa dá um palpite e o programa diz se acertou ou para que lado errou.</p>
+
+<pre class="file" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int secreto = 42;  // por enquanto, o número é sempre o mesmo
+    int palpite = 0;
+
+    printf("=== Jogo de Adivinhação ===\n");
+    printf("Pensei num número de 1 a 100.\n");
+    printf("Seu palpite: ");
+    scanf("%d", &amp;palpite);
+
+    if (palpite == secreto) {
+        printf("Acertou!\n");
+    } else if (palpite &lt; secreto) {
+        printf("Errou. O número é maior.\n");
+    } else {
+        printf("Errou. O número é menor.\n");
+    }
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>int secreto = 42;</code></td><td>O número que a pessoa tem de adivinhar. Na versão 3, ele vai ser sorteado.</td></tr>
+<tr><td><code>scanf("%d", &amp;palpite);</code></td><td>Lê um inteiro (<code>%d</code>) e guarda em <code>palpite</code>. O <code>&amp;</code> entrega o endereço da variável (veja <a href="scanf.html">Entrada com scanf</a>).</td></tr>
+<tr><td><code>if (palpite == secreto)</code></td><td>Dois sinais de igual: <strong>compara</strong>. Um só (<code>=</code>) guardaria 42 no palpite (veja o cenário abaixo).</td></tr>
+<tr><td><code>else if (palpite &lt; secreto)</code></td><td>Se não acertou e o palpite é menor, o número secreto é <strong>maior</strong>.</td></tr>
+<tr><td><code>else</code></td><td>Sobrou um caso só: o palpite é maior, então o número é menor.</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/adivinhacao">$ gcc -std=c23 -Wall -Wextra adivinhacao.c -o adivinhacao
+$ ./adivinhacao
+=== Jogo de Adivinhação ===
+Pensei num número de 1 a 100.
+Seu palpite: 30
+Errou. O número é maior.
+$ ./adivinhacao
+=== Jogo de Adivinhação ===
+Pensei num número de 1 a 100.
+Seu palpite: 70
+Errou. O número é menor.
+$ ./adivinhacao
+=== Jogo de Adivinhação ===
+Pensei num número de 1 a 100.
+Seu palpite: 42
+Acertou!</pre>
+
+<div class="cenario">
+<strong>Um <code>=</code> só no <code>if</code>: todo palpite "acerta"</strong>
+<p class="warning" style="margin:6px 0">Este código tem um erro de propósito: <code>if (palpite = secreto)</code>.</p>
+<pre class="term" data-cwd="~/c/adivinhacao">$ gcc -std=c23 -Wall -Wextra adivinhacao.c -o adivinhacao
+adivinhacao.c: In function ‘main’:
+adivinhacao.c:12:9: warning: suggest parentheses around assignment used as truth value [-Wparentheses]
+   12 |     if (palpite = secreto) {
+      |         ^~~~~~~
+$ ./adivinhacao
+=== Jogo de Adivinhação ===
+Pensei num número de 1 a 100.
+Seu palpite: 30
+Acertou!
+</pre>
+<p><strong>O que significa:</strong> "sugiro parênteses em volta de uma atribuição usada como valor verdade". <code>palpite = secreto</code> <strong>guarda</strong> 42 em <code>palpite</code>, e o resultado da expressão é 42, que não é zero, ou seja, verdadeiro. Por isso o palpite 30 "acertou". O <code>-Wall</code> desconfiou e avisou.</p>
+<p><strong>Como consertar:</strong> para comparar, use <code>==</code>. Veja <a href="operadores-comparacao.html">Operadores de Comparação</a>.</p>
+</div>
+
+<div class="tryc" data-stdin="30\n" data-goal="out:Errou. O número é maior.,src:else">
+<p class="try-task"><strong>Missão (versão 1):</strong> o jogo só sabe dizer "Acertou!". Acrescente um <code>else if</code> que mostra <code>Errou. O número é maior.</code> quando o palpite é menor que o secreto, e um <code>else</code> que mostra <code>Errou. O número é menor.</code>. A entrada da missão é o palpite <code>30</code>.</p>
+<pre class="script" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int secreto = 42;  // por enquanto, o número é sempre o mesmo
+    int palpite = 0;
+
+    printf("=== Jogo de Adivinhação ===\n");
+    printf("Pensei num número de 1 a 100.\n");
+    printf("Seu palpite: ");
+    scanf("%d", &amp;palpite);
+
+    if (palpite == secreto) {
+        printf("Acertou!\n");
+    }
+    // e se errou? diga se o número é maior ou menor
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int secreto = 42;  // por enquanto, o número é sempre o mesmo
+    int palpite = 0;
+
+    printf("=== Jogo de Adivinhação ===\n");
+    printf("Pensei num número de 1 a 100.\n");
+    printf("Seu palpite: ");
+    scanf("%d", &amp;palpite);
+
+    if (palpite == secreto) {
+        printf("Acertou!\n");
+    } else if (palpite &lt; secreto) {
+        printf("Errou. O número é maior.\n");
+    } else {
+        printf("Errou. O número é menor.\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao2">Versão 2 · Repetir até acertar e contar as tentativas</h2>
+<p>Um palpite só é pouco. A versão 2 repete a pergunta <strong>enquanto</strong> o palpite for diferente do secreto: isso é um <a href="while.html">while</a>. E conta quantos palpites a pessoa deu, com uma variável que começa em 0 e ganha 1 a cada volta (<code>tentativas++</code>, veja <a href="incremento.html">++ e --</a>).</p>
+
+<pre class="file" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int secreto = 42;  // por enquanto, o número é sempre o mesmo
+    int palpite = 0;
+    int tentativas = 0;
+
+    printf("=== Jogo de Adivinhação ===\n");
+    printf("Pensei num número de 1 a 100.\n");
+
+    while (palpite != secreto) {
+        printf("Seu palpite: ");
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            return 1;
+        }
+        tentativas++;
+
+        if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else if (palpite &gt; secreto) {
+            printf("É menor.\n");
+        }
+    }
+    printf("Acertou em %d tentativas!\n", tentativas);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int tentativas = 0;</dt><dd>O contador. Começa em zero, porque ainda ninguém chutou nada.</dd>
+  <dt>while (palpite != secreto)</dt><dd>"Enquanto o palpite for diferente do secreto, repita." <code>palpite</code> começa em 0, que nunca é o secreto (de 1 a 100), então o laço sempre entra na primeira vez.</dd>
+  <dt>if (scanf("%d", &amp;palpite) != 1)</dt><dd>O <code>scanf</code> devolve quantos valores leu. Se a pessoa digitou texto ou a entrada acabou, ele devolve 0 ou <code>EOF</code>, e o jogo para em vez de rodar para sempre (veja o cenário abaixo).</dd>
+  <dt>tentativas++;</dt><dd>Mais um palpite contado.</dd>
+  <dt>else if (palpite &gt; secreto)</dt><dd>Agora são três casos: menor, maior ou igual. Quando é igual, nenhum dos dois <code>if</code> mostra nada, o laço testa a condição, vê que acertou e sai.</dd>
+  <dt>printf("Acertou em %d tentativas!\n", tentativas);</dt><dd>Fora do laço: só chega aqui quem acertou.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/adivinhacao">$ gcc -std=c23 -Wall -Wextra adivinhacao.c -o adivinhacao
+$ ./adivinhacao
+=== Jogo de Adivinhação ===
+Pensei num número de 1 a 100.
+Seu palpite: 50
+É menor.
+Seu palpite: 25
+É maior.
+Seu palpite: 37
+É maior.
+Seu palpite: 43
+É menor.
+Seu palpite: 40
+É maior.
+Seu palpite: 42
+Acertou em 6 tentativas!</pre>
+
+<div class="cenario">
+<strong>Sem conferir o <code>scanf</code>: um texto trava o jogo num laço infinito</strong>
+<p class="warning" style="margin:6px 0">Este código tem um erro de propósito: <code>scanf("%d", &amp;palpite);</code> sem o <code>if</code> em volta.</p>
+<pre class="term" data-cwd="~/c/adivinhacao">$ gcc -std=c23 -Wall -Wextra adivinhacao.c -o adivinhacao
+$ printf 'abc\n' | timeout 3 ./adivinhacao | head -n 6
+=== Jogo de Adivinhação ===
+Pensei num número de 1 a 100.
+Seu palpite: É maior.
+Seu palpite: É maior.
+Seu palpite: É maior.
+Seu palpite: É maior.</pre>
+<p>O comando "digita" <code>abc</code> para o jogo (<code>printf … |</code>), corta o programa depois de 3 segundos (<code>timeout 3</code>) e mostra só as 6 primeiras linhas (<code>head -n 6</code>); sem isso, a tela encheria sem parar.</p>
+<p><strong>O que aconteceu:</strong> o <code>%d</code> não consegue ler <code>abc</code>, desiste e <strong>deixa o <code>abc</code> na entrada</strong>. O <code>palpite</code> continua 0, o laço repete, o <code>scanf</code> tenta de novo, esbarra no mesmo <code>abc</code>… para sempre. No seu terminal, aperte <kbd>Ctrl</kbd>+<kbd>C</kbd> para parar.</p>
+<p><strong>Como consertar:</strong> confira o retorno: <code>if (scanf("%d", &amp;palpite) != 1)</code>, como na versão 2. Para pedir de novo em vez de encerrar, veja a versão 4 do <a href="projeto-calculadora.html#versao4">projeto Calculadora</a> e <a href="validar-entrada.html">Validar a Entrada</a>.</p>
+</div>
+
+<div class="tryc" data-stdin="50\n25\n37\n43\n42\n" data-goal="out:Acertou em 5 tentativas!,src:while\s*\(">
+<p class="try-task"><strong>Missão (versão 2):</strong> o jogo pergunta uma vez só. Coloque o trecho que pergunta, lê, conta e compara dentro de um <code>while (palpite != secreto) { … }</code>. A entrada da missão é <code>50</code>, <code>25</code>, <code>37</code>, <code>43</code>, <code>42</code>: o jogo deve terminar com <code>Acertou em 5 tentativas!</code>.</p>
+<pre class="script" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int secreto = 42;  // por enquanto, o número é sempre o mesmo
+    int palpite = 0;
+    int tentativas = 0;
+
+    printf("=== Jogo de Adivinhação ===\n");
+    printf("Pensei num número de 1 a 100.\n");
+
+    // repita este bloco enquanto palpite != secreto
+    printf("Seu palpite: ");
+    if (scanf("%d", &amp;palpite) != 1) {
+        printf("\nFim de jogo: não consegui ler um número.\n");
+        return 1;
+    }
+    tentativas++;
+
+    if (palpite &lt; secreto) {
+        printf("É maior.\n");
+    } else if (palpite &gt; secreto) {
+        printf("É menor.\n");
+    }
+
+    printf("Acertou em %d tentativas!\n", tentativas);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int secreto = 42;  // por enquanto, o número é sempre o mesmo
+    int palpite = 0;
+    int tentativas = 0;
+
+    printf("=== Jogo de Adivinhação ===\n");
+    printf("Pensei num número de 1 a 100.\n");
+
+    while (palpite != secreto) {
+        printf("Seu palpite: ");
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            return 1;
+        }
+        tentativas++;
+
+        if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else if (palpite &gt; secreto) {
+            printf("É menor.\n");
+        }
+    }
+    printf("Acertou em %d tentativas!\n", tentativas);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao3">Versão 3 · Sortear o número</h2>
+<p>Com o 42 fixo, o jogo perde a graça na segunda partida. Hora de deixar o computador escolher. A função <code>rand()</code> ("random", aleatório), do <code>&lt;stdlib.h&gt;</code>, devolve um inteiro entre 0 e <code>RAND_MAX</code> (no Linux, 2147483647). Para transformar isso num número de 1 a 100, usamos o resto da divisão (veja <a href="aleatorios.html">Números Aleatórios</a>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Expressão</th><th>Resultado</th><th>Por quê</th></tr>
+<tr><td><code>rand()</code></td><td>de 0 a 2147483647</td><td>Um número grande qualquer.</td></tr>
+<tr><td><code>rand() % 100</code></td><td>de 0 a 99</td><td>O resto da divisão por 100 sempre fica entre 0 e 99.</td></tr>
+<tr><td><code>rand() % 100 + 1</code></td><td>de 1 a 100</td><td>Soma 1 nos dois extremos.</td></tr>
+</table>
+</div>
+
+<p>Mas tem uma pegadinha. Veja este programa, que sorteia cinco números, rodando três vezes:</p>
+
+<pre class="file" data-file="sorteio.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    for (int i = 0; i &lt; 5; i++) {
+        printf("%d ", rand() % 100 + 1);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/adivinhacao">$ gcc -std=c23 -Wall -Wextra sorteio.c -o sorteio
+$ ./sorteio
+84 87 78 16 94
+$ ./sorteio
+84 87 78 16 94
+$ ./sorteio
+84 87 78 16 94 </pre>
+
+<p>Os mesmos cinco números, toda vez! O <code>rand()</code> não é sorte de verdade: é uma <strong>conta</strong> que, a partir de um número inicial (a <strong>semente</strong>), gera uma sequência que <em>parece</em> aleatória. Mesma semente, mesma sequência. Sem você dizer nada, a semente é sempre 1.</p>
+
+<p>A solução é trocar a semente a cada execução com <code>srand</code> ("seed random", semear o aleatório). E o que muda a cada execução? O relógio: <code>time(NULL)</code>, do <code>&lt;time.h&gt;</code>, devolve quantos segundos se passaram desde 1º de janeiro de 1970.</p>
+
+<pre class="file" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    srand(time(NULL));                 // embaralha: uma sequência nova a cada execução
+    int secreto = rand() % 100 + 1;    // um número de 1 a 100
+    int palpite = 0;
+    int tentativas = 0;
+
+    printf("=== Jogo de Adivinhação ===\n");
+    printf("Pensei num número de 1 a 100.\n");
+
+    while (palpite != secreto) {
+        printf("Seu palpite: ");
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            return 1;
+        }
+        tentativas++;
+
+        if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else if (palpite &gt; secreto) {
+            printf("É menor.\n");
+        }
+    }
+    printf("Acertou em %d tentativas!\n", tentativas);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;stdlib.h&gt; e &lt;time.h&gt;</dt><dd><code>stdlib.h</code> traz <code>rand</code> e <code>srand</code>; <code>time.h</code> traz <code>time</code>.</dd>
+  <dt>srand(time(NULL));</dt><dd>Usa a hora atual como semente. Chame <strong>uma vez só</strong>, no começo do programa.</dd>
+  <dt>int secreto = rand() % 100 + 1;</dt><dd>Sorteia o número de 1 a 100. O resto do jogo não mudou nada.</dd>
+</dl>
+
+<p>Para ganhar sempre em poucas tentativas, a Ana usa uma estratégia: chutar o <strong>meio</strong> do intervalo que ainda é possível. Começa em 50; se "é menor", o número está entre 1 e 49, e ela chuta 25; e assim por diante. A cada palpite, o intervalo cai pela metade:</p>
+
+<pre class="term" data-cwd="~/c/adivinhacao">$ gcc -std=c23 -Wall -Wextra adivinhacao.c -o adivinhacao
+$ ./adivinhacao
+=== Jogo de Adivinhação ===
+Pensei num número de 1 a 100.
+Seu palpite: 50
+É menor.
+Seu palpite: 25
+É menor.
+Seu palpite: 12
+É maior.
+Seu palpite: 18
+É maior.
+Seu palpite: 21
+É maior.
+Seu palpite: 23
+Acertou em 6 tentativas!
+$ ./adivinhacao
+=== Jogo de Adivinhação ===
+Pensei num número de 1 a 100.
+Seu palpite: 50
+É menor.
+Seu palpite: 25
+É menor.
+Seu palpite: 12
+É menor.
+Seu palpite: 6
+É maior.
+Seu palpite: 9
+É maior.
+Seu palpite: 10
+Acertou em 6 tentativas!</pre>
+
+<div class="warning">
+<strong>No editor do guia, os números sorteados são outros</strong>
+<p>O <code>rand()</code> é uma conta, e cada biblioteca C usa a sua. O gcc do Linux usa a da <strong>glibc</strong>; o editor do guia usa a da <strong>wasi-libc</strong> (baseada na musl). Por isso o <code>sorteio.c</code> mostra <code>84 87 78 16 94</code> no terminal da Ana e outra sequência no editor. Nos dois, a sequência se repete enquanto a semente for a mesma. Moral: nunca escreva um programa que depende de <em>quais</em> números o <code>rand()</code> vai dar.</p>
+</div>
+
+<div class="tip">
+<strong>Como testar um jogo que sorteia?</strong>
+<p>Se o número muda a cada execução, como conferir que o jogo funciona? Dois truques que os programadores usam de verdade:</p>
+<ul>
+  <li><strong>Fixar o número durante o teste</strong>, como fizemos nas versões 1 e 2. Depois, troca-se pelo sorteio.</li>
+  <li><strong>Escolher palpites que funcionam para qualquer número.</strong> Se a entrada for 1, 2, 3, …, 100, o jogo <strong>tem</strong> de acertar em algum momento, seja qual for o número. É o que a missão abaixo faz.</li>
+</ul>
+</div>
+
+<div class="tryc" data-stdin="1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40\n41\n42\n43\n44\n45\n46\n47\n48\n49\n50\n51\n52\n53\n54\n55\n56\n57\n58\n59\n60\n61\n62\n63\n64\n65\n66\n67\n68\n69\n70\n71\n72\n73\n74\n75\n76\n77\n78\n79\n80\n81\n82\n83\n84\n85\n86\n87\n88\n89\n90\n91\n92\n93\n94\n95\n96\n97\n98\n99\n100" data-goal="src:srand\s*\(\s*time\s*\(\s*NULL\s*\)\s*\),src:rand\s*\(\s*\)\s*%\s*100\s*\+\s*1,outre:Acertou em \d+ tentativas!">
+<p class="try-task"><strong>Missão (versão 3):</strong> troque o <code>42</code> fixo por um número sorteado de 1 a 100 (<code>rand() % 100 + 1</code>) e chame <code>srand(time(NULL));</code> uma vez, no começo do <code>main</code>. Não esqueça os dois <code>#include</code>. A entrada da missão chuta 1, 2, 3… até 100, então o jogo acerta seja qual for o número sorteado. Rode duas ou três vezes e veja o número de tentativas mudar.</p>
+<pre class="script" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int secreto = 42;  // por enquanto, o número é sempre o mesmo
+    int palpite = 0;
+    int tentativas = 0;
+
+    printf("=== Jogo de Adivinhação ===\n");
+    printf("Pensei num número de 1 a 100.\n");
+
+    while (palpite != secreto) {
+        printf("Seu palpite: ");
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            return 1;
+        }
+        tentativas++;
+
+        if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else if (palpite &gt; secreto) {
+            printf("É menor.\n");
+        }
+    }
+    printf("Acertou em %d tentativas!\n", tentativas);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    srand(time(NULL));                 // embaralha: uma sequência nova a cada execução
+    int secreto = rand() % 100 + 1;    // um número de 1 a 100
+    int palpite = 0;
+    int tentativas = 0;
+
+    printf("=== Jogo de Adivinhação ===\n");
+    printf("Pensei num número de 1 a 100.\n");
+
+    while (palpite != secreto) {
+        printf("Seu palpite: ");
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            return 1;
+        }
+        tentativas++;
+
+        if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else if (palpite &gt; secreto) {
+            printf("É menor.\n");
+        }
+    }
+    printf("Acertou em %d tentativas!\n", tentativas);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao4">Versão 4 · Limite, recorde e jogar de novo</h2>
+<p>Com a estratégia do meio, dá para achar qualquer número de 1 a 100 em no máximo 7 palpites: a cada palpite errado, sobra no máximo a metade dos números (100 → 50 → 25 → 12 → 6 → 3 → 1); depois de 6 erros sobra um número só, e o 7º palpite acerta. Então a versão final dá <strong>7 tentativas</strong>: quem chuta à toa perde. E mais duas coisas: <strong>jogar de novo</strong> sem rodar o programa outra vez, e guardar o <strong>recorde</strong> (a partida com menos tentativas).</p>
+
+<p>O código de uma partida foi para uma <a href="funcoes.html">função</a>, <code>jogar</code>. Ela recebe o número secreto e devolve quantas tentativas a pessoa usou, ou 0 se perdeu. O <code>main</code> só cuida do que acontece <strong>entre</strong> as partidas.</p>
+
+<pre class="file" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+#define MAX_TENTATIVAS 7
+
+// Joga uma partida. Devolve quantas tentativas a pessoa usou,
+// ou 0 se ela não acertou dentro do limite.
+int jogar(int secreto) {
+    printf("\nPensei num número de 1 a 100. Você tem %d tentativas.\n", MAX_TENTATIVAS);
+    for (int tentativa = 1; tentativa &lt;= MAX_TENTATIVAS; tentativa++) {
+        int palpite = 0;
+        printf("Tentativa %d: ", tentativa);
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            exit(1);
+        }
+        if (palpite == secreto) {
+            printf("Acertou em %d tentativa(s)!\n", tentativa);
+            return tentativa;
+        } else if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else {
+            printf("É menor.\n");
+        }
+    }
+    printf("Suas tentativas acabaram. O número era %d.\n", secreto);
+    return 0;
+}
+
+int main(void) {
+    srand(time(NULL));
+    int recorde = 0;      // 0 = ainda não há recorde
+    char resposta = 's';
+
+    printf("=== Jogo de Adivinhação ===\n");
+    while (resposta == 's' || resposta == 'S') {
+        int secreto = rand() % 100 + 1;
+        int usadas = jogar(secreto);
+
+        if (usadas &gt; 0 &amp;&amp; (recorde == 0 || usadas &lt; recorde)) {
+            recorde = usadas;
+            printf("Novo recorde: %d tentativa(s)!\n", recorde);
+        }
+
+        printf("Jogar de novo? (s/n): ");
+        if (scanf(" %c", &amp;resposta) != 1) {
+            resposta = 'n';
+        }
+    }
+
+    if (recorde &gt; 0) {
+        printf("Seu recorde: %d tentativa(s).\n", recorde);
+    }
+    printf("Até a próxima!\n");
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Trecho</th><th>O que faz</th></tr>
+<tr><td><code>#define MAX_TENTATIVAS 7</code></td><td>Uma constante com nome: antes de compilar, o pré-processador troca <code>MAX_TENTATIVAS</code> por <code>7</code> em todo o código. Para deixar o jogo mais fácil, você muda num lugar só (veja <a href="constantes.html">Constantes</a>).</td></tr>
+<tr><td><code>int jogar(int secreto)</code></td><td>A função recebe o número sorteado como <a href="parametros.html">parâmetro</a> e devolve um <code>int</code>.</td></tr>
+<tr><td><code>for (int tentativa = 1; tentativa &lt;= MAX_TENTATIVAS; tentativa++)</code></td><td>Repete no máximo 7 vezes, com <code>tentativa</code> valendo 1, 2, …, 7. Aqui o <a href="for.html">for</a> é melhor que o <code>while</code>: sabemos o número máximo de voltas.</td></tr>
+<tr><td><code>return tentativa;</code></td><td>Acertou: sai da função <strong>e do laço</strong> na hora, devolvendo quantas tentativas usou.</td></tr>
+<tr><td><code>printf("Suas tentativas acabaram…")</code> e <code>return 0;</code></td><td>Só chega aqui quem passou pelas 7 voltas sem acertar.</td></tr>
+<tr><td><code>exit(1);</code></td><td>Dentro de uma função, <code>return</code> só sai da função. Para encerrar o <strong>programa</strong> de qualquer lugar, use <code>exit</code>, do <code>stdlib.h</code> (veja <a href="exit.html">Encerrar o Programa</a>).</td></tr>
+<tr><td><code>int recorde = 0;</code></td><td>0 quer dizer "ainda não tem recorde".</td></tr>
+<tr><td><code>usadas &gt; 0 &amp;&amp; (recorde == 0 || usadas &lt; recorde)</code></td><td>"Ganhou <strong>e</strong> (é a primeira vitória <strong>ou</strong> usou menos tentativas que o recorde)". Os parênteses importam: veja <a href="precedencia.html">Precedência</a>.</td></tr>
+<tr><td><code>while (resposta == 's' || resposta == 'S')</code></td><td>Repete as partidas enquanto a resposta for <code>s</code>. A primeira volta sempre acontece, porque <code>resposta</code> começa com <code>'s'</code>.</td></tr>
+</table>
+</div>
+
+<p>A sessão do começo da página é esta versão. Se a pessoa digitar texto, o jogo termina com uma mensagem (e o código de saída 1):</p>
+
+<pre class="term" data-cwd="~/c/adivinhacao">$ ./adivinhacao
+=== Jogo de Adivinhação ===
+
+Pensei num número de 1 a 100. Você tem 7 tentativas.
+Tentativa 1: cinquenta
+
+Fim de jogo: não consegui ler um número.
+$ echo $?
+1</pre>
+
+<p>Testar o limite de tentativas parece depender da sorte: e se a entrada acertar o número sem querer? Truque: chutar <code>0</code>. O secreto vai de 1 a 100, então <code>0</code> <strong>nunca</strong> acerta, e a resposta é sempre "É maior.". Sete zeros = derrota garantida, seja qual for o número sorteado.</p>
+
+<div class="tryc" data-stdin="0\n0\n0\n0\n0\n0\n0\nn\n" data-goal="outre:Suas tentativas acabaram\. O número era \d+\.,out:Até a próxima!,src:MAX_TENTATIVAS\s*;">
+<p class="try-task"><strong>Missão (versão 4, o limite):</strong> a função <code>jogar</code> repete para sempre. Troque o <code>while (1)</code> por um <code>for</code> que vai de 1 até <code>MAX_TENTATIVAS</code> e, depois do laço, mostre <code>Suas tentativas acabaram. O número era N.</code> e devolva 0. A entrada da missão chuta <code>0</code> sete vezes e responde <code>n</code>.</p>
+<pre class="script" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+#define MAX_TENTATIVAS 7
+
+// Joga uma partida. Devolve quantas tentativas a pessoa usou,
+// ou 0 se ela não acertou dentro do limite.
+int jogar(int secreto) {
+    printf("\nPensei num número de 1 a 100. Você tem %d tentativas.\n", MAX_TENTATIVAS);
+    // limite as tentativas a MAX_TENTATIVAS
+    int tentativa = 0;
+    while (1) {
+        tentativa++;
+        int palpite = 0;
+        printf("Tentativa %d: ", tentativa);
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            exit(1);
+        }
+        if (palpite == secreto) {
+            printf("Acertou em %d tentativa(s)!\n", tentativa);
+            return tentativa;
+        } else if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else {
+            printf("É menor.\n");
+        }
+    }
+}
+
+int main(void) {
+    srand(time(NULL));
+    int recorde = 0;      // 0 = ainda não há recorde
+    char resposta = 's';
+
+    printf("=== Jogo de Adivinhação ===\n");
+    while (resposta == 's' || resposta == 'S') {
+        int secreto = rand() % 100 + 1;
+        int usadas = jogar(secreto);
+
+        if (usadas &gt; 0 &amp;&amp; (recorde == 0 || usadas &lt; recorde)) {
+            recorde = usadas;
+            printf("Novo recorde: %d tentativa(s)!\n", recorde);
+        }
+
+        printf("Jogar de novo? (s/n): ");
+        if (scanf(" %c", &amp;resposta) != 1) {
+            resposta = 'n';
+        }
+    }
+
+    if (recorde &gt; 0) {
+        printf("Seu recorde: %d tentativa(s).\n", recorde);
+    }
+    printf("Até a próxima!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+#define MAX_TENTATIVAS 7
+
+// Joga uma partida. Devolve quantas tentativas a pessoa usou,
+// ou 0 se ela não acertou dentro do limite.
+int jogar(int secreto) {
+    printf("\nPensei num número de 1 a 100. Você tem %d tentativas.\n", MAX_TENTATIVAS);
+    for (int tentativa = 1; tentativa &lt;= MAX_TENTATIVAS; tentativa++) {
+        int palpite = 0;
+        printf("Tentativa %d: ", tentativa);
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            exit(1);
+        }
+        if (palpite == secreto) {
+            printf("Acertou em %d tentativa(s)!\n", tentativa);
+            return tentativa;
+        } else if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else {
+            printf("É menor.\n");
+        }
+    }
+    printf("Suas tentativas acabaram. O número era %d.\n", secreto);
+    return 0;
+}
+
+int main(void) {
+    srand(time(NULL));
+    int recorde = 0;      // 0 = ainda não há recorde
+    char resposta = 's';
+
+    printf("=== Jogo de Adivinhação ===\n");
+    while (resposta == 's' || resposta == 'S') {
+        int secreto = rand() % 100 + 1;
+        int usadas = jogar(secreto);
+
+        if (usadas &gt; 0 &amp;&amp; (recorde == 0 || usadas &lt; recorde)) {
+            recorde = usadas;
+            printf("Novo recorde: %d tentativa(s)!\n", recorde);
+        }
+
+        printf("Jogar de novo? (s/n): ");
+        if (scanf(" %c", &amp;resposta) != 1) {
+            resposta = 'n';
+        }
+    }
+
+    if (recorde &gt; 0) {
+        printf("Seu recorde: %d tentativa(s).\n", recorde);
+    }
+    printf("Até a próxima!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<div class="tryc" data-stdin="0\n0\n0\n0\n0\n0\n0\ns\n0\n0\n0\n0\n0\n0\n0\nn\n" data-goal="outre:(Pensei num número[\s\S]*){2}Até a próxima!,src:while\s*\(">
+<p class="try-task"><strong>Missão (versão 4, jogar de novo):</strong> o jogo pergunta "Jogar de novo?", mas ignora a resposta. Troque o bloco <code>{ … }</code> do <code>main</code> por <code>while (resposta == 's' || resposta == 'S') { … }</code>. A entrada perde uma partida (sete zeros), responde <code>s</code>, perde outra e responde <code>n</code>: o jogo deve mostrar "Pensei num número" duas vezes.</p>
+<pre class="script" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+#define MAX_TENTATIVAS 7
+
+// Joga uma partida. Devolve quantas tentativas a pessoa usou,
+// ou 0 se ela não acertou dentro do limite.
+int jogar(int secreto) {
+    printf("\nPensei num número de 1 a 100. Você tem %d tentativas.\n", MAX_TENTATIVAS);
+    for (int tentativa = 1; tentativa &lt;= MAX_TENTATIVAS; tentativa++) {
+        int palpite = 0;
+        printf("Tentativa %d: ", tentativa);
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            exit(1);
+        }
+        if (palpite == secreto) {
+            printf("Acertou em %d tentativa(s)!\n", tentativa);
+            return tentativa;
+        } else if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else {
+            printf("É menor.\n");
+        }
+    }
+    printf("Suas tentativas acabaram. O número era %d.\n", secreto);
+    return 0;
+}
+
+int main(void) {
+    srand(time(NULL));
+    int recorde = 0;      // 0 = ainda não há recorde
+    char resposta = 's';
+
+    printf("=== Jogo de Adivinhação ===\n");
+    // repita a partida enquanto a resposta for s ou S
+    {
+        int secreto = rand() % 100 + 1;
+        int usadas = jogar(secreto);
+
+        if (usadas &gt; 0 &amp;&amp; (recorde == 0 || usadas &lt; recorde)) {
+            recorde = usadas;
+            printf("Novo recorde: %d tentativa(s)!\n", recorde);
+        }
+
+        printf("Jogar de novo? (s/n): ");
+        if (scanf(" %c", &amp;resposta) != 1) {
+            resposta = 'n';
+        }
+    }
+
+    if (recorde &gt; 0) {
+        printf("Seu recorde: %d tentativa(s).\n", recorde);
+    }
+    printf("Até a próxima!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+#define MAX_TENTATIVAS 7
+
+// Joga uma partida. Devolve quantas tentativas a pessoa usou,
+// ou 0 se ela não acertou dentro do limite.
+int jogar(int secreto) {
+    printf("\nPensei num número de 1 a 100. Você tem %d tentativas.\n", MAX_TENTATIVAS);
+    for (int tentativa = 1; tentativa &lt;= MAX_TENTATIVAS; tentativa++) {
+        int palpite = 0;
+        printf("Tentativa %d: ", tentativa);
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            exit(1);
+        }
+        if (palpite == secreto) {
+            printf("Acertou em %d tentativa(s)!\n", tentativa);
+            return tentativa;
+        } else if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else {
+            printf("É menor.\n");
+        }
+    }
+    printf("Suas tentativas acabaram. O número era %d.\n", secreto);
+    return 0;
+}
+
+int main(void) {
+    srand(time(NULL));
+    int recorde = 0;      // 0 = ainda não há recorde
+    char resposta = 's';
+
+    printf("=== Jogo de Adivinhação ===\n");
+    while (resposta == 's' || resposta == 'S') {
+        int secreto = rand() % 100 + 1;
+        int usadas = jogar(secreto);
+
+        if (usadas &gt; 0 &amp;&amp; (recorde == 0 || usadas &lt; recorde)) {
+            recorde = usadas;
+            printf("Novo recorde: %d tentativa(s)!\n", recorde);
+        }
+
+        printf("Jogar de novo? (s/n): ");
+        if (scanf(" %c", &amp;resposta) != 1) {
+            resposta = 'n';
+        }
+    }
+
+    if (recorde &gt; 0) {
+        printf("Seu recorde: %d tentativa(s).\n", recorde);
+    }
+    printf("Até a próxima!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>O programa completo</h2>
+<p>A versão final, igual à versão 4. Compile com <code>gcc -std=c23 -Wall -Wextra adivinhacao.c -o adivinhacao</code>:</p>
+
+<pre class="file" data-file="adivinhacao.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+
+#define MAX_TENTATIVAS 7
+
+// Joga uma partida. Devolve quantas tentativas a pessoa usou,
+// ou 0 se ela não acertou dentro do limite.
+int jogar(int secreto) {
+    printf("\nPensei num número de 1 a 100. Você tem %d tentativas.\n", MAX_TENTATIVAS);
+    for (int tentativa = 1; tentativa &lt;= MAX_TENTATIVAS; tentativa++) {
+        int palpite = 0;
+        printf("Tentativa %d: ", tentativa);
+        if (scanf("%d", &amp;palpite) != 1) {
+            printf("\nFim de jogo: não consegui ler um número.\n");
+            exit(1);
+        }
+        if (palpite == secreto) {
+            printf("Acertou em %d tentativa(s)!\n", tentativa);
+            return tentativa;
+        } else if (palpite &lt; secreto) {
+            printf("É maior.\n");
+        } else {
+            printf("É menor.\n");
+        }
+    }
+    printf("Suas tentativas acabaram. O número era %d.\n", secreto);
+    return 0;
+}
+
+int main(void) {
+    srand(time(NULL));
+    int recorde = 0;      // 0 = ainda não há recorde
+    char resposta = 's';
+
+    printf("=== Jogo de Adivinhação ===\n");
+    while (resposta == 's' || resposta == 'S') {
+        int secreto = rand() % 100 + 1;
+        int usadas = jogar(secreto);
+
+        if (usadas &gt; 0 &amp;&amp; (recorde == 0 || usadas &lt; recorde)) {
+            recorde = usadas;
+            printf("Novo recorde: %d tentativa(s)!\n", recorde);
+        }
+
+        printf("Jogar de novo? (s/n): ");
+        if (scanf(" %c", &amp;resposta) != 1) {
+            resposta = 'n';
+        }
+    }
+
+    if (recorde &gt; 0) {
+        printf("Seu recorde: %d tentativa(s).\n", recorde);
+    }
+    printf("Até a próxima!\n");
+    return 0;
+}
+</pre>
+
+<p>O que o projeto juntou: <a href="scanf.html">scanf</a>, <a href="else-if.html">else if</a>, <a href="while.html">while</a>, <a href="for.html">for</a>, <a href="incremento.html">++</a>, <a href="operadores-logicos.html">&amp;&amp; e ||</a>, <a href="aleatorios.html">rand e srand</a>, <a href="constantes.html">#define</a>, <a href="funcoes.html">funções</a> e <a href="exit.html">exit</a>.</p>
+
+<h3>Rodando no laboratório</h3>
+<p>Uma partida a mais na máquina da Ana, só para ver o número mudar. Ela chutou o meio e precisou das 7 tentativas, por pouco:</p>
+
+<pre class="term" data-cwd="~/c/adivinhacao">$ gcc -std=c23 -Wall -Wextra adivinhacao.c -o adivinhacao
+$ ./adivinhacao
+=== Jogo de Adivinhação ===
+
+Pensei num número de 1 a 100. Você tem 7 tentativas.
+Tentativa 1: 50
+É menor.
+Tentativa 2: 25
+É maior.
+Tentativa 3: 37
+É menor.
+Tentativa 4: 31
+É maior.
+Tentativa 5: 34
+É maior.
+Tentativa 6: 35
+É maior.
+Tentativa 7: 36
+Acertou em 7 tentativa(s)!
+Novo recorde: 7 tentativa(s)!
+Jogar de novo? (s/n): n
+Seu recorde: 7 tentativa(s).
+Até a próxima!
+</pre>
+
+<hr>
+
+<h2>Desafios extras</h2>
+<ol>
+  <li><strong>Dica de intervalo.</strong> Em vez de "É maior.", mostre o intervalo que sobrou: <code>Está entre 51 e 100.</code> Guarde dois inteiros, <code>menor</code> e <code>maior</code>, e atualize a cada palpite.</li>
+  <li><strong>Palpite fora do intervalo.</strong> Se a pessoa chutar 0 ou 150, avise <code>Escolha de 1 a 100.</code> e <strong>não</strong> conte a tentativa.</li>
+  <li><strong>Níveis.</strong> Pergunte no começo: fácil (1 a 50, 10 tentativas), médio (1 a 100, 7) ou difícil (1 a 1000, 10). A função <code>jogar</code> passa a receber o máximo e o limite como parâmetros.</li>
+  <li><strong>Pedir de novo em vez de encerrar.</strong> Quando a pessoa digitar texto, peça o palpite de novo. Use <code>fgets</code> e <code>strtol</code>, como a <a href="projeto-calculadora.html#versao4">Calculadora</a> faz com <code>strtod</code>.</li>
+  <li><strong>Recorde guardado.</strong> Grave o recorde num arquivo <code>recorde.txt</code> ao sair e leia ao começar, para ele valer de um dia para o outro (veja <a href="escrever-arquivos.html">Escrever Arquivos</a> e <a href="ler-arquivos.html">Ler Arquivos</a>).</li>
+</ol>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. Qual expressão sorteia um número de 1 a 6, como um dado?</p>
+<label><input type="radio" name="q1"> <code>rand() % 6</code></label>
+<label><input type="radio" name="q1"> <code>rand() % 7</code></label>
+<label><input type="radio" name="q1"> <code>rand() % 6 + 1</code></label>
+<label><input type="radio" name="q1"> <code>rand(6)</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. A Ana esqueceu o <code>srand(time(NULL))</code>. O que acontece?</p>
+<label><input type="radio" name="q2"> O programa não compila.</label>
+<label><input type="radio" name="q2"> O número secreto é o mesmo em toda execução.</label>
+<label><input type="radio" name="q2"> O <code>rand()</code> devolve sempre 0.</label>
+<label><input type="radio" name="q2"> O número muda, mas fica fora de 1 a 100.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Por que a missão do limite chuta <code>0</code> e não, por exemplo, <code>50</code>?</p>
+<label><input type="radio" name="q3"> Porque o <code>scanf</code> não lê 50.</label>
+<label><input type="radio" name="q3"> Porque 0 é mais rápido.</label>
+<label><input type="radio" name="q3"> Porque o editor só aceita 0.</label>
+<label><input type="radio" name="q3"> Porque o secreto vai de 1 a 100: 0 nunca acerta, então a derrota não depende do número sorteado.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Na função <code>jogar</code>, o que o <code>return tentativa;</code> dentro do <code>for</code> faz?</p>
+<label><input type="radio" name="q4"> Sai do laço e da função na hora, devolvendo o número de tentativas.</label>
+<label><input type="radio" name="q4"> Pula para a próxima volta do <code>for</code>.</label>
+<label><input type="radio" name="q4"> Encerra o programa inteiro.</label>
+<label><input type="radio" name="q4"> Só sai do <code>if</code>.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete a linha que embaralha a sequência do <code>rand()</code> usando o relógio:</p>
+<div class="ex-code"><input data-answer="srand" aria-label="função" size="6">(time(NULL));</div>
+</div>
+
+<div class="exercise">
+<p>6. Complete o laço que dá no máximo <code>MAX_TENTATIVAS</code> voltas, começando em 1:</p>
+<div class="ex-code">for (int t = 1; t <input data-answer="&lt;=" aria-label="operador" size="3"> MAX_TENTATIVAS; t++)</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Teste primeiro com um número fixo; sorteie depois.</li>
+  <li><code>while (palpite != secreto)</code> repete até acertar; um contador com <code>++</code> conta as tentativas.</li>
+  <li>Confira o retorno do <code>scanf</code>: texto na entrada vira laço infinito.</li>
+  <li><code>rand() % 100 + 1</code> sorteia de 1 a 100; <code>srand(time(NULL))</code>, uma vez no começo, muda a sequência a cada execução.</li>
+  <li>Os números do <code>rand()</code> mudam de uma biblioteca C para outra (gcc × editor do guia): não dependa deles.</li>
+  <li>Para testar sem depender da sorte: palpites que cobrem todos os números, ou palpites que nunca acertam (0).</li>
+</ul>
+<p>Próximo projeto: <a href="projeto-notas.html">Boletim de Notas</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
