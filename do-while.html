@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C do while — repetir pelo menos uma vez | Guia C</title>
+<meta name="description" content="O laço do while em C para quem nunca programou: rodar o corpo pelo menos uma vez, validar uma nota com scanf, menu que repete, &quot;deseja continuar?&quot; com %c, e o ponto e vírgula obrigatório no fim, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">do while</span></h1>
+
+<p class="intro">O <a href="while.html">while</a> faz a pergunta <strong>antes</strong> de cada volta: se a resposta já for "não" na primeira vez, o corpo nem roda. Mas há situações em que você precisa fazer a coisa <strong>pelo menos uma vez</strong> para só depois decidir se repete: mostrar um menu, pedir uma nota, perguntar "deseja continuar?". Para isso o C tem o <code>do while</code> ("faça … enquanto"): primeiro <strong>faz</strong>, depois <strong>pergunta</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A forma do <code>do { … } while (condição);</code> e por que o <code>;</code> no fim é obrigatório.</li>
+  <li>A diferença prática entre <code>while</code> e <code>do while</code>: zero voltas × pelo menos uma.</li>
+  <li>Como <strong>validar a entrada</strong>: pedir a nota de novo até ela estar entre 0 e 10.</li>
+  <li>Como fazer um <strong>menu que repete</strong> até a pessoa escolher "Sair".</li>
+  <li>Como perguntar "deseja continuar? (s/n)" com <code>scanf(" %c", …)</code>, e por que o espaço antes do <code>%c</code> importa.</li>
+  <li>Os erros mais comuns e as mensagens reais do compilador.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15</strong> na máquina fictícia da Ana, na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: provar a comida antes de pôr mais sal</h2>
+<p>Quem cozinha não pergunta "precisa de mais sal?" antes de provar. A ordem é:</p>
+<ol class="passo">
+  <li><strong>Prova</strong> a comida.</li>
+  <li>Pergunta: ainda está sem sal? <strong>Sim</strong> → põe uma pitada e volta ao passo 1.</li>
+  <li><strong>Não</strong> → pronto, serve.</li>
+</ol>
+<p>Você prova <strong>pelo menos uma vez</strong>, sempre, e só então decide se repete. Essa é a diferença entre os dois laços:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>while</code></th><th><code>do while</code></th></tr>
+<tr><td>Quando testa a condição</td><td><strong>Antes</strong> de cada volta</td><td><strong>Depois</strong> de cada volta</td></tr>
+<tr><td>Menor número de voltas</td><td>0</td><td>1</td></tr>
+<tr><td>Comparação</td><td>"Tem louça? Então lave."</td><td>"Prove. Precisa de sal? Então prove de novo."</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. A forma do <code>do while</code></h2>
+
+<pre class="file" data-file="contar_do.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i = 1;
+    do {
+        printf("Volta %d\n", i);
+        i++;
+    } while (i &lt;= 5);
+    printf("Fim! i agora vale %d\n", i);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>do</dt><dd>"Faça". Marca o começo do laço. Não tem condição aqui: o corpo começa a rodar direto.</dd>
+  <dt>{ … }</dt><dd>O corpo, que roda <strong>pelo menos uma vez</strong>.</dd>
+  <dt>while (i &lt;= 5)</dt><dd>A condição, testada <strong>depois</strong> de cada volta. Se for verdadeira, o programa volta para o <code>do</code>; se for falsa, segue para a linha de baixo.</dd>
+  <dt>;</dt><dd>O <strong>ponto e vírgula no fim é obrigatório</strong>. O <code>do while</code> é o único laço que termina com <code>;</code>. Esquecer dá erro de compilação (veja <a href="#erros">Quando dá errado</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra contar_do.c -o contar_do
+$ ./contar_do
+Volta 1
+Volta 2
+Volta 3
+Volta 4
+Volta 5
+Fim! i agora vale 6</pre>
+
+<p>A saída é igual à do <code>while</code> da aula anterior. Quando a condição começa verdadeira, os dois laços fazem a mesma coisa. A diferença aparece quando ela começa <strong>falsa</strong>.</p>
+
+<div class="tip">
+<strong>Escreva o <code>while</code> na mesma linha da <code>}</code></strong>
+<p>Assim, quem lê vê logo que aquele <code>while</code> é o <strong>fim</strong> de um <code>do</code>, e não o começo de um laço novo. É o estilo usado neste guia e na maioria dos projetos em C.</p>
+</div>
+
+<hr>
+
+<h2>2. Pelo menos uma vez: a diferença na prática</h2>
+<p>Neste programa, os dois laços começam com o contador em 10 e a condição <code>&lt;= 5</code>, que já é falsa:</p>
+
+<pre class="file" data-file="umavez.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i = 10;
+    while (i &lt;= 5) {
+        printf("while: volta %d\n", i);
+        i++;
+    }
+
+    int j = 10;
+    do {
+        printf("do while: volta %d\n", j);
+        j++;
+    } while (j &lt;= 5);
+
+    printf("Fim\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra umavez.c -o umavez
+$ ./umavez
+do while: volta 10
+Fim</pre>
+
+<p>O <code>while</code> perguntou primeiro (<code>10 &lt;= 5</code>? não) e não rodou nenhuma vez. O <code>do while</code> rodou o corpo, mostrou <code>volta 10</code>, e <strong>só então</strong> perguntou: como a resposta foi "não", parou. Por isso ele é a escolha quando a primeira volta é obrigatória.</p>
+
+<hr>
+
+<h2>3. Pedir até a resposta ser válida</h2>
+<p>Esta é a tarefa mais comum do <code>do while</code>. A Ana está lançando notas e uma nota só vale de 0 a 10. O programa precisa <strong>perguntar uma vez</strong> e, se a resposta for inválida, <strong>perguntar de novo</strong>:</p>
+
+<pre class="file" data-file="nota.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 0;
+    do {
+        printf("Digite a nota (0 a 10): ");
+        if (scanf("%d", &amp;nota) != 1) {
+            printf("Isso não é um número.\n");
+            return 1;
+        }
+        if (nota &lt; 0 || nota &gt; 10) {
+            printf("Nota inválida! Tente de novo.\n");
+        }
+    } while (nota &lt; 0 || nota &gt; 10);
+    printf("Nota registrada: %d\n", nota);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int nota = 0;</dt><dd>A variável nasce <strong>fora</strong> do <code>do</code>, porque a condição lá embaixo precisa enxergá-la (veja o erro <a href="#erros">‘nota’ undeclared</a>).</dd>
+  <dt>if (scanf("%d", &amp;nota) != 1)</dt><dd>O <code>scanf</code> devolve quantos valores conseguiu ler. Se não for 1, a pessoa digitou algo que não é número. Aqui o programa avisa e termina com <code>return 1</code> (código de saída 1 = "deu errado"). Sem essa conferência, uma letra faria o laço repetir para sempre, como você viu em <a href="while.html">while</a>.</dd>
+  <dt>nota &lt; 0 || nota &gt; 10</dt><dd>"Nota menor que 0 <strong>ou</strong> maior que 10": a definição de nota <strong>inválida</strong> (veja <a href="operadores-logicos.html">Operadores Lógicos</a>). O laço repete enquanto ela for inválida.</dd>
+  <dt>printf("Nota inválida!…")</dt><dd>Um aviso para a pessoa saber por que a pergunta voltou. Ele usa a mesma condição do <code>while</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nota.c -o nota
+$ ./nota
+Digite a nota (0 a 10): 15
+Nota inválida! Tente de novo.
+Digite a nota (0 a 10): -2
+Nota inválida! Tente de novo.
+Digite a nota (0 a 10): 8
+Nota registrada: 8
+$ ./nota
+Digite a nota (0 a 10): oito
+Isso não é um número.
+$ echo $?
+1</pre>
+
+<p>Com um <code>while</code> comum, você teria de escrever o <code>printf</code> e o <code>scanf</code> duas vezes (uma antes do laço e outra dentro). O <code>do while</code> escreve a pergunta <strong>uma vez só</strong>.</p>
+
+<div class="note">
+<strong>Por que não tentar de novo quando a pessoa digita uma letra?</strong>
+<p>Dá para fazer, mas exige jogar fora o que ficou na entrada (o <code>oito</code> continua lá esperando, e o próximo <code>scanf</code> tropeçaria nele de novo). Isso é assunto da aula <a href="validar-entrada.html">Validar a Entrada</a>. Por enquanto, encerrar com uma mensagem clara já é muito melhor do que travar.</p>
+</div>
+
+<div class="tryc" data-stdin="15&#10;-2&#10;8" data-goal="out:Nota registrada: 8,src:do\s*\{">
+<p class="try-task"><strong>Missão:</strong> este programa pergunta a nota uma vez só e aceita qualquer coisa: com a entrada <code>15</code>, <code>-2</code>, <code>8</code>, ele registra o 15. Coloque a pergunta dentro de um <code>do { … } while (…);</code> para repetir enquanto a nota for menor que 0 ou maior que 10. A saída deve terminar com <code>Nota registrada: 8</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 0;
+    printf("Digite a nota (0 a 10): ");
+    if (scanf("%d", &amp;nota) != 1) {
+        return 1;
+    }
+    printf("Nota registrada: %d\n", nota);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 0;
+    do {
+        printf("Digite a nota (0 a 10): ");
+        if (scanf("%d", &amp;nota) != 1) {
+            return 1;
+        }
+    } while (nota &lt; 0 || nota &gt; 10);
+    printf("Nota registrada: %d\n", nota);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. A soma até o 0, sem repetir a leitura</h2>
+<p>Na aula do <a href="while.html">while</a>, o programa que soma até o 0 tinha a pergunta e o <code>scanf</code> escritos duas vezes. Com <code>do while</code>, cada número é lido no começo da volta e a condição vem no fim:</p>
+
+<pre class="file" data-file="soma_do.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int numero = 0;
+    int soma = 0;
+    do {
+        printf("Digite um número (0 para parar): ");
+        if (scanf("%d", &amp;numero) != 1) {
+            numero = 0;
+        }
+        soma += numero;
+    } while (numero != 0);
+    printf("Soma: %d\n", soma);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra soma_do.c -o soma_do
+$ ./soma_do
+Digite um número (0 para parar): 10
+Digite um número (0 para parar): 25
+Digite um número (0 para parar): 7
+Digite um número (0 para parar): 0
+Soma: 42</pre>
+
+<p>Repare num detalhe: aqui o <code>0</code> <strong>entra</strong> na soma (<code>soma += numero</code> roda antes do teste). Como somar 0 não muda nada, o resultado é o mesmo. E se a leitura falhar (uma letra, ou o fim da entrada), o programa trata como se a pessoa tivesse digitado 0 e para.</p>
+
+<hr>
+
+<h2>5. Um menu que repete</h2>
+<p>Quase todo programa de terminal tem um menu: mostra as opções, a pessoa escolhe, o programa faz a tarefa e mostra o menu de novo, até ela escolher "Sair". O menu precisa aparecer pelo menos uma vez, então é <code>do while</code>. Cada opção é tratada com um <a href="switch.html">switch</a>:</p>
+
+<pre class="file" data-file="menu.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 0;
+    int itens = 0;
+    do {
+        printf("\n=== Lojinha da Ana ===\n");
+        printf("1 - Vender um item\n");
+        printf("2 - Ver vendas\n");
+        printf("0 - Sair\n");
+        printf("Escolha: ");
+        if (scanf("%d", &amp;opcao) != 1) {
+            opcao = 0;
+        }
+
+        switch (opcao) {
+            case 1:
+                itens++;
+                printf("Venda registrada.\n");
+                break;
+            case 2:
+                printf("Itens vendidos hoje: %d\n", itens);
+                break;
+            case 0:
+                printf("Até amanhã!\n");
+                break;
+            default:
+                printf("Opção inválida.\n");
+        }
+    } while (opcao != 0);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra menu.c -o menu
+$ ./menu
+
+=== Lojinha da Ana ===
+1 - Vender um item
+2 - Ver vendas
+0 - Sair
+Escolha: 1
+Venda registrada.
+
+=== Lojinha da Ana ===
+1 - Vender um item
+2 - Ver vendas
+0 - Sair
+Escolha: 1
+Venda registrada.
+
+=== Lojinha da Ana ===
+1 - Vender um item
+2 - Ver vendas
+0 - Sair
+Escolha: 2
+Itens vendidos hoje: 2
+
+=== Lojinha da Ana ===
+1 - Vender um item
+2 - Ver vendas
+0 - Sair
+Escolha: 7
+Opção inválida.
+
+=== Lojinha da Ana ===
+1 - Vender um item
+2 - Ver vendas
+0 - Sair
+Escolha: 0
+Até amanhã!</pre>
+
+<dl class="anatomy">
+  <dt>int itens = 0;</dt><dd>O contador de vendas nasce fora do laço, para <strong>sobreviver</strong> de uma volta para outra.</dd>
+  <dt>opcao = 0;</dt><dd>Se a pessoa digitar uma letra, o programa trata como "Sair" em vez de mostrar o menu para sempre.</dd>
+  <dt>break;</dt><dd>Dentro do <code>switch</code>, o <code>break</code> sai <strong>só do switch</strong>, não do laço. O programa continua até o <code>while (opcao != 0)</code>.</dd>
+  <dt>while (opcao != 0);</dt><dd>Repete o menu enquanto a escolha não for 0.</dd>
+</dl>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> esta caixa não tem entrada pronta. Clique em <strong>Rodar</strong> e <strong>digite</strong> as opções no terminal da caixa (Enter depois de cada uma). Venda alguns itens, veja as vendas, e saia com 0. Depois acrescente uma opção <code>3 - Cancelar uma venda</code> que diminui <code>itens</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 0;
+    int itens = 0;
+    do {
+        printf("\n=== Lojinha da Ana ===\n");
+        printf("1 - Vender um item\n");
+        printf("2 - Ver vendas\n");
+        printf("0 - Sair\n");
+        printf("Escolha: ");
+        if (scanf("%d", &amp;opcao) != 1) {
+            opcao = 0;
+        }
+
+        switch (opcao) {
+            case 1:
+                itens++;
+                printf("Venda registrada.\n");
+                break;
+            case 2:
+                printf("Itens vendidos hoje: %d\n", itens);
+                break;
+            case 0:
+                printf("Até amanhã!\n");
+                break;
+            default:
+                printf("Opção inválida.\n");
+        }
+    } while (opcao != 0);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>6. "Deseja continuar? (s/n)"</h2>
+<p>Outra pergunta clássica no fim de cada volta. A resposta é uma letra, então a variável é um <code>char</code> (veja <a href="char.html">Caracteres</a>) e o formato do <code>scanf</code> é <code>%c</code>:</p>
+
+<pre class="file" data-file="continuar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char resposta = 'n';
+    int pedidos = 0;
+    do {
+        pedidos++;
+        printf("Pedido %d anotado.\n", pedidos);
+        printf("Deseja fazer outro pedido? (s/n) ");
+        if (scanf(" %c", &amp;resposta) != 1) {
+            resposta = 'n';
+        }
+    } while (resposta == 's' || resposta == 'S');
+    printf("Total de pedidos: %d\n", pedidos);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>" %c"</dt><dd>Lê <strong>um caractere</strong>. O <strong>espaço antes do <code>%c</code></strong> manda o <code>scanf</code> pular espaços e quebras de linha antes de ler. Ele é essencial: sem ele, o <code>scanf</code> lê o Enter da resposta anterior (veja <a href="#erros">Quando dá errado</a>).</dd>
+  <dt>resposta == 's' || resposta == 'S'</dt><dd>Aceita <code>s</code> minúsculo ou maiúsculo. Letras vão entre aspas simples: <code>'s'</code> é um caractere; <code>"s"</code> seria um texto.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra continuar.c -o continuar
+$ ./continuar
+Pedido 1 anotado.
+Deseja fazer outro pedido? (s/n) s
+Pedido 2 anotado.
+Deseja fazer outro pedido? (s/n) S
+Pedido 3 anotado.
+Deseja fazer outro pedido? (s/n) n
+Total de pedidos: 3</pre>
+
+<p>Qualquer resposta que não seja <code>s</code> ou <code>S</code> encerra: <code>n</code>, <code>x</code>, até o fim da entrada.</p>
+
+<hr>
+
+<h2>Qual usar: <code>do while</code> × <code>while</code></h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Laço</th><th>Por quê</th></tr>
+<tr><td>Menu, "deseja continuar?", pedir até ser válido</td><td><code>do while</code></td><td>A primeira volta é obrigatória: só dá para testar depois de perguntar.</td></tr>
+<tr><td>Vender enquanto houver estoque, dobrar até passar de 1000</td><td><code>while</code></td><td>Pode ser que não haja nada a fazer (estoque zerado): 0 voltas é uma resposta válida.</td></tr>
+<tr><td>Contar de 1 a 10, passar por todos os alunos</td><td><a href="for.html">for</a></td><td>O número de voltas é conhecido.</td></tr>
+</table>
+</div>
+<p>Na dúvida, pergunte-se: "faz sentido o corpo rodar <strong>zero</strong> vezes?". Se sim, <code>while</code>. Se não, <code>do while</code>. Na prática, o <code>do while</code> aparece bem menos que os outros dois, mas nas situações acima ele deixa o código mais curto e sem repetição.</p>
+
+<hr>
+
+<h2 id="erros">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"expected ‘;’ before …" (esqueceu o <code>;</code> do fim)</strong>
+<pre class="file" data-file="semponto.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i = 1;
+    do {
+        printf("%d\n", i);
+        i++;
+    } while (i &lt;= 3)
+    printf("Fim\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semponto.c -o semponto
+semponto.c: In function ‘main’:
+semponto.c:8:21: error: expected ‘;’ before ‘printf’
+    8 |     } while (i &lt;= 3)
+      |                     ^
+      |                     ;
+    9 |     printf("Fim\n");
+      |     ~~~~~~           </pre>
+<p><strong>O que significa:</strong> "esperava <code>;</code> antes de <code>printf</code>". O compilador chegou ao <code>printf</code> da linha 9 ainda esperando o fim do <code>do while</code>. Ele até mostra onde o <code>;</code> deveria estar (a linha com <code>;</code> embaixo do <code>^</code>). O Clang do editor diz: <code>error: expected ';' after do/while statement</code>.</p>
+<p><strong>Como consertar:</strong> ponha <code>;</code> depois do <code>)</code>: <code>} while (i &lt;= 3);</code>.</p>
+</div>
+
+<div class="tryc" data-goal="compila,out:Fim">
+<p class="try-task"><strong>Missão:</strong> este é o programa acima. Rode, leia a mensagem do Clang, conserte e rode de novo até aparecer <code>Fim</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i = 1;
+    do {
+        printf("%d\n", i);
+        i++;
+    } while (i &lt;= 3)
+    printf("Fim\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i = 1;
+    do {
+        printf("%d\n", i);
+        i++;
+    } while (i &lt;= 3);
+    printf("Fim\n");
+    return 0;
+}
+</pre>
+</div>
+
+<div class="cenario">
+<strong>"‘nota’ undeclared" (variável criada dentro do <code>do</code>)</strong>
+<pre class="file" data-file="dentro.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    do {
+        int nota = 0;
+        printf("Digite a nota (0 a 10): ");
+        scanf("%d", &amp;nota);
+    } while (nota &lt; 0 || nota &gt; 10);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dentro.c -o dentro
+dentro.c: In function ‘main’:
+dentro.c:8:14: error: ‘nota’ undeclared (first use in this function)
+    8 |     } while (nota &lt; 0 || nota &gt; 10);
+      |              ^~~~
+dentro.c:8:14: note: each undeclared identifier is reported only once for each function it appears in</pre>
+<p><strong>O que significa:</strong> "‘nota’ não declarada (primeiro uso nesta função)". Uma variável criada dentro de <code>{ }</code> só existe até a <code>}</code> que fecha o bloco (veja <a href="escopo.html">Escopo</a>). A condição do <code>while</code> fica <strong>depois</strong> da <code>}</code>, onde <code>nota</code> já não existe. O Clang diz <code>error: use of undeclared identifier 'nota'</code>.</p>
+<p><strong>Como consertar:</strong> crie a variável antes do <code>do</code>: <code>int nota = 0;</code>, e dentro do laço só use (<code>scanf("%d", &amp;nota);</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>O programa termina sem esperar a resposta (<code>%c</code> sem espaço)</strong>
+<pre class="file" data-file="continuar_errado.c">        if (scanf("%c", &amp;resposta) != 1) {
+</pre>
+<pre class="term" data-cwd="~/c">$ ./continuar_errado
+Pedido 1 anotado.
+Deseja fazer outro pedido? (s/n) s
+Pedido 2 anotado.
+Deseja fazer outro pedido? (s/n) Total de pedidos: 2</pre>
+<p><strong>O que aconteceu:</strong> a Ana digitou <code>s</code> e apertou Enter. O Enter também é um caractere (<code>'\n'</code>) e ficou esperando na entrada. Na segunda pergunta, o <code>%c</code> leu esse <code>'\n'</code> na hora, sem esperar: como <code>'\n'</code> não é <code>'s'</code>, o laço terminou. O compilador não tem como avisar: o programa é válido.</p>
+<p><strong>Como consertar:</strong> use <code>" %c"</code>, com espaço antes do <code>%</code>. O espaço pula o Enter (e outros espaços) antes de ler a letra. Com <code>%d</code> isso não acontece porque o <code>%d</code> já pula espaços sozinho.</p>
+</div>
+
+<div class="cenario">
+<strong>O menu volta sem parar</strong>
+<p><strong>O que aconteceu:</strong> a condição do <code>while</code> nunca fica falsa. As causas mais comuns são: a variável testada não é a que o <code>scanf</code> preenche (<code>while (escolha != 0)</code> com <code>scanf("%d", &amp;opcao)</code>); uma letra digitada sem conferir o retorno do <code>scanf</code> (o menu se repete mostrando a mesma opção antiga, como em <a href="while.html">while</a>); ou a condição invertida (<code>==</code> no lugar de <code>!=</code> faz o laço terminar logo, ao contrário).</p>
+<p><strong>Como parar:</strong> <kbd>Ctrl</kbd>+<kbd>C</kbd> no terminal, ou <strong>■ Parar</strong> no editor do guia.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>O que faz</th></tr>
+<tr><td><code>do { … } while (condição);</code></td><td>Roda o corpo; depois testa. Repete enquanto a condição for verdadeira. Roda <strong>pelo menos 1 vez</strong>. Termina com <code>;</code>.</td></tr>
+<tr><td><code>do { pergunta; } while (inválido);</code></td><td>Pedir de novo até a resposta ser válida.</td></tr>
+<tr><td><code>do { menu; switch …; } while (opcao != 0);</code></td><td>Menu que repete até a opção de sair.</td></tr>
+<tr><td><code>scanf(" %c", &amp;r)</code></td><td>Lê uma letra pulando espaços e o Enter anterior.</td></tr>
+<tr><td><code>if (scanf("%d", &amp;x) != 1)</code></td><td>Detecta quando a pessoa não digitou um número.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O que falta?</h3>
+<p>Complete o fim do laço:</p>
+<div class="ex-code">do { printf("Oi\n"); i++; } while (i &lt; 3)<input data-answer=";" aria-label="o que falta" size="3"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Condição da validação</h3>
+<p>Complete a condição para repetir enquanto a idade for <strong>menor que 0 ou maior que 120</strong>:</p>
+<div class="ex-code">} while (<input data-answer="idade &lt; 0 \|\| idade &gt; 120|idade&lt;0\|\|idade&gt;120|idade &gt; 120 \|\| idade &lt; 0" aria-label="condição">);</div>
+</div>
+
+<div class="exercise">
+<h3>3. Quantas voltas?</h3>
+<p>Quantas vezes <code>Oi</code> aparece? <code>int n = 50; do { printf("Oi\n"); n++; } while (n &lt; 10);</code></p>
+<div class="ex-code"><input data-answer="1|uma" aria-label="quantas vezes"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Qual é a principal diferença entre <code>while</code> e <code>do while</code>?</p>
+<label><input type="radio" name="q4"> O <code>do while</code> é mais rápido</label>
+<label><input type="radio" name="q4"> O <code>while</code> não aceita <code>&amp;&amp;</code> na condição</label>
+<label><input type="radio" name="q4"> O <code>do while</code> testa a condição depois do corpo, então roda pelo menos uma vez</label>
+<label><input type="radio" name="q4"> O <code>do while</code> não pode ter laço infinito</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Num programa com <code>scanf("%c", &amp;resposta)</code> dentro de um <code>do while</code>, a segunda pergunta "Deseja continuar?" não espera a resposta. Qual é o conserto?</p>
+<label><input type="radio" name="q5"> Trocar <code>do while</code> por <code>while</code></label>
+<label><input type="radio" name="q5"> Escrever <code>" %c"</code>, com espaço, para pular o Enter que sobrou</label>
+<label><input type="radio" name="q5"> Trocar <code>char</code> por <code>int</code></label>
+<label><input type="radio" name="q5"> Tirar o <code>;</code> do fim do <code>while</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual destas tarefas pede um <code>do while</code>?</p>
+<label><input type="radio" name="q6"> Mostrar os números de 1 a 100</label>
+<label><input type="radio" name="q6"> Vender enquanto houver estoque (que pode estar zerado)</label>
+<label><input type="radio" name="q6"> Somar as notas de 30 alunos</label>
+<label><input type="radio" name="q6"> Mostrar um menu e repetir até a pessoa escolher "Sair"</label>
+</div>
+
+<h3>Missão final: o jogo de adivinhação</h3>
+<div class="tryc" data-stdin="3&#10;9&#10;7" data-goal="out:Acertou em 3 tentativas!,src:do\s*\{">
+<p class="try-task"><strong>Missão:</strong> o número secreto é <code>7</code>. Use um <code>do while</code> para pedir um palpite, contar a tentativa e dizer <code>Mais alto!</code> ou <code>Mais baixo!</code>, repetindo enquanto o palpite for diferente do segredo. No fim, mostre <code>Acertou em N tentativas!</code>. A entrada já traz os palpites <code>3</code>, <code>9</code> e <code>7</code>. (No <a href="projeto-adivinhacao.html">projeto do jogo</a>, o segredo é sorteado.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int segredo = 7;
+    int palpite = 0;
+    int tentativas = 0;
+    // escreva o do while aqui
+
+    printf("Acertou em %d tentativas!\n", tentativas);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int segredo = 7;
+    int palpite = 0;
+    int tentativas = 0;
+    do {
+        printf("Seu palpite: ");
+        if (scanf("%d", &amp;palpite) != 1) {
+            return 1;
+        }
+        tentativas++;
+        if (palpite &lt; segredo) {
+            printf("Mais alto!\n");
+        } else if (palpite &gt; segredo) {
+            printf("Mais baixo!\n");
+        }
+    } while (palpite != segredo);
+    printf("Acertou em %d tentativas!\n", tentativas);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>do { corpo } while (condição);</code> roda o corpo e <strong>depois</strong> testa. O corpo roda <strong>pelo menos uma vez</strong>.</li>
+  <li>O <code>;</code> no fim é obrigatório. Sem ele, o gcc diz <code>expected ‘;’ before …</code>.</li>
+  <li>Use <code>do while</code> para validar entrada, menus e "deseja continuar?": a pergunta fica escrita uma vez só.</li>
+  <li>Variáveis usadas na condição nascem <strong>antes</strong> do <code>do</code>; as criadas dentro das chaves não existem no <code>while (…)</code>.</li>
+  <li>Confira o retorno do <code>scanf</code> e use <code>" %c"</code> (com espaço) para ler uma letra depois de um Enter.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
