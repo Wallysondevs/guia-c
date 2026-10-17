@@ -28,13 +28,16 @@ function rodar(arquivos, opts) {
   const fontes = arquivos.filter((a) => /\.c$/i.test(a.nome)).map((a) => a.nome);
   const prog = (fontes[0] || arquivos[0].nome).replace(/^.*\//, "").replace(/\.[^.]*$/, "") || "programa";
   const flags = opts.flags === undefined || opts.flags === null ? "-std=c23 -Wall -Wextra" : opts.flags;
+  // math.h: o editor não precisa de -lm; no terminal a aula ensina a pôr. Na comparação, o gcc ganha o -lm sozinho.
+  const libs = /^\s*#\s*include\s*<math\.h>/m.test(arquivos.map((a) => a.codigo).join("\n")) && !/(^|\s)-lm(\s|$)/.test(flags) ? " -lm" : "";
   const entrada = opts.stdin !== null && opts.stdin !== undefined ? "printf %s " + q(b64(opts.stdin)) + " | base64 -d > /tmp/entrada.txt" : ": > /tmp/entrada.txt";
   const script = [
     "cd /home/ana && rm -rf ./* ./.[!.]* 2>/dev/null; cd /home/ana",
     arquivos.map((a) => 'mkdir -p "$(dirname ' + q(a.nome) + ')" && printf %s ' + q(b64(a.codigo)) + " | base64 -d > " + q(a.nome)).join("\n"),
     entrada,
     "echo @@COMPILA@@",
-    cc + " " + flags + " " + fontes.map(q).join(" ") + " -o " + q(prog) + " 2>&1",
+    // bibliotecas (-lm, -lpthread…) depois das fontes, como se escreve no terminal (antes delas o ligador não as usa)
+    cc + " " + flags.split(/\s+/).filter((f) => f && !/^-l/.test(f)).join(" ") + " " + fontes.map(q).join(" ") + " -o " + q(prog) + " " + flags.split(/\s+/).filter((f) => /^-l/.test(f)).join(" ") + libs + " 2>&1",
     'echo "@@CEXIT@@$?"',
     // stdbuf -oL: saída em linhas, como num terminal (senão um programa que aborta perde o que estava no buffer)
     "if [ -x " + q(prog) + " ]; then timeout 10 stdbuf -oL -eL ./" + q(prog) + " " + (opts.args || []).map(q).join(" ") + " < /tmp/entrada.txt 2>&1 | grep -v '^timeout: o comando monitorado'; echo \"@@EXIT@@${PIPESTATUS[0]}\"; fi",
