@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Novas Linhas e Escapes — \n, \t, \", \\ e o %% do printf | Guia C</title>
+<meta name="description" content="Sequências de escape em C para quem nunca programou: a quebra de linha \n (e por que terminar a saída com ela), a tabulação \t, as aspas \" e \', a barra invertida \\ e o caminho do Windows, o %% do printf, os escapes por código (\x41, \101, \u00e7), o \0 e os textos compridos em vários pedaços, com as saídas e os avisos reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Novas Linhas e Escapes</span></h1>
+
+<p class="intro">Como escrever, dentro de um texto entre aspas, uma aspa? Ou uma tabulação, que você não consegue "ver"? Ou o caminho <code>C:\Users\ana</code>, cheio de barras invertidas? Desde o Olá, mundo você usa o <code>\n</code> para pular a linha. Ele é o mais famoso de uma família: as <strong>sequências de escape</strong>. Nesta aula você vai conhecer a família inteira, entender por que a saída deve terminar com <code>\n</code>, cair (de propósito) na armadilha do caminho do Windows e aprender a mostrar o <code>%</code> no <code>printf</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma sequência de escape, e por que <code>\n</code> é <strong>um</strong> caractere só.</li>
+  <li>Linhas em branco, e por que terminar a saída com <code>\n</code> (o texto pode sumir sem ele).</li>
+  <li>A tabulação <code>\t</code> para alinhar colunas, e o limite dela.</li>
+  <li>Aspas dentro do texto (<code>\"</code> e <code>\'</code>) e a barra invertida (<code>\\</code>).</li>
+  <li>Por que <code>"C:\novos"</code> pula a linha, e o aviso <code>unknown escape sequence</code>.</li>
+  <li>Mostrar o <code>%</code> no <code>printf</code> com <code>%%</code>.</li>
+  <li>Os escapes por código (<code>\x41</code>, <code>\101</code>, <code>&#92;u00e7</code>), o <code>\0</code> e textos compridos em vários pedaços.</li>
+</ul>
+</div>
+
+<p>Os exemplos foram compilados na máquina fictícia da Ana com o comando padrão do guia, <code>gcc -std=c23 -Wall -Wextra</code>, na pasta <code>~/c</code>.</p>
+
+<hr>
+
+<h2>A ideia: a barra invertida "avisa" o compilador</h2>
+<p>Dentro de um texto entre aspas, quase todo caractere é ele mesmo: <code>A</code> é A, <code>7</code> é 7. Mas há dois problemas:</p>
+<ul>
+  <li>alguns caracteres têm um <strong>papel</strong> para o compilador: a aspa <code>"</code> quer dizer "o texto acabou";</li>
+  <li>outros <strong>não dá para digitar</strong> de forma visível: se você apertar Enter no meio das aspas, o texto fica "aberto" e dá erro (aula <a href="sintaxe.html">Sintaxe</a>).</li>
+</ul>
+
+<p>A solução é um código de duas letras que começa com a <strong>barra invertida</strong> <code>\</code> (em inglês, <em>backslash</em>). A barra é um aviso, como as aspas de quem fala "entre aspas" com os dedos: "o próximo caractere não é ele mesmo; é um código". O nome técnico é <strong>escapar</strong> o caractere: tirá-lo do seu papel normal. Para o compilador, <code>\n</code> é <strong>um caractere só</strong> (a quebra de linha), embora você digite dois.</p>
+
+<hr>
+
+<h2>1. As sequências de escape mais usadas</h2>
+
+<pre class="file" data-file="escapes.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Linha 1\nLinha 2\n");
+    printf("Nome\tIdade\n");
+    printf("Ana\t29\n");
+    printf("Ela disse: \"oi\"\n");
+    printf("copo d'água e copo d\'água\n");
+    printf("C:\\Users\\ana\n");
+    putchar('\'');
+    putchar(' ');
+    putchar('"');
+    putchar('\n');
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra escapes.c -o escapes
+$ ./escapes
+Linha 1
+Linha 2
+Nome	Idade
+Ana	29
+Ela disse: "oi"
+copo d'água e copo d'água
+C:\Users\ana
+' "</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escape</th><th>Vira</th><th>Nome em inglês</th><th>Quando usar</th></tr>
+<tr><td><code>\n</code></td><td>Quebra de linha</td><td><em>new line</em></td><td>Pular a linha (seção 2)</td></tr>
+<tr><td><code>\t</code></td><td>Tabulação (Tab)</td><td><em>tab</em></td><td>Alinhar colunas simples (seção 3)</td></tr>
+<tr><td><code>\"</code></td><td><code>"</code></td><td><em>double quote</em></td><td>Uma aspa dupla dentro de <code>"…"</code> (seção 4)</td></tr>
+<tr><td><code>\'</code></td><td><code>'</code></td><td><em>single quote</em></td><td>Obrigatório num caractere: <code>'\''</code>. Dentro de <code>"…"</code>, opcional: <code>"d'água"</code> funciona.</td></tr>
+<tr><td><code>\\</code></td><td><code>\</code></td><td><em>backslash</em></td><td>Uma barra invertida de verdade (seção 5)</td></tr>
+<tr><td><code>\0</code></td><td>Caractere nulo</td><td><em>null</em></td><td>A marca de fim de todo texto em C (seção 7)</td></tr>
+</table>
+</div>
+
+<p>Repare nas quatro últimas linhas do programa: num caractere (aspas simples, aula <a href="char.html">Caracteres</a>), quem precisa de escape é a aspa <strong>simples</strong> (<code>'\''</code>); a dupla vai solta (<code>'"'</code>). Num texto (aspas duplas), é o contrário. A regra: <strong>só precisa escapar a aspa igual à que está "abraçando"</strong>.</p>
+
+<p>Dá para ver cada caractere que o programa mandou para a tela com o comando <code>od -c</code> (<em>octal dump</em>, "despejo de bytes", com <code>-c</code> de <em>caracteres</em>), que mostra até os invisíveis:</p>
+
+<pre class="term" data-cwd="~/c">$ ./escapes | od -c | head -3
+0000000   L   i   n   h   a       1  \n   L   i   n   h   a       2  \n
+0000020   N   o   m   e  \t   I   d   a   d   e  \n   A   n   a  \t   2
+0000040   9  \n   E   l   a       d   i   s   s   e   :       "   o   i</pre>
+
+<p>Cada "casinha" é um caractere. O <code>\n</code> e o <code>\t</code> ocupam <strong>uma</strong> casinha cada: são um caractere só, que o <code>od</code> desenha com dois símbolos porque eles não têm desenho próprio. (Os números da esquerda contam a posição, em octal; pode ignorar.)</p>
+
+<hr>
+
+<h2>2. A quebra de linha: <code>\n</code></h2>
+<p>Você já sabe que o <code>printf</code> não pula linha sozinho (aula <a href="printf.html">Saída com printf</a>). O <code>\n</code> pode ficar em qualquer lugar do texto, e cada um é uma quebra. Dois seguidos dão uma <strong>linha em branco</strong>:</p>
+
+<pre class="file" data-file="linhas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Cardápio\n\n");
+    printf("1. Pão de queijo\n2. Café\n");
+    printf("\nBom apetite!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra linhas.c -o linhas
+$ ./linhas
+Cardápio
+                    « o segundo \n da linha 4
+1. Pão de queijo
+2. Café
+                    « o \n do começo da linha 6
+Bom apetite!</pre>
+
+<dl class="anatomy">
+  <dt>"Cardápio\n\n"</dt><dd>O primeiro <code>\n</code> termina a linha do "Cardápio"; o segundo termina uma linha <strong>vazia</strong>.</dd>
+  <dt>"1. Pão de queijo\n2. Café\n"</dt><dd>Um <code>\n</code> no meio: duas linhas com um <code>printf</code> só.</dd>
+  <dt>"\nBom apetite!\n"</dt><dd>Um <code>\n</code> no começo: primeiro pula (a linha anterior já tinha terminado, então sobra uma em branco), depois escreve.</dd>
+</dl>
+
+<p>Outros jeitos de pular a linha: <code>puts("texto")</code> põe o <code>\n</code> sozinho, e <code>putchar('\n')</code> mostra só a quebra. Os três dão o mesmo caractere.</p>
+
+<h3>Termine a saída com <code>\n</code>: o texto pode sumir</h3>
+<p>O C não manda cada letra para a tela na hora: ele junta o texto numa área de espera, o <strong>buffer</strong> (em inglês, "amortecedor"), e só "despeja" quando chega um <code>\n</code> ou quando o programa termina normalmente. É como o garçom que espera o pedido da mesa inteira antes de ir à cozinha: dá menos viagens.</p>
+
+<p>O problema aparece quando o programa <strong>quebra</strong> antes de despejar. Para simular uma quebra, este programa chama <code>abort()</code> (de <code>stdlib.h</code>, "abortar"), que derruba o programa na hora, como um travamento:</p>
+
+<pre class="file" data-file="buffer.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    printf("Salvando o arquivo...");
+    abort();
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra buffer.c -o buffer
+$ ./buffer
+Abortado                   (imagem do núcleo gravada) ./buffer      « cadê o "Salvando"?</pre>
+
+<p>O <code>printf</code> rodou, mas o texto ficou preso no buffer e morreu junto com o programa. Agora, o mesmo programa com <code>\n</code> no fim do texto (<code>buffer2.c</code>):</p>
+
+<pre class="term" data-cwd="~/c">$ ./buffer2
+Salvando o arquivo...
+Abortado                   (imagem do núcleo gravada) ./buffer2</pre>
+
+<p>O <code>\n</code> despejou o texto na tela antes da queda. Isso importa muito quando você estiver caçando um erro: se o programa cai e a última mensagem não aparece, você vai procurar o problema no lugar errado. Por isso, <strong>termine cada mensagem com <code>\n</code></strong>. (Quando você quer mesmo ficar na mesma linha, como num <code>printf("Nome: ")</code> antes de ler o teclado, o C despeja sozinho antes de esperar a digitação; e há o <code>fflush(stdout)</code>, "esvaziar a saída", que despeja na hora. A aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a> conta os detalhes.)</p>
+
+<div class="tryc" data-goal="out:Salvando o arquivo...,src:abort\s*\(\s*\)">
+<p class="try-task"><strong>Missão:</strong> rode: o programa cai e a mensagem não aparece. Faça a mensagem <code>Salvando o arquivo...</code> aparecer <strong>antes</strong> da queda, sem tirar o <code>abort()</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    printf("Salvando o arquivo...");
+    abort();
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    printf("Salvando o arquivo...\n");
+    abort();
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A tabulação: <code>\t</code></h2>
+<p>O <code>\t</code> é a tecla Tab dentro do texto. O terminal tem "paradas" de 8 em 8 colunas (na coluna 8, 16, 24…), como as marcas de uma régua, e o Tab pula até a <strong>próxima parada</strong>. Por isso ele serve para alinhar colunas:</p>
+
+<pre class="file" data-file="tabela.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Produto\tQtd\tPreço\n");
+    printf("Arroz\t2\t5\n");
+    printf("Feijão\t1\t8\n");
+    printf("Macarrão integral\t3\t4\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tabela.c -o tabela
+$ ./tabela
+Produto	Qtd	Preço
+Arroz	2	5
+Feijão	1	8
+Macarrão integral	3	4</pre>
+
+<p>As três primeiras linhas ficaram alinhadas: "Produto", "Arroz" e "Feijão" têm menos de 8 letras, e o Tab levou todas até a coluna 8. Mas "Macarrão integral" tem 17 letras: o Tab pulou para a parada seguinte, a 24, e a linha desalinhou. O <code>\t</code> é bom para tabelas simples, com textos curtos. Para alinhar de verdade, com a largura que você escolher, o <code>printf</code> tem os formatos de largura (<code>%-20s</code>, por exemplo), na aula <a href="formatos-printf.html">Formatos do printf</a>.</p>
+
+<p>Um Tab parece vários espaços, mas é <strong>um</strong> caractere. O comando <code>cat -A</code> (mostrar <em>All</em>, tudo) desenha cada Tab como <code>^I</code> e o fim de cada linha como <code>$</code> (os acentos viram códigos estranhos, como <code>M-CM-'</code>: é o jeito do <code>cat -A</code> mostrar os bytes do UTF-8):</p>
+
+<pre class="term" data-cwd="~/c">$ ./tabela | cat -A
+Produto^IQtd^IPreM-CM-'o$
+Arroz^I2^I5$
+FeijM-CM-#o^I1^I8$
+MacarrM-CM-#o integral^I3^I4$</pre>
+
+<div class="tryc" data-goal="outre:^Nome\tNota\nAna\t9\nBruno\t7\n$">
+<p class="try-task"><strong>Missão:</strong> o boletim saiu com espaços no lugar das tabulações. Troque o espaço entre as colunas por <code>\t</code> nas três linhas, para que as notas fiquem alinhadas.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Nome Nota\n");
+    printf("Ana 9\n");
+    printf("Bruno 7\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Nome\tNota\n");
+    printf("Ana\t9\n");
+    printf("Bruno\t7\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Aspas dentro do texto: <code>\"</code></h2>
+<p>A aspa dupla fecha o texto. Então, para <strong>mostrar</strong> uma aspa dupla, escape-a: <code>\"</code>. Veja o que acontece quando a Ana esquece:</p>
+
+<pre class="file" data-file="aspa.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Ela disse "oi"\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aspa.c -o aspa
+aspa.c: In function ‘main’:
+aspa.c:4:24: error: expected ‘)’ before ‘oi’
+    4 |     printf("Ela disse "oi"\n");
+      |           ~            ^~
+      |                        )</pre>
+
+<p>Para o compilador, a aspa antes de <code>oi</code> <strong>fechou</strong> o texto <code>"Ela disse "</code>. Aí veio a palavra <code>oi</code>, solta, que não faz sentido ali: "esperava <code>)</code> antes de <code>oi</code>". O conserto é escapar as duas aspas de dentro:</p>
+
+<pre class="file" data-file="aspa.c · consertado">    printf("Ela disse \"oi\"\n");
+</pre>
+
+<p>Saída: <code>Ela disse "oi"</code>. No editor do guia, o Clang diz só <code>expected ')'</code> e aponta, com uma nota, o <code>(</code> que ficou sem par (<code>to match this '('</code>).</p>
+
+<hr>
+
+<h2>5. A barra invertida: <code>\\</code> e o caminho do Windows</h2>
+<p>Se a barra invertida começa um escape, como mostrar uma barra de verdade? Escapando a própria barra: <code>\\</code> vira uma <code>\</code>. Isso pega muita gente com os caminhos do Windows, que separam as pastas com barra invertida. Copie um caminho para dentro das aspas e veja:</p>
+
+<pre class="file" data-file="caminho.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("C:\novos\testes\n");
+    printf("C:\pasta\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra caminho.c -o caminho
+caminho.c: In function ‘main’:
+caminho.c:5:24: warning: unknown escape sequence: ‘\p’
+    5 |     printf("C:\pasta\n");
+      |                        ^
+$ ./caminho
+C:
+ovos	estes          « \n pulou a linha e \t virou um Tab!
+C:pasta              « o \p "sumiu" com a barra</pre>
+
+<dl class="anatomy">
+  <dt>"C:\novos\testes\n"</dt><dd>O compilador leu <code>C:</code> + <code>\n</code> (quebra de linha) + <code>ovos</code> + <code>\t</code> (Tab) + <code>estes</code>. <strong>Sem aviso nenhum</strong>, porque <code>\n</code> e <code>\t</code> são escapes válidos: para ele, você quis isso mesmo.</dd>
+  <dt>warning: unknown escape sequence: ‘\p’</dt><dd>"Sequência de escape desconhecida: <code>\p</code>". Não existe escape <code>\p</code>; o <code>gcc</code> avisa e usa só o <code>p</code>, jogando a barra fora. No editor do guia: <code>unknown escape sequence '\p' [-Wunknown-escape-sequence]</code>.</dd>
+</dl>
+
+<p>Dois jeitos de consertar:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Comentário</th></tr>
+<tr><td>Dobrar as barras</td><td><code>"C:\\novos\\testes"</code></td><td>Funciona sempre. Com muitas barras, fica difícil de ler.</td></tr>
+<tr><td>Barra normal</td><td><code>"C:/novos/testes"</code></td><td>O próprio Windows aceita <code>/</code> na maioria dos programas, inclusive no <code>fopen</code> (aula <a href="arquivos.html">Arquivos</a>).</td></tr>
+</table>
+</div>
+
+<p>(Quem vem do C++ ou do Python pode procurar as "strings cruas", em que a barra não é escape, como o <code>R"(…)"</code> do C++. O C <strong>não</strong> tem isso: em C, é <code>\\</code> ou <code>/</code>.)</p>
+
+<div class="tryc" data-goal="out:Arquivo salvo em &quot;C:\\Dados\\notas.txt&quot;,semaviso">
+<p class="try-task"><strong>Missão:</strong> faça o programa mostrar exatamente <code>Arquivo salvo em "C:\Dados\notas.txt"</code>, com as aspas e as barras, sem nenhum aviso. Rode primeiro como está e leia o aviso; depois use <code>\"</code> e <code>\\</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Arquivo salvo em C:\Dados\notas.txt\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Arquivo salvo em \"C:\\Dados\\notas.txt\"\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>6. O <code>%</code> no <code>printf</code>: <code>%%</code></h2>
+<p>O <code>%</code> não é um escape da linguagem: para o C, <code>"50%"</code> é um texto normal. Mas para o <strong><code>printf</code></strong> ele é especial: marca uma lacuna, como <code>%d</code> (aula <a href="printf.html">Saída com printf</a>). Então, um <code>%</code> solto no texto do <code>printf</code> vira uma lacuna estranha:</p>
+
+<pre class="file" data-file="porcento.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Desconto de 50% hoje!\n");
+    printf("Juros: 2%\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra porcento.c -o porcento
+porcento.c: In function ‘main’:
+porcento.c:4:30: warning: ' ' flag used with ‘%o’ gnu_printf format [-Wformat=]
+    4 |     printf("Desconto de 50% hoje!\n");
+      |                              ^
+porcento.c:4:30: warning: format ‘%ho’ expects a matching ‘int’ argument [-Wformat=]
+    4 |     printf("Desconto de 50% hoje!\n");
+      |                           ~~~^
+      |                              |
+      |                              int
+porcento.c:5:22: warning: unknown conversion type character ‘\x0a’ in format [-Wformat=]
+    5 |     printf("Juros: 2%\n");
+      |                      ^~
+$ ./porcento
+Desconto de 50157770je!          « "% ho" virou uma lacuna, e entrou lixo no lugar
+Juros: 2%</pre>
+
+<p>Que confusão! O <code>printf</code> leu <code>% ho</code> como uma lacuna: <code>%</code>, um espaço (que é uma opção de formato), <code>h</code> e <code>o</code> (a lacuna de número em octal). Como nenhum número foi passado, entrou um valor qualquer da memória (que muda de uma vez para outra), e o <code>"ho"</code> de "hoje" sumiu. Na segunda linha, <code>%\n</code> não é lacuna nenhuma (<code>‘\x0a’</code> é o código do <code>\n</code>): o <code>gcc</code> avisa "caractere de conversão desconhecido". O resultado muda de um sistema para outro: no editor do guia, a primeira linha sai <code>Desconto de 500je!</code> e a segunda nem aparece.</p>
+
+<p>Para o <code>printf</code> mostrar um <code>%</code>, escreva <strong><code>%%</code></strong>:</p>
+
+<pre class="file" data-file="porcento2.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Desconto de 50%% hoje!\n");
+    printf("Desconto de %d%% hoje!\n", 30);
+    puts("No puts, 100% é só 100%.");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra porcento2.c -o porcento2
+$ ./porcento2
+Desconto de 50% hoje!
+Desconto de 30% hoje!
+No puts, 100% é só 100%.</pre>
+
+<dl class="anatomy">
+  <dt>50%%</dt><dd>O <code>printf</code> troca <code>%%</code> por um <code>%</code>.</dd>
+  <dt>%d%%</dt><dd>Uma lacuna (<code>%d</code>, que recebe o 30) e logo depois um <code>%</code> de verdade.</dd>
+  <dt>puts("… 100% …")</dt><dd>O <code>puts</code> não tem lacunas, então o <code>%</code> vai sozinho. Se você escrever <code>%%</code> no <code>puts</code>, aparecem os dois.</dd>
+</dl>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para mostrar</th><th>Na linguagem C (qualquer texto)</th><th>No texto do <code>printf</code></th></tr>
+<tr><td><code>"</code></td><td><code>\"</code></td><td><code>\"</code></td></tr>
+<tr><td><code>\</code></td><td><code>\\</code></td><td><code>\\</code></td></tr>
+<tr><td><code>%</code></td><td><code>%</code> (não é especial)</td><td><code>%%</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>7. Escapes por código e o <code>\0</code></h2>
+<p>Todo caractere tem um número (o <code>A</code> é 65, aula <a href="char.html">Caracteres</a>). Dá para escrever um caractere pelo número, de três jeitos:</p>
+
+<pre class="file" data-file="codigos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("\x41\x6e\x61\n");
+    printf("\101\156\141\n");
+    printf("maçã e ma&#92;u00e7&#92;u00e3\n");
+    printf("Preço: 10 &#92;u20ac\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra codigos.c -o codigos
+$ ./codigos
+Ana
+Ana
+maçã e maçã
+Preço: 10 €</pre>
+
+<dl class="anatomy">
+  <dt>\x41</dt><dd>Um byte pelo valor em <strong>hexadecimal</strong> (base 16, com os dígitos 0–9 e a–f): <code>41</code> em hexadecimal é 65, o <code>A</code>. <code>\x6e</code> é o <code>n</code> e <code>\x61</code> é o <code>a</code>.</dd>
+  <dt>\101</dt><dd>O mesmo, em <strong>octal</strong> (base 8), com até 3 dígitos: <code>101</code> em octal também é 65. É por isso que <code>\0</code> é o caractere de número 0.</dd>
+  <dt>&#92;u00e7</dt><dd>Um caractere pelo código <strong>Unicode</strong> (a grande tabela que dá um número a cada caractere de todas as línguas): <code>00e7</code> é o <code>ç</code>, <code>00e3</code> é o <code>ã</code>, <code>20ac</code> é o <code>€</code>. Sempre 4 dígitos hexadecimais (para códigos maiores, <code>\U</code> com 8). <span class="versao">C99</span></dd>
+</dl>
+
+<p>Na prática, escreva os acentos direto, como no <code>"maçã"</code>: é mais legível, e funciona porque o arquivo está em UTF-8 (aula <a href="acentos-utf8.html">Acentos e UTF-8</a>). Os escapes por código servem para caracteres invisíveis ou difíceis de digitar.</p>
+
+<h3>O <code>\0</code>, a marca de fim</h3>
+<p>O <code>\0</code> é o caractere de número zero. Você não o vê, mas ele está no fim de <strong>todo</strong> texto entre aspas: <code>"Ana"</code> guarda <code>A</code>, <code>n</code>, <code>a</code> e um <code>\0</code> escondido, que avisa "o texto acabou aqui". Se você escrever um <code>\0</code> no meio, quem lê o texto para ali:</p>
+
+<pre class="term" data-cwd="~/c">$ cat nulo0.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("abc\0def\n");
+    printf("|\n");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra nulo0.c -o nulo0
+nulo0.c: In function ‘main’:
+nulo0.c:4:16: warning: embedded ‘\0’ in format [-Wformat-contains-nul]
+    4 |     printf("abc\0def\n");
+      |                ^~
+$ ./nulo0
+abc|          « o "def\n" ficou depois da marca de fim: nem a linha pulou</pre>
+
+<p>O <code>gcc</code> até avisa: "<code>\0</code> embutido no formato". Na prática, você quase nunca vai escrever um <code>\0</code> num texto; o importante é reconhecê-lo. A aula <a href="strings.html">Strings</a> explica tudo sobre essa marca.</p>
+
+<h3>Os outros escapes</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escape</th><th>O que faz</th><th>Uso</th></tr>
+<tr><td><code>\r</code></td><td>Volta ao começo da mesma linha (<em>carriage return</em>, "retorno do carro" da máquina de escrever)</td><td>Barras de progresso que se reescrevem; os arquivos de texto do Windows terminam as linhas com <code>\r\n</code></td></tr>
+<tr><td><code>\a</code></td><td>"Bip" do terminal (<em>alert</em>)</td><td>Raro; muitos terminais nem tocam</td></tr>
+<tr><td><code>\b</code></td><td>Volta um caractere (<em>backspace</em>)</td><td>Raro</td></tr>
+<tr><td><code>\f</code>, <code>\v</code></td><td>Nova página, tabulação vertical</td><td>Coisa de impressora antiga; quase nunca</td></tr>
+<tr><td><code>\?</code></td><td><code>?</code></td><td>Existe por motivos históricos; <code>?</code> sozinho funciona</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>8. Textos compridos: pedaços lado a lado</h2>
+<p>Um texto entre aspas não pode quebrar de linha no código. Mas, se ele for comprido, dá para escrevê-lo em <strong>vários pedaços seguidos</strong>, sem nada entre eles: o compilador cola todos num só, antes de compilar.</p>
+
+<pre class="file" data-file="juntos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Atenção: este programa apaga arquivos. "
+           "Confira a pasta antes de continuar.\n");
+    printf("linha 1\n"
+           "linha 2\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra juntos.c -o juntos
+$ ./juntos
+Atenção: este programa apaga arquivos. Confira a pasta antes de continuar.
+linha 1
+linha 2</pre>
+
+<dl class="anatomy">
+  <dt>"…arquivos. " "Confira…"</dt><dd>Dois textos vizinhos viram um só: <code>"…arquivos. Confira…"</code>. É um texto só para o <code>printf</code>.</dd>
+  <dt>O espaço no fim do primeiro pedaço</dt><dd>O compilador cola os pedaços sem pôr nada no meio. Esqueça o espaço e as palavras grudam: <code>arquivos.Confira</code>.</dd>
+  <dt>Sem <code>\n</code>, sem quebra</dt><dd>Quebrar a linha no <strong>código</strong> não quebra a linha na <strong>tela</strong>. Para isso, coloque <code>\n</code> dentro dos pedaços, como no segundo <code>printf</code>.</dd>
+</dl>
+
+<hr>
+
+<h2>Formas diferentes de pular a linha, e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Use quando</th></tr>
+<tr><td><code>\n</code> no fim do texto</td><td><code>printf("Oi\n");</code></td><td>Quase sempre.</td></tr>
+<tr><td><code>\n</code> no meio</td><td><code>printf("a\nb\n");</code></td><td>Várias linhas curtas de uma vez.</td></tr>
+<tr><td><code>puts</code></td><td><code>puts("Oi");</code></td><td>Texto fixo, sem lacunas: o <code>\n</code> é automático.</td></tr>
+<tr><td><code>putchar('\n')</code></td><td><code>putchar('\n');</code></td><td>Terminar uma linha montada aos pedaços, um caractere por vez.</td></tr>
+<tr><td>Pedaços lado a lado</td><td><code>"linha 1\n" "linha 2\n"</code></td><td>Texto comprido, para o código não passar da tela.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: unknown escape sequence: ‘\p’</code></strong>
+<p><strong>O que significa:</strong> há uma barra invertida seguida de um caractere que não forma escape nenhum. Quase sempre é um caminho do Windows. O <code>gcc</code> joga a barra fora. Cuidado com o que ele <strong>não</strong> avisa: <code>\n</code>, <code>\t</code>, <code>\r</code>, <code>\a</code>, <code>\b</code>, <code>\f</code> e <code>\v</code> são válidos e viram caracteres especiais em silêncio (seção 5).</p>
+<p><strong>Como consertar:</strong> <code>\\</code> para cada barra, ou barras normais <code>/</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expected ‘)’ before ‘oi’</code></strong>
+<p><strong>O que significa:</strong> uma aspa dupla no meio do texto fechou o texto antes da hora, e o que veio depois ficou solto no código (seção 4).</p>
+<p><strong>Como consertar:</strong> escape as aspas de dentro: <code>"Ela disse \"oi\"\n"</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: missing terminating " character</code></strong>
+<p><strong>O que significa:</strong> "falta o caractere <code>"</code> de fechamento": um texto foi aberto e a linha acabou sem fechá-lo. Acontece quando a aspa final some, quando você aperta Enter no meio das aspas, e também com uma barra no fim do texto: em <code>"C:\"</code>, o <code>\"</code> é uma aspa <strong>escapada</strong>, que não fecha nada. A aula <a href="editores.html">Editores e IDEs</a> mostra a avalanche de mensagens que ele causa.</p>
+<p><strong>Como consertar:</strong> feche o texto na mesma linha. Para um caminho que termina em barra, <code>"C:\\"</code>. Para um texto comprido, use pedaços lado a lado (seção 8).</p>
+</div>
+
+<div class="cenario">
+<strong>Um número estranho no lugar do <code>%</code>: <code>' ' flag used with ‘%o’</code></strong>
+<p><strong>O que significa:</strong> um <code>%</code> solto no texto do <code>printf</code> foi lido como lacuna, junto com as letras seguintes (seção 6). Os avisos falam de <code>format</code>, de uma lacuna que você não escreveu (<code>%o</code>, <code>%ho</code>) ou de um <code>conversion type character</code> desconhecido.</p>
+<p><strong>Como consertar:</strong> no <code>printf</code>, escreva <code>%%</code> para cada <code>%</code> que deve aparecer.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: hex escape sequence out of range</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra xerro.c -o xerro           « printf("\xe7a\n");
+xerro.c: In function ‘main’:
+xerro.c:4:21: warning: hex escape sequence out of range
+    4 |     printf("\xe7a\n");
+      |                     ^</pre>
+<p><strong>O que significa:</strong> "escape hexadecimal fora do limite". O <code>\x</code> engole <strong>todos</strong> os dígitos hexadecimais que vierem depois, e o <code>a</code> também é um dígito hexadecimal (vale 10). Então o compilador leu <code>\xe7a</code>, um número grande demais para um caractere, em vez de <code>\xe7</code> seguido de <code>a</code>.</p>
+<p><strong>Como consertar:</strong> separe em dois pedaços lado a lado, <code>"\xe7" "a\n"</code>, ou use o escape octal (que para em 3 dígitos). Para acentos, o melhor é escrever o caractere direto: <code>"ça"</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A última mensagem não aparece quando o programa cai</strong>
+<p><strong>O que significa:</strong> o texto estava no buffer, esperando um <code>\n</code>, e morreu com o programa (seção 2). Acontece nos travamentos (<code>Falha de segmentação</code>, <code>Abortado</code>), no seu computador e no editor do guia.</p>
+<p><strong>Como consertar:</strong> termine as mensagens com <code>\n</code>. Se precisar ficar na mesma linha, chame <code>fflush(stdout);</code> logo depois do <code>printf</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Resultado</th></tr>
+<tr><td><code>"\n"</code> / <code>"\t"</code></td><td>Quebra de linha / Tab</td></tr>
+<tr><td><code>"\n\n"</code></td><td>Termina a linha e deixa uma em branco</td></tr>
+<tr><td><code>"\""</code> / <code>'\''</code></td><td>Aspa dupla num texto / aspa simples num caractere</td></tr>
+<tr><td><code>"\\"</code></td><td>Uma barra invertida</td></tr>
+<tr><td><code>printf("10%%")</code></td><td><code>10%</code> (só no <code>printf</code>; no <code>puts</code>, <code>%</code> sozinho)</td></tr>
+<tr><td><code>"\0"</code></td><td>Caractere nulo, a marca de fim de texto</td></tr>
+<tr><td><code>"\r"</code> / <code>"\a"</code></td><td>Volta ao começo da linha / bip</td></tr>
+<tr><td><code>"\x41"</code> / <code>"\101"</code></td><td>Caractere pelo código hexadecimal / octal (<code>A</code>)</td></tr>
+<tr><td><code>"&#92;u00e7"</code></td><td>Caractere Unicode pelo código (<code>ç</code>) <span class="versao">C99</span></td></tr>
+<tr><td><code>"abc" "def"</code></td><td>Pedaços lado a lado: <code>"abcdef"</code></td></tr>
+<tr><td><code>fflush(stdout);</code></td><td>Despeja na tela o que está no buffer</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Tab</h3>
+<p>Complete para separar <code>Produto</code> e <code>Preço</code> com um Tab:</p>
+<div class="ex-code">printf("Produto<input data-answer="\t" aria-label="escape">Preço\n");</div>
+</div>
+
+<div class="exercise">
+<h3>2. Barra invertida</h3>
+<p>Complete o escape para mostrar <code>C:\Temp</code>:</p>
+<div class="ex-code">printf("C:<input data-answer="\\" aria-label="escape">Temp\n");</div>
+</div>
+
+<div class="exercise">
+<h3>3. O sinal de porcentagem</h3>
+<p>Complete para mostrar <code>Bateria: 80%</code>:</p>
+<div class="ex-code">printf("Bateria: 80<input data-answer="%%" aria-label="porcentagem">\n");</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que <code>printf("C:\novos\n");</code> mostra?</p>
+<label><input type="radio" name="q4"> <code>C:\novos</code></label>
+<label><input type="radio" name="q4"> Erro de compilação</label>
+<label><input type="radio" name="q4"> <code>C:</code>, uma quebra de linha e <code>ovos</code></label>
+<label><input type="radio" name="q4"> <code>C:novos</code>, com um aviso</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Quantos caracteres há no texto <code>"a\tb"</code> (sem contar o <code>\0</code> do fim)?</p>
+<label><input type="radio" name="q5"> 3: o <code>\t</code> é um caractere só</label>
+<label><input type="radio" name="q5"> 4</label>
+<label><input type="radio" name="q5"> 2</label>
+<label><input type="radio" name="q5"> 10, por causa da tabulação</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Qual é o texto de <code>"Bom" "dia"</code>?</p>
+<label><input type="radio" name="q6"> Erro: falta um sinal entre os dois</label>
+<label><input type="radio" name="q6"> <code>"Bomdia"</code></label>
+<label><input type="radio" name="q6"> <code>"Bom dia"</code></label>
+<label><input type="radio" name="q6"> <code>"Bom"</code>, e o <code>"dia"</code> é ignorado</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. O programa da Ana faz <code>printf("Calculando...");</code> e logo depois cai com <code>Falha de segmentação</code>. "Calculando..." não aparece. Por quê?</p>
+<label><input type="radio" name="q7"> O <code>printf</code> não chegou a rodar.</label>
+<label><input type="radio" name="q7"> Faltou o <code>#include &lt;stdio.h&gt;</code>.</label>
+<label><input type="radio" name="q7"> As reticências são um escape.</label>
+<label><input type="radio" name="q7"> Sem <code>\n</code>, o texto ficou no buffer e morreu com o programa.</label>
+</div>
+
+<h3>Missão final: o recibo da lojinha</h3>
+
+<div class="tryc" data-goal="outre:^Lojinha &quot;Da Ana&quot;\nItem\tPreço\nCaderno\tR\$ 12\nDesconto: 10%\nRecibo salvo em C:\\\\Recibos\n$,src:\\\\t,src:%%,semaviso">
+<p class="try-task"><strong>Missão:</strong> o recibo da lojinha da Ana tem quatro problemas: aspas, tabulação, porcentagem e barra invertida. Rode, leia as mensagens e conserte até a saída ficar exatamente assim (entre <code>Item</code> e <code>Preço</code>, e entre <code>Caderno</code> e <code>R$</code>, há um <strong>Tab</strong>, <code>\t</code>), sem nenhum aviso:</p>
+<pre class="out">Lojinha "Da Ana"
+Item	Preço
+Caderno	R$ 12
+Desconto: 10%
+Recibo salvo em C:\Recibos</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lojinha "Da Ana"\n");
+    printf("Item    Preço\n");
+    printf("Caderno R$ 12\n");
+    printf("Desconto: 10%\n");
+    printf("Recibo salvo em C:\Recibos\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lojinha \"Da Ana\"\n");
+    printf("Item\tPreço\n");
+    printf("Caderno\tR$ 12\n");
+    printf("Desconto: 10%%\n");
+    printf("Recibo salvo em C:\\Recibos\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>A barra invertida começa uma <strong>sequência de escape</strong>: <code>\n</code> (linha), <code>\t</code> (Tab), <code>\"</code>, <code>\'</code>, <code>\\</code>, <code>\0</code>. Cada uma vira <strong>um</strong> caractere.</li>
+  <li>Termine as mensagens com <code>\n</code>: sem ele, o texto espera no buffer e pode sumir se o programa cair. <code>fflush(stdout)</code> despeja na hora.</li>
+  <li>O <code>\t</code> pula até a próxima parada de 8 colunas: bom para tabelas com textos curtos.</li>
+  <li>Caminhos do Windows entre aspas quebram: <code>\n</code> e <code>\t</code> viram especiais em silêncio, e escapes desconhecidos dão <code>unknown escape sequence</code>. Use <code>\\</code> ou <code>/</code>.</li>
+  <li>No <code>printf</code>, o <code>%</code> marca lacunas: para mostrar um, escreva <code>%%</code>.</li>
+  <li><code>\x41</code>, <code>\101</code> e <code>&#92;u00e7</code> escrevem um caractere pelo código; os acentos podem ir direto no texto (UTF-8).</li>
+  <li>Pedaços lado a lado (<code>"a" "b"</code>) são colados pelo compilador: bom para textos compridos.</li>
+  <li>Próximo passo: <a href="erros-compilacao.html">Lendo Erros do Compilador</a>, para entender as mensagens que você viu nesta aula.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
