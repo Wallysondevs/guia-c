@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Tipos de Dados — visão geral, tamanhos e formatos do printf | Guia C</title>
+<meta name="description" content="Tipos de dados em C para quem nunca programou: char, int, long, float, double, bool e void, o tamanho real de cada um no gcc 15 e no editor do guia, a letra de cada tipo no printf, por que o C não tem tipo string e como escolher o tipo certo, com saídas reais e missões.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Tipos de Dados</span></h1>
+
+<p class="intro">Toda variável em C tem um <strong>tipo</strong>, escolhido quando ela é criada: <code>int idade</code>, <code>double altura</code>. O tipo diz que espécie de valor cabe na caixa, quanto espaço ela ocupa na memória e qual letra o <code>printf</code> usa para mostrá-la. Esta aula é o <strong>mapa</strong>: mostra os tipos que você vai usar o tempo todo, o tamanho real de cada um e como escolher. Cada família tem depois a sua própria aula.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Os tipos do dia a dia: <code>int</code>, <code>double</code>, <code>char</code> e <code>bool</code>.</li>
+  <li>Os "parentes": <code>short</code>, <code>long</code>, <code>long long</code>, <code>float</code>, <code>long double</code>, e o tipo "nenhum valor", <code>void</code>.</li>
+  <li>Como medir o tamanho de um tipo com <code>sizeof</code>, e por que o <code>long</code> tem 8 bytes no gcc e 4 no editor do guia.</li>
+  <li>A letra de cada tipo no <code>printf</code> (<code>%d</code>, <code>%ld</code>, <code>%f</code>, <code>%c</code>…).</li>
+  <li>Por que o C <strong>não tem</strong> um tipo <code>string</code>.</li>
+  <li>Como escolher o tipo certo para cada informação.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>, um PC comum de 64 bits), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: cada coisa no seu recipiente</h2>
+<p>Na cozinha, cada coisa tem o seu recipiente: ovos vão na caixa de ovos, leite vai na garrafa, açúcar vai no pote. Você até consegue pôr leite na caixa de ovos, mas vai dar errado. E ninguém guarda uma colher de sal num balde.</p>
+
+<p>Os tipos do C são esses recipientes. Escolher o tipo é responder três perguntas:</p>
+<ol class="passo">
+  <li><strong>Que espécie de informação?</strong> Número inteiro, número com vírgula, uma letra, sim/não.</li>
+  <li><strong>De que tamanho?</strong> A idade de uma pessoa cabe num recipiente pequeno; a população do mundo precisa de um grande.</li>
+  <li><strong>Com que precisão?</strong> Um preço precisa de centavos; o número de alunos, não.</li>
+</ol>
+
+<hr>
+
+<h2>1. Os quatro tipos do dia a dia</h2>
+
+<pre class="file" data-file="tipos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double altura = 1.65;
+    char inicial = 'A';
+    bool cliente_vip = true;
+    printf("Idade: %d\n", idade);
+    printf("Altura: %.2f\n", altura);
+    printf("Inicial: %c\n", inicial);
+    printf("VIP: %d\n", cliente_vip);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipos.c -o tipos
+$ ./tipos
+Idade: 29
+Altura: 1.65
+Inicial: A
+VIP: 1                   « true aparece como 1 (a aula bool explica)</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Nome vem de</th><th>Guarda</th><th>Como se escreve o valor</th><th><code>printf</code></th><th>Aula</th></tr>
+<tr><td><code>int</code></td><td><em>integer</em>, "inteiro"</td><td>Números inteiros, positivos ou negativos</td><td><code>29</code>, <code>-7</code>, <code>0</code></td><td><code>%d</code></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>double</code></td><td><em>double precision</em>, "precisão dupla"</td><td>Números com vírgula (fração)</td><td><code>1.65</code>, <code>-0.5</code>, <code>3.0</code> (com ponto)</td><td><code>%f</code></td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+<tr><td><code>char</code></td><td><em>character</em>, "caractere"</td><td>Um caractere (por dentro, um número pequeno)</td><td><code>'A'</code>, <code>'7'</code>, <code>'?'</code> (aspas simples)</td><td><code>%c</code></td><td><a href="char.html">Caracteres</a></td></tr>
+<tr><td><code>bool</code> <span class="versao">C23</span></td><td>George Boole, matemático</td><td>Verdadeiro ou falso</td><td><code>true</code>, <code>false</code></td><td><code>%d</code> (mostra 1 ou 0)</td><td><a href="bool.html">Booleanos</a></td></tr>
+</table>
+</div>
+
+<p>Com esses quatro você escreve quase todos os programas do Nível 1. Os outros tipos são variações de tamanho e de precisão dos mesmos números. O <code>bool</code> sem <code>#include</code> é novidade do C23; em código mais antigo você vai ver <code>#include &lt;stdbool.h&gt;</code> no topo (a aula <a href="bool.html">Booleanos</a> conta a história).</p>
+
+<div class="tryc" data-goal="out:Pago: 0,src:\bbool\s+pago\b">
+<p class="try-task"><strong>Missão:</strong> rode e veja a ficha da Ana. Depois crie uma variável <code>bool pago</code> valendo <code>false</code> e mostre-a numa linha nova, <code>Pago: 0</code>, com <code>%d</code>. Se quiser, tente também pôr <code>"A"</code> (com aspas <strong>duplas</strong>) no <code>char inicial</code> e leia o erro: um <code>char</code> guarda um caractere, entre aspas simples.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double altura = 1.65;
+    char inicial = 'A';
+    printf("Idade: %d\n", idade);
+    printf("Altura: %.2f\n", altura);
+    printf("Inicial: %c\n", inicial);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double altura = 1.65;
+    char inicial = 'A';
+    bool pago = false;
+    printf("Idade: %d\n", idade);
+    printf("Altura: %.2f\n", altura);
+    printf("Inicial: %c\n", inicial);
+    printf("Pago: %d\n", pago);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Medir o tamanho: <code>sizeof</code></h2>
+<p>A memória do computador é medida em <strong>bytes</strong>. Um byte é um pedacinho de memória com 8 <strong>bits</strong> (cada bit é um 0 ou 1) e consegue guardar 256 valores diferentes. Quanto mais bytes um tipo tem, maiores (ou mais precisos) os números que ele guarda.</p>
+
+<p>O operador <code>sizeof</code> ("tamanho de") responde quantos bytes um tipo ocupa. O resultado é de um tipo especial para tamanhos, o <code>size_t</code>, que o <code>printf</code> mostra com <code>%zu</code> (<code>z</code> de <em>size</em>, <code>u</code> de <em>unsigned</em>, "sem sinal"; detalhes em <a href="sizeof.html">Tamanho dos Tipos</a>):</p>
+
+<pre class="file" data-file="tamanhos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("bool:        %zu\n", sizeof(bool));
+    printf("char:        %zu\n", sizeof(char));
+    printf("short:       %zu\n", sizeof(short));
+    printf("int:         %zu\n", sizeof(int));
+    printf("long:        %zu\n", sizeof(long));
+    printf("long long:   %zu\n", sizeof(long long));
+    printf("float:       %zu\n", sizeof(float));
+    printf("double:      %zu\n", sizeof(double));
+    printf("long double: %zu\n", sizeof(long double));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanhos.c -o tamanhos
+$ ./tamanhos
+bool:        1
+char:        1
+short:       2
+int:         4
+long:        8
+long long:   8
+float:       4
+double:      8
+long double: 16</pre>
+
+<p>Os espaços depois dos nomes (<code>"int:         "</code>) estão lá só para alinhar a saída em colunas.</p>
+
+<h3>A tabela completa</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Bytes no gcc 15 (Linux 64 bits)</th><th>Bytes no editor do guia</th><th>Guarda</th><th>Faixa aproximada</th><th><code>printf</code></th></tr>
+<tr><td><code>bool</code></td><td>1</td><td>1</td><td>verdadeiro/falso</td><td><code>true</code> ou <code>false</code></td><td><code>%d</code></td></tr>
+<tr><td><code>char</code></td><td>1</td><td>1</td><td>um caractere (um número pequeno por dentro)</td><td>-128 a 127</td><td><code>%c</code> (ou <code>%d</code> para ver o número)</td></tr>
+<tr><td><code>short</code></td><td>2</td><td>2</td><td>inteiro pequeno</td><td>-32 768 a 32 767</td><td><code>%hd</code></td></tr>
+<tr><td><code>int</code></td><td>4</td><td>4</td><td>inteiro (o padrão)</td><td>cerca de ±2,1 bilhões</td><td><code>%d</code></td></tr>
+<tr><td><code>long</code></td><td><strong>8</strong></td><td><strong>4</strong></td><td>inteiro "grande"</td><td>±9,2 quintilhões no gcc; ±2,1 bilhões no editor</td><td><code>%ld</code></td></tr>
+<tr><td><code>long long</code></td><td>8</td><td>8</td><td>inteiro grande (8 bytes em todo lugar)</td><td>cerca de ±9,2 quintilhões</td><td><code>%lld</code></td></tr>
+<tr><td><code>float</code></td><td>4</td><td>4</td><td>número com vírgula, precisão simples</td><td>uns 6 a 7 dígitos certos</td><td><code>%f</code></td></tr>
+<tr><td><code>double</code></td><td>8</td><td>8</td><td>número com vírgula, precisão dupla (o padrão)</td><td>uns 15 a 16 dígitos certos</td><td><code>%f</code></td></tr>
+<tr><td><code>long double</code></td><td>16</td><td>16</td><td>número com vírgula, mais precisão</td><td>uns 18 dígitos certos no gcc</td><td><code>%Lf</code></td></tr>
+</table>
+</div>
+
+<p>Os limites exatos de cada inteiro (com <code>limits.h</code>) estão em <a href="inteiros.html">Inteiros</a>; a precisão dos números com vírgula, em <a href="ponto-flutuante.html">float e double</a>. A <a href="ref-tipos.html">referência de tipos</a> junta tudo numa página de consulta, e <a href="formatos-printf.html">Formatos do printf</a> explica cada letra.</p>
+
+<div class="warning">
+<strong>Os tamanhos não são iguais em todo computador</strong>
+<p>A norma do C só garante <strong>mínimos</strong>: <code>int</code> tem pelo menos 16 bits (2 bytes), <code>long</code> pelo menos 32 bits (4 bytes), <code>long long</code> pelo menos 64 bits (8 bytes). Os números da coluna do gcc valem para o Linux 64 bits da Ana. No Windows, <code>long</code> tem 4 bytes. No editor do guia, que roda como um computador "de 32 bits" (WebAssembly), <code>long</code> também tem 4 bytes: rode o <code>tamanhos.c</code> lá e confira. Quando o tamanho exato importa, use <code>long long</code> ou os tipos de tamanho fixo, como <code>int64_t</code> (aula <a href="stdint.html">Inteiros de Tamanho Fixo</a>).</p>
+</div>
+
+<h3>Os valores escritos também têm tipo</h3>
+<p>Um número escrito direto no código (um <strong>literal</strong>) também tem tipo. O C decide pelo jeito de escrever:</p>
+
+<pre class="file" data-file="literais.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%zu %zu %zu %zu %zu %zu\n",
+           sizeof(42), sizeof(4.5), sizeof(4.5f), sizeof('A'), sizeof(true), sizeof("Ana"));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra literais.c -o literais
+$ ./literais
+4 8 4 4 1 4</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Literal</th><th>Tipo</th><th>Bytes</th><th>Por quê</th></tr>
+<tr><td><code>42</code></td><td><code>int</code></td><td>4</td><td>Número sem ponto.</td></tr>
+<tr><td><code>4.5</code></td><td><code>double</code></td><td>8</td><td>Número com ponto.</td></tr>
+<tr><td><code>4.5f</code></td><td><code>float</code></td><td>4</td><td>O <code>f</code> no fim pede <code>float</code>.</td></tr>
+<tr><td><code>'A'</code></td><td><code>int</code> (!)</td><td>4</td><td>Surpresa do C: um caractere entre aspas simples é um <code>int</code>, não um <code>char</code>. Ele cabe num <code>char</code> sem problema (aula <a href="char.html">Caracteres</a>). Em C++ seria 1.</td></tr>
+<tr><td><code>true</code></td><td><code>bool</code></td><td>1</td><td>Palavra-chave de verdadeiro no C23.</td></tr>
+<tr><td><code>"Ana"</code></td><td>array de <code>char</code></td><td>4</td><td>Três letras e um caractere invisível no fim, o <code>'\0'</code>, que marca onde o texto termina (aula <a href="strings.html">Strings</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. E o texto? O C não tem tipo <code>string</code></h2>
+<p>Quem vem de Python, JavaScript ou mesmo do C++ procura um tipo <code>string</code> para guardar nomes e frases. Em C, ele <strong>não existe</strong>:</p>
+
+<pre class="file" data-file="semstring.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    string nome = "Ana";
+    printf("%s\n", nome);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semstring.c -o semstring
+semstring.c: In function ‘main’:
+semstring.c:4:5: error: unknown type name ‘string’; did you mean ‘stdin’?
+    4 |     string nome = "Ana";
+      |     ^~~~~~
+      |     stdin
+semstring.c:4:19: error: initialization of ‘int’ from ‘char *’ makes integer from pointer without a cast [-Wint-conversion]
+    4 |     string nome = "Ana";
+      |                   ^~~~~
+semstring.c:5:14: warning: format ‘%s’ expects argument of type ‘char *’, but argument 2 has type ‘int’ [-Wformat=]
+    5 |     printf("%s\n", nome);
+      |             ~^     ~~~~
+      |              |     |
+      |              |     int
+      |              char *
+      |             %d</pre>
+
+<dl class="anatomy">
+  <dt>unknown type name ‘string’</dt><dd>"Nome de tipo desconhecido: <code>string</code>". O <code>did you mean ‘stdin’?</code> é um chute do gcc por um nome parecido; não tem nada a ver com o seu problema.</dd>
+  <dt>initialization of ‘int’ from ‘char *’</dt><dd>Sem saber o que é <code>string</code>, o gcc imaginou que <code>nome</code> fosse um <code>int</code> e reclamou do texto. É um erro em cascata: conserte o primeiro e este some.</dd>
+</dl>
+
+<p>Em C, um texto é uma <strong>fileira de <code>char</code></strong>, um array, com o <code>'\0'</code> no fim. Por enquanto, basta reconhecer o formato; ele tem várias aulas próprias a partir de <a href="arrays.html">Arrays</a> e <a href="strings.html">Strings</a>:</p>
+
+<pre class="file" data-file="texto.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[] = "Ana";
+    printf("Nome: %s\n", nome);
+    printf("Tamanho: %zu bytes\n", sizeof(nome));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra texto.c -o texto
+$ ./texto
+Nome: Ana
+Tamanho: 4 bytes         « 'A', 'n', 'a' e o '\0'</pre>
+
+<p>Os colchetes <code>[]</code> dizem "uma fileira de", e o <code>%s</code> (<em>string</em>) mostra o texto todo. Isso é o mais longe que o guia vai com textos antes da aula certa.</p>
+
+<hr>
+
+<h2>4. <code>void</code>: o tipo "nenhum valor"</h2>
+<p>O <code>void</code> ("vazio") é um tipo que quer dizer <strong>nada</strong>. Não existe variável <code>void</code>: não há o que guardar. Ele aparece em dois lugares que você já viu:</p>
+<dl class="anatomy">
+  <dt>int main(void)</dt><dd>Dentro dos parênteses, <code>void</code> diz "esta função não recebe nada".</dd>
+  <dt>void prepara(void)</dt><dd>Antes do nome, diz "esta função não devolve nada" (aula <a href="funcoes.html">Funções</a>). Você viu uma assim em <a href="variaveis.html">Variáveis</a>.</dd>
+</dl>
+<p>Mais adiante ele volta como <code>void *</code>, um "endereço de qualquer coisa" (aula <a href="void-ponteiro.html">Ponteiro void*</a>).</p>
+
+<hr>
+
+<h2>5. Escolher o tipo certo</h2>
+<p>Na dúvida, a pergunta é "o que eu quero guardar?". Esta tabela resolve quase todos os casos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero guardar…</th><th>Use</th><th>Exemplo</th></tr>
+<tr><td>Uma contagem, uma idade, uma quantidade, uma nota de 0 a 10 sem fração</td><td><code>int</code></td><td><code>int alunos = 32;</code></td></tr>
+<tr><td>Um número que pode passar de 2 bilhões (população, bytes de um arquivo, milissegundos)</td><td><code>long long</code></td><td><code>long long habitantes = 8'100'000'000;</code></td></tr>
+<tr><td>Uma medida com fração (altura, peso, média, temperatura)</td><td><code>double</code></td><td><code>double media = 7.75;</code></td></tr>
+<tr><td>Um preço</td><td><code>double</code> no começo; em sistemas de dinheiro de verdade, centavos em <code>long long</code></td><td><code>long long preco_centavos = 1250;</code></td></tr>
+<tr><td>Uma única letra ou símbolo (uma opção de menu, uma tecla)</td><td><code>char</code></td><td><code>char opcao = 's';</code></td></tr>
+<tr><td>Sim ou não, ligado ou desligado</td><td><code>bool</code></td><td><code>bool pago = false;</code></td></tr>
+<tr><td>Um nome, uma frase, qualquer texto</td><td>array de <code>char</code></td><td><code>char cidade[] = "Recife";</code></td></tr>
+<tr><td>Um número de telefone, CEP ou CPF</td><td>array de <code>char</code> (!)</td><td><code>char cep[] = "01310-100";</code></td></tr>
+</table>
+</div>
+
+<p>O <code>8'100'000'000</code> usa o separador de dígitos do <span class="versao">C23</span>: os apóstrofos só ajudam a ler e são ignorados pelo compilador (aula <a href="inteiros.html">Inteiros</a>).</p>
+
+<div class="tip">
+<strong>Telefone não é número</strong>
+<p>Você nunca vai somar dois telefones. E números assim têm zeros à esquerda (<code>01310</code>), traços e parênteses que um <code>int</code> jogaria fora. Regra: se você não faz contas com aquilo, guarde como texto.</p>
+</div>
+
+<h3>O que acontece com o tipo errado</h3>
+<p>O tipo errado raramente dá erro de compilação. Na maioria das vezes, o programa roda e dá a resposta errada:</p>
+
+<pre class="file" data-file="errado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int preco = 4.99;
+    int peso_kg = 2.5;
+    double total = preco * peso_kg;
+    printf("Total: %.2f\n", total);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra errado.c -o errado
+$ ./errado
+Total: 8.00              « 4 × 2: os centavos e o meio quilo sumiram</pre>
+
+<p>O <code>int</code> jogou fora a parte depois do ponto (4.99 virou 4; 2.5 virou 2), e o gcc não avisou com <code>-Wall -Wextra</code>. O Clang do editor avisa, porque os números estão escritos direto no código: <code>implicit conversion from 'double' to 'int' changes value from 4.99 to 4 [-Wliteral-conversion]</code>.</p>
+
+<div class="tryc" data-goal="out:Total: 12.48,semaviso">
+<p class="try-task"><strong>Missão:</strong> conserte os tipos (só os tipos, sem mudar os números) para o total da feira da Ana sair certo: <code>Total: 12.48</code>, sem avisos. Leia os avisos do Clang primeiro: eles apontam exatamente as linhas a consertar.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int preco = 4.99;
+    int peso_kg = 2.5;
+    double total = preco * peso_kg;
+    printf("Total: %.2f\n", total);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 4.99;
+    double peso_kg = 2.5;
+    double total = preco * peso_kg;
+    printf("Total: %.2f\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<p>A conta exata é 4,99 × 2,5 = 12,475. O <code>%.2f</code> arredondou para duas casas e mostrou <code>12.48</code>. (Com <code>%.3f</code> sairia <code>12.475</code>.)</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: unknown type name ‘string’</code></strong>
+<p><strong>O que significa:</strong> o C não tem tipo <code>string</code>. (O mesmo erro aparece com qualquer tipo escrito errado, como <code>Int</code> ou <code>doble</code>.)</p>
+<p><strong>Como consertar:</strong> para texto, use um array de <code>char</code>: <code>char nome[] = "Ana";</code> (aula <a href="strings.html">Strings</a>). Para um tipo escrito errado, confira as letras: todos os tipos do C são em minúsculas.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: initialization of ‘char’ from ‘char *’ makes integer from pointer without a cast</code></strong>
+<p><strong>O que significa:</strong> você escreveu <code>char inicial = "A";</code>, com aspas duplas. Aspas duplas fazem um <strong>texto</strong>, mesmo com uma letra só:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aspas.c -o aspas
+aspas.c: In function ‘main’:
+aspas.c:4:20: error: initialization of ‘char’ from ‘char *’ makes integer from pointer without a cast [-Wint-conversion]
+    4 |     char inicial = "A";
+      |                    ^~~</pre>
+<p><strong>Como consertar:</strong> um caractere vai entre aspas simples: <code>char inicial = 'A';</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘long int’</code></strong>
+<p><strong>O que significa:</strong> cada tipo tem a sua letra no <code>printf</code>, e <code>long</code> usa <code>%ld</code>:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra longd.c -o longd
+longd.c: In function ‘main’:
+longd.c:5:14: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘long int’ [-Wformat=]
+    5 |     printf("%d\n", habitantes);
+      |             ~^     ~~~~~~~~~~
+      |              |     |
+      |              int   long int
+      |             %ld
+$ ./longd
+213000000                « desta vez saiu certo, por sorte</pre>
+<p><strong>Como consertar:</strong> use a letra que o gcc sugere na última linha (<code>%ld</code>). O número saiu certo aqui, mas com a letra errada o <code>printf</code> pode ler bytes a mais ou a menos e mostrar lixo; o resultado depende da máquina. Nunca ignore um aviso <code>-Wformat</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O resultado sai sem os centavos (<code>8.00</code> em vez de <code>12.48</code>)</strong>
+<p><strong>O que significa:</strong> uma variável que deveria guardar fração foi declarada como <code>int</code>. O gcc não avisa com <code>-Wall -Wextra</code>; com <code>-Wconversion</code>, avisa.</p>
+<p><strong>Como consertar:</strong> use <code>double</code> para tudo que pode ter vírgula. Veja também <a href="conversao-tipos.html">Conversão de Tipos</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Exemplo</th><th><code>printf</code></th><th>Bytes (gcc / editor)</th></tr>
+<tr><td><code>char</code></td><td><code>char c = 'A';</code></td><td><code>%c</code></td><td>1 / 1</td></tr>
+<tr><td><code>short</code></td><td><code>short s = 100;</code></td><td><code>%hd</code></td><td>2 / 2</td></tr>
+<tr><td><code>int</code></td><td><code>int n = 29;</code></td><td><code>%d</code></td><td>4 / 4</td></tr>
+<tr><td><code>long</code></td><td><code>long l = 100000L;</code></td><td><code>%ld</code></td><td>8 / 4</td></tr>
+<tr><td><code>long long</code></td><td><code>long long g = 8'100'000'000;</code></td><td><code>%lld</code></td><td>8 / 8</td></tr>
+<tr><td><code>float</code></td><td><code>float f = 1.5f;</code></td><td><code>%f</code></td><td>4 / 4</td></tr>
+<tr><td><code>double</code></td><td><code>double d = 1.65;</code></td><td><code>%f</code></td><td>8 / 8</td></tr>
+<tr><td><code>long double</code></td><td><code>long double x = 1.5L;</code></td><td><code>%Lf</code></td><td>16 / 16</td></tr>
+<tr><td><code>bool</code></td><td><code>bool ok = true;</code></td><td><code>%d</code></td><td>1 / 1</td></tr>
+<tr><td><code>void</code></td><td><code>int main(void)</code></td><td>(nenhum valor)</td><td>-</td></tr>
+<tr><td>texto</td><td><code>char nome[] = "Ana";</code></td><td><code>%s</code></td><td>letras + 1</td></tr>
+<tr><td><code>sizeof(...)</code></td><td><code>sizeof(int)</code></td><td><code>%zu</code></td><td>-</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O tipo da altura</h3>
+<p>Complete com o tipo certo para guardar 1.72:</p>
+<div class="ex-code"><input data-answer="double|float" aria-label="tipo"> altura = 1.72;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A letra do printf</h3>
+<p>Complete o formato para mostrar um <code>long</code>:</p>
+<div class="ex-code">printf("<input data-answer="%ld|%li" aria-label="formato">\n", habitantes);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Quantos bytes tem um <code>long</code>?</p>
+<label><input type="radio" name="q3"> Sempre 4</label>
+<label><input type="radio" name="q3"> Sempre 8</label>
+<label><input type="radio" name="q3"> Depende do sistema: 8 no gcc do Linux 64 bits, 4 no editor do guia e no Windows</label>
+<label><input type="radio" name="q3"> Sempre o dobro de um <code>int</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual tipo você usaria para guardar um CEP como <code>01310-100</code>?</p>
+<label><input type="radio" name="q4"> <code>int</code></label>
+<label><input type="radio" name="q4"> Um array de <code>char</code> (texto)</label>
+<label><input type="radio" name="q4"> <code>double</code></label>
+<label><input type="radio" name="q4"> <code>long long</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. O que acontece com <code>string nome = "Ana";</code> em C?</p>
+<label><input type="radio" name="q5"> Compila: <code>string</code> é o tipo de texto do C</label>
+<label><input type="radio" name="q5"> Compila, mas só com <code>#include &lt;string.h&gt;</code></label>
+<label><input type="radio" name="q5"> Só dá um aviso</label>
+<label><input type="radio" name="q5"> Erro: <code>unknown type name ‘string’</code>, porque o C não tem esse tipo</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Em C, quantos bytes tem <code>sizeof('A')</code> no gcc do laboratório?</p>
+<label><input type="radio" name="q6"> 4, porque <code>'A'</code> é um <code>int</code> em C</label>
+<label><input type="radio" name="q6"> 1, porque é um <code>char</code></label>
+<label><input type="radio" name="q6"> 2</label>
+<label><input type="radio" name="q6"> 8</label>
+</div>
+
+<h3>Missão final: a ficha do produto</h3>
+
+<div class="tryc" data-goal="out:Produto B: 12 unidades a 3.75 (disponível: 1),semaviso,src:\bchar\s+\w+\s*=\s*'B',src:\bint\s+\w+\s*=\s*12\b,src:\bdouble\s+\w+\s*=\s*3\.75\b,src:\bbool\s+\w+\s*=\s*true\b">
+<p class="try-task"><strong>Missão:</strong> a lojinha da Ana precisa de uma ficha para cada produto. Declare quatro variáveis, cada uma com o <strong>tipo certo</strong>: o código do produto (a letra <code>'B'</code>), a quantidade em estoque (<code>12</code>), o preço (<code>3.75</code>) e se está disponível (<code>true</code>). Depois complete o <code>printf</code> com as letras certas (<code>%c</code>, <code>%d</code>, <code>%.2f</code>, <code>%d</code>) para mostrar a linha abaixo, sem avisos.</p>
+<pre class="out">Produto B: 12 unidades a 3.75 (disponível: 1)</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    // declare as quatro variáveis aqui
+
+    printf("Produto ...\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char codigo = 'B';
+    int quantidade = 12;
+    double preco = 3.75;
+    bool disponivel = true;
+
+    printf("Produto %c: %d unidades a %.2f (disponível: %d)\n",
+           codigo, quantidade, preco, disponivel);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O tipo diz o que cabe na caixa, quanto espaço ela ocupa e qual letra o <code>printf</code> usa.</li>
+  <li>Do dia a dia: <code>int</code> (<code>%d</code>), <code>double</code> (<code>%f</code>), <code>char</code> (<code>%c</code>) e <code>bool</code> (<code>%d</code>, sem <code>#include</code> no C23).</li>
+  <li>Parentes: <code>short</code>, <code>long</code> (<code>%ld</code>), <code>long long</code> (<code>%lld</code>), <code>float</code>, <code>long double</code> (<code>%Lf</code>). <code>void</code> é "nenhum valor".</li>
+  <li><code>sizeof</code> mede em bytes (mostre com <code>%zu</code>). A norma só garante mínimos: <code>long</code> tem 8 bytes no gcc do Linux 64 bits e 4 no editor e no Windows.</li>
+  <li>Literais têm tipo: <code>42</code> é <code>int</code>, <code>4.5</code> é <code>double</code>, <code>4.5f</code> é <code>float</code> e, em C, <code>'A'</code> é <code>int</code>.</li>
+  <li>O C não tem tipo <code>string</code>: texto é um array de <code>char</code> terminado em <code>'\0'</code>.</li>
+  <li>O tipo errado quase nunca dá erro; dá resposta errada. Escolha pelo que você quer guardar.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
