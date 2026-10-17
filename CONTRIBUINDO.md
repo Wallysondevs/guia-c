@@ -203,6 +203,8 @@ Conferido com `tools/sim.js --nativo`. **Nas metas, use o que é igual nos dois*
 | `printf("%s\n", p)` com `p == NULL` | `(null)`, código 0 | `Falha de segmentação`, 139 (o gcc troca por `puts`); com texto antes do `%s`, os dois dão `(null)` |
 | Função `[[noreturn]]` que volta | `Falha de segmentação`, 139 | `Instrução ilegal`, 132 |
 | `strdup` com `-std=c17` | funciona | `implicit declaration of function ‘strdup’; did you mean ‘strcmp’?` sem `#define _POSIX_C_SOURCE 200809L` (com `-std=c23` funciona) |
+| `char *p = strchr(texto_const, 'a')` com `-std=c23` | sem aviso | `initialization discards ‘const’ qualifier` (a glibc 2.43 devolve `const char *` no C23) |
+| `rand()` sem `srand` | o primeiro número é 0 | outro número |
 | Ordem de avaliação dos argumentos (não especificada pelo C) | `printf("%d %d\n", remove("b.txt"), remove("b.txt"))` dá `0 -1` (da esquerda para a direita) | dá `-1 0` (da direita para a esquerda) |
 
 Iguais nos dois: `int` com 4 bytes, `long long` com 8, `0.1 + 0.2` (`0.30000000000000004` com `%.17g`), a formatação do `printf` (`%5.2f`, `%-5d`, `%05d`, `%x`, `%o`, `%e`), `strtol`, `qsort` (só quando não há empates: a ordem dos itens empatados muda entre a musl e a glibc, então dê sempre um critério de desempate), as mensagens do `perror`, os códigos de saída (134, 136, 139), o estouro de `int` (`2147483647 + 1` = `-2147483648`) e a saída perdida do `printf` sem `\n` antes de um segfault.
@@ -221,7 +223,7 @@ Iguais nos dois: `int` com 4 bytes, `long long` com 8, `0.1 + 0.2` (`0.300000000
   - o código inicial **não** pode cumprir a meta, e a solução **tem** de cumprir;
   - confere também `&lt;`/`&amp;` em **todos** os `<pre>` da página (também `pre.file` e `pre.term`), as metas e as regex, e avisa se a caixa usa `trycpp` em vez de `tryc`;
   - guarda o resultado em cache; `-v` mostra as saídas.
-- `node tools/testar-missoes.js --nativo página.html`: roda também no gcc 15 do laboratório e mostra as diferenças, sem contar como falha. As conhecidas, da tabela acima, saem marcadas como "esperado". Ele avisa quando, no gcc, a meta **não** seria cumprida.
+- `node tools/testar-missoes.js --nativo página.html` (as bibliotecas `-l…` do `data-flags` vão depois das fontes, e com `math.h` o gcc ganha o `-lm` sozinho): roda também no gcc 15 do laboratório e mostra as diferenças, sem contar como falha. As conhecidas, da tabela acima, saem marcadas como "esperado". Ele avisa quando, no gcc, a meta **não** seria cumprida.
 - `tools/demo.html`: página de teste com caixas de todos os tipos (sirva a raiz do site e abra `/tools/demo.html`).
 
 ## 5. Fidelidade: o laboratório (`~/guia-c-lab/lab`)
