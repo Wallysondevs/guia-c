@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C switch — escolher entre vários valores | Guia C</title>
+<meta name="description" content="switch em C para quem nunca programou: comparar uma variável com vários valores fixos, case, break e default, o break esquecido (-Wimplicit-fallthrough), vários case para o mesmo bloco, o que o switch não aceita (faixas, double, textos, variáveis, case repetido), variáveis dentro de um case no C23 e switch × else if, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">switch</span></h1>
+
+<p class="intro">A lanchonete da escola tem um cardápio numerado: 1 é o X-salada, 2 é o pastel, 3 é o suco. Com o que você já sabe, daria para escrever isso com <a href="else-if.html">else if</a>: "se for 1…, senão, se for 2…, senão, se for 3…". Funciona, mas repete a mesma pergunta várias vezes. O <code>switch</code> ("chave", como a chave seletora de um aparelho) foi feito para esse caso: <strong>uma</strong> variável comparada com vários valores fixos. Nesta aula você vai aprender o <code>switch</code>, o <code>case</code>, o <code>default</code> e, principalmente, o <code>break</code>, cujo esquecimento é um dos erros mais clássicos do C.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como escrever um <code>switch</code> com <code>case</code>, <code>break</code> e <code>default</code>.</li>
+  <li>O que acontece quando falta o <code>break</code>, e o aviso <code>-Wimplicit-fallthrough</code>.</li>
+  <li>Como juntar vários <code>case</code> no mesmo bloco (<code>'s'</code> e <code>'S'</code>; os meses de 31 dias).</li>
+  <li>O que o <code>switch</code> não aceita: faixas, <code>double</code>, textos, variáveis no <code>case</code> e <code>case</code> repetido, com os erros reais.</li>
+  <li>Como declarar variáveis dentro de um <code>case</code> <span class="versao">C23</span>.</li>
+  <li>Quando usar <code>switch</code> e quando usar <code>else if</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. As saídas dos programas foram iguais no editor do guia; os avisos e erros do Clang, que mudam de palavras, estão indicados.</p>
+
+<hr>
+
+<h2>A ideia: o painel do elevador</h2>
+<p>No elevador, você aperta o botão do 3º andar e ele vai <strong>direto</strong> para o 3º andar. Ele não pergunta "é o térreo? não. É o 1º? não. É o 2º? não. É o 3º? sim". Cada botão leva a um lugar.</p>
+<p>O <code>switch</code> funciona assim. Ele olha o valor da variável <strong>uma vez</strong> e pula direto para o <code>case</code> (o "caso", o botão) com aquele valor. Se nenhum botão combina, ele vai para o <code>default</code> ("padrão"), o "nenhuma das anteriores". E o <code>break</code> ("interromper") é o "chegamos, pode sair do elevador".</p>
+
+<hr>
+
+<h2>1. O primeiro switch</h2>
+
+<pre class="file" data-file="lanche.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 0;
+    printf("1 - X-salada\n");
+    printf("2 - Pastel\n");
+    printf("3 - Suco\n");
+    printf("Escolha: ");
+    if (scanf("%d", &amp;opcao) != 1) {
+        return 1;
+    }
+    switch (opcao) {
+        case 1:
+            printf("X-salada: R$ 18.00\n");
+            break;
+        case 2:
+            printf("Pastel: R$ 9.00\n");
+            break;
+        case 3:
+            printf("Suco: R$ 7.00\n");
+            break;
+        default:
+            printf("Opção %d não existe.\n", opcao);
+            break;
+    }
+    printf("Obrigada pela preferência!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lanche.c -o lanche
+$ ./lanche
+1 - X-salada
+2 - Pastel
+3 - Suco
+Escolha: 2
+Pastel: R$ 9.00                  « pulou direto para o case 2
+Obrigada pela preferência!       « depois do break, o programa continua depois do switch
+$ ./lanche
+1 - X-salada
+2 - Pastel
+3 - Suco
+Escolha: 7
+Opção 7 não existe.              « nenhum case é 7: foi para o default
+Obrigada pela preferência!</pre>
+
+<dl class="anatomy">
+  <dt>switch (opcao)</dt><dd>"Conforme o valor de <code>opcao</code>…". Entre os parênteses vai a expressão que será comparada. Ela precisa ser um <strong>inteiro</strong>: <code>int</code>, <code>char</code>, <code>long</code>, um <a href="enums.html">enum</a>…</dd>
+  <dt>{ … }</dt><dd>As chaves do <code>switch</code> guardam todos os casos. Elas são obrigatórias.</dd>
+  <dt>case 1:</dt><dd>"No caso de ser 1, comece aqui". Depois do <code>case</code> vem um valor <strong>fixo</strong> (um número ou um caractere como <code>'s'</code>) e <strong>dois-pontos</strong>, não ponto e vírgula. O <code>case</code> é só um rótulo, um ponto de entrada: ele não tem chaves próprias.</dd>
+  <dt>break;</dt><dd>"Terminei este caso: saia do <code>switch</code>". O programa continua na primeira linha depois da chave que fecha o <code>switch</code>. A seção 2 mostra o que acontece sem ele.</dd>
+  <dt>default:</dt><dd>"Se não for nenhum dos anteriores". É opcional, mas quase sempre vale a pena: aqui ele avisa a pessoa que digitou uma opção que não existe. O <code>break</code> do último caso não é obrigatório, mas o guia sempre coloca: se alguém acrescentar outro <code>case</code> embaixo, ele já está lá.</dd>
+  <dt>o recuo</dt><dd>Os <code>case</code> ficam 4 espaços para dentro do <code>switch</code>, e o código de cada caso, mais 4. O compilador ignora; é para você enxergar onde cada caso começa. (Alguns projetos, como o Linux, deixam o <code>case</code> na mesma coluna do <code>switch</code>. Os dois estilos são comuns.)</dd>
+</dl>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> clique em Rodar e digite uma opção no terminal da caixa. Teste 1, 2, 3 e um número que não está no cardápio. Depois acrescente a opção <code>4 - Água</code>, que custa R$ 4.00: uma linha a mais no cardápio e um <code>case</code> novo, com o seu <code>break</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 0;
+    printf("1 - X-salada\n");
+    printf("2 - Pastel\n");
+    printf("3 - Suco\n");
+    printf("Escolha: ");
+    if (scanf("%d", &amp;opcao) != 1) {
+        return 1;
+    }
+    switch (opcao) {
+        case 1:
+            printf("X-salada: R$ 18.00\n");
+            break;
+        case 2:
+            printf("Pastel: R$ 9.00\n");
+            break;
+        case 3:
+            printf("Suco: R$ 7.00\n");
+            break;
+        default:
+            printf("Opção %d não existe.\n", opcao);
+            break;
+    }
+    printf("Obrigada pela preferência!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. O <code>break</code> esquecido</h2>
+<p>O <code>case</code> diz onde <strong>entrar</strong>, mas não onde <strong>sair</strong>. Sem <code>break</code>, o programa continua descendo e roda o código dos casos de baixo também, sem conferir o valor deles. Isso se chama <strong>queda</strong> (em inglês, <em>fall through</em>, "cair através"):</p>
+
+<pre class="file" data-file="sembreak.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 2;
+    switch (opcao) {
+        case 1:
+            printf("X-salada: R$ 18.00\n");
+            break;
+        case 2:
+            printf("Pastel: R$ 9.00\n");
+        case 3:
+            printf("Suco: R$ 7.00\n");
+        default:
+            printf("Opção %d não existe.\n", opcao);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sembreak.c -o sembreak
+sembreak.c: In function ‘main’:
+sembreak.c:10:13: warning: this statement may fall through [-Wimplicit-fallthrough=]
+   10 |             printf("Pastel: R$ 9.00\n");
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+sembreak.c:11:9: note: here
+   11 |         case 3:
+      |         ^~~~
+sembreak.c:12:13: warning: this statement may fall through [-Wimplicit-fallthrough=]
+   12 |             printf("Suco: R$ 7.00\n");
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~
+sembreak.c:13:9: note: here
+   13 |         default:
+      |         ^~~~~~~
+$ ./sembreak
+Pastel: R$ 9.00          « entrou no case 2…
+Suco: R$ 7.00            « …caiu no case 3…
+Opção 2 não existe.      « …e no default. A Ana pediu só um pastel!</pre>
+
+<ol class="passo">
+  <li>O <code>switch</code> pulou para o <code>case 2</code> e mostrou o pastel.</li>
+  <li>Não havia <code>break</code>. O <code>case 3:</code> é só um rótulo, então o programa passou por ele e rodou o <code>printf</code> do suco.</li>
+  <li>Também não havia <code>break</code> depois do suco, e o programa caiu no <code>default</code>.</li>
+</ol>
+
+<p>O aviso diz: "esta instrução pode cair (no próximo caso)", e a nota <code>here</code> ("aqui") mostra onde. Ele vem do <code>-Wextra</code>: só com <code>-Wall</code>, o gcc compila calado. No editor do guia, o Clang não dá esse aviso nem com <code>-Wall -Wextra</code>; é preciso pedir <code>-Wimplicit-fallthrough</code>, e aí ele diz <code>unannotated fall-through between switch labels</code> ("queda sem anotação entre rótulos do switch") e sugere o conserto: <code>insert 'break;' to avoid fall-through</code>.</p>
+
+<div class="tryc" data-flags="-std=c23 -Wall -Wextra -Wimplicit-fallthrough" data-goal="outre:^Pastel: R\$ 9\.00\n$,semaviso">
+<p class="try-task"><strong>Missão:</strong> esta caixa compila com <code>-Wimplicit-fallthrough</code>, então o Clang avisa sobre as quedas. Ponha os <code>break</code> que faltam para a Ana receber só o pastel, sem nenhum aviso. A saída inteira deve ser:</p>
+<pre class="out">Pastel: R$ 9.00</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 2;
+    switch (opcao) {
+        case 1:
+            printf("X-salada: R$ 18.00\n");
+            break;
+        case 2:
+            printf("Pastel: R$ 9.00\n");
+        case 3:
+            printf("Suco: R$ 7.00\n");
+        default:
+            printf("Opção %d não existe.\n", opcao);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 2;
+    switch (opcao) {
+        case 1:
+            printf("X-salada: R$ 18.00\n");
+            break;
+        case 2:
+            printf("Pastel: R$ 9.00\n");
+            break;
+        case 3:
+            printf("Suco: R$ 7.00\n");
+            break;
+        default:
+            printf("Opção %d não existe.\n", opcao);
+            break;
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<div class="tip">
+<strong>E quando a queda é de propósito?</strong>
+<p>Às vezes cair no caso de baixo é exatamente o que se quer (quem chega ao nível 3 de um jogo ganha os prêmios dos níveis 3, 2 e 1). Desde o <span class="versao">C23</span>, você marca isso com <code>[[fallthrough]];</code> no fim do caso, e o compilador para de avisar. A aula <a href="atributos.html">Atributos</a> mostra o exemplo completo. Sem a marca, quem ler o código vai achar que você esqueceu o <code>break</code>.</p>
+</div>
+
+<hr>
+
+<h2>3. Vários <code>case</code> para o mesmo bloco</h2>
+<p>Há um tipo de queda que é comum e não gera aviso: vários <code>case</code> seguidos, <strong>sem nada entre eles</strong>. Todos entram no mesmo bloco. Serve para aceitar a resposta em minúscula e em maiúscula:</p>
+
+<pre class="file" data-file="resposta.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char resposta = '?';
+    printf("Quer o recibo? (s/n) ");
+    if (scanf(" %c", &amp;resposta) != 1) {
+        return 1;
+    }
+    switch (resposta) {
+        case 's':
+        case 'S':
+            printf("Imprimindo o recibo...\n");
+            break;
+        case 'n':
+        case 'N':
+            printf("Tudo bem, sem recibo.\n");
+            break;
+        default:
+            printf("Não entendi '%c'.\n", resposta);
+            break;
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra resposta.c -o resposta       « nenhum aviso
+$ ./resposta
+Quer o recibo? (s/n) S
+Imprimindo o recibo...           « 'S' entrou pelo case 'S'
+$ ./resposta
+Quer o recibo? (s/n) n
+Tudo bem, sem recibo.
+$ ./resposta
+Quer o recibo? (s/n) talvez
+Não entendi 't'.                 « o %c leu só a primeira letra</pre>
+
+<dl class="anatomy">
+  <dt>case 's':</dt><dd>Um caractere entre aspas simples é um número para o C (o código da letra; aula <a href="char.html">Caracteres</a>), então pode ser um <code>case</code>. <code>'s'</code> e <code>'S'</code> são valores diferentes (115 e 83).</dd>
+  <dt>case 's': case 'S':</dt><dd>Dois rótulos para o mesmo lugar. Se a resposta for <code>'s'</code>, o programa entra no primeiro, passa pelo segundo (que não tem código) e roda o <code>printf</code>. O gcc não avisa, porque não há nenhuma instrução "caindo".</dd>
+  <dt>" %c"</dt><dd>O espaço antes do <code>%c</code> pula Enters e espaços que sobraram (aula <a href="scanf.html">Entrada com scanf</a>).</dd>
+</dl>
+
+<p>Os rótulos podem ficar na mesma linha: <code>case 4: case 6: case 9: case 11:</code>. É assim que a missão final desta aula vai separar os meses de 30 e de 31 dias.</p>
+
+<hr>
+
+<h2>4. Sem <code>default</code></h2>
+<p>O <code>default</code> é opcional. Sem ele, se nenhum <code>case</code> combina, o <code>switch</code> simplesmente não faz nada, e o programa segue:</p>
+
+<pre class="file" data-file="lanche2.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 7;
+    switch (opcao) {
+        case 1:
+            printf("X-salada: R$ 18.00\n");
+            break;
+        case 2:
+            printf("Pastel: R$ 9.00\n");
+            break;
+    }
+    printf("Obrigada pela preferência!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lanche2.c -o lanche2
+$ ./lanche2
+Obrigada pela preferência!       « o 7 não combinou com nada, e ninguém foi avisado</pre>
+
+<p>Às vezes é isso mesmo que você quer. Mas, quando o valor vem de quem usa o programa, um <code>default</code> que avisa "opção inválida" evita que um erro de digitação passe calado. Com um <a href="enums.html">enum</a>, o compilador consegue até avisar quando falta um caso (<code>-Wswitch</code>), como mostra aquela aula.</p>
+
+<hr>
+
+<h2>5. O que o <code>switch</code> não aceita</h2>
+<p>O <code>switch</code> é rápido e organizado porque só compara <strong>igualdade com valores inteiros fixos</strong>, conhecidos na hora de compilar. Tudo o que foge disso dá erro de compilação.</p>
+
+<h3>Faixas de valores</h3>
+
+<pre class="term" data-cwd="~/c">$ cat faixa.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 8;
+    switch (nota) {
+        case nota &gt;= 7:
+            printf("Aprovada\n");
+            break;
+    }
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra faixa.c -o faixa
+faixa.c: In function ‘main’:
+faixa.c:6:9: error: case label does not reduce to an integer constant
+    6 |         case nota &gt;= 7:
+      |         ^~~~</pre>
+
+<p>"O rótulo do <code>case</code> não se reduz a uma constante inteira." Depois do <code>case</code> só pode vir um valor fixo, e <code>nota &gt;= 7</code> depende da variável. Perguntas como "maior que", "entre 7 e 10" são trabalho do <a href="else-if.html">else if</a>. (No Clang: <code>expression is not an integer constant expression</code>.)</p>
+
+<div class="note">
+<strong>A faixa do gcc: <code>case 0 ... 11:</code></strong>
+<p>O gcc e o Clang aceitam uma <strong>extensão</strong> (um recurso que não faz parte do C padrão): <code>case 0 ... 11:</code>, com espaços em volta dos três pontos, vale para todos os números de 0 a 11. Com <code>-Wpedantic</code>, que avisa sobre o que não é padrão, o gcc 15 diz <code>ISO C does not support range expressions in switch statements before C2Y</code>: o recurso entrou no C2y, a próxima versão do C. Por enquanto, se o seu código precisa compilar em qualquer compilador, use <code>else if</code>.</p>
+</div>
+
+<h3>Números com vírgula e textos</h3>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra preco.c -o preco
+preco.c: In function ‘main’:
+preco.c:5:13: error: switch quantity not an integer
+    5 |     switch (preco) {
+      |             ^~~~~
+preco.c:6:9: error: case label does not reduce to an integer constant
+    6 |         case 9.0:
+      |         ^~~~
+$ gcc -std=c23 -Wall -Wextra texto.c -o texto
+texto.c: In function ‘main’:
+texto.c:5:13: error: switch quantity not an integer
+    5 |     switch (nome) {
+      |             ^~~~
+texto.c:6:9: error: pointers are not permitted as case values
+    6 |         case "pastel":
+      |         ^~~~</pre>
+
+<p>No <code>preco.c</code>, <code>preco</code> é um <code>double</code>; no <code>texto.c</code>, <code>nome</code> é um texto (<code>char nome[] = "pastel";</code>). "A quantidade do <code>switch</code> não é um inteiro." No segundo, o <code>case "pastel":</code> também é recusado: "ponteiros não são permitidos como valores de <code>case</code>" (um texto entre aspas duplas é, por baixo, um endereço; aula <a href="strings.html">Strings</a>). Para textos, compare com <code>strcmp</code> num <code>else if</code> (aula <a href="funcoes-string.html">Funções de String</a>). No Clang: <code>statement requires expression of integer type ('double' invalid)</code>.</p>
+
+<h3>Variáveis no <code>case</code> e <code>case</code> repetido</h3>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra variavel.c -o variavel
+variavel.c: In function ‘main’:
+variavel.c:7:9: error: case label does not reduce to an integer constant
+    7 |         case promocao:
+      |         ^~~~
+$ gcc -std=c23 -Wall -Wextra duplo.c -o duplo
+duplo.c: In function ‘main’:
+duplo.c:9:9: error: duplicate case value
+    9 |         case 1:
+      |         ^~~~
+duplo.c:6:9: note: previously used here
+    6 |         case 1:
+      |         ^~~~</pre>
+
+<p>No primeiro, <code>promocao</code> é uma variável comum (<code>int promocao = 3;</code>): o mesmo erro da faixa. O valor do <code>case</code> precisa ser conhecido na hora de compilar: um número, um caractere, um <code>#define</code>, um valor de <a href="enums.html">enum</a> ou uma constante <code>constexpr</code> <span class="versao">C23</span> (aula <a href="constantes.html">Constantes</a>). No segundo, o <code>case 1</code> aparece duas vezes: "valor de <code>case</code> repetido", e a nota mostra onde ele foi usado antes. O elevador não pode ter dois botões para o mesmo andar.</p>
+
+<hr>
+
+<h2>6. Variáveis dentro de um <code>case</code></h2>
+<p>Um caso pode precisar de uma variável só dele:</p>
+
+<pre class="file" data-file="declara.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 1;
+    switch (opcao) {
+        case 1:
+            int quantidade = 2;
+            printf("%d X-saladas: R$ %d.00\n", quantidade, quantidade * 18);
+            break;
+        case 2:
+            printf("Pastel\n");
+            break;
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra declara.c -o declara
+$ ./declara
+2 X-saladas: R$ 36.00
+$ gcc -std=c17 -Wall -Wextra -Wpedantic declara.c -o declara
+declara.c: In function ‘main’:
+declara.c:7:13: warning: a label can only be part of a statement and a declaration is not a statement [-Wfree-labels]
+    7 |             int quantidade = 2;
+      |             ^~~</pre>
+
+<p>No <span class="versao">C23</span>, uma declaração pode vir logo depois de um rótulo como <code>case 1:</code>. Até o C17, não podia: "um rótulo só pode fazer parte de uma instrução, e uma declaração não é uma instrução". Compiladores mais antigos dão <strong>erro</strong> nesse ponto, e você vai encontrar essa mensagem em muitos fóruns. No editor, com <code>-std=c17</code>, o Clang avisa <code>label followed by a declaration is a C23 extension</code>.</p>
+
+<p>Mesmo no C23, há uma pegadinha: o <code>switch</code> inteiro é um bloco só, então <code>quantidade</code> continua existindo nos casos de baixo, mas <strong>sem valor</strong>, porque o programa pulou a linha que a inicializa. Neste <code>pula.c</code>, o <code>case 2</code> usa a variável do <code>case 1</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ cat pula.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 2;
+    switch (opcao) {
+        case 1:
+            int quantidade = 2;
+            printf("%d\n", quantidade);
+            break;
+        case 2:
+            printf("%d\n", quantidade);
+            break;
+    }
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra pula.c -o pula
+pula.c: In function ‘main’:
+pula.c:11:13: warning: ‘quantidade’ is used uninitialized [-Wuninitialized]
+   11 |             printf("%d\n", quantidade);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~
+pula.c:7:17: note: ‘quantidade’ was declared here
+    7 |             int quantidade = 2;
+      |                 ^~~~~~~~~~
+$ ./pula
+0                « um valor qualquer: o "= 2" nunca rodou</pre>
+
+<p>"<code>quantidade</code> é usada sem valor inicial." Desta vez saiu 0, mas poderia ser qualquer número (aula <a href="variaveis.html">Variáveis</a>). O jeito que funciona em qualquer versão, e o que o guia recomenda, é dar <strong>chaves</strong> ao caso:</p>
+
+<pre class="file">        case 1: {
+            int quantidade = 2;
+            printf("%d X-saladas: R$ %d.00\n", quantidade, quantidade * 18);
+            break;
+        }
+</pre>
+
+<p>Com as chaves, <code>quantidade</code> só existe dentro do <code>case 1</code> (aula <a href="escopo.html">Escopo</a>). Se outro caso tentar usá-la, o erro aparece na compilação (<code>‘quantidade’ undeclared</code>), em vez de um valor qualquer na execução.</p>
+
+<hr>
+
+<h2><code>switch</code> ou <code>else if</code>?</h2>
+<p>O mesmo cardápio com <code>else if</code>:</p>
+
+<pre class="file" data-file="lanche3.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int opcao = 2;
+    if (opcao == 1) {
+        printf("X-salada: R$ 18.00\n");
+    } else if (opcao == 2) {
+        printf("Pastel: R$ 9.00\n");
+    } else if (opcao == 3) {
+        printf("Suco: R$ 7.00\n");
+    } else {
+        printf("Opção %d não existe.\n", opcao);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lanche3.c -o lanche3
+$ ./lanche3
+Pastel: R$ 9.00</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th><th>Por quê</th></tr>
+<tr><td>Uma variável inteira (ou <code>char</code>, ou <code>enum</code>) comparada com vários valores fixos: menus, letras, códigos</td><td><code>switch</code></td><td>A variável aparece uma vez só, cada caso fica bem separado, e com <code>enum</code> o compilador avisa se faltar um caso.</td></tr>
+<tr><td>Faixas: <code>nota &gt;= 9</code>, <code>idade &lt; 12</code></td><td><code>else if</code></td><td>O <code>switch</code> só compara igualdade.</td></tr>
+<tr><td>Números com vírgula ou textos</td><td><code>else if</code> (com <code>strcmp</code> para textos)</td><td>O <code>switch</code> só aceita inteiros.</td></tr>
+<tr><td>Condições com variáveis diferentes: <code>saldo &gt; 0 &amp;&amp; idade &gt;= 18</code></td><td><code>else if</code></td><td>O <code>switch</code> olha uma expressão só.</td></tr>
+<tr><td>Dois caminhos</td><td><code>if</code> / <code>else</code></td><td>Um <code>switch</code> para dois casos é exagero.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: this statement may fall through [-Wimplicit-fallthrough=]</code></strong>
+<p><strong>O que significa:</strong> um caso termina sem <code>break</code>, e o programa vai cair no caso de baixo. Vem do <code>-Wextra</code>. No Clang, só com <code>-Wimplicit-fallthrough</code>: <code>unannotated fall-through between switch labels</code>.</p>
+<p><strong>Como consertar:</strong> ponha <code>break;</code> no fim do caso. Se a queda é de propósito, marque com <code>[[fallthrough]];</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Apareceram as mensagens de vários casos</strong>
+<p><strong>O que significa:</strong> o mesmo problema do aviso acima, num programa compilado sem <code>-Wextra</code> (ou no editor, sem <code>-Wimplicit-fallthrough</code>).</p>
+<p><strong>Como consertar:</strong> confira se todo caso termina com <code>break</code>, e compile sempre com <code>-Wall -Wextra</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: case label does not reduce to an integer constant</code></strong>
+<p><strong>O que significa:</strong> depois do <code>case</code> há algo que não é um valor inteiro fixo: uma comparação (<code>case nota &gt;= 7:</code>), uma variável (<code>case promocao:</code>) ou um número com vírgula (<code>case 9.0:</code>). No Clang: <code>expression is not an integer constant expression</code>.</p>
+<p><strong>Como consertar:</strong> use um número, um caractere, um <code>#define</code>, um <code>enum</code> ou um <code>constexpr</code>. Para faixas e variáveis, troque por <code>else if</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: switch quantity not an integer</code></strong>
+<p><strong>O que significa:</strong> a expressão do <code>switch (…)</code> é um <code>double</code>, um texto ou outra coisa que não é inteira. No Clang: <code>statement requires expression of integer type</code>.</p>
+<p><strong>Como consertar:</strong> use <code>else if</code>, ou guarde o valor num inteiro se ele for mesmo inteiro (centavos em vez de reais, por exemplo).</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: duplicate case value</code></strong>
+<p><strong>O que significa:</strong> dois <code>case</code> com o mesmo valor. Pode ser um erro de digitação, ou dois nomes de <code>#define</code>/<code>enum</code> que valem o mesmo número. No Clang: <code>duplicate case value '1'</code>.</p>
+<p><strong>Como consertar:</strong> apague um deles, ou junte os dois blocos num só.</p>
+</div>
+
+<div class="cenario">
+<strong><code>a label can only be part of a statement and a declaration is not a statement</code></strong>
+<p><strong>O que significa:</strong> uma variável foi declarada logo depois de um <code>case</code>, num compilador ou padrão anterior ao C23 (no gcc 15 com <code>-std=c17 -Wpedantic</code>, é um aviso; em compiladores mais antigos, um erro).</p>
+<p><strong>Como consertar:</strong> dê chaves ao caso: <code>case 1: { int quantidade = 2; … break; }</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>O que faz</th></tr>
+<tr><td><code>switch (expr) { … }</code></td><td>Calcula <code>expr</code> (um inteiro) uma vez e pula para o <code>case</code> com esse valor.</td></tr>
+<tr><td><code>case 3:</code> / <code>case 'a':</code></td><td>Ponto de entrada para aquele valor fixo. Dois-pontos no fim.</td></tr>
+<tr><td><code>case 'a': case 'A':</code></td><td>Vários valores para o mesmo bloco.</td></tr>
+<tr><td><code>break;</code></td><td>Sai do <code>switch</code>. Sem ele, o programa cai no caso de baixo.</td></tr>
+<tr><td><code>default:</code></td><td>Para qualquer valor sem <code>case</code>. Opcional.</td></tr>
+<tr><td><code>[[fallthrough]];</code></td><td>Marca uma queda proposital <span class="versao">C23</span> (aula <a href="atributos.html">Atributos</a>).</td></tr>
+<tr><td><code>case 1: { … }</code></td><td>Chaves para declarar variáveis só daquele caso.</td></tr>
+<tr><td>não aceita</td><td>faixas (<code>&gt;=</code>), <code>double</code>, textos, variáveis no <code>case</code>, <code>case</code> repetido.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Sair do caso</h3>
+<p>Complete com a palavra que encerra o caso e sai do <code>switch</code>:</p>
+<div class="ex-code">case 2: printf("Pastel\n"); <input data-answer="break" aria-label="palavra">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Nenhuma das anteriores</h3>
+<p>Complete com a palavra do caso que pega todos os outros valores:</p>
+<div class="ex-code"><input data-answer="default" aria-label="palavra">: printf("Opção inválida\n"); break;</div>
+</div>
+
+<div class="exercise">
+<h3>3. A pontuação</h3>
+<p>Complete o rótulo do caso da letra <code>q</code> minúscula (lembre: caractere entre aspas simples, e o sinal do fim):</p>
+<div class="ex-code">case <input data-answer="'q':" aria-label="rótulo"> printf("Saindo...\n"); break;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Com <code>int n = 1;</code>, o que mostra <code>switch (n) { case 1: printf("A"); case 2: printf("B"); break; case 3: printf("C"); }</code>?</p>
+<label><input type="radio" name="q4"> <code>A</code></label>
+<label><input type="radio" name="q4"> <code>ABC</code></label>
+<label><input type="radio" name="q4"> <code>AB</code></label>
+<label><input type="radio" name="q4"> Nada</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Qual destes <strong>não</strong> pode ser usado num <code>switch</code>?</p>
+<label><input type="radio" name="q5"> <code>switch (letra)</code>, com <code>char letra</code></label>
+<label><input type="radio" name="q5"> <code>switch (preco)</code>, com <code>double preco</code></label>
+<label><input type="radio" name="q5"> <code>switch (opcao)</code>, com <code>int opcao</code></label>
+<label><input type="radio" name="q5"> <code>switch (dia % 7)</code>, com <code>int dia</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Para dar o conceito A para notas de 9 a 10, B de 7 a 8,9 e assim por diante, o melhor é:</p>
+<label><input type="radio" name="q6"> <code>switch</code> com <code>case nota &gt;= 9:</code></label>
+<label><input type="radio" name="q6"> <code>switch</code> com <code>case 9.0:</code> e <code>case 10.0:</code></label>
+<label><input type="radio" name="q6"> Um <code>switch</code> sem <code>break</code></label>
+<label><input type="radio" name="q6"> <code>else if</code>, porque são faixas de valores</label>
+</div>
+
+<h3>Missão final: os dias do mês</h3>
+
+<div class="tryc" data-stdin="4" data-goal="out:O mês 4 tem 30 dias.,src:switch\s*\(\s*mes\s*\),src:case\s+4\s*:,semaviso">
+<p class="try-task"><strong>Missão:</strong> o programa lê o número de um mês (a entrada preparada é <code>4</code>, abril) e deve mostrar quantos dias ele tem. Escreva um <code>switch (mes)</code> que guarda em <code>dias</code>: 31 para os meses 1, 3, 5, 7, 8, 10 e 12; 30 para 4, 6, 9 e 11; e 28 para o 2 (vamos ignorar os anos bissextos). No <code>default</code>, mostre <code>Mês inválido.</code> e termine com <code>return 1;</code>. Junte os meses com vários <code>case</code> seguidos. Sem avisos. A saída deve terminar com:</p>
+<pre class="out">O mês 4 tem 30 dias.</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int mes = 0;
+    printf("Mês (1 a 12): ");
+    if (scanf("%d", &amp;mes) != 1) {
+        return 1;
+    }
+    int dias = 0;
+
+    // escreva o switch aqui
+
+    printf("O mês %d tem %d dias.\n", mes, dias);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int mes = 0;
+    printf("Mês (1 a 12): ");
+    if (scanf("%d", &amp;mes) != 1) {
+        return 1;
+    }
+    int dias = 0;
+
+    switch (mes) {
+        case 1: case 3: case 5: case 7: case 8: case 10: case 12:
+            dias = 31;
+            break;
+        case 4: case 6: case 9: case 11:
+            dias = 30;
+            break;
+        case 2:
+            dias = 28;
+            break;
+        default:
+            printf("Mês inválido.\n");
+            return 1;
+    }
+
+    printf("O mês %d tem %d dias.\n", mes, dias);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Troque a entrada da caixa para <code>2</code>, <code>12</code> e <code>13</code> e confira as três respostas. No laboratório da Ana, a solução deu:</p>
+
+<pre class="term" data-cwd="~/c">$ ./meses &lt;&lt;&lt; 2
+Mês (1 a 12): O mês 2 tem 28 dias.
+$ ./meses &lt;&lt;&lt; 12
+Mês (1 a 12): O mês 12 tem 31 dias.
+$ ./meses &lt;&lt;&lt; 13
+Mês (1 a 12): Mês inválido.</pre>
+
+<p>(O <code>&lt;&lt;&lt;</code> do terminal entrega o texto ao programa como se fosse digitado, mas sem mostrá-lo na tela; por isso a resposta sai grudada na pergunta.) Repare no <code>default</code>: em vez de <code>break</code>, ele termina com <code>return 1;</code>, que sai do <code>main</code> inteiro. Assim o programa não chega a mostrar "O mês 13 tem 0 dias.".</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>switch (x) { case V: … break; default: … }</code> compara <strong>uma</strong> expressão inteira com vários valores fixos e pula direto para o caso certo.</li>
+  <li>O <code>case</code> é só um ponto de entrada. Sem <code>break</code>, o programa cai nos casos de baixo; o gcc avisa com <code>-Wextra</code> (<code>this statement may fall through</code>), o Clang só com <code>-Wimplicit-fallthrough</code>.</li>
+  <li>Vários <code>case</code> seguidos, sem código entre eles, dividem o mesmo bloco: <code>case 's': case 'S':</code>. Queda proposital com código: <code>[[fallthrough]];</code> <span class="versao">C23</span>.</li>
+  <li><code>default</code> pega o resto. É opcional, mas avisa quando a pessoa digita algo inesperado.</li>
+  <li>O <code>switch</code> não aceita faixas, <code>double</code>, textos, variáveis no <code>case</code> nem <code>case</code> repetido: para isso, <code>else if</code>.</li>
+  <li>Para declarar uma variável num caso, dê chaves a ele: <code>case 1: { … }</code>.</li>
+  <li>Próximo passo: os laços, a começar pelo <a href="while.html">while</a>, que repete um bloco. Juntos, um laço e um <code>switch</code> fazem o menu que volta depois de cada escolha.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
