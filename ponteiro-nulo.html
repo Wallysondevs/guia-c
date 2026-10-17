@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Ponteiro Nulo — NULL, nullptr e a falha de segmentação | Guia C</title>
+<meta name="description" content="Ponteiro nulo em C para quem nunca programou: o que é NULL, de onde ele vem (stddef.h, stdio.h), o nullptr do C23, como conferir um ponteiro antes de usar, o que acontece ao desreferenciar um ponteiro nulo (Falha de segmentação, código 139) e por que a saída do printf pode sumir, com saídas reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Ponteiro Nulo (NULL e nullptr)</span></h1>
+
+<p class="intro">Na aula <a href="ponteiros.html">Ponteiros</a> você viu que um ponteiro sem valor inicial guarda lixo, um endereço qualquer, e que isso é perigoso. Mas às vezes você <strong>ainda não tem</strong> para onde apontar: a pessoa não escolheu uma opção, a busca não achou nada, o arquivo não abriu. Para isso existe o <strong>ponteiro nulo</strong>: um valor especial que quer dizer "não aponta para nada", e que dá para testar. Esta aula mostra como criá-lo, como conferir antes de usar e o que acontece quando alguém esquece de conferir.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um ponteiro nulo e por que ele é melhor que lixo.</li>
+  <li><code>NULL</code> (de onde vem, que <code>#include</code> pede) e o <code>nullptr</code> do <span class="versao">C23</span>.</li>
+  <li>Como conferir um ponteiro antes de usar: <code>if (p != NULL)</code> e a forma curta <code>if (p)</code>.</li>
+  <li>O que acontece ao desreferenciar um ponteiro nulo: <code>Falha de segmentação</code>, código 139.</li>
+  <li>Por que, às vezes, o que o programa escreveu antes de morrer some (o <em>buffer</em> do <code>printf</code>).</li>
+</ul>
+</div>
+
+<p>Os programas foram compilados na máquina da Ana, na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o bilhete em branco</h2>
+<p>Lembra do bilhete com o número da gaveta? Existem três situações possíveis para ele:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O bilhete</th><th>Em C</th><th>Dá para confiar?</th></tr>
+<tr><td>Tem o número de uma gaveta de verdade</td><td><code>int *p = &amp;x;</code></td><td>Sim: <code>*p</code> é o <code>x</code>.</td></tr>
+<tr><td>Tem um número rabiscado ao acaso</td><td><code>int *p;</code> (lixo)</td><td><strong>Não</strong>, e não há como saber olhando.</td></tr>
+<tr><td>Está escrito, bem grande: <strong>"NENHUMA"</strong></td><td><code>int *p = NULL;</code></td><td>Não aponta para nada, <strong>e você sabe disso</strong>: dá para perguntar antes de ir até a gaveta.</td></tr>
+</table>
+</div>
+
+<p>O ponteiro nulo é o terceiro bilhete. Ele não resolve tudo sozinho: ir até a gaveta "NENHUMA" continua sendo um erro. A vantagem é que esse erro pode ser <strong>evitado com um <code>if</code></strong>, e, quando não é evitado, o programa morre na hora e no lugar certo, em vez de estragar dados em silêncio.</p>
+
+<figure>
+<svg viewBox="0 0 638 136" width="638" role="img" aria-label="Três ponteiros: p1 aponta para x, p2 tem lixo e aponta para um lugar desconhecido, p3 é NULL" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><defs><marker id="g9f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs><rect x="10" y="4" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="85" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">42</text><rect x="166" y="4" width="150" height="46" rx="5" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="241" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">&amp;x</text><rect x="322" y="4" width="150" height="46" rx="5" style="fill:var(--warn-bg);stroke:var(--warn-border);stroke-width:1.5"/><text x="397" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">0x??????</text><rect x="478" y="4" width="150" height="46" rx="5" style="fill:var(--sidebar-bg);stroke:var(--border);stroke-width:1.5"/><text x="553" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">NULL</text><path d="M12,58 v6 H158 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="85" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">x</text><path d="M168,58 v6 H314 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="241" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">p1: aponta</text><path d="M324,58 v6 H470 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="397" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">p2: lixo (?)</text><path d="M480,58 v6 H626 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="553" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">p3: nulo</text><path d="M241,86 C241,124 85,124 85,86" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#g9f1)"/><text x="163" y="130" text-anchor="middle" font-size="12" style="fill:var(--accent)">p1 → x</text></svg>
+<figcaption>Só o <code>p1</code> leva a algum lugar. O <code>p2</code> pode levar a qualquer gaveta, e não há como descobrir. O <code>p3</code> diz claramente "nenhuma": basta testar.</figcaption>
+</figure>
+
+<hr>
+
+<h2>1. Criar e testar um ponteiro nulo</h2>
+
+<pre class="file" data-file="nulo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int *p = NULL;
+
+    printf("p guarda %p\n", (void *) p);
+    if (p == NULL) {
+        printf("p não aponta para nada\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nulo.c -o nulo
+$ ./nulo
+p guarda (nil)               « o jeito da glibc de mostrar o ponteiro nulo
+p não aponta para nada</pre>
+
+<dl class="anatomy">
+  <dt>int *p = NULL;</dt><dd>Cria o ponteiro já "apontando para nada". <code>NULL</code> (lê-se "nul") é uma constante que vem nos cabeçalhos da biblioteca padrão. O <code>stdio.h</code> já a traz, por isso este programa não precisou de outro <code>#include</code>.</dd>
+  <dt>p == NULL</dt><dd>Compara o <strong>endereço guardado</strong> em <code>p</code> com o nulo. Repare: sem <code>*</code>. Você pergunta sobre o bilhete, sem ir até gaveta nenhuma.</dd>
+  <dt>(nil)</dt><dd>É assim que o <code>%p</code> da glibc (a biblioteca C do Linux) mostra um ponteiro nulo: "nil", nada. No editor do guia, que usa outra biblioteca, o mesmo programa mostra <code>p guarda 0</code>.</dd>
+</dl>
+
+<h3>Por dentro, o nulo é o endereço 0</h3>
+<p>Na prática, <code>NULL</code> é o endereço zero, uma gaveta que o sistema <strong>nunca</strong> entrega a programa nenhum. Por isso escrever <code>int *q = 0;</code> também cria um ponteiro nulo, e um ponteiro nulo vale "falso" num <code>if</code>:</p>
+
+<pre class="file" data-file="zero.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int *p = NULL;
+    int *q = 0;
+    int x = 5;
+    int *r = &amp;x;
+
+    printf("p == q? %d\n", p == q);
+    printf("p é falso? %d\n", !p);
+    printf("r é falso? %d\n", !r);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra zero.c -o zero
+$ ./zero
+p == q? 1          « NULL e 0 dão o mesmo ponteiro
+p é falso? 1       « nulo conta como falso
+r é falso? 0       « um ponteiro que aponta para algo conta como verdadeiro</pre>
+
+<p>Daí vem a forma curta de testar, muito comum em código C:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma longa</th><th>Forma curta</th><th>Pergunta</th></tr>
+<tr><td><code>if (p != NULL)</code></td><td><code>if (p)</code></td><td>"<code>p</code> aponta para alguma coisa?"</td></tr>
+<tr><td><code>if (p == NULL)</code></td><td><code>if (!p)</code></td><td>"<code>p</code> é nulo?"</td></tr>
+</table>
+</div>
+
+<p>As duas fazem exatamente o mesmo. A forma longa é mais clara para quem está começando; a curta é a que você mais vai encontrar em projetos.</p>
+
+<hr>
+
+<h2>2. <code>nullptr</code>: o nulo do C23 <span class="versao">C23</span></h2>
+<p>O C23 criou uma palavra-chave própria para o ponteiro nulo, <code>nullptr</code> (de "<em>null pointer</em>", ponteiro nulo), que não precisa de <code>#include</code> nenhum. O gcc 15 e o Clang do editor aceitam:</p>
+
+<pre class="file" data-file="nullptr.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int *p = nullptr;
+
+    if (p == nullptr) {
+        printf("p é nulo\n");
+    }
+    printf("p == NULL? %d\n", p == NULL);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nullptr.c -o nullptr
+$ ./nullptr
+p é nulo
+p == NULL? 1           « nullptr e NULL dão o mesmo ponteiro nulo</pre>
+
+<p>Por que criar outra forma, se <code>NULL</code> já existia? Porque <code>NULL</code> é uma <a href="macros.html">macro</a>, e cada biblioteca a define de um jeito: às vezes como <code>((void *)0)</code>, às vezes como um simples <code>0</code>. Um <code>0</code> também é um número inteiro, e isso causa confusões em situações avançadas (como nas <a href="variadicas.html">funções variádicas</a>, as de número variável de argumentos, como o próprio <code>printf</code>). O <code>nullptr</code> é sempre e só um ponteiro nulo, com um tipo próprio, <code>nullptr_t</code>.</p>
+
+<p>O preço: só existe a partir do C23. Com um padrão mais antigo, ele não é reconhecido:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c17 -Wall -Wextra nullptr.c -o nullptr
+nullptr.c: In function ‘main’:
+nullptr.c:4:14: error: ‘nullptr’ undeclared (first use in this function)
+    4 |     int *p = nullptr;
+      |              ^~~~~~~
+nullptr.c:4:14: note: each undeclared identifier is reported only once for each function it appears in</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Desde</th><th>Precisa de</th><th>Use?</th></tr>
+<tr><td><code>NULL</code></td><td>sempre (C89)</td><td><code>stddef.h</code> (ou <code>stdio.h</code>, <code>stdlib.h</code>, <code>string.h</code>…)</td><td><strong>Sim.</strong> Funciona em qualquer compilador e é o que 99% do código existente usa. É o que este guia usa na maioria dos exemplos.</td></tr>
+<tr><td><code>nullptr</code></td><td><span class="versao">C23</span></td><td>nada</td><td><strong>Sim</strong>, em código novo, se todos que vão compilar têm gcc 13+ ou Clang 16+.</td></tr>
+<tr><td><code>0</code></td><td>sempre</td><td>nada</td><td>Evite: funciona, mas não deixa claro que é um ponteiro.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. Ir até a gaveta "NENHUMA": desreferenciar o nulo</h2>
+<p>Testar <code>p</code> é seguro. Usar <code>*p</code> quando <code>p</code> é nulo, não: é ir até a gaveta zero, que não pertence ao programa.</p>
+
+<pre class="file" data-file="desref.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int *p = NULL;
+
+    printf("Antes de usar o ponteiro\n");
+    printf("*p vale %d\n", *p);
+    printf("Depois\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra desref.c -o desref
+$ ./desref
+Antes de usar o ponteiro
+Falha de segmentação     (imagem do núcleo gravada) ./desref
+$ echo $?
+139</pre>
+
+<p>Compilou sem nenhum aviso, rodou a primeira linha e morreu na segunda. Vamos ler a mensagem, que é do terminal (o <code>bash</code>), não do seu programa:</p>
+
+<dl class="anatomy">
+  <dt>Falha de segmentação</dt><dd>Em inglês, <em>segmentation fault</em> ("segfault"). O programa tentou mexer numa região da memória (um "segmento") que não é dele, e o sistema o matou na hora.</dd>
+  <dt>(imagem do núcleo gravada)</dt><dd>Em inglês, <em>core dumped</em>. O sistema pode salvar uma "fotografia" da memória do programa no momento da morte, para estudar depois com um depurador. Você não precisa fazer nada com ela agora; a aula <a href="depuracao-gdb.html">Depurar com gdb</a> mostra outro jeito de investigar.</dd>
+  <dt>./desref</dt><dd>Qual comando morreu.</dd>
+  <dt>139</dt><dd>O código de saída. Quando um programa é morto por um sinal, o código é 128 + o número do sinal. A falha de segmentação é o sinal 11 (<code>SIGSEGV</code>): 128 + 11 = 139. Veja <a href="sinais.html">Sinais</a>.</dd>
+</dl>
+
+<p>No editor do guia, o resultado é o mesmo: a saída mostra <code>Antes de usar o ponteiro</code>, depois <code>Falha de segmentação (imagem do núcleo gravada)</code> e <code>[código de saída: 139]</code>. Experimente:</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e veja o programa morrer na linha do <code>*p</code>. Depois troque <code>NULL</code> por <code>&amp;x</code> e rode de novo.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int x = 42;
+    int *p = NULL;
+
+    printf("x vale %d\n", x);
+    printf("Antes de usar o ponteiro\n");
+    printf("*p vale %d\n", *p);
+    printf("Depois\n");
+    return 0;
+}
+</pre>
+</div>
+
+<h3>A saída que some: o <em>buffer</em> do <code>printf</code></h3>
+<p>Agora rode o mesmo programa mandando a saída para um arquivo, em vez da tela:</p>
+
+<pre class="term" data-cwd="~/c">$ ./desref &gt; saida.txt
+Falha de segmentação     (imagem do núcleo gravada) ./desref &gt; saida.txt
+$ cat saida.txt
+$                            « o arquivo está vazio!</pre>
+
+<p>O <code>Antes de usar o ponteiro</code> sumiu. O motivo: o <code>printf</code> não escreve cada letra na hora. Ele junta o texto num <strong>buffer</strong> (um balde) e só despeja o balde de tempos em tempos, porque despejar de uma vez é muito mais rápido. A regra da glibc é:</p>
+
+<ul>
+  <li>Se a saída é a <strong>tela</strong> (um terminal), o balde é despejado a cada <code>\n</code>. Por isso, no terminal, a primeira linha apareceu.</li>
+  <li>Se a saída é um <strong>arquivo</strong> ou um <strong>pipe</strong> (<code>|</code>), o balde só é despejado quando enche (alguns milhares de letras) ou quando o programa termina normalmente.</li>
+</ul>
+
+<p>Um programa morto por falha de segmentação não termina normalmente: o balde vai junto com ele, sem ser despejado. Isso engana muita gente, que procura o erro no lugar errado ("se nem o primeiro <code>printf</code> apareceu, o erro deve estar antes dele!"). Duas defesas:</p>
+
+<ul>
+  <li><code>fflush(stdout);</code> logo depois de um <code>printf</code> força o despejo do balde.</li>
+  <li>Mensagens de depuração vão para <code>stderr</code>, que não tem balde: <code>fprintf(stderr, "chegou aqui\n");</code> (veja <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>).</li>
+</ul>
+
+<div class="note">
+<strong>Pergunta sem <code>\n</code></strong>
+Um <code>printf("Quantos anos? ");</code> sem <code>\n</code> fica no balde mesmo no terminal. Ele aparece na tela porque, quando o programa vai ler o teclado (<code>scanf</code>), a glibc despeja o balde antes. Se a entrada vier de um pipe (<code>echo 7 | ./programa</code>), esse despejo não acontece, e uma pergunta seguida de uma falha de segmentação some da tela. Você vai ver isso no "Quando dá errado".
+</div>
+
+<h3>Descobrir a linha do erro</h3>
+<p>A mensagem <code>Falha de segmentação</code> não diz <strong>onde</strong> o programa morreu. Num programa grande, a forma mais rápida de descobrir é compilar com o <strong>AddressSanitizer</strong> (<code>-fsanitize=address</code>) e <code>-g</code>, que acrescentam ao programa um "fiscal" da memória:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address desref.c -o desref-asan
+$ ./desref-asan
+Antes de usar o ponteiro
+AddressSanitizer:DEADLYSIGNAL
+=================================================================
+==58052==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000 (pc 0x59e405ebe267 bp 0x7ffe3dcbd470 sp 0x7ffe3dcbd460 T0)
+==58052==The signal is caused by a READ memory access.
+==58052==Hint: address points to the zero page.
+    #0 0x59e405ebe267 in main /home/ana/c/desref.c:7
+    #1 0x77d13c82a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #2 0x77d13c82a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #3 0x59e405ebe144 in _start (/home/ana/c/desref-asan+0x1144) (BuildId: ad68b35b2bf9594f8e02e5ad0bf5bd7c00457bab)
+…                            « (os valores dos registradores do processador, omitidos aqui)
+SUMMARY: AddressSanitizer: SEGV /home/ana/c/desref.c:7 in main
+==58052==ABORTING</pre>
+
+<p>As linhas importantes: <code>SEGV on unknown address 0x000000000000</code> (falha de segmentação no endereço zero, o nulo), <code>READ memory access</code> (foi uma leitura), <code>address points to the zero page</code> (o endereço está na "página zero", a do nulo) e, principalmente, <code>desref.c:7</code>: <strong>linha 7</strong>, a do <code>*p</code>. O sanitizer não funciona no editor do guia; a aula <a href="sanitizers.html">Sanitizers</a> mostra mais.</p>
+
+<hr>
+
+<h2>4. Sempre conferir antes de usar</h2>
+<p>O uso típico do ponteiro nulo: um ponteiro que <strong>talvez</strong> receba um endereço. Ele nasce nulo, alguma decisão do programa pode apontá-lo para algo, e, antes de usar, você confere. A Ana quer ver os pontos de uma pessoa do jogo:</p>
+
+<pre class="file" data-file="escolha.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos_ana = 30;
+    int pontos_bia = 45;
+    int *escolhido = NULL;
+    int opcao = 0;
+
+    printf("Ver os pontos de quem? (1 = Ana, 2 = Bia): ");
+    if (scanf("%d", &amp;opcao) != 1) {
+        printf("Digite um número.\n");
+        return 1;
+    }
+
+    if (opcao == 1) {
+        escolhido = &amp;pontos_ana;
+    } else if (opcao == 2) {
+        escolhido = &amp;pontos_bia;
+    }
+
+    if (escolhido != NULL) {
+        printf("Pontos: %d\n", *escolhido);
+    } else {
+        printf("Opção inválida.\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra escolha.c -o escolha
+$ ./escolha
+Ver os pontos de quem? (1 = Ana, 2 = Bia): 2
+Pontos: 45
+$ ./escolha
+Ver os pontos de quem? (1 = Ana, 2 = Bia): 7
+Opção inválida.          « nenhum if apontou o ponteiro: ele continuou NULL</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Por que está lá</th></tr>
+<tr><td><code>int *escolhido = NULL;</code></td><td>O ponteiro nasce dizendo "nenhum". Nunca com lixo.</td></tr>
+<tr><td><code>escolhido = &amp;pontos_bia;</code></td><td>Só aponta se a opção for válida.</td></tr>
+<tr><td><code>if (escolhido != NULL)</code></td><td>Antes de ir até a gaveta, confere se existe gaveta.</td></tr>
+</table>
+</div>
+
+<p>Esse padrão vai aparecer o tempo todo, porque muitas funções da biblioteca padrão <strong>devolvem <code>NULL</code> quando falham</strong>: <code>fopen</code> quando o arquivo não abre (<a href="arquivos.html">Arquivos</a>), <code>malloc</code> quando falta memória (<a href="malloc-free.html">malloc e free</a>), <code>strchr</code> quando não acha a letra (<a href="funcoes-string.html">Funções de String</a>), <code>getenv</code> quando a variável não existe (<a href="getenv.html">getenv</a>), <code>fgets</code> quando a entrada acaba (<a href="fgets.html">fgets</a>). Em todas, a regra é a mesma: <strong>confira o retorno antes de usar</strong>.</p>
+
+<h3>Conferir e usar na mesma condição</h3>
+<p>O <code>&amp;&amp;</code> só olha o lado direito se o esquerdo for verdadeiro (veja <a href="operadores-logicos.html">Operadores Lógicos</a>). Por isso esta linha é segura, mesmo quando <code>p</code> é nulo:</p>
+
+<pre class="file">if (p != NULL &amp;&amp; *p &gt; 0) {     // se p for nulo, o *p nem é avaliado
+    printf("positivo\n");
+}
+</pre>
+
+<p>Inverter a ordem (<code>*p &gt; 0 &amp;&amp; p != NULL</code>) estraga tudo: o <code>*p</code> seria avaliado primeiro.</p>
+
+<div class="tryc" data-stdin="7" data-goal="out:Opção inválida,exit:0">
+<p class="try-task"><strong>Missão:</strong> este programa esqueceu de conferir o ponteiro, e com a entrada <code>7</code> ele morre com <code>Falha de segmentação</code>. Rode para ver. Depois coloque um <code>if</code> que só mostra os pontos quando <code>escolhido</code> não for nulo e, senão, mostra <code>Opção inválida.</code></p>
+<pre class="out">Ver os pontos de quem? (1 = Ana, 2 = Bia): 7
+Opção inválida.</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos_ana = 30;
+    int pontos_bia = 45;
+    int *escolhido = NULL;
+    int opcao = 0;
+
+    printf("Ver os pontos de quem? (1 = Ana, 2 = Bia): ");
+    if (scanf("%d", &amp;opcao) != 1) {
+        printf("Digite um número.\n");
+        return 1;
+    }
+
+    if (opcao == 1) {
+        escolhido = &amp;pontos_ana;
+    } else if (opcao == 2) {
+        escolhido = &amp;pontos_bia;
+    }
+
+    printf("Pontos: %d\n", *escolhido);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos_ana = 30;
+    int pontos_bia = 45;
+    int *escolhido = NULL;
+    int opcao = 0;
+
+    printf("Ver os pontos de quem? (1 = Ana, 2 = Bia): ");
+    if (scanf("%d", &amp;opcao) != 1) {
+        printf("Digite um número.\n");
+        return 1;
+    }
+
+    if (opcao == 1) {
+        escolhido = &amp;pontos_ana;
+    } else if (opcao == 2) {
+        escolhido = &amp;pontos_bia;
+    }
+
+    if (escolhido != NULL) {
+        printf("Pontos: %d\n", *escolhido);
+    } else {
+        printf("Opção inválida.\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Hábitos que evitam o problema</h2>
+<ol class="passo">
+  <li><strong>Todo ponteiro nasce com valor:</strong> o endereço de algo, ou <code>NULL</code>. Nunca <code>int *p;</code> sozinho.</li>
+  <li><strong>Confira antes de usar</strong> todo ponteiro que pode ser nulo, principalmente os que vêm de funções (<code>fopen</code>, <code>malloc</code>, <code>strchr</code>…).</li>
+  <li><strong>Depois de "jogar fora" o que o ponteiro apontava, volte-o para <code>NULL</code></strong>. Isso fará sentido em <a href="malloc-free.html">malloc e free</a>: um ponteiro para memória já devolvida parece válido, mas não é; um nulo, pelo menos, dá para testar.</li>
+  <li><strong>Compile com <code>-Wall -Wextra</code></strong> e, quando um programa morrer sem explicação, rode-o com <code>-g -fsanitize=address</code>.</li>
+</ol>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"‘NULL’ undeclared": faltou o <code>#include</code></strong>
+<pre class="file" data-file="semnull.c">int main(void) {
+    int *p = NULL;
+    return p == 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semnull.c -o semnull
+semnull.c: In function ‘main’:
+semnull.c:2:14: error: ‘NULL’ undeclared (first use in this function)
+    2 |     int *p = NULL;
+      |              ^~~~
+semnull.c:1:1: note: ‘NULL’ is defined in header ‘&lt;stddef.h&gt;’; this is probably fixable by adding ‘#include &lt;stddef.h&gt;’
+  +++ |+#include &lt;stddef.h&gt;
+    1 | int main(void) {
+semnull.c:2:14: note: each undeclared identifier is reported only once for each function it appears in
+    2 |     int *p = NULL;
+      |              ^~~~</pre>
+<p><strong>O que significa:</strong> "<code>NULL</code> não foi declarado". <code>NULL</code> não faz parte da linguagem: vem de um cabeçalho. O próprio gcc dá a dica: "<code>NULL</code> é definido em <code>&lt;stddef.h&gt;</code>; provavelmente se resolve acrescentando <code>#include &lt;stddef.h&gt;</code>". No editor, o Clang diz <code>use of undeclared identifier 'NULL'</code>.</p>
+<p><strong>Como consertar:</strong> inclua <code>&lt;stddef.h&gt;</code>, ou qualquer cabeçalho que você já usaria (<code>stdio.h</code>, <code>stdlib.h</code> e <code>string.h</code> também trazem o <code>NULL</code>). Ou, em C23, use <code>nullptr</code>, que não precisa de cabeçalho.</p>
+</div>
+
+<div class="cenario">
+<strong>"‘nullptr’ undeclared": padrão antigo</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c17 -Wall -Wextra nullptr.c -o nullptr
+nullptr.c: In function ‘main’:
+nullptr.c:4:14: error: ‘nullptr’ undeclared (first use in this function)
+    4 |     int *p = nullptr;
+      |              ^~~~~~~
+nullptr.c:4:14: note: each undeclared identifier is reported only once for each function it appears in</pre>
+<p><strong>O que significa:</strong> o <code>nullptr</code> só existe a partir do C23, e o comando pediu o C17.</p>
+<p><strong>Como consertar:</strong> compile com <code>-std=c23</code> (o gcc 15 já usa o C23 se você não pedir outro padrão) ou use <code>NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Falha de segmentação" e a pergunta sumiu</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra escolha-sem.c -o escolha-sem
+$ echo 7 | ./escolha-sem
+Falha de segmentação     (imagem do núcleo gravada) echo 7 | ./escolha-sem
+$ echo $?
+139</pre>
+<p><strong>O que aconteceu:</strong> é o programa da missão, sem o <code>if</code>. Com a opção 7, <code>escolhido</code> continuou <code>NULL</code>, e o <code>*escolhido</code> matou o programa. A pergunta "Ver os pontos de quem?" nem apareceu: ela estava no balde do <code>printf</code> (sem <code>\n</code>, e com a entrada vindo de um pipe), e o balde morreu junto. Digitando o 7 no teclado, a pergunta apareceria antes.</p>
+<p><strong>Como consertar:</strong> confira o ponteiro antes de usar (<code>if (escolhido != NULL)</code>). Para achar a linha, compile com <code>-g -fsanitize=address</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"O nulo aparece como <code>(nil)</code> no Linux e como <code>0</code> no editor"</strong>
+<p><strong>O que aconteceu:</strong> nada de errado. O formato que o <code>%p</code> usa para o nulo não é definido pelo padrão do C: cada biblioteca escolhe o seu. A glibc do Linux escreve <code>(nil)</code>; a biblioteca do editor escreve <code>0</code>.</p>
+<p><strong>Como resolver:</strong> para saber se um ponteiro é nulo, teste com <code>if (p == NULL)</code>; não dependa do texto que o <code>%p</code> mostra.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que faz</th></tr>
+<tr><td><code>int *p = NULL;</code></td><td>Cria um ponteiro que não aponta para nada (precisa de <code>stddef.h</code>, <code>stdio.h</code> ou outro cabeçalho padrão).</td></tr>
+<tr><td><code>int *p = nullptr;</code></td><td>O mesmo, em C23, sem cabeçalho.</td></tr>
+<tr><td><code>if (p != NULL)</code> / <code>if (p)</code></td><td>Verdadeiro se <code>p</code> aponta para algo.</td></tr>
+<tr><td><code>if (p == NULL)</code> / <code>if (!p)</code></td><td>Verdadeiro se <code>p</code> é nulo.</td></tr>
+<tr><td><code>if (p &amp;&amp; *p &gt; 0)</code></td><td>Confere e usa na mesma condição (o <code>*p</code> só roda se <code>p</code> não for nulo).</td></tr>
+<tr><td><code>*p</code> com <code>p</code> nulo</td><td>Falha de segmentação: o programa morre com código 139.</td></tr>
+<tr><td><code>printf("%p", (void *) NULL)</code></td><td><code>(nil)</code> no Linux; <code>0</code> no editor do guia.</td></tr>
+<tr><td><code>fflush(stdout);</code></td><td>Despeja o balde do <code>printf</code> agora.</td></tr>
+<tr><td><code>gcc -g -fsanitize=address …</code></td><td>Mostra a linha da falha de segmentação.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Nasce nulo</h3>
+<p>Complete para criar o ponteiro <code>achado</code> sem apontar para nada (use a forma que funciona em qualquer versão do C):</p>
+<div class="ex-code">int *achado = <input data-answer="NULL" aria-label="valor">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Conferir antes</h3>
+<p>Complete a condição para só usar <code>*p</code> quando <code>p</code> apontar para algo (forma longa):</p>
+<div class="ex-code">if (p <input data-answer="!= NULL|!=NULL" aria-label="comparação">) { printf("%d\n", *p); }</div>
+</div>
+
+<div class="exercise">
+<h3>3. O código</h3>
+<p>Um programa morreu com falha de segmentação. Qual número o <code>echo $?</code> mostra logo depois?</p>
+<div class="ex-code">$ echo $?  →  <input data-answer="139" aria-label="código"></div>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Por que <code>int *p = NULL;</code> é melhor que <code>int *p;</code>?</p>
+<label><input type="radio" name="q4"> Porque <code>NULL</code> faz o <code>*p</code> funcionar</label>
+<label><input type="radio" name="q4"> Porque <code>NULL</code> ocupa menos memória</label>
+<label><input type="radio" name="q4"> Não há diferença</label>
+<label><input type="radio" name="q4"> Porque um nulo pode ser testado com <code>if</code>; o lixo não</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Um programa morreu com falha de segmentação e o <code>printf("Início\n")</code> da primeira linha não apareceu no arquivo de saída. O mais provável é que…</p>
+<label><input type="radio" name="q5"> o erro está antes do <code>printf</code></label>
+<label><input type="radio" name="q5"> o texto ficou no buffer (balde) e morreu junto com o programa</label>
+<label><input type="radio" name="q5"> o <code>printf</code> não funciona com arquivos</label>
+<label><input type="radio" name="q5"> faltou o <code>#include &lt;stdio.h&gt;</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Qual condição é segura mesmo quando <code>p</code> é nulo?</p>
+<label><input type="radio" name="q6"> <code>if (*p &gt; 0 &amp;&amp; p != NULL)</code></label>
+<label><input type="radio" name="q6"> <code>if (*p != NULL)</code></label>
+<label><input type="radio" name="q6"> <code>if (p != NULL &amp;&amp; *p &gt; 0)</code></label>
+<label><input type="radio" name="q6"> <code>if (*p)</code></label>
+</div>
+
+<h3>Missão final: achou ou não achou?</h3>
+
+<div class="tryc" data-goal="out:Primeiro negativo: -15,out:Depois: 120 80 0 40 -3,src:if\s*\(\s*!?\s*achado">
+<p class="try-task"><strong>Missão:</strong> a Ana anotou os saldos de 5 clientes. Complete o programa: (1) no laço, quando achar o <strong>primeiro</strong> saldo negativo, faça <code>achado</code> apontar para ele (<code>&amp;saldos[i]</code>) e pare com <code>break</code>; (2) depois do laço, <strong>confira</strong> o <code>achado</code>: se não for nulo, mostre <code>Primeiro negativo: </code> e o valor, e zere esse saldo <strong>pelo ponteiro</strong>; se for nulo, mostre <code>Nenhum negativo</code>.</p>
+<pre class="out">Primeiro negativo: -15
+Depois: 120 80 0 40 -3</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int saldos[5] = {120, 80, -15, 40, -3};
+    int *achado = NULL;
+
+    for (int i = 0; i &lt; 5; i++) {
+        // se saldos[i] for negativo: aponte achado para ele e pare
+    }
+
+    // confira achado: mostre o valor e zere pelo ponteiro,
+    // ou mostre "Nenhum negativo"
+
+    printf("Depois:");
+    for (int i = 0; i &lt; 5; i++) {
+        printf(" %d", saldos[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int saldos[5] = {120, 80, -15, 40, -3};
+    int *achado = NULL;
+
+    for (int i = 0; i &lt; 5; i++) {
+        if (saldos[i] &lt; 0) {
+            achado = &amp;saldos[i];
+            break;
+        }
+    }
+
+    if (achado != NULL) {
+        printf("Primeiro negativo: %d\n", *achado);
+        *achado = 0;
+    } else {
+        printf("Nenhum negativo\n");
+    }
+
+    printf("Depois:");
+    for (int i = 0; i &lt; 5; i++) {
+        printf(" %d", saldos[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <strong>ponteiro nulo</strong> não aponta para nada, e, ao contrário do lixo, dá para testar.</li>
+  <li><code>NULL</code> vem dos cabeçalhos padrão (<code>stddef.h</code>, <code>stdio.h</code>, <code>stdlib.h</code>…) e funciona em qualquer C. <code>nullptr</code> é a palavra-chave do <span class="versao">C23</span>, sem cabeçalho.</li>
+  <li>Teste com <code>if (p != NULL)</code> ou <code>if (p)</code>; nulo vale falso.</li>
+  <li>Desreferenciar o nulo (<code>*p</code>) mata o programa: <code>Falha de segmentação (imagem do núcleo gravada)</code>, código <strong>139</strong>, no Linux e no editor.</li>
+  <li>Quando o programa morre, o que estava no balde do <code>printf</code> some (principalmente com a saída num arquivo ou pipe). Use <code>fflush(stdout)</code> ou <code>stderr</code> para mensagens de depuração, e <code>-g -fsanitize=address</code> para achar a linha.</li>
+  <li>Funções como <code>fopen</code>, <code>malloc</code>, <code>strchr</code> e <code>getenv</code> devolvem <code>NULL</code> quando falham: confira sempre. Próxima aula: <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
