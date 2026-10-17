@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Campos de Bits — guardar vários valores pequenos num só int | Guia C</title>
+<meta name="description" content="Campos de bits em C para quem está começando: unsigned ativo : 1;, quanto cabe em cada largura, quanto espaço se economiza com sizeof, o que acontece quando o valor não cabe, o int : 1 que vira -1, por que não dá para pegar o endereço de um campo e por que a ordem dos bits depende do compilador. Saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Campos de Bits</span></h1>
+
+<p class="intro">Muitas informações de um programa são <strong>pequenas</strong>: "o despertador está ligado?" (sim ou não), "que dia da semana?" (1 a 7), "que hora?" (0 a 23). Guardar cada uma num <code>unsigned</code> inteiro, que tem 32 bits, é como usar uma mala grande para levar um par de meias. Os <strong>campos de bits</strong> (<em>bit-fields</em>) deixam você dizer ao C quantos bits cada membro de uma <code>struct</code> precisa, e ele encaixa vários membros no mesmo espaço.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A sintaxe <code>unsigned ativo : 1;</code> e o que o número depois dos dois-pontos quer dizer.</li>
+  <li>Quantos valores cabem em 1, 2, 3… bits, e como escolher a largura.</li>
+  <li>Quanto espaço se economiza, medido com <code>sizeof</code>.</li>
+  <li>O que acontece quando você guarda um valor que <strong>não cabe</strong> (e o aviso do compilador).</li>
+  <li>A pegadinha do <code>int x : 1</code>, que guarda <code>-1</code> em vez de <code>1</code>.</li>
+  <li>Os limites: não dá para pegar o endereço de um campo (adeus, <code>scanf</code> direto), nem usar <code>sizeof</code> nele, e a ordem dos bits na memória depende do compilador.</li>
+</ul>
+</div>
+
+<p>Esta aula usa <strong>structs</strong> (veja <a href="structs.html">Structs</a>) e fala de <strong>bits</strong>, os zeros e uns que formam cada número (a aula <a href="memoria.html">Memória, Bits e Bytes</a> explica). Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: uma gaveta com divisórias</h2>
+<p>Imagine uma gaveta de cozinha. Você pode jogar tudo lá dentro, ou pôr <strong>divisórias</strong>: um espaço estreito para os palitos, um médio para as colheres, um largo para as conchas. A gaveta é a mesma; as divisórias só aproveitam melhor o espaço.</p>
+
+<p>Um <code>unsigned</code> é a gaveta: tem 32 bits. Um campo de bits é uma divisória: você diz "este membro usa 1 bit, este usa 5, este usa 6", e o compilador coloca todos, lado a lado, dentro da mesma gaveta de 32 bits.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Informação do despertador</th><th>Valores possíveis</th><th>Bits que bastam</th></tr>
+<tr><td>Está ligado?</td><td>0 ou 1</td><td>1 bit</td></tr>
+<tr><td>Hora</td><td>0 a 23</td><td>5 bits (cabem 0 a 31)</td></tr>
+<tr><td>Minuto</td><td>0 a 59</td><td>6 bits (cabem 0 a 63)</td></tr>
+<tr><td>Dia da semana</td><td>1 a 7</td><td>3 bits (cabem 0 a 7)</td></tr>
+<tr><td colspan="2"><strong>Total</strong></td><td><strong>15 bits</strong>: cabe numa gaveta só</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O problema: uma struct "folgada"</h2>
+<p>Primeiro, o despertador da Ana do jeito que você já sabe fazer, um <code>unsigned</code> para cada informação:</p>
+
+<pre class="file" data-file="semcampos.c">#include &lt;stdio.h&gt;
+
+struct Despertador {
+    unsigned ativo;
+    unsigned hora;
+    unsigned minuto;
+    unsigned dia;
+};
+
+int main(void) {
+    struct Despertador d = {1, 6, 30, 2};
+    printf("Toca às %02u:%02u no dia %u (ativo: %u)\n", d.hora, d.minuto, d.dia, d.ativo);
+    printf("sizeof: %zu bytes\n", sizeof d);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semcampos.c -o semcampos
+$ ./semcampos
+Toca às 06:30 no dia 2 (ativo: 1)
+sizeof: 16 bytes</pre>
+
+<p>Quatro membros de 4 bytes cada: <strong>16 bytes</strong>, ou 128 bits, para guardar 15 bits de informação. O <code>%02u</code> mostra o número sem sinal com dois dígitos, completando com zero à esquerda (veja <a href="formatos-printf.html">Formatos do printf</a>); o <code>sizeof</code> mede o tamanho em bytes (aula <a href="sizeof.html">sizeof</a>).</p>
+
+<hr>
+
+<h2>2. A sintaxe: dois-pontos e a largura</h2>
+<p>Agora o mesmo despertador com campos de bits. A única mudança está dentro da <code>struct</code>:</p>
+
+<pre class="file" data-file="campos.c">#include &lt;stdio.h&gt;
+
+struct Despertador {
+    unsigned ativo  : 1;
+    unsigned hora   : 5;
+    unsigned minuto : 6;
+    unsigned dia    : 3;
+};
+
+int main(void) {
+    struct Despertador d = {1, 6, 30, 2};
+    printf("Toca às %02u:%02u no dia %u (ativo: %u)\n", d.hora, d.minuto, d.dia, d.ativo);
+    printf("sizeof: %zu bytes\n", sizeof d);
+    d.hora = 23;
+    d.minuto = 59;
+    d.ativo = 0;
+    printf("Agora: %02u:%02u (ativo: %u)\n", d.hora, d.minuto, d.ativo);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>unsigned</dt><dd>O tipo do campo: inteiro <strong>sem sinal</strong> (só zero e positivos). É o tipo mais usado em campos de bits, e a seção 5 mostra por quê.</dd>
+  <dt>ativo</dt><dd>O nome do membro, como em qualquer <code>struct</code>.</dd>
+  <dt>: 1</dt><dd>A <strong>largura</strong> do campo, em bits. Leia "<code>ativo</code> ocupa 1 bit". Os espaços em volta dos dois-pontos são opcionais; aqui eles só alinham a coluna.</dd>
+  <dt>hora : 5</dt><dd>5 bits guardam de 0 a 31: sobra espaço para 0 a 23.</dd>
+  <dt>d.hora = 23;</dt><dd>Fora da <code>struct</code>, nada muda: você lê e escreve o campo com o ponto, como um membro comum.</dd>
+  <dt>{1, 6, 30, 2}</dt><dd>A inicialização também é igual: os valores vão na ordem dos membros.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra campos.c -o campos
+$ ./campos
+Toca às 06:30 no dia 2 (ativo: 1)
+sizeof: 4 bytes          « eram 16
+Agora: 23:59 (ativo: 0)</pre>
+
+<p>Mesmo comportamento, <strong>um quarto</strong> do espaço. Os quatro campos somam 15 bits e couberam numa única "gaveta" de 4 bytes (32 bits); os 17 bits que sobram ficam sem uso.</p>
+
+<div class="tryc" data-file="campos.c">
+<p class="try-task"><strong>Experimente:</strong> rode e veja o <code>sizeof</code>. Depois acrescente um campo <code>unsigned segundo : 6;</code>: o tamanho muda? (São 21 bits: ainda cabe em 32.) Agora acrescente <code>unsigned ano : 12;</code> (33 bits no total) e veja o que acontece com o <code>sizeof</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+struct Despertador {
+    unsigned ativo  : 1;
+    unsigned hora   : 5;
+    unsigned minuto : 6;
+    unsigned dia    : 3;
+};
+
+int main(void) {
+    struct Despertador d = {1, 6, 30, 2};
+    printf("Toca às %02u:%02u no dia %u (ativo: %u)\n", d.hora, d.minuto, d.dia, d.ativo);
+    printf("sizeof: %zu bytes\n", sizeof d);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Quando os bits passam de 32, o compilador abre uma <strong>segunda gaveta</strong> e o <code>sizeof</code> pula para 8. O tamanho cresce de 4 em 4 bytes, porque cada "gaveta" é um <code>unsigned</code> inteiro.</p>
+
+<hr>
+
+<h2>3. Quanto cabe em cada largura</h2>
+<p>Cada bit a mais <strong>dobra</strong> a quantidade de valores. Com <em>n</em> bits sem sinal, cabem os números de 0 até 2<sup>n</sup> − 1:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Largura</th><th>Valores (<code>unsigned</code>)</th><th>Serve para…</th></tr>
+<tr><td><code>: 1</code></td><td>0 a 1</td><td>sim/não, ligado/desligado</td></tr>
+<tr><td><code>: 2</code></td><td>0 a 3</td><td>4 opções (P, M, G, GG)</td></tr>
+<tr><td><code>: 3</code></td><td>0 a 7</td><td>dia da semana</td></tr>
+<tr><td><code>: 4</code></td><td>0 a 15</td><td>mês (1 a 12)</td></tr>
+<tr><td><code>: 5</code></td><td>0 a 31</td><td>dia do mês, hora</td></tr>
+<tr><td><code>: 6</code></td><td>0 a 63</td><td>minuto, segundo</td></tr>
+<tr><td><code>: 8</code></td><td>0 a 255</td><td>um byte inteiro (uma cor RGB)</td></tr>
+<tr><td><code>: 12</code></td><td>0 a 4095</td><td>ano</td></tr>
+</table>
+</div>
+
+<p>A regra para escolher: ache o <strong>maior valor</strong> que o campo vai guardar e pegue a menor largura em que ele cabe. Para o mês (até 12): 3 bits vão até 7 (não dá); 4 bits vão até 15 (dá).</p>
+
+<hr>
+
+<h2>4. Quando o valor não cabe</h2>
+<p>O campo <code>nivel</code> abaixo tem 3 bits (0 a 7). O que acontece se a Ana tentar guardar 9?</p>
+
+<pre class="file" data-file="estouro.c">#include &lt;stdio.h&gt;
+
+struct Volume {
+    unsigned nivel : 3;
+};
+
+int main(void) {
+    struct Volume v = {0};
+    v.nivel = 7;
+    printf("nível 7 -&gt; %u\n", v.nivel);
+    v.nivel = 9;
+    printf("nível 9 -&gt; %u\n", v.nivel);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estouro.c -o estouro
+estouro.c: In function ‘main’:
+estouro.c:11:15: warning: unsigned conversion from ‘int’ to ‘unsigned char:3’ changes value from ‘9’ to ‘1’ [-Woverflow]
+   11 |     v.nivel = 9;
+      |               ^
+$ ./estouro
+nível 7 -&gt; 7
+nível 9 -&gt; 1             « o 9 virou 1</pre>
+
+<dl class="anatomy">
+  <dt>unsigned conversion from ‘int’ to ‘unsigned char:3’</dt><dd>"Conversão sem sinal de <code>int</code> para um campo de 3 bits". O gcc descreve o campo como <code>unsigned char:3</code>: o tipo pequeno que ele usou por dentro e a largura.</dd>
+  <dt>changes value from ‘9’ to ‘1’</dt><dd>"Muda o valor de 9 para 1". O compilador já fez a conta e avisa o resultado.</dd>
+  <dt>[-Woverflow]</dt><dd>A regra do aviso: <em>overflow</em> é "transbordar". Ela vem ligada mesmo sem <code>-Wall</code>.</dd>
+</dl>
+
+<p>Por que 1? Em binário, 9 é <code>1001</code>. O campo só tem lugar para os <strong>3 bits da direita</strong> (<code>001</code>); o bit que sobra à esquerda é jogado fora. É como um hodômetro de carro com 3 dígitos: depois de 999 ele volta para 000. Em conta: o valor guardado é o resto da divisão por 8 (9 % 8 = 1).</p>
+
+<p>O Clang, compilador do editor, avisa com outras palavras: <code>implicit truncation from 'int' to bit-field changes value from 9 to 1 [-Wbitfield-constant-conversion]</code> ("truncamento implícito", isto é, corte escondido).</p>
+
+<h3>Com uma variável, nenhum aviso</h3>
+<p>O compilador só avisa quando o número está escrito direto no código. Se o valor vem de uma variável, o corte acontece <strong>em silêncio</strong>:</p>
+
+<pre class="file" data-file="estouro2.c">#include &lt;stdio.h&gt;
+
+struct Volume {
+    unsigned nivel : 3;
+};
+
+int main(void) {
+    struct Volume v = {0};
+    for (unsigned i = 5; i &lt;= 10; i++) {
+        v.nivel = i;
+        printf("guardei %2u, ficou %u\n", i, v.nivel);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estouro2.c -o estouro2     « nenhum aviso
+$ ./estouro2
+guardei  5, ficou 5
+guardei  6, ficou 6
+guardei  7, ficou 7
+guardei  8, ficou 0      « deu a volta
+guardei  9, ficou 1
+guardei 10, ficou 2</pre>
+
+<p>Para campos <code>unsigned</code>, esse "dar a volta" é garantido pela linguagem: não é erro, é aritmética de relógio. Mas quase nunca é o que você queria. Por isso, <strong>confira o valor antes</strong> de guardar num campo pequeno (<code>if (i &lt;= 7)</code>) ou dê ao campo a largura certa.</p>
+
+<div class="tryc" data-file="estouro2.c" data-goal="out:guardei 10\, ficou 10">
+<p class="try-task"><strong>Missão:</strong> o volume da caixinha de som da Ana agora vai até 10, mas o campo <code>nivel</code> só guarda até 7. Mude <strong>só a largura</strong> do campo para que a última linha mostre <code>guardei 10, ficou 10</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+struct Volume {
+    unsigned nivel : 3;
+};
+
+int main(void) {
+    struct Volume v = {0};
+    for (unsigned i = 5; i &lt;= 10; i++) {
+        v.nivel = i;
+        printf("guardei %2u, ficou %u\n", i, v.nivel);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+struct Volume {
+    unsigned nivel : 4;
+};
+
+int main(void) {
+    struct Volume v = {0};
+    for (unsigned i = 5; i &lt;= 10; i++) {
+        v.nivel = i;
+        printf("guardei %2u, ficou %u\n", i, v.nivel);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. A pegadinha do <code>int x : 1</code></h2>
+<p>E se o campo for <code>int</code> (com sinal) em vez de <code>unsigned</code>? Com sinal, um dos bits serve para dizer se o número é negativo. Num campo de <strong>1 bit</strong>, esse bit é o único que existe:</p>
+
+<pre class="file" data-file="sinal.c">#include &lt;stdio.h&gt;
+
+struct Flags {
+    int ligado : 1;
+    bool aceso : 1;
+};
+
+int main(void) {
+    struct Flags f = {0};
+    f.ligado = 1;
+    f.aceso = 1;
+    printf("ligado = %d\n", f.ligado);
+    printf("aceso  = %d\n", f.aceso);
+    if (f.ligado == 1) printf("ligado é 1\n");
+    else printf("ligado NÃO é 1\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sinal.c -o sinal
+sinal.c: In function ‘main’:
+sinal.c:14:18: warning: comparison is always false due to limited range of data type [-Wtype-limits]
+   14 |     if (f.ligado == 1) printf("ligado é 1\n");
+      |                  ^~
+$ ./sinal
+ligado = -1              « guardei 1, saiu -1
+aceso  = 1
+ligado NÃO é 1</pre>
+
+<ul>
+  <li>Um campo <code>int</code> de 1 bit só guarda dois valores: <strong>0 e −1</strong>. O 1 não existe nele.</li>
+  <li>O gcc percebeu na comparação: <em>comparison is always false due to limited range of data type</em> = "a comparação é sempre falsa por causa do alcance limitado do tipo".</li>
+  <li>O Clang (editor) avisa já na atribuição: <code>implicit truncation from 'int' to a one-bit wide bit-field changes value from 1 to -1</code>.</li>
+  <li>O campo <code>bool aceso : 1</code> funciona como esperado: guarda 0 ou 1. Em C23, <code>bool</code> é palavra-chave <span class="versao">C23</span>; no C99 a C17, escreva <code>#include &lt;stdbool.h&gt;</code> (veja <a href="bool.html">bool</a>).</li>
+</ul>
+
+<div class="warning">
+<strong>Regra prática: campo de bits é <code>unsigned</code> (ou <code>bool</code>)</strong>
+<p>Use <code>int</code> com sinal só se o campo precisa mesmo guardar negativos, e com largura suficiente (um <code>int x : 4</code> guarda de −8 a 7). E nunca escreva só <code>int</code> esperando sem sinal: num campo de bits, se o <code>int</code> "puro" tem sinal ou não é uma <strong>escolha do compilador</strong>. Escreva <code>signed int</code> ou <code>unsigned int</code> para não deixar dúvida.</p>
+</div>
+
+<hr>
+
+<h2>6. Que tipos podem ter campos de bits</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo do campo</th><th>O padrão C garante?</th><th>Observação</th></tr>
+<tr><td><code>unsigned int</code> (ou só <code>unsigned</code>)</td><td>Sim</td><td>O mais comum. Largura de 1 a 32 no gcc e no editor.</td></tr>
+<tr><td><code>signed int</code></td><td>Sim</td><td>Guarda negativos; cuidado com largura 1.</td></tr>
+<tr><td><code>int</code></td><td>Sim</td><td>Com sinal ou não: depende do compilador. Evite.</td></tr>
+<tr><td><code>bool</code></td><td>Sim <span class="versao">C99</span></td><td>Largura 1. Ótimo para sim/não.</td></tr>
+<tr><td><code>unsigned char</code>, <code>uint8_t</code>, <code>unsigned long</code>…</td><td>Não (cada compilador decide)</td><td>O gcc e o Clang aceitam; um compilador mais antigo pode recusar.</td></tr>
+</table>
+</div>
+
+<p>O tipo também define a <strong>largura máxima</strong>. Um campo não pode ser mais largo que o próprio tipo:</p>
+
+<pre class="file" data-file="largura.c">#include &lt;stdio.h&gt;
+
+struct Errado {
+    unsigned grande : 40;
+};
+
+int main(void) {
+    struct Errado e = {0};
+    printf("%zu\n", sizeof e);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra largura.c -o largura
+largura.c:4:14: error: width of ‘grande’ exceeds its type
+    4 |     unsigned grande : 40;
+      |              ^~~~~~</pre>
+
+<p><em>Width of ‘grande’ exceeds its type</em> = "a largura de <code>grande</code> passa do tamanho do tipo". Um <code>unsigned</code> tem 32 bits. O Clang é mais detalhado: <code>width of bit-field 'grande' (40 bits) exceeds the width of its type (32 bits)</code>. Para 40 bits, use um tipo maior, como <code>uint64_t</code> (aula <a href="stdint.html">Inteiros de Tamanho Fixo</a>), que o gcc e o Clang aceitam.</p>
+
+<hr>
+
+<h2>7. O que você não pode fazer com um campo</h2>
+<p>O menor pedaço de memória que tem <strong>endereço</strong> é o byte. Um campo de bits pode começar no meio de um byte, então ele <strong>não tem endereço próprio</strong>. Isso traz três consequências.</p>
+
+<h3>Não dá para usar <code>&amp;</code> (nem <code>scanf</code> direto)</h3>
+<pre class="file" data-file="endereco.c">#include &lt;stdio.h&gt;
+
+struct Despertador {
+    unsigned ativo  : 1;
+    unsigned hora   : 5;
+};
+
+int main(void) {
+    struct Despertador d = {1, 6};
+    printf("Nova hora: ");
+    scanf("%u", &amp;d.hora);
+    printf("Hora: %u\n", d.hora);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra endereco.c -o endereco
+endereco.c: In function ‘main’:
+endereco.c:11:17: error: cannot take address of bit-field ‘hora’
+   11 |     scanf("%u", &amp;d.hora);
+      |                 ^</pre>
+
+<p><em>Cannot take address of bit-field ‘hora’</em> = "não é possível pegar o endereço do campo de bits <code>hora</code>". O <code>scanf</code> precisa de um endereço para saber onde guardar (aula <a href="scanf.html">scanf</a>), e o campo não tem um. No Clang: <code>address of bit-field requested</code> ("foi pedido o endereço de um campo de bits"). Pelo mesmo motivo, também não existe ponteiro para um campo (<code>unsigned *p = &amp;d.hora;</code> dá o mesmo erro).</p>
+
+<p>O conserto: leia numa variável comum e depois copie para o campo. De quebra, você confere o valor antes, e o problema da seção 4 some.</p>
+
+<div class="tryc" data-file="endereco.c" data-stdin="7" data-goal="out:Hora: 7">
+<p class="try-task"><strong>Missão:</strong> este programa não compila. Crie uma variável <code>unsigned h = 0;</code>, leia nela com o <code>scanf</code> e, se ela for no máximo 23, guarde em <code>d.hora</code>. A entrada já tem o número 7; o programa tem que mostrar <code>Hora: 7</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+struct Despertador {
+    unsigned ativo  : 1;
+    unsigned hora   : 5;
+};
+
+int main(void) {
+    struct Despertador d = {1, 6};
+    printf("Nova hora: ");
+    scanf("%u", &amp;d.hora);
+    printf("Hora: %u\n", d.hora);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+struct Despertador {
+    unsigned ativo  : 1;
+    unsigned hora   : 5;
+};
+
+int main(void) {
+    struct Despertador d = {1, 6};
+    unsigned h = 0;
+    printf("Nova hora: ");
+    if (scanf("%u", &amp;h) == 1 &amp;&amp; h &lt;= 23) {
+        d.hora = h;
+    }
+    printf("Hora: %u\n", d.hora);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Não dá para usar <code>sizeof</code> num campo</h3>
+<p>O <code>sizeof</code> mede em bytes, e um campo de 5 bits não tem um número inteiro de bytes:</p>
+
+<pre class="term" data-cwd="~/c">$ cat sizeofcampo.c
+#include &lt;stdio.h&gt;
+
+struct D { unsigned hora : 5; };
+
+int main(void) {
+    struct D d = {6};
+    printf("%zu\n", sizeof d.hora);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra sizeofcampo.c -o sizeofcampo
+sizeofcampo.c: In function ‘main’:
+sizeofcampo.c:7:28: error: ‘sizeof’ applied to a bit-field
+    7 |     printf("%zu\n", sizeof d.hora);
+      |                            ^</pre>
+
+<p>"<code>sizeof</code> aplicado a um campo de bits". O <code>sizeof d</code>, da <code>struct</code> inteira, continua valendo.</p>
+
+<h3>Não existe array de campos de bits</h3>
+<p><code>unsigned luzes[8] : 1;</code> não existe em C. Se a Ana quer 8 interruptores, ela escreve 8 campos com nomes (<code>sala</code>, <code>cozinha</code>…) ou usa um número comum e os <strong>operadores de bits</strong> (aulas <a href="operadores-bits.html">Operadores de Bits</a> e <a href="mascaras-bits.html">Máscaras e Flags</a>), que permitem escolher o bit por um índice.</p>
+
+<hr>
+
+<h2>8. Onde cada campo fica: depende do compilador</h2>
+<p>Dentro da "gaveta", qual campo fica nos bits da direita e qual fica nos da esquerda? O padrão C <strong>não diz</strong>: cada compilador (e cada tipo de processador) escolhe. Este programa copia os bytes da <code>struct</code> para um <code>unsigned</code> comum com <code>memcpy</code> (aula <a href="funcoes-string.html">Funções de String</a>) e mostra o número em hexadecimal:</p>
+
+<pre class="file" data-file="ordem.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+struct Tres {
+    unsigned a : 4;
+    unsigned b : 4;
+    unsigned c : 8;
+};
+
+int main(void) {
+    struct Tres t = {0};
+    t.a = 0x1;
+    t.b = 0x2;
+    t.c = 0xFF;
+    unsigned bruto = 0;
+    memcpy(&amp;bruto, &amp;t, sizeof bruto);
+    printf("bruto = 0x%08X\n", bruto);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ordem.c -o ordem
+$ ./ordem
+bruto = 0x0000FF21</pre>
+
+<p>Lendo da direita para a esquerda (cada dígito hexadecimal são 4 bits): <code>1</code> é o <code>a</code>, <code>2</code> é o <code>b</code>, <code>FF</code> é o <code>c</code>. No gcc do laboratório e no Clang do editor, o <strong>primeiro campo fica nos bits mais baixos</strong> (os da direita), e os dois mostram <code>0x0000FF21</code>. Em outros processadores e compiladores, a ordem pode ser a contrária, ou o compilador pode deixar espaços entre os campos.</p>
+
+<div class="warning">
+<strong>Não use campos de bits para formatos "de fora"</strong>
+<p>Se os bits vão sair do programa (gravados num arquivo, enviados pela rede, escritos num registrador de um aparelho), a posição exata importa, e com campos de bits ela muda de compilador para compilador. Nesses casos, use um inteiro de tamanho fixo (<code>uint32_t</code>) e monte os bits você mesmo com <code>&lt;&lt;</code>, <code>|</code> e <code>&amp;</code> (aula <a href="mascaras-bits.html">Máscaras e Flags</a>). Campos de bits são ótimos para dados que <strong>ficam dentro</strong> do programa.</p>
+</div>
+
+<h3>Campos sem nome e largura zero</h3>
+<p>Dois recursos menos usados, para quando você quer controlar o espaço:</p>
+
+<pre class="file" data-file="zero.c">#include &lt;stdio.h&gt;
+
+struct A { unsigned x : 4; unsigned y : 4; };
+struct B { unsigned x : 4; unsigned : 0; unsigned y : 4; };
+struct C { unsigned x : 4; unsigned : 4; unsigned y : 4; };
+
+int main(void) {
+    printf("A=%zu B=%zu C=%zu\n", sizeof(struct A), sizeof(struct B), sizeof(struct C));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra zero.c -o zero
+$ ./zero
+A=4 B=8 C=4</pre>
+
+<dl class="anatomy">
+  <dt>unsigned : 0;</dt><dd>Campo <strong>sem nome</strong> e de largura <strong>zero</strong>: "feche esta gaveta; o próximo campo começa numa nova". Por isso <code>B</code> tem 8 bytes.</dd>
+  <dt>unsigned : 4;</dt><dd>Campo sem nome de 4 bits: um "espaço reservado" que ninguém usa, só para empurrar o <code>y</code> para a frente. <code>C</code> continua com 4 bytes (12 bits no total).</dd>
+</dl>
+
+<hr>
+
+<h2>9. Vale a pena? Formas diferentes de guardar sim/não</h2>
+<p>Economizar 12 bytes num despertador não muda nada. Campos de bits fazem diferença quando há <strong>muitos</strong> registros: um milhão de despertadores ocupam 16 MB sem campos e 4 MB com eles. Mas cada leitura de um campo custa algumas instruções a mais (o processador precisa "recortar" os bits), e há os limites que você viu.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Espaço</th><th>Prós</th><th>Contras</th></tr>
+<tr><td>Membros comuns (<code>unsigned ativo;</code>, <code>bool ativo;</code>)</td><td>Maior</td><td>Simples; tem endereço; <code>scanf</code> direto</td><td>Desperdiça memória</td></tr>
+<tr><td>Campos de bits (<code>unsigned ativo : 1;</code>)</td><td>Pequeno</td><td>Usa como membro comum, com nome</td><td>Sem <code>&amp;</code>; ordem dos bits não é portátil; corte silencioso</td></tr>
+<tr><td>Um inteiro com máscaras (<code>uint8_t flags;</code> e <code>flags &amp; ATIVO</code>)</td><td>Pequeno</td><td>Posição exata dos bits; combina várias flags numa conta</td><td>Código menos legível; exige os <a href="operadores-bits.html">operadores de bits</a></td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar:</strong> comece com membros comuns. Use campos de bits quando a memória importa (muitos registros) e os dados ficam dentro do programa. Use máscaras quando os bits saem do programa (arquivos, rede, hardware) ou quando você precisa testar várias flags de uma vez.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: cannot take address of bit-field ‘hora’</code></strong>
+<p><strong>O que significa:</strong> você usou <code>&amp;</code> num campo de bits, quase sempre num <code>scanf</code> ou para criar um ponteiro. No Clang: <code>address of bit-field requested</code>.</p>
+<p><strong>Como consertar:</strong> leia numa variável comum (<code>unsigned h;</code>), confira o valor e copie: <code>d.hora = h;</code>. Se você precisa mesmo de ponteiro para o membro, ele não pode ser campo de bits.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: unsigned conversion from ‘int’ to ‘unsigned char:3’ changes value from ‘9’ to ‘1’ [-Woverflow]</code></strong>
+<p><strong>O que significa:</strong> o número não cabe na largura do campo e vai ser cortado (só os bits da direita ficam). No Clang: <code>implicit truncation from 'int' to bit-field changes value</code>.</p>
+<p><strong>Como consertar:</strong> aumente a largura (com 3 bits, o máximo é 7; com 4, é 15). Lembre que, com variáveis, o corte acontece <strong>sem aviso</strong>: confira o valor antes de guardar.</p>
+</div>
+
+<div class="cenario">
+<strong>O campo guarda 1, mas mostra <code>-1</code></strong>
+<p><strong>O que significa:</strong> o campo é <code>int</code> (com sinal) de largura 1, que só guarda 0 e −1. O gcc avisa <code>comparison is always false due to limited range of data type</code> se você comparar com 1; o Clang avisa na atribuição.</p>
+<p><strong>Como consertar:</strong> declare como <code>unsigned ativo : 1;</code> ou <code>bool ativo : 1;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: width of ‘grande’ exceeds its type</code></strong>
+<p><strong>O que significa:</strong> a largura pedida é maior que o número de bits do tipo (32 para <code>unsigned</code>).</p>
+<p><strong>Como consertar:</strong> diminua a largura ou use um tipo maior, como <code>uint64_t</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: ‘sizeof’ applied to a bit-field</code></strong>
+<p><strong>O que significa:</strong> <code>sizeof</code> mede bytes, e um campo de bits não tem tamanho em bytes. No Clang: <code>invalid application of 'sizeof' to bit-field</code>.</p>
+<p><strong>Como consertar:</strong> meça a <code>struct</code> inteira (<code>sizeof d</code>). A largura do campo é a que você escreveu depois dos dois-pontos.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>unsigned nome : N;</code></td><td>Campo sem sinal de N bits: guarda de 0 a 2<sup>N</sup> − 1</td></tr>
+<tr><td><code>signed int nome : N;</code></td><td>Campo com sinal: de −2<sup>N−1</sup> a 2<sup>N−1</sup> − 1 (com N = 1: só 0 e −1)</td></tr>
+<tr><td><code>bool nome : 1;</code></td><td>Campo sim/não (0 ou 1)</td></tr>
+<tr><td><code>unsigned : N;</code></td><td>N bits sem nome, reservados (espaço vazio)</td></tr>
+<tr><td><code>unsigned : 0;</code></td><td>O próximo campo começa numa nova unidade de armazenamento</td></tr>
+<tr><td><code>x.nome = v;</code></td><td>Guarda <code>v</code>; se não couber, ficam só os N bits da direita</td></tr>
+<tr><td><code>&amp;x.nome</code>, <code>sizeof x.nome</code></td><td>Erro de compilação: campo de bits não tem endereço nem tamanho em bytes</td></tr>
+<tr><td><code>sizeof x</code></td><td>Tamanho da <code>struct</code> inteira (múltiplo do tamanho da unidade, 4 bytes para <code>unsigned</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Largura do mês</h3>
+<p>Complete com a <strong>menor</strong> largura que guarda os meses de 1 a 12:</p>
+<div class="ex-code">unsigned mes : <input data-answer="4" aria-label="largura">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Sim ou não</h3>
+<p>Complete com o tipo que guarda 0 ou 1 num campo de 1 bit sem a pegadinha do −1 (escreva um tipo de uma palavra só, sem include):</p>
+<div class="ex-code"><input data-answer="unsigned|bool" aria-label="tipo"> ligado : 1;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Um campo <code>unsigned nivel : 3;</code> recebe <code>v.nivel = 10;</code>. O que fica guardado?</p>
+<label><input type="radio" name="q3"> 10</label>
+<label><input type="radio" name="q3"> 7 (o maior valor que cabe)</label>
+<label><input type="radio" name="q3"> 2 (sobram os 3 bits da direita: 10 % 8)</label>
+<label><input type="radio" name="q3"> Erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que <code>scanf("%u", &amp;d.hora);</code> não compila quando <code>hora</code> é campo de bits?</p>
+<label><input type="radio" name="q4"> Porque <code>%u</code> não serve para campos de bits; o certo é <code>%b</code></label>
+<label><input type="radio" name="q4"> Porque um campo de bits não tem endereço próprio</label>
+<label><input type="radio" name="q4"> Porque falta o <code>#include &lt;stdint.h&gt;</code></label>
+<label><input type="radio" name="q4"> Porque <code>hora</code> tem menos de 8 bits</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Uma <code>struct</code> tem só <code>unsigned a : 10; unsigned b : 10;</code>. Quanto dá o <code>sizeof</code> no gcc do laboratório?</p>
+<label><input type="radio" name="q5"> 4 (20 bits cabem numa unidade de 32)</label>
+<label><input type="radio" name="q5"> 8</label>
+<label><input type="radio" name="q5"> 3 (20 bits arredondados para bytes)</label>
+<label><input type="radio" name="q5"> 20</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. A Ana quer gravar num arquivo um cabeçalho de 32 bits com posições de bits definidas por um documento oficial. O que usar?</p>
+<label><input type="radio" name="q6"> Campos de bits, porque a ordem é sempre a mesma</label>
+<label><input type="radio" name="q6"> Campos <code>int x : 1</code></label>
+<label><input type="radio" name="q6"> Uma <code>struct</code> com um <code>bool</code> por bit</label>
+<label><input type="radio" name="q6"> Um <code>uint32_t</code> com máscaras e deslocamentos, porque a posição dos campos de bits depende do compilador</label>
+</div>
+
+<h3>Missão final: a data em 4 bytes</h3>
+
+<div class="tryc" data-file="data.c" data-goal="out:17/10/2026,out:sizeof: 4,src:dia\s*:\s*\d,src:mes\s*:\s*\d,src:ano\s*:\s*\d">
+<p class="try-task"><strong>Missão:</strong> a agenda da Ana guarda milhares de datas, e cada uma ocupa 12 bytes. Transforme os três membros em <strong>campos de bits</strong> com a menor largura possível para cada um (dia de 1 a 31, mês de 1 a 12, ano até 4095), para a data caber em <strong>4 bytes</strong>. A saída tem que ser:</p>
+<pre class="out">17/10/2026
+sizeof: 4</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+struct Data {
+    unsigned dia;
+    unsigned mes;
+    unsigned ano;
+};
+
+int main(void) {
+    struct Data hoje = {17, 10, 2026};
+    printf("%02u/%02u/%u\n", hoje.dia, hoje.mes, hoje.ano);
+    printf("sizeof: %zu\n", sizeof hoje);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+struct Data {
+    unsigned dia : 5;
+    unsigned mes : 4;
+    unsigned ano : 12;
+};
+
+int main(void) {
+    struct Data hoje = {17, 10, 2026};
+    printf("%02u/%02u/%u\n", hoje.dia, hoje.mes, hoje.ano);
+    printf("sizeof: %zu\n", sizeof hoje);
+    return 0;
+}
+</pre>
+</div>
+
+<p>No laboratório, a solução mostrou as mesmas duas linhas: <code>5 + 4 + 12 = 21</code> bits, uma unidade de 32 bits só. Experimente pôr <code>ano : 11</code>: o 2026 ainda cabe (11 bits vão até 2047), mas a agenda quebraria em 2048.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Campo de bits: <code>unsigned nome : N;</code> dentro de uma <code>struct</code>. O membro ocupa só N bits, e vários campos dividem a mesma unidade (um <code>unsigned</code> de 32 bits).</li>
+  <li>Com N bits sem sinal cabem de 0 a 2<sup>N</sup> − 1. Escolha a menor largura em que o maior valor cabe.</li>
+  <li>O despertador da Ana caiu de 16 para 4 bytes. A economia importa quando há muitos registros.</li>
+  <li>Valor que não cabe é cortado (ficam os bits da direita). Com número fixo, o compilador avisa (<code>-Woverflow</code>); com variável, não: confira antes.</li>
+  <li>Use <code>unsigned</code> ou <code>bool</code>. Um <code>int x : 1</code> só guarda 0 e −1.</li>
+  <li>Campo de bits não tem endereço (<code>&amp;</code>, <code>scanf</code>, ponteiro) nem <code>sizeof</code>, e não existe array de campos.</li>
+  <li>A posição dos campos dentro da unidade depende do compilador. Para arquivos, rede e hardware, use máscaras.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
