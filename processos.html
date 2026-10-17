@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Processos — fork, exec e wait | Guia C</title>
+<meta name="description" content="Processos em C para iniciantes: PID e PPID com getpid e getppid, fork e o valor que ele devolve no pai e no filho, memória separada, wait e waitpid com WIFEXITED e WEXITSTATUS, execvp para rodar outro programa, o padrão fork + exec + wait de um shell, system, processos zumbis e o printf que sai duas vezes. Saídas reais do gcc 15 no Linux e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Processos</span> (fork e exec)</h1>
+
+<p class="intro">Quando você digita <code>ls</code> no terminal, o Bash não "vira" o <code>ls</code>: ele cria um <strong>processo novo</strong>, põe o <code>ls</code> para rodar nele, espera terminar e mostra o prompt de novo. Todo programa que roda no seu computador é um processo, e qualquer programa em C pode criar outros. Nesta aula você vai usar as três chamadas que fazem isso no Linux e no macOS: <code>fork</code> (criar uma cópia do processo), <code>exec</code> (trocar o programa que o processo roda) e <code>wait</code> (esperar um processo terminar). No fim, você terá escrito o coração de um shell.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um processo, o <strong>PID</strong> e o <strong>PPID</strong> (<code>getpid</code> e <code>getppid</code>).</li>
+  <li>Como o <code>fork</code> cria um processo filho, e como saber se você é o pai ou o filho.</li>
+  <li>Por que pai e filho não dividem as variáveis.</li>
+  <li>Como esperar o filho com <code>wait</code>/<code>waitpid</code> e ler o código de saída com <code>WIFEXITED</code> e <code>WEXITSTATUS</code>.</li>
+  <li>Como rodar outro programa com <code>execvp</code>, e o padrão <code>fork</code> + <code>exec</code> + <code>wait</code>.</li>
+  <li>Três armadilhas: processos zumbis, o <code>printf</code> que sai duas vezes e o <code>exit</code> no filho.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/processos</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Os números de processo (PID) mudam a cada execução; no seu computador eles serão bem maiores (algo como 48213).</p>
+
+<div class="warning">
+<strong><code>fork</code>, <code>exec</code> e <code>wait</code> não são do C padrão:</strong> são do <strong>POSIX</strong>, o padrão do Linux, do macOS e dos outros Unix. No Windows, use o WSL (aula <a href="instalar-windows-mac.html">Instalar no Windows e no Mac</a>). O editor do guia também não tem processos: lá, <code>fork</code> dá <code>error: use of undeclared identifier 'fork'</code>. Por isso esta aula usa o terminal, e as caixas "Experimente" praticam as partes que rodam em qualquer lugar.
+</div>
+
+<hr>
+
+<h2>A ideia: a receita e a cozinheira</h2>
+<p>Um <strong>programa</strong> é uma receita escrita num caderno: o arquivo <code>./loja</code> no disco. Um <strong>processo</strong> é alguém <strong>cozinhando</strong> aquela receita agora, com os ingredientes na bancada (a memória) e o dedo apontando em que linha está. Pode haver três pessoas fazendo o mesmo bolo ao mesmo tempo: um programa, três processos.</p>
+<ul>
+  <li><code>fork</code> ("garfo", ou bifurcação: o caminho que se divide em dois) é a cozinheira se <strong>clonar</strong>. A cópia tem a mesma receita, os mesmos ingredientes e está na mesma linha. A partir daí, cada uma segue sozinha.</li>
+  <li><code>exec</code> ("execute", executar) é a cozinheira jogar a receita fora e pegar <strong>outra</strong>: continua sendo a mesma pessoa, fazendo outra coisa.</li>
+  <li><code>wait</code> ("esperar") é a cozinheira original esperar a cópia terminar para saber como foi.</li>
+</ul>
+
+<hr>
+
+<h2>1. PID: o número de cada processo</h2>
+<p>O sistema dá a cada processo um número único, o <strong>PID</strong> ("process ID", identidade do processo). Todo processo também tem um <strong>pai</strong>, o processo que o criou; o número do pai é o <strong>PPID</strong> ("parent process ID").</p>
+
+<pre class="file" data-file="pid.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void) {
+    printf("Meu PID: %d\n", (int) getpid());
+    printf("PID de quem me chamou: %d\n", (int) getppid());
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#define _POSIX_C_SOURCE 200809L</dt><dd>Pede aos cabeçalhos as funções e os tipos do POSIX (versão de 2008). Com <code>-std=c23</code>, sem esta linha, o tipo <code>pid_t</code> não existe (o cenário "Quando dá errado" mostra). Todos os programas desta aula começam com ela.</dd>
+  <dt>#include &lt;unistd.h&gt;</dt><dd>"Unix standard", o cabeçalho do POSIX com <code>getpid</code>, <code>fork</code>, <code>exec…</code> e <code>sleep</code>.</dd>
+  <dt>getpid()</dt><dd>"Get process ID": o PID deste processo, num tipo <code>pid_t</code>. O <code>(int)</code> é para o <code>%d</code> do <code>printf</code>.</dd>
+  <dt>getppid()</dt><dd>"Get parent process ID": o PID do pai.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra pid.c -o pid
+$ echo $$                       « o PID do próprio Bash
+3
+$ ./pid
+Meu PID: 54
+PID de quem me chamou: 3</pre>
+
+<p>O pai do <code>./pid</code> é o Bash (o <code>$$</code> do Bash é o PID dele): foi ele que criou o processo para rodar o programa. Rode de novo e o PID do programa muda, porque é outro processo; o do Bash continua o mesmo.</p>
+
+<hr>
+
+<h2>2. fork: um processo vira dois</h2>
+
+<pre class="file" data-file="fork1.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void) {
+    printf("Antes do fork (PID %d)\n", (int) getpid());
+    fork();
+    printf("Depois do fork (PID %d)\n", (int) getpid());
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra fork1.c -o fork1
+$ ./fork1
+Antes do fork (PID 55)
+Depois do fork (PID 56)
+Depois do fork (PID 55)</pre>
+
+<p>Uma linha "Antes" e <strong>duas</strong> "Depois". O <code>fork</code> criou uma cópia do processo 55, o processo 56, e as duas cópias continuaram da linha seguinte ao <code>fork</code>. Cada uma rodou o seu <code>printf</code>. Quem aparece primeiro depende de qual o sistema deixou rodar antes: pode mudar de uma execução para outra.</p>
+
+<h3>Quem é o pai e quem é o filho?</h3>
+<p>Para cada processo fazer uma coisa diferente, use o valor que o <code>fork</code> devolve. Ele "volta duas vezes", uma em cada processo, com valores diferentes:</p>
+
+<pre class="file" data-file="fork2.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void) {
+    pid_t pid = fork();
+
+    if (pid == -1) {
+        perror("fork");
+        return 1;
+    } else if (pid == 0) {
+        printf("Sou o filho. Meu PID é %d; meu pai é o %d.\n", (int) getpid(), (int) getppid());
+    } else {
+        printf("Sou o pai (PID %d). Meu filho nasceu com o PID %d.\n", (int) getpid(), (int) pid);
+    }
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th><code>fork()</code> devolve</th><th>Em qual processo</th><th>Quer dizer</th></tr>
+<tr><td><code>0</code></td><td>no <strong>filho</strong></td><td>"Você é a cópia." (O filho descobre o próprio PID com <code>getpid</code>.)</td></tr>
+<tr><td>um número maior que 0</td><td>no <strong>pai</strong></td><td>"Deu certo; este é o PID do seu filho."</td></tr>
+<tr><td><code>-1</code></td><td>no pai (não houve filho)</td><td>Falhou: sistema sem memória ou limite de processos. O motivo fica em <code>errno</code> (aula <a href="errno.html">errno e perror</a>).</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra fork2.c -o fork2
+$ ./fork2
+Sou o pai (PID 57). Meu filho nasceu com o PID 58.
+Sou o filho. Meu PID é 58; meu pai é o 57.</pre>
+
+<p>O mesmo <code>if</code>, rodando em dois processos, foi por dois caminhos: no pai, <code>pid</code> valia 58; no filho, 0.</p>
+
+<hr>
+
+<h2>3. Cada um com a sua memória</h2>
+<p>A cópia é completa: o filho recebe uma cópia de <strong>todas</strong> as variáveis do pai. Mas são cópias. Depois do <code>fork</code>, o que um muda o outro não vê:</p>
+
+<pre class="file" data-file="memoria.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main(void) {
+    int moedas = 10;
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        moedas = moedas + 90;
+        printf("Filho: tenho %d moedas.\n", moedas);
+        return 0;
+    }
+
+    wait(NULL);
+    printf("Pai: tenho %d moedas.\n", moedas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra memoria.c -o memoria
+$ ./memoria
+Filho: tenho 100 moedas.
+Pai: tenho 10 moedas.</pre>
+
+<p>O filho ganhou 90 moedas, mas só na bancada dele. O <code>wait(NULL)</code> (próxima seção) fez o pai esperar o filho terminar antes de mostrar as suas: 10, como antes. Para dois processos trocarem dados, é preciso um canal de comunicação, como um arquivo, um <em>pipe</em> (o <code>|</code> do terminal) ou o código de saída. Se você quer partes do programa rodando ao mesmo tempo <strong>dividindo</strong> as variáveis, o que você procura são as <a href="threads.html">threads</a>.</p>
+
+<hr>
+
+<h2>4. wait e waitpid: esperar o filho e saber como foi</h2>
+<p>O pai pode esperar o filho terminar e receber o <strong>código de saída</strong> dele, o mesmo número que o <code>echo $?</code> mostra no terminal (aula <a href="exit.html">exit e atexit</a>):</p>
+
+<pre class="file" data-file="esperar.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main(void) {
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("fork");
+        return 1;
+    }
+
+    if (pid == 0) {
+        printf("Filho: conferindo o estoque...\n");
+        sleep(1);
+        printf("Filho: faltam 3 produtos.\n");
+        exit(3);
+    }
+
+    int status;
+    printf("Pai: esperando o filho %d terminar.\n", (int) pid);
+    waitpid(pid, &amp;status, 0);
+
+    if (WIFEXITED(status)) {
+        printf("Pai: o filho terminou com o código %d.\n", WEXITSTATUS(status));
+    } else if (WIFSIGNALED(status)) {
+        printf("Pai: o filho foi morto pelo sinal %d.\n", WTERMSIG(status));
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;sys/wait.h&gt;</dt><dd>O cabeçalho do <code>wait</code>, do <code>waitpid</code> e das macros <code>W…</code>.</dd>
+  <dt>exit(3);</dt><dd>O filho termina com o código 3 (aqui, "faltam 3 produtos").</dd>
+  <dt>waitpid(pid, &amp;status, 0)</dt><dd>"Wait for PID": espera <strong>aquele</strong> filho terminar e guarda em <code>status</code> como foi. O <code>0</code> são as opções (nenhuma). O <code>wait(&amp;status)</code> espera qualquer filho; <code>wait(NULL)</code> espera sem querer saber o resultado.</dd>
+  <dt>WIFEXITED(status)</dt><dd>"Wait if exited": verdadeiro se o filho terminou normalmente (<code>return</code> ou <code>exit</code>).</dd>
+  <dt>WEXITSTATUS(status)</dt><dd>"Wait exit status": o código de saída, de 0 a 255.</dd>
+  <dt>WIFSIGNALED(status)</dt><dd>Verdadeiro se o filho foi morto por um sinal (aula <a href="sinais.html">Sinais</a>); <code>WTERMSIG</code> diz qual.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra esperar.c -o esperar
+$ ./esperar
+Pai: esperando o filho 62 terminar.
+Filho: conferindo o estoque...
+Filho: faltam 3 produtos.
+Pai: o filho terminou com o código 3.</pre>
+
+<p>O pai ficou parado no <code>waitpid</code> durante o segundo em que o filho dormiu, e só continuou quando o filho terminou. Por que macros, e não o <code>status</code> direto? Porque o <code>status</code> guarda várias informações num número só: o código de saída fica nos bits 8 a 15, e o número do sinal, nos bits 0 a 6. As macros tiram cada pedaço com operações de bits (aula <a href="operadores-bits.html">Operadores de Bits</a>). A missão abaixo faz isso à mão.</p>
+
+<div class="tryc" data-goal="out:768: terminou com o código 3,out:11: morto pelo sinal 11,out:32512: terminou com o código 127,out:15: morto pelo sinal 15">
+<p class="try-task"><strong>Missão:</strong> o editor do guia não tem <code>fork</code>, mas dá para entender o <code>status</code> aqui mesmo. Num <code>status</code> do Linux, o código de saída é o byte que começa no bit 8, e o sinal são os 7 bits de baixo. Complete as duas funções: <code>codigo_de_saida</code> deve devolver <code>(status &gt;&gt; 8) &amp; 0xFF</code> e <code>sinal</code> deve devolver <code>status &amp; 0x7F</code>. (O 32512 é o que o <code>system</code> do editor devolve: você vai ver na seção 6.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int codigo_de_saida(int status) {
+    return status;
+}
+
+int sinal(int status) {
+    return status;
+}
+
+void explicar(int status) {
+    if (sinal(status) == 0) {
+        printf("%5d: terminou com o código %d\n", status, codigo_de_saida(status));
+    } else {
+        printf("%5d: morto pelo sinal %d\n", status, sinal(status));
+    }
+}
+
+int main(void) {
+    int exemplos[] = {768, 11, 0, 32512, 15};
+    for (int i = 0; i &lt; 5; i++) {
+        explicar(exemplos[i]);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int codigo_de_saida(int status) {
+    return (status &gt;&gt; 8) &amp; 0xFF;
+}
+
+int sinal(int status) {
+    return status &amp; 0x7F;
+}
+
+void explicar(int status) {
+    if (sinal(status) == 0) {
+        printf("%5d: terminou com o código %d\n", status, codigo_de_saida(status));
+    } else {
+        printf("%5d: morto pelo sinal %d\n", status, sinal(status));
+    }
+}
+
+int main(void) {
+    int exemplos[] = {768, 11, 0, 32512, 15};
+    for (int i = 0; i &lt; 5; i++) {
+        explicar(exemplos[i]);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<p>768 é 3 × 256: o filho do <code>esperar.c</code> (código 3). 11 é um filho morto por <code>SIGSEGV</code>, e 15, por <code>SIGTERM</code>. Num programa de verdade, use sempre as macros: o padrão POSIX não promete que os bits fiquem nesses lugares em todo sistema.</p>
+
+<hr>
+
+<h2>5. exec: trocar de programa</h2>
+<p>A família <code>exec</code> põe <strong>outro programa</strong> para rodar no processo atual. O PID continua o mesmo, mas o código, as variáveis e tudo o mais são trocados pelos do programa novo. Se der certo, o <code>exec</code> <strong>nunca volta</strong>: não sobrou nada do programa antigo para onde voltar.</p>
+
+<pre class="file" data-file="exec1.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void) {
+    printf("Vou virar o wc...\n");
+    fflush(stdout);
+    char *args[] = {"wc", "-l", "compras.txt", NULL};
+    execvp("wc", args);
+    perror("execvp");
+    return 1;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>fflush(stdout);</dt><dd>Esvazia o buffer do <code>printf</code> antes da troca. O <code>exec</code> joga fora a memória do programa antigo, inclusive o texto que ainda estivesse esperando no buffer (aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>).</dd>
+  <dt>char *args[] = {"wc", "-l", "compras.txt", NULL};</dt><dd>Os argumentos do programa novo: viram o <code>argv</code> dele (aula <a href="argc-argv.html">Argumentos da Linha de Comando</a>). O primeiro é o nome do programa (o <code>argv[0]</code>), e a lista <strong>tem de terminar com <code>NULL</code></strong>: é assim que o <code>exec</code> sabe onde ela acaba.</dd>
+  <dt>execvp("wc", args)</dt><dd>Troca este programa pelo <code>wc</code> ("word count", contar palavras; com <code>-l</code>, conta linhas). O <code>v</code> quer dizer que os argumentos vêm num vetor (array); o <code>p</code>, que o programa é procurado nas pastas do <code>PATH</code>, como o terminal faz (aula <a href="getenv.html">Variáveis de Ambiente</a>).</dd>
+  <dt>perror("execvp"); return 1;</dt><dd>Só roda se o <code>exec</code> <strong>falhou</strong> (o programa não existe, por exemplo).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/processos">$ printf "arroz\nfeijão\n" &gt; compras.txt
+$ gcc -std=c23 -Wall -Wextra exec1.c -o exec1
+$ ./exec1
+Vou virar o wc...
+2 compras.txt</pre>
+
+<p>A segunda linha foi escrita pelo <code>wc</code>, rodando no mesmo processo que antes era o <code>exec1</code>. O <code>perror</code> e o <code>return 1</code> nunca rodaram.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Argumentos</th><th>Procura no <code>PATH</code>?</th></tr>
+<tr><td><code>execvp("wc", args)</code></td><td>Num array terminado em <code>NULL</code></td><td>Sim</td></tr>
+<tr><td><code>execlp("wc", "wc", "-l", "compras.txt", (char *) NULL)</code></td><td>Um por um ("l" de lista), terminando em <code>NULL</code></td><td>Sim</td></tr>
+<tr><td><code>execv("/usr/bin/wc", args)</code></td><td>Array</td><td>Não: caminho completo</td></tr>
+<tr><td><code>execl("/usr/bin/wc", "wc", "-l", …, (char *) NULL)</code></td><td>Lista</td><td>Não</td></tr>
+<tr><td><code>execve</code>, <code>execle</code></td><td>Como <code>execv</code>/<code>execl</code>, mais as variáveis de ambiente ("e")</td><td>Não</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>6. fork + exec + wait: o coração de um shell</h2>
+<p>Sozinho, o <code>exec</code> acaba com o seu programa. A combinação que o Bash usa para rodar cada comando é: <strong><code>fork</code></strong> (criar um filho), <strong><code>exec</code></strong> no filho (o filho vira o comando) e <strong><code>wait</code></strong> no pai (esperar e pegar o código de saída). Esta função faz exatamente isso:</p>
+
+<pre class="file" data-file="rodar.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int rodar(char *args[]) {
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("fork");
+        return -1;
+    }
+    if (pid == 0) {
+        execvp(args[0], args);
+        perror(args[0]);
+        _exit(127);
+    }
+
+    int status;
+    waitpid(pid, &amp;status, 0);
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    return 128 + WTERMSIG(status);
+}
+
+int main(void) {
+    char *eco[] = {"echo", "Olá da lojinha!", NULL};
+    char *lista[] = {"ls", "compras.txt", NULL};
+    char *falta[] = {"ls", "nao-existe.txt", NULL};
+    char *errado[] = {"lss", NULL};
+
+    printf("[código %d]\n", rodar(eco));
+    printf("[código %d]\n", rodar(lista));
+    printf("[código %d]\n", rodar(falta));
+    printf("[código %d]\n", rodar(errado));
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>if (pid == 0) { execvp(…); … }</code></td><td>Só o filho entra aqui e vira o comando.</td></tr>
+<tr><td><code>perror(args[0]); _exit(127);</code></td><td>Se o <code>exec</code> falhou, o filho avisa e termina com 127, o mesmo código que o Bash usa para "comando não encontrado". O <code>_exit</code> (com sublinhado) termina <strong>sem</strong> esvaziar os buffers: o porquê está nos cenários do fim.</td></tr>
+<tr><td><code>waitpid(pid, &amp;status, 0)</code></td><td>Só o pai chega aqui: espera o comando terminar.</td></tr>
+<tr><td><code>return 128 + WTERMSIG(status);</code></td><td>Se o comando morreu por um sinal, devolve 128 + o sinal, a mesma conta do Bash.</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra rodar.c -o rodar
+$ ./rodar
+Olá da lojinha!
+[código 0]
+compras.txt
+[código 0]
+ls: não foi possível acessar 'nao-existe.txt': Arquivo ou diretório inexistente
+[código 2]
+lss: No such file or directory
+[código 127]</pre>
+
+<p>Quatro comandos, quatro processos filhos, quatro códigos. O <code>ls</code> devolveu 2 ("arquivo não encontrado", um código do próprio <code>ls</code>), e o <code>lss</code>, que não existe, fez o <code>execvp</code> falhar: o <code>perror</code> mostrou o motivo e o filho saiu com 127. Junte isso a um laço que lê uma linha com <code>fgets</code> e a separa em palavras, e você tem um shell de verdade.</p>
+
+<h3>system: o atalho</h3>
+<p>O C padrão tem uma função que faz <code>fork</code> + <code>exec</code> + <code>wait</code> num passo só: <code>system</code>, de <code>&lt;stdlib.h&gt;</code>. Ela entrega o texto inteiro para o shell (<code>/bin/sh</code>) rodar:</p>
+
+<pre class="file" data-file="sistema.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int r1 = system("ls compras.txt");
+    printf("system devolveu %d\n", r1);
+    int r2 = system("lss");
+    printf("system devolveu %d\n", r2);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra sistema.c -o sistema
+$ ./sistema
+compras.txt
+system devolveu 0
+sh: 1: lss: not found
+system devolveu 32512</pre>
+
+<p>O <code>system</code> devolve o <code>status</code> cru, o mesmo número do <code>waitpid</code>: 32512 é 127 × 256, "terminou com o código 127" (o da missão da seção 4). É prático, mas tem dois problemas: roda um shell inteiro a mais, e, se o texto tiver algo que o usuário digitou, ele pode "injetar" comandos seus (um nome de arquivo como <code>x; rm -rf ~</code>). Com <code>execvp</code>, cada argumento vai separado e nada é interpretado.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> no editor do guia o <code>system</code> compila, mas não existe shell: os dois comandos dão <code>not found</code> e devolvem 32512. Use a ideia da missão da seção 4 e mostre também o código de saída: <code>(r1 &gt;&gt; 8) &amp; 0xFF</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int r1 = system("ls compras.txt");
+    printf("system devolveu %d\n", r1);
+    int r2 = system("lss");
+    printf("system devolveu %d\n", r2);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>7. Processos zumbis</h2>
+<p>Quando um filho termina, o sistema guarda o código de saída dele até o pai pedir com <code>wait</code>. Enquanto o pai não pede, o filho já morreu mas continua na tabela de processos: é um <strong>zumbi</strong>.</p>
+
+<pre class="file" data-file="zumbi.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        return 0;                 // o filho termina na hora
+    }
+    printf("Filho %d terminou, mas não vou esperar por ele.\n", (int) pid);
+    sleep(30);                    // o pai fica 30 s sem chamar wait
+    return 0;
+}
+</pre>
+
+<p>A Ana roda o programa em segundo plano (o <code>&amp;</code>) e, um segundo depois, pede ao <code>ps</code> ("process status", situação dos processos) a lista do pai (<code>--pid $!</code>) e dos filhos dele (<code>--ppid $!</code>):</p>
+
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra zumbi.c -o zumbi
+$ ./zumbi &amp; sleep 1; ps -o pid,ppid,stat,args --pid $! --ppid $!
+[1] 4
+Filho 6 terminou, mas não vou esperar por ele.
+    PID    PPID STAT COMMAND
+      4       3 S    ./zumbi
+      6       4 Z    [zumbi] &lt;defunct&gt;
+$ kill $!; wait $!; ps -o pid,ppid,stat,args --pid $! --ppid $!
+[1]+  Terminado                  ./zumbi
+    PID    PPID STAT COMMAND</pre>
+
+<p>Na coluna <code>STAT</code>, o pai está <code>S</code> ("sleeping", dormindo) e o filho, <code>Z</code> ("zombie"), com a palavra <code>&lt;defunct&gt;</code> ("defunto"). Um zumbi não gasta memória nem processador, só uma vaga na tabela; mas um programa que cria milhares de filhos sem esperar esgota as vagas. Quando o pai morreu (o <code>kill</code>), o sistema recolheu o zumbi, e a lista ficou vazia. A regra: <strong>todo <code>fork</code> tem o seu <code>wait</code></strong>, como todo <code>malloc</code> tem o seu <code>free</code>.</p>
+
+<hr>
+
+<h2>Qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th></tr>
+<tr><td>Rodar um comando simples, com texto fixo escrito por você</td><td><code>system("…")</code> (C padrão; funciona até no Windows)</td></tr>
+<tr><td>Rodar um programa com argumentos vindos do usuário, e saber o código de saída</td><td><code>fork</code> + <code>execvp</code> + <code>waitpid</code></td></tr>
+<tr><td>Trocar o seu programa por outro, sem voltar</td><td><code>execvp</code> sozinho</td></tr>
+<tr><td>Fazer duas coisas ao mesmo tempo, cada uma com a sua memória (se uma quebrar, a outra continua)</td><td><code>fork</code></td></tr>
+<tr><td>Fazer duas coisas ao mesmo tempo dividindo as variáveis</td><td><a href="threads.html">Threads</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: unknown type name ‘pid_t’</code></strong>
+<p>O programa usa <code>pid_t</code> e só tem <code>&lt;stdio.h&gt;</code> e <code>&lt;unistd.h&gt;</code>, sem o <code>#define _POSIX_C_SOURCE</code>:</p>
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra semtipo.c -o semtipo
+semtipo.c: In function ‘main’:
+semtipo.c:5:5: error: unknown type name ‘pid_t’
+    5 |     pid_t pid = fork();
+      |     ^~~~~</pre>
+<p><strong>O que significa:</strong> "nome de tipo desconhecido". Com <code>-std=c23</code>, o gcc pede à glibc só o que é do C padrão, e o <code>pid_t</code> é do POSIX. (Sem o <code>-std</code>, o gcc usa o modo GNU, que liga o POSIX sozinho; por isso muitos exemplos da internet funcionam sem a linha.)</p>
+<p><strong>Como consertar:</strong> <code>#define _POSIX_C_SOURCE 200809L</code> na primeira linha, antes de qualquer <code>#include</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘wait’</code></strong>
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra semwait.c -o semwait
+semwait.c: In function ‘main’:
+semwait.c:10:5: error: implicit declaration of function ‘wait’ [-Wimplicit-function-declaration]
+   10 |     wait(NULL);
+      |     ^~~~</pre>
+<p><strong>O que significa:</strong> o <code>wait</code> não está no <code>&lt;unistd.h&gt;</code>. No C23, chamar uma função sem declaração é erro (aula <a href="prototipos.html">Protótipos</a>).</p>
+<p><strong>Como consertar:</strong> <code>#include &lt;sys/wait.h&gt;</code>, que traz <code>wait</code>, <code>waitpid</code> e as macros <code>W…</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O texto do <code>printf</code> sai duas vezes</strong>
+<pre class="file" data-file="dobrado.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main(void) {
+    printf("Recibo da lojinha: ");
+    pid_t pid = fork();
+    if (pid == 0) {
+        printf("(filho)\n");
+        return 0;
+    }
+    wait(NULL);
+    printf("(pai)\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/processos">$ gcc -std=c23 -Wall -Wextra dobrado.c -o dobrado
+$ ./dobrado
+Recibo da lojinha: (filho)
+Recibo da lojinha: (pai)</pre>
+<p><strong>O que significa:</strong> o <code>printf</code> sem <code>\n</code> deixou "Recibo da lojinha: " esperando no <strong>buffer</strong> (a memória do programa), e o <code>fork</code> copiou a memória inteira, buffer incluído. Cada processo esvaziou a sua cópia no fim.</p>
+<p><strong>Como consertar:</strong> <code>fflush(stdout);</code> logo antes de todo <code>fork</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Com a saída num pipe ou arquivo, as linhas aparecem repetidas</strong>
+<p>É o <code>rodar.c</code> da seção 6, com uma única diferença: o filho termina com <code>exit(127)</code> em vez de <code>_exit(127)</code>. No terminal, sai tudo certo. Mas mande a saída para outro programa (<code>| cat</code>) e compare:</p>
+<pre class="term" data-cwd="~/c/processos">$ ./rodar | cat                « o rodar.c, com _exit
+Olá da lojinha!
+compras.txt
+ls: não foi possível acessar 'nao-existe.txt': Arquivo ou diretório inexistente
+lss: No such file or directory
+[código 0]
+[código 0]
+[código 2]
+[código 127]
+$ ./rodar2 | cat               « a mesma coisa, com exit
+Olá da lojinha!
+compras.txt
+ls: não foi possível acessar 'nao-existe.txt': Arquivo ou diretório inexistente
+lss: No such file or directory
+[código 0]
+[código 0]
+[código 2]
+[código 0]
+[código 0]
+[código 2]
+[código 127]</pre>
+<p><strong>O que significa:</strong> num pipe, o <code>stdout</code> não esvazia a cada <code>\n</code>: os "[código …]" do pai ficam juntos no buffer até o fim (por isso, nas duas versões, eles aparecem depois). Quando o pai criou o filho do <code>lss</code>, o buffer tinha três linhas, e o filho ganhou uma cópia. O <code>exec</code> falhou, e o <code>exit</code> do filho esvaziou a cópia: três linhas repetidas. O <code>_exit</code> termina sem esvaziar nada.</p>
+<p><strong>Como consertar:</strong> no filho, depois de um <code>exec</code> que falhou, use <code>_exit</code>. E faça <code>fflush(stdout)</code> antes do <code>fork</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O computador fica lento e aparece <code>fork: Resource temporarily unavailable</code></strong>
+<p><strong>O que significa:</strong> um <code>fork</code> dentro de um laço, sem o <code>if (pid == 0)</code> para o filho sair do laço: cada filho também cria filhos, que criam filhos… O número de processos dobra a cada volta (2, 4, 8, 16…) até o sistema recusar (<code>EAGAIN</code>). Isso tem até nome: <em>fork bomb</em>.</p>
+<p><strong>Como consertar:</strong> o filho faz o seu trabalho e termina (<code>_exit</code> ou <code>return</code> dentro do <code>if (pid == 0)</code>); só o pai continua o laço. Teste programas com <code>fork</code> com cuidado.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>#define _POSIX_C_SOURCE 200809L</code></td><td>Liga o POSIX com <code>-std=c23</code> (primeira linha do arquivo)</td></tr>
+<tr><td><code>getpid()</code>, <code>getppid()</code></td><td>O PID deste processo e o do pai (<code>&lt;unistd.h&gt;</code>)</td></tr>
+<tr><td><code>pid_t pid = fork();</code></td><td>Cria um filho: 0 no filho, o PID do filho no pai, -1 se falhou</td></tr>
+<tr><td><code>execvp(nome, args)</code></td><td>Troca o programa; <code>args</code> termina em <code>NULL</code>; só volta se falhar</td></tr>
+<tr><td><code>wait(&amp;status)</code> / <code>waitpid(pid, &amp;status, 0)</code></td><td>Espera um filho / aquele filho (<code>&lt;sys/wait.h&gt;</code>)</td></tr>
+<tr><td><code>WIFEXITED(status)</code>, <code>WEXITSTATUS(status)</code></td><td>Terminou normalmente? Com que código?</td></tr>
+<tr><td><code>WIFSIGNALED(status)</code>, <code>WTERMSIG(status)</code></td><td>Morreu por sinal? Qual?</td></tr>
+<tr><td><code>_exit(código)</code></td><td>Termina o filho sem esvaziar os buffers (<code>&lt;unistd.h&gt;</code>)</td></tr>
+<tr><td><code>fflush(stdout)</code></td><td>Esvazia o buffer antes de <code>fork</code> e <code>exec</code></td></tr>
+<tr><td><code>system("comando")</code></td><td>Roda pelo shell e devolve o <code>status</code> (C padrão)</td></tr>
+<tr><td><code>ps -o pid,ppid,stat,args</code></td><td>No terminal: lista processos (<code>Z</code> = zumbi)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O valor no filho</h3>
+<p>Complete o teste que só é verdadeiro no processo filho:</p>
+<div class="ex-code">if (pid == <input data-answer="0" aria-label="valor">) { … }</div>
+</div>
+
+<div class="exercise">
+<h3>2. O fim da lista</h3>
+<p>Complete o array de argumentos do <code>execvp</code>:</p>
+<div class="ex-code">char *args[] = {"ls", "-l", <input data-answer="NULL|nullptr" aria-label="fim">};</div>
+</div>
+
+<div class="exercise">
+<h3>3. O código do filho</h3>
+<p>Complete a macro que tira o código de saída do <code>status</code>:</p>
+<div class="ex-code">printf("%d\n", <input data-answer="WEXITSTATUS" aria-label="macro">(status));</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Um programa faz <code>int x = 5;</code>, depois <code>fork()</code>, e o filho faz <code>x = 50;</code>. Quanto vale o <code>x</code> do pai depois que o filho termina?</p>
+<label><input type="radio" name="q4"> 50</label>
+<label><input type="radio" name="q4"> 5: cada processo tem a sua cópia da memória</label>
+<label><input type="radio" name="q4"> 55</label>
+<label><input type="radio" name="q4"> Depende de quem rodou primeiro</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Quando a linha depois de um <code>execvp</code> roda?</p>
+<label><input type="radio" name="q5"> Sempre, depois que o outro programa termina</label>
+<label><input type="radio" name="q5"> Nunca</label>
+<label><input type="radio" name="q5"> Só se o <code>execvp</code> falhou</label>
+<label><input type="radio" name="q5"> Só no processo pai</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O que é um processo zumbi?</p>
+<label><input type="radio" name="q6"> Um filho que já terminou, mas cujo pai ainda não chamou <code>wait</code></label>
+<label><input type="radio" name="q6"> Um processo que ignora o <code>SIGKILL</code></label>
+<label><input type="radio" name="q6"> Um processo que roda sem PID</label>
+<label><input type="radio" name="q6"> Um processo travado num laço infinito</label>
+</div>
+
+<h3>Missão final: montar o comando</h3>
+<p>O editor não roda <code>execvp</code>, mas a parte mais delicada de chamá-lo é montar o array de argumentos, e isso dá para praticar aqui.</p>
+
+<div class="tryc" data-goal="outre:^\$ wc -l compras\.txt\n\$ ls -a\n$">
+<p class="try-task"><strong>Missão:</strong> a função <code>mostrar</code> imprime um comando como o shell veria, andando pelo array até achar o <code>NULL</code> do fim, do mesmo jeito que o <code>execvp</code> faz. Os dois arrays estão incompletos: o primeiro deve ser o comando <code>wc -l compras.txt</code> (falta o <code>"-l"</code>), e o segundo, <code>ls -a</code>. Acrescente cada opção no lugar certo, <strong>antes</strong> do <code>NULL</code>, que tem de continuar sendo o último (sem ele, o laço passaria do fim do array: aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>). A saída deve ser exatamente:</p>
+<pre class="out">$ wc -l compras.txt
+$ ls -a</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void mostrar(char *args[]) {
+    printf("$");
+    for (int i = 0; args[i] != NULL; i++) {
+        printf(" %s", args[i]);
+    }
+    printf("\n");
+}
+
+int main(void) {
+    char *contar[] = {"wc", "compras.txt", NULL};
+    char *listar[] = {"ls", NULL};
+    mostrar(contar);
+    mostrar(listar);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void mostrar(char *args[]) {
+    printf("$");
+    for (int i = 0; args[i] != NULL; i++) {
+        printf(" %s", args[i]);
+    }
+    printf("\n");
+}
+
+int main(void) {
+    char *contar[] = {"wc", "-l", "compras.txt", NULL};
+    char *listar[] = {"ls", "-a", NULL};
+    mostrar(contar);
+    mostrar(listar);
+    return 0;
+}
+</pre>
+</div>
+
+<p>No seu computador, troque <code>mostrar(contar)</code> por <code>rodar(contar)</code>, a função da seção 6, e o comando roda de verdade.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <strong>processo</strong> é um programa rodando, com o seu <strong>PID</strong>; o processo que o criou é o pai (<strong>PPID</strong>).</li>
+  <li><code>fork()</code> cria uma cópia do processo. Devolve 0 no filho, o PID do filho no pai e -1 se falhar. Cada um tem a sua cópia das variáveis.</li>
+  <li><code>waitpid(pid, &amp;status, 0)</code> espera o filho; <code>WIFEXITED</code>/<code>WEXITSTATUS</code> e <code>WIFSIGNALED</code>/<code>WTERMSIG</code> leem o resultado. Todo <code>fork</code> tem o seu <code>wait</code>, ou sobram zumbis.</li>
+  <li><code>execvp(nome, args)</code> troca o programa do processo; <code>args</code> termina em <code>NULL</code>, e o <code>exec</code> só volta se falhar.</li>
+  <li><code>fork</code> + <code>exec</code> no filho + <code>wait</code> no pai é como o shell roda cada comando. <code>system</code> faz o mesmo pelo shell, com risco de injeção.</li>
+  <li><code>fflush(stdout)</code> antes de <code>fork</code> e <code>exec</code>; <code>_exit</code> no filho quando o <code>exec</code> falha.</li>
+  <li>Tudo isso é POSIX (Linux, macOS, WSL), não C padrão: com <code>-std=c23</code>, comece com <code>#define _POSIX_C_SOURCE 200809L</code>. O editor do guia não tem processos.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
