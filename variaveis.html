@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Variáveis — declarar, mudar e inicializar | Guia C</title>
+<meta name="description" content="Variáveis em C para quem nunca programou: declarar com tipo, nome e valor, mostrar com printf e %d, mudar o valor, várias numa linha, o lixo de uma variável sem valor inicial e os avisos -Wuninitialized, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Variáveis</span></h1>
+
+<p class="intro">Todo programa precisa <strong>guardar coisas</strong> enquanto trabalha: a idade de uma pessoa, o preço de um caderno, quantas maçãs sobraram na lojinha da Ana. Em C, cada coisa guardada fica numa <strong>variável</strong>. Nesta aula você vai criar suas primeiras variáveis, mostrar o valor delas com <code>printf</code>, trocar esse valor e entender por que o compilador reclama (ou, pior, <em>não</em> reclama) quando uma variável fica sem valor.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma variável e como criar uma: <code>int idade = 29;</code>.</li>
+  <li>Como mostrar o valor com <code>printf</code> e o <code>%d</code>.</li>
+  <li>Como trocar o valor e por que o <strong>tipo</strong> da variável nunca muda.</li>
+  <li>Como criar várias variáveis numa linha (e a armadilha que mora ali).</li>
+  <li>O que acontece com uma variável sem valor inicial (o "lixo") e os avisos <code>-Wuninitialized</code> e <code>-Wmaybe-uninitialized</code>.</li>
+  <li>Os erros de usar uma variável antes de criá-la e de criar duas com o mesmo nome.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> (cada opção é explicada em <a href="compilar.html">Compilar com gcc</a>). Você pode repetir cada um no editor do guia, que compila C de verdade no navegador.</p>
+
+<hr>
+
+<h2>A ideia: uma caixa com etiqueta e formato</h2>
+<p>Pense numa mudança de casa. Você guarda as coisas em caixas e escreve uma <strong>etiqueta</strong> em cada uma: "LIVROS", "PANELAS". Quando quer as panelas, procura pela etiqueta.</p>
+
+<p>Uma variável é isso: um pedacinho da memória do computador com uma etiqueta. A etiqueta é o <strong>nome</strong>; o que está dentro é o <strong>valor</strong>. O nome "variável" vem daí: o que está dentro pode <em>variar</em>.</p>
+
+<p>Em C existe um detalhe a mais: cada caixa tem um <strong>formato</strong>, escolhido quando você a cria, e esse formato nunca muda. Uma caixa de ovos só guarda ovos; uma caixa de sapatos só guarda sapatos. Esse formato se chama <strong>tipo</strong>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte da caixa</th><th>Nome técnico</th><th>Exemplo</th></tr>
+<tr><td>O formato (o que cabe nela)</td><td><strong>tipo</strong></td><td><code>int</code> (número inteiro), <code>double</code> (número com vírgula), <code>char</code> (um caractere)</td></tr>
+<tr><td>A etiqueta</td><td><strong>nome</strong></td><td><code>idade</code>, <code>preco</code></td></tr>
+<tr><td>O que está guardado agora</td><td><strong>valor</strong></td><td><code>29</code>, <code>4.5</code>, <code>'A'</code></td></tr>
+</table>
+</div>
+
+<p>Os tipos têm aula própria (<a href="tipos-dados.html">Tipos de Dados</a>). Por enquanto, três bastam: <code>int</code> (de <em>integer</em>, "inteiro") para números sem vírgula, <code>double</code> ("duplo", de precisão dupla) para números com vírgula e <code>char</code> (de <em>character</em>, "caractere") para uma letra só. Textos inteiros, como <code>"Ana"</code>, são um pouco mais trabalhosos em C e ficam para a aula <a href="strings.html">Strings</a>.</p>
+
+<hr>
+
+<h2>1. Declarar uma variável</h2>
+<p>Criar uma variável se chama <strong>declarar</strong>. A receita é sempre a mesma: <code>tipo nome = valor;</code>.</p>
+
+<pre class="file" data-file="idade.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("A Ana tem %d anos.\n", idade);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int</dt><dd>O <strong>tipo</strong>: esta caixa guarda um número inteiro.</dd>
+  <dt>idade</dt><dd>O <strong>nome</strong> da variável. As regras de nomes estão em <a href="identificadores.html">Nomes de Variáveis</a>.</dd>
+  <dt>=</dt><dd>Leia como "recebe": <em>idade recebe 29</em>. Não é o "igual" da matemática; quem compara valores é o <code>==</code> (aula <a href="operadores-comparacao.html">Operadores de Comparação</a>).</dd>
+  <dt>29</dt><dd>O <strong>valor inicial</strong>. Números não levam aspas.</dd>
+  <dt>;</dt><dd>O ponto e vírgula termina a declaração, como o ponto final de uma frase.</dd>
+  <dt>printf("… %d …", idade)</dt><dd>O <code>printf</code> (<em>print formatted</em>, "imprimir formatado") mostra o texto entre aspas. Onde aparece <code>%d</code>, ele encaixa o <strong>valor</strong> da variável que vem depois da vírgula. O <code>d</code> vem de <em>decimal</em>: "mostre um inteiro em base 10".</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra idade.c -o idade
+$ ./idade
+A Ana tem 29 anos.</pre>
+
+<p>O <code>gcc</code> não mostrou nada: isso quer dizer que compilou sem erros nem avisos. O <code>./idade</code> rodou o programa, e o <code>%d</code> foi trocado por <code>29</code>. Repare que o programa mostrou o <strong>valor</strong>, e não a palavra "idade": o nome é só a etiqueta, para você e para o compilador.</p>
+
+<h3>Outros tipos, outras letras</h3>
+<p>O <code>%d</code> serve para <code>int</code>. Cada tipo tem a sua letra no <code>printf</code>. Um texto pode ter vários <code>%</code>, e os valores entram <strong>na ordem</strong>, separados por vírgula:</p>
+
+<pre class="file" data-file="ola.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double altura = 1.65;
+    char inicial = 'A';
+    printf("%c. tem %d anos e %.2f m de altura.\n", inicial, idade, altura);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ola.c -o ola
+$ ./ola
+A. tem 29 anos e 1.65 m de altura.</pre>
+
+<dl class="anatomy">
+  <dt>double altura = 1.65;</dt><dd>Número com vírgula se escreve com <strong>ponto</strong>, como nos Estados Unidos. <code>1,65</code> significaria outra coisa.</dd>
+  <dt>char inicial = 'A';</dt><dd>Um caractere vai entre aspas <strong>simples</strong>. Aspas duplas são para textos (aula <a href="char.html">Caracteres</a>).</dd>
+  <dt>%c</dt><dd>Encaixa um <code>char</code> (o 1º valor da lista, <code>inicial</code>).</dd>
+  <dt>%d</dt><dd>Encaixa um <code>int</code> (o 2º valor, <code>idade</code>).</dd>
+  <dt>%.2f</dt><dd>Encaixa um <code>double</code> com 2 casas depois do ponto (o 3º valor, <code>altura</code>). Sem o <code>.2</code>, sairia <code>1.650000</code>. Os detalhes estão em <a href="ponto-flutuante.html">float e double</a> e em <a href="formatos-printf.html">Formatos do printf</a>.</dd>
+</dl>
+
+<div class="warning">
+<strong>A letra tem de combinar com o tipo</strong>
+<p>O <code>printf</code> confia em você: se o texto diz <code>%d</code> e você passa um <code>double</code>, ele lê os bits errados e mostra um número sem sentido. O <code>-Wall</code> avisa (veja em <a href="#errado">Quando dá errado</a>). Por isso o guia sempre compila com <code>-Wall -Wextra</code>.</p>
+</div>
+
+<div class="tryc" data-goal="out:A Ana comprou 8 maçãs.">
+<p class="try-task"><strong>Experimente:</strong> clique em <strong>Rodar</strong> e veja a frase. Depois troque o valor de <code>quantidade</code> para <code>8</code> e rode de novo. Se quiser ir além, crie <code>int dia = 12;</code> e mostre também o dia com outro <code>%d</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int quantidade = 6;
+    printf("A Ana comprou %d maçãs.\n", quantidade);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int quantidade = 8;
+    printf("A Ana comprou %d maçãs.\n", quantidade);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Mudar o valor</h2>
+<p>Depois de declarada, a variável é usada só pelo nome, <strong>sem</strong> repetir o tipo. Para trocar o valor, escreva <code>nome = novo valor;</code>. Isso se chama <strong>atribuição</strong>, e o valor antigo é jogado fora:</p>
+
+<pre class="file" data-file="mudar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int macas = 6;
+    printf("Antes: %d\n", macas);
+    macas = 4;
+    printf("Depois: %d\n", macas);
+    macas = macas + 2;
+    printf("Mais duas: %d\n", macas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra mudar.c -o mudar
+$ ./mudar
+Antes: 6
+Depois: 4
+Mais duas: 6</pre>
+
+<p>O programa roda <strong>de cima para baixo</strong>. A linha <code>macas = macas + 2;</code> parece estranha para quem lembra da matemática, mas lembre que <code>=</code> é "recebe":</p>
+<ol class="passo">
+  <li>O C calcula primeiro o lado <strong>direito</strong>: lê o valor atual de <code>macas</code> (4) e soma 2, dando 6.</li>
+  <li>Depois guarda o resultado na caixa da esquerda, no lugar do 4.</li>
+</ol>
+<p>Esse padrão tem um atalho, <code>macas += 2;</code>, explicado em <a href="operadores-atribuicao.html">Operadores de Atribuição</a>.</p>
+
+<h3>Declarar, atribuir, inicializar</h3>
+<p>Três palavras aparecem o tempo todo em livros e mensagens de erro:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que é</th><th>Exemplo</th></tr>
+<tr><td><strong>declarar</strong></td><td>criar a caixa (dizer tipo e nome)</td><td><code>int macas;</code></td></tr>
+<tr><td><strong>inicializar</strong></td><td>dar o primeiro valor <em>na mesma linha</em> da declaração</td><td><code>int macas = 6;</code></td></tr>
+<tr><td><strong>atribuir</strong></td><td>guardar um valor numa caixa que já existe</td><td><code>macas = 4;</code></td></tr>
+</table>
+</div>
+
+<h3>Copiar uma variável para outra</h3>
+<p><code>int b = a;</code> <strong>copia</strong> o valor. Depois disso, as duas caixas são independentes:</p>
+
+<pre class="file" data-file="copia.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 1;
+    int b = a;
+    a = 5;
+    printf("a=%d b=%d\n", a, b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra copia.c -o copia
+$ ./copia
+a=5 b=1                  « mudar a depois não mexeu em b</pre>
+
+<h3>O tipo nunca muda</h3>
+<p>Uma caixa de <code>int</code> continua sendo de <code>int</code> até o fim. Tentar guardar um texto nela é recusado pelo gcc:</p>
+
+<pre class="file" data-file="tipo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    idade = "trinta";
+    printf("%d\n", idade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipo.c -o tipo
+tipo.c: In function ‘main’:
+tipo.c:5:11: error: assignment to ‘int’ from ‘char *’ makes integer from pointer without a cast [-Wint-conversion]
+    5 |     idade = "trinta";
+      |           ^</pre>
+
+<dl class="anatomy">
+  <dt>assignment to ‘int’ from ‘char *’</dt><dd>"Atribuição a um <code>int</code> a partir de um <code>char *</code>". O <code>char *</code> é o tipo que o C dá a um texto entre aspas: um <strong>ponteiro</strong>, o endereço onde as letras estão guardadas (aulas <a href="ponteiros.html">Ponteiros</a> e <a href="ponteiros-strings.html">Ponteiros e Strings</a>).</dd>
+  <dt>makes integer from pointer without a cast</dt><dd>"Transforma um ponteiro em inteiro sem uma conversão explícita". Em outras palavras: isso é texto, e a caixa é de número.</dd>
+  <dt>[-Wint-conversion]</dt><dd>O nome da regra. Até o gcc 13 isso era só um aviso; desde o gcc 14 é um <strong>error</strong>, e o arquivo <code>tipo</code> nem foi criado. (A leitura da mensagem, parte por parte, está em <a href="erros-compilacao.html">Lendo Erros do Compilador</a>.)</dd>
+</dl>
+
+<p>Já um número com vírgula numa caixa de <code>int</code> passa <strong>sem nenhum aviso</strong> no gcc, e a parte depois da vírgula some:</p>
+
+<pre class="file" data-file="corta.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    idade = 29.9;
+    printf("%d\n", idade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra corta.c -o corta
+$ ./corta
+29                       « o .9 foi cortado (não arredondado), em silêncio</pre>
+
+<p>O C <strong>converte</strong> o <code>29.9</code> para <code>int</code> jogando fora a parte fracionária. Nem o <code>-Wall -Wextra</code> avisou. Existe uma opção que avisa, o <code>-Wconversion</code> (ela não faz parte do <code>-Wall</code>; a aula <a href="avisos.html">Avisos</a> fala dela):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -Wconversion corta.c -o corta
+corta.c: In function ‘main’:
+corta.c:5:13: warning: conversion from ‘double’ to ‘int’ changes value from ‘2.9899999999999999e+1’ to ‘29’ [-Wfloat-conversion]
+    5 |     idade = 29.9;
+      |             ^~~~</pre>
+
+<p>O <code>2.9899999999999999e+1</code> é o seu 29.9 escrito do jeito que o computador o guarda de verdade: em notação científica (<code>e+1</code> = "vezes 10 elevado a 1") e com um errinho lá no fim. Esse errinho é normal e é explicado em <a href="ponto-flutuante.html">float e double</a>. O Clang, o compilador do editor do guia, avisa esse caso mesmo sem <code>-Wconversion</code>, porque o número está escrito direto no código: <code>implicit conversion from 'double' to 'int' changes value from 29.9 to 29 [-Wliteral-conversion]</code>. A conversão de propósito, com <code>(int)</code>, tem aula própria: <a href="conversao-tipos.html">Conversão de Tipos</a>.</p>
+
+<hr>
+
+<h2>3. Várias variáveis numa linha</h2>
+<p>Variáveis do <strong>mesmo tipo</strong> podem ser declaradas juntas, separadas por vírgula:</p>
+
+<pre class="file" data-file="linha.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 1, b = 2, c = 3;
+    printf("%d %d %d\n", a, b, c);
+    int x, y = 5;
+    printf("%d %d\n", x, y);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra linha.c -o linha
+linha.c: In function ‘main’:
+linha.c:7:5: warning: ‘x’ is used uninitialized [-Wuninitialized]
+    7 |     printf("%d %d\n", x, y);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~
+linha.c:6:9: note: ‘x’ was declared here
+    6 |     int x, y = 5;
+      |         ^
+$ ./linha
+1 2 3
+0 5</pre>
+
+<p>A linha 4 está certa: três variáveis, cada uma com seu valor. A linha 6 é a <strong>armadilha</strong>: quem lê <code>int x, y = 5;</code> pode achar que as duas valem 5, mas o <code>= 5</code> vale só para o <code>y</code>. O <code>x</code> ficou <strong>sem valor</strong>, e o compilador avisou. Aqui ele apareceu como <code>0</code> por acaso; a seção 4 mostra que ele poderia ser qualquer número.</p>
+
+<div class="tip">
+<strong>Uma variável por linha</strong>
+<p>Declarar várias numa linha economiza espaço, mas esconde erros como esse. A maioria dos guias de estilo recomenda <strong>uma declaração por linha</strong>, cada uma com seu valor. Variáveis de tipos diferentes (um <code>int</code> e um <code>double</code>) nunca podem ir na mesma declaração.</p>
+</div>
+
+<h3>Começar do zero com <code>= {}</code> <span class="versao">C23</span></h3>
+<p>Além do <code>= valor</code>, o C aceita o valor entre chaves, <code>= {20}</code>. E desde o C23, chaves <strong>vazias</strong> dão o valor "zero" do tipo:</p>
+
+<pre class="file" data-file="zero.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 10;
+    int b = {20};
+    int c = {};
+    printf("%d %d %d\n", a, b, c);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra zero.c -o zero
+$ ./zero
+10 20 0
+$ gcc -std=c17 -Wall -Wextra -Wpedantic zero.c -o zero
+zero.c: In function ‘main’:
+zero.c:6:13: warning: ISO C forbids empty initializer braces before C23 [-Wpedantic]
+    6 |     int c = {};
+      |             ^</pre>
+
+<p>No C23 tudo certo. Pedindo o padrão antigo (<code>-std=c17</code>) com <code>-Wpedantic</code> ("seja exigente com o padrão"), o gcc lembra: "o ISO C proíbe chaves de inicialização vazias antes do C23". Para variáveis simples, a forma mais comum continua sendo <code>int c = 0;</code>, que funciona em todas as versões. As chaves brilham com <a href="arrays.html">Arrays</a> e <a href="structs.html">Structs</a>, onde <code>= {}</code> zera tudo de uma vez.</p>
+
+<hr>
+
+<h2>4. Variável sem valor inicial: o "lixo"</h2>
+<p>O C deixa você criar uma variável <strong>sem</strong> valor: <code>int pontos;</code>. Ela existe, ocupa memória, mas o C não limpa essa memória. O que estiver lá, sobrado de outra parte do programa, vira o "valor". Programadores chamam isso de <strong>lixo</strong> (<em>garbage</em>).</p>
+
+<p>Neste programa, a função <code>prepara</code> usa um pedaço da memória e termina; depois a função <code>mostra</code> cria <code>pontos</code> sem valor. (Funções são do Nível 2, em <a href="funcoes.html">Funções</a>; aqui elas só servem para "sujar" a memória antes.)</p>
+
+<pre class="file" data-file="lixo.c">#include &lt;stdio.h&gt;
+
+void prepara(void) {
+    int numeros[4] = {1234, 5678, 9012, 3456};
+    printf("prepara usou: %d\n", numeros[0]);
+}
+
+void mostra(void) {
+    int pontos;
+    printf("pontos vale: %d\n", pontos);
+}
+
+int main(void) {
+    prepara();
+    mostra();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lixo.c -o lixo
+lixo.c: In function ‘mostra’:
+lixo.c:10:5: warning: ‘pontos’ is used uninitialized [-Wuninitialized]
+   10 |     printf("pontos vale: %d\n", pontos);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+lixo.c:9:9: note: ‘pontos’ was declared here
+    9 |     int pontos;
+      |         ^~~~~~
+$ ./lixo
+prepara usou: 1234
+pontos vale: 1864013119
+$ ./lixo
+prepara usou: 1234
+pontos vale: -1087482880
+$ ./lixo
+prepara usou: 1234
+pontos vale: -716709242  « três execuções, três valores diferentes</pre>
+
+<dl class="anatomy">
+  <dt>warning:</dt><dd>"Aviso". Diferente de <code>error</code>, o programa <strong>foi</strong> gerado. Mas este aviso é sério.</dd>
+  <dt>‘pontos’ is used uninitialized</dt><dd>"<code>pontos</code> é usada sem ter sido inicializada": você leu o valor de uma caixa onde nunca guardou nada.</dd>
+  <dt>[-Wuninitialized]</dt><dd>A regra de aviso que pegou o problema. Ela vem ligada pelo <code>-Wall</code>. Sem <code>-Wall</code>, o gcc compila esse programa calado.</dd>
+  <dt>note: ‘pontos’ was declared here</dt><dd>"Nota: <code>pontos</code> foi declarada aqui": o compilador aponta a linha da criação, onde está o conserto.</dd>
+</dl>
+
+<p>O número muda a cada execução e não tem nenhum significado. Num jogo, a Ana começaria a partida com 1,8 bilhão de pontos. Ler uma variável sem valor é um <strong>comportamento indefinido</strong>: a linguagem não promete <em>nada</em> sobre o que acontece, nem que sai um número (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>). Às vezes o lixo é <code>0</code>, como na seção 3, e o erro passa despercebido nos testes para aparecer depois. No editor do guia, o mesmo programa costuma mostrar um número que sobrou da função <code>prepara</code>: outra máquina, outro lixo.</p>
+
+<div class="warning">
+<strong>Regra do guia: toda variável nasce com valor</strong>
+<p>Sempre que puder, dê o valor já na declaração: <code>int pontos = 0;</code>. Se ainda não souber o valor certo, comece com zero. E nunca ignore um aviso <code>uninitialized</code>.</p>
+</div>
+
+<h3>"Talvez sem valor": <code>-Wmaybe-uninitialized</code></h3>
+<p>Às vezes a variável recebe valor só em <strong>alguns caminhos</strong> do programa. Aqui, <code>desconto</code> só recebe valor se a Ana fez mais de 5 compras. (O <code>if</code> tem aula própria, <a href="if-else.html">if e else</a>; o <code>scanf</code> lê um número do teclado, aula <a href="scanf.html">Entrada com scanf</a>. Por enquanto, leia o código como uma frase.)</p>
+
+<pre class="file" data-file="talvez.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int compras = 0;
+    if (scanf("%d", &amp;compras) != 1) {
+        return 1;
+    }
+    int desconto;
+    if (compras &gt; 10) {
+        desconto = 5;
+    } else if (compras &gt; 5) {
+        desconto = 2;
+    }
+    int pagar = 100 - desconto;
+    printf("Você paga: %d reais\n", pagar);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra talvez.c -o talvez     « nenhum aviso!
+$ gcc -std=c23 -Wall -Wextra -O2 talvez.c -o talvez
+talvez.c: In function ‘main’:
+talvez.c:14:9: warning: ‘desconto’ may be used uninitialized [-Wmaybe-uninitialized]
+   14 |     int pagar = 100 - desconto;
+      |         ^~~~~
+talvez.c:8:9: note: ‘desconto’ was declared here
+    8 |     int desconto;
+      |         ^~~~~~~~
+$ echo 3 | ./talvez
+Você paga: 95 reais      « 3 compras não dão desconto, mas saiu 95</pre>
+
+<ul>
+  <li><em>May be used uninitialized</em> = "<strong>pode</strong> ser usada sem valor". O compilador não tem certeza (depende do número digitado), mas achou um caminho em que nenhum valor é guardado: 5 compras ou menos.</li>
+  <li>No gcc, esse aviso só aparece quando você também pede <strong>otimização</strong> (<code>-O2</code>, "otimize, nível 2"), porque a análise que encontra esses caminhos roda junto com a otimização. Sem <code>-O2</code>, o mesmo erro passou calado.</li>
+  <li>O resultado <code>95</code> com 3 compras é o comportamento indefinido em ação: o otimizador supôs que o caminho sem valor nunca acontece e usou o desconto de 5.</li>
+  <li>O conserto é o mesmo: <code>int desconto = 0;</code>.</li>
+</ul>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>O editor compila com o <strong>Clang</strong>, que pega este caso mesmo sem otimização, com outras palavras: <code>variable 'desconto' is used uninitialized whenever 'if' condition is false [-Wsometimes-uninitialized]</code> ("é usada sem valor sempre que a condição do <code>if</code> for falsa"). Para o <code>lixo.c</code>, o Clang escreve <code>variable 'pontos' is uninitialized when used here [-Wuninitialized]</code> e ainda sugere o conserto: <code>initialize the variable 'pontos' to silence this warning</code>, com um <code>= 0</code> desenhado embaixo. Duas ferramentas, a mesma lição.</p>
+</div>
+
+<div class="tryc" data-goal="out:Pontos: 10,semaviso">
+<p class="try-task"><strong>Missão:</strong> rode e leia o aviso: qual variável está sem valor? Conserte só a linha da declaração dela, para o programa mostrar <code>Pontos: 10</code> sem nenhum aviso.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos;
+    int bonus = 10;
+    pontos = pontos + bonus;
+    printf("Pontos: %d\n", pontos);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 0;
+    int bonus = 10;
+    pontos = pontos + bonus;
+    printf("Pontos: %d\n", pontos);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Esse programa com defeito pode até mostrar <code>Pontos: 10</code>, se o lixo daquela vez for zero, mas o aviso continua lá. "Deu o número certo" não quer dizer que está certo.</p>
+
+<hr>
+
+<h2>5. Usar antes de declarar e declarar duas vezes</h2>
+<p>O compilador lê o arquivo de cima para baixo. Uma variável só existe <strong>da linha da declaração para baixo</strong>:</p>
+
+<pre class="file" data-file="antes.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%d\n", total);
+    int total = 50;
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra antes.c -o antes
+antes.c: In function ‘main’:
+antes.c:4:20: error: ‘total’ undeclared (first use in this function)
+    4 |     printf("%d\n", total);
+      |                    ^~~~~
+antes.c:4:20: note: each undeclared identifier is reported only once for each function it appears in
+antes.c:5:9: warning: unused variable ‘total’ [-Wunused-variable]
+    5 |     int total = 50;
+      |         ^~~~~</pre>
+
+<dl class="anatomy">
+  <dt>‘total’ undeclared (first use in this function)</dt><dd>"<code>total</code> não declarada (primeiro uso nesta função)". Na linha 4, <code>total</code> ainda não existe. O mesmo erro aparece quando o nome está escrito diferente (<code>Total</code>, <code>totla</code>).</dd>
+  <dt>note: each undeclared identifier is reported only once…</dt><dd>"Cada identificador não declarado é avisado só uma vez por função". Se você usar <code>total</code> dez vezes, o erro aparece só na primeira.</dd>
+  <dt>warning: unused variable ‘total’</dt><dd>"Variável <code>total</code> não usada": a da linha 5 foi criada e ninguém leu o valor dela depois. É um efeito do mesmo engano.</dd>
+</dl>
+
+<p>O Clang, no editor, diz <code>use of undeclared identifier 'total'</code> ("uso de identificador não declarado").</p>
+
+<p>E criar <strong>duas</strong> variáveis com o mesmo nome no mesmo bloco também é erro:</p>
+
+<pre class="file" data-file="dupla.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 50;
+    int total = 80;
+    printf("%d\n", total);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dupla.c -o dupla
+dupla.c: In function ‘main’:
+dupla.c:5:9: error: redefinition of ‘total’
+    5 |     int total = 80;
+      |         ^~~~~
+dupla.c:4:9: note: previous definition of ‘total’ with type ‘int’
+    4 |     int total = 50;
+      |         ^~~~~</pre>
+
+<p><em>Redefinition</em> = "definição repetida"; <em>previous definition of ‘total’ with type ‘int’</em> = "definição anterior de <code>total</code>, com tipo <code>int</code>". Para mudar o valor, escreva sem o tipo: <code>total = 80;</code>. Repetir o <code>int</code> pede uma caixa <strong>nova</strong> com uma etiqueta que já existe. (No editor, o Clang escreve <code>redefinition of 'total'</code> e <code>previous definition is here</code>.)</p>
+
+<div class="tryc" data-goal="out:Total: 80,compila">
+<p class="try-task"><strong>Missão:</strong> este programa não compila. Rode, leia o erro e conserte a linha 5 para que ela só <strong>troque o valor</strong> de <code>total</code>. O programa deve mostrar <code>Total: 80</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 50;
+    int total = 80;
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 50;
+    total = 80;
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: ‘x’ undeclared (first use in this function)</code></strong>
+<p><strong>O que significa:</strong> na linha indicada, o nome não existe. Causas: a declaração está <strong>mais abaixo</strong>, o nome está escrito diferente (maiúscula, acento, letra trocada) ou a variável foi criada dentro de outro bloco <code>{ }</code> (aula <a href="escopo.html">Escopo</a>). No Clang: <code>use of undeclared identifier 'x'</code>.</p>
+<p><strong>Como consertar:</strong> copie o nome da mensagem e procure-o no arquivo. Confira se a declaração vem <strong>antes</strong> da linha do erro e se o nome é idêntico.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘x’ is used uninitialized</code> / <code>may be used uninitialized</code></strong>
+<p><strong>O que significa:</strong> o programa lê uma variável que não recebeu valor (ou pode não ter recebido, em algum caminho). O valor lido é lixo, e o comportamento é indefinido.</p>
+<p><strong>Como consertar:</strong> dê um valor na declaração apontada pela <code>note: ‘x’ was declared here</code>: <code>int x = 0;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: redefinition of ‘x’</code></strong>
+<p><strong>O que significa:</strong> o mesmo nome foi declarado duas vezes no mesmo bloco.</p>
+<p><strong>Como consertar:</strong> para trocar o valor, tire o tipo da segunda linha (<code>x = 80;</code>). Se são duas coisas diferentes, dê nomes diferentes.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expected ‘,’ or ‘;’ before ‘printf’</code></strong>
+<p><strong>O que significa:</strong> faltou o <code>;</code> no fim da declaração. Com <code>int total = 50</code> (sem ponto e vírgula) seguido de <code>printf(…)</code>, o gcc continuou lendo e tropeçou na palavra da linha de baixo:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pontovirgula.c -o pontovirgula
+pontovirgula.c: In function ‘main’:
+pontovirgula.c:5:5: error: expected ‘,’ or ‘;’ before ‘printf’
+    5 |     printf("%d\n", total);
+      |     ^~~~~~
+pontovirgula.c:4:9: warning: unused variable ‘total’ [-Wunused-variable]
+    4 |     int total = 50
+      |         ^~~~~</pre>
+<p><strong>Como consertar:</strong> quando o erro aponta uma linha que parece certa, olhe o fim da linha <strong>anterior</strong>. O Clang é mais direto: <code>expected ';' at end of declaration</code>, apontando o lugar exato da linha 4.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’</code></strong>
+<p><strong>O que significa:</strong> a letra do <code>printf</code> não combina com o tipo da variável. O programa é gerado, mas mostra lixo:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra formato.c -o formato
+formato.c: In function ‘main’:
+formato.c:5:21: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’ [-Wformat=]
+    5 |     printf("Preço: %d\n", preco);
+      |                    ~^     ~~~~~
+      |                     |     |
+      |                     int   double
+      |                    %f
+$ ./formato
+Preço: 294781608         « preco valia 2.5</pre>
+<p><strong>Como consertar:</strong> use a letra do tipo: <code>%d</code> para <code>int</code>, <code>%f</code> para <code>double</code>, <code>%c</code> para <code>char</code>. O próprio gcc sugere, na última linha, <code>%f</code>. No editor, o mesmo programa mostrou <code>Preço: 0</code>: não espere nenhum número em especial.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: assignment to ‘int’ from ‘char *’ makes integer from pointer without a cast</code></strong>
+<p><strong>O que significa:</strong> você tentou guardar um texto entre aspas numa variável de número. No Clang: <code>incompatible pointer to integer conversion assigning to 'int' from 'char[7]'</code>.</p>
+<p><strong>Como consertar:</strong> se é número, tire as aspas (<code>30</code>, e não <code>"30"</code>). Se é texto, ele precisa de um array de <code>char</code> (aula <a href="strings.html">Strings</a>). Para transformar texto em número de propósito, veja <a href="string-numero.html">Texto ↔ Número</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>int x = 10;</code></td><td>Declara <code>x</code> com valor inicial 10</td></tr>
+<tr><td><code>int x = {};</code> <span class="versao">C23</span></td><td>Declara <code>x</code> valendo zero</td></tr>
+<tr><td><code>int x;</code></td><td>Declara sem valor: lixo até receber um (evite)</td></tr>
+<tr><td><code>x = 20;</code></td><td>Atribui: troca o valor (sem repetir o tipo)</td></tr>
+<tr><td><code>x = x + 1;</code></td><td>Calcula com o valor atual e guarda o resultado</td></tr>
+<tr><td><code>int b = a;</code></td><td>Copia o valor de <code>a</code>; as duas ficam independentes</td></tr>
+<tr><td><code>int a = 1, b = 2;</code></td><td>Várias do mesmo tipo numa linha (cada uma com seu valor)</td></tr>
+<tr><td><code>printf("%d\n", x);</code></td><td>Mostra um <code>int</code></td></tr>
+<tr><td><code>printf("%.2f\n", d);</code></td><td>Mostra um <code>double</code> com 2 casas</td></tr>
+<tr><td><code>printf("%c\n", c);</code></td><td>Mostra um <code>char</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Declarar</h3>
+<p>Complete para criar uma variável inteira <code>alunos</code> valendo 32:</p>
+<div class="ex-code"><input data-answer="int" aria-label="tipo"> alunos = 32;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Mostrar</h3>
+<p>Complete o formato para mostrar o <code>int</code> <code>alunos</code>:</p>
+<div class="ex-code">printf("Turma com <input data-answer="%d|%i" aria-label="formato"> alunos\n", alunos);</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Depois de <code>int x, y = 5;</code>, quanto vale <code>x</code>?</p>
+<label><input type="radio" name="q3"> 5</label>
+<label><input type="radio" name="q3"> Nenhum valor definido: é lixo (e o compilador avisa se você o usar)</label>
+<label><input type="radio" name="q3"> 0, sempre</label>
+<label><input type="radio" name="q3"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. O que o programa mostra? <code>int a = 2; int b = a; a = 7; printf("%d", b);</code></p>
+<label><input type="radio" name="q4"> 2</label>
+<label><input type="radio" name="q4"> 7</label>
+<label><input type="radio" name="q4"> 9</label>
+<label><input type="radio" name="q4"> Um erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Com <code>int nota = 7.8;</code>, o que <code>printf("%d", nota);</code> mostra no gcc com <code>-Wall -Wextra</code>?</p>
+<label><input type="radio" name="q5"> 8, arredondado</label>
+<label><input type="radio" name="q5"> 7.8</label>
+<label><input type="radio" name="q5"> 7, e o gcc não avisa nada</label>
+<label><input type="radio" name="q5"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. A linha 5 tem <code>int total = 80;</code> e a linha 4 já tinha <code>int total = 50;</code>. O que o gcc diz?</p>
+<label><input type="radio" name="q6"> Nada: <code>total</code> passa a valer 80</label>
+<label><input type="radio" name="q6"> <code>‘total’ undeclared</code></label>
+<label><input type="radio" name="q6"> <code>‘total’ is used uninitialized</code></label>
+<label><input type="radio" name="q6"> <code>redefinition of ‘total’</code></label>
+</div>
+
+<h3>Missão final: o caixa da lojinha</h3>
+
+<div class="tryc" data-goal="out:Total: 15 reais,out:Total: 20 reais,semaviso,src:quantidade\s*=\s*4\s*;,src:quantidade\s*\*\s*preco">
+<p class="try-task"><strong>Missão:</strong> a Ana vendeu 3 cadernos a 5 reais cada. Declare <code>quantidade</code> (<code>int</code>, valendo 3) e <code>preco</code> (<code>int</code>, valendo 5), calcule <code>total</code> (<code>int</code>) como <code>quantidade * preco</code> (o <code>*</code> é "vezes") e mostre a primeira linha. Depois a cliente pegou mais um caderno: <strong>mude</strong> <code>quantidade</code> para 4 (sem declarar de novo), calcule o total outra vez e mostre a segunda linha. Sem avisos.</p>
+<pre class="out">Total: 15 reais
+Total: 20 reais</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    // declare quantidade, preco e total aqui
+
+    // mostre o total
+
+    // mude a quantidade, recalcule e mostre de novo
+
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int quantidade = 3;
+    int preco = 5;
+    int total = quantidade * preco;
+    printf("Total: %d reais\n", total);
+
+    quantidade = 4;
+    total = quantidade * preco;
+    printf("Total: %d reais\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que o <code>total</code> não muda sozinho quando a <code>quantidade</code> muda: a conta <code>quantidade * preco</code> é feita <strong>na hora</strong> em que a linha roda, e o resultado é guardado. Por isso a missão pede para calcular de novo.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Variável = caixa com <strong>tipo</strong> (formato), <strong>nome</strong> (etiqueta) e <strong>valor</strong>. Declare com <code>tipo nome = valor;</code>.</li>
+  <li>Mostre com <code>printf</code>: <code>%d</code> para <code>int</code>, <code>%f</code> para <code>double</code>, <code>%c</code> para <code>char</code>. A letra tem de combinar com o tipo (<code>-Wformat</code> avisa).</li>
+  <li>Para mudar o valor: <code>nome = novo;</code>, sem repetir o tipo. O lado direito é calculado primeiro. O tipo nunca muda; um <code>29.9</code> guardado num <code>int</code> vira <code>29</code> em silêncio.</li>
+  <li>Várias numa linha: <code>int a = 1, b = 2;</code>. Em <code>int x, y = 5;</code>, só o <code>y</code> vale 5. Prefira uma por linha. <code>= {}</code> dá zero <span class="versao">C23</span>.</li>
+  <li>Variável sem valor guarda lixo, e lê-la é comportamento indefinido. <code>-Wall</code> avisa com <code>-Wuninitialized</code>; o <code>-Wmaybe-uninitialized</code> do gcc aparece com <code>-O2</code>. Regra: toda variável nasce com valor.</li>
+  <li>A variável só existe da declaração para baixo (<code>undeclared</code>), e o mesmo nome não pode ser declarado duas vezes no mesmo bloco (<code>redefinition</code>).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
