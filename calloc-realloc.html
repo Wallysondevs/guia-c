@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C calloc e realloc — memória zerada e blocos que mudam de tamanho | Guia C</title>
+<meta name="description" content="calloc e realloc em C para quem nunca programou: calloc(quantidade, tamanho) entrega memória zerada e confere a multiplicação, realloc aumenta e diminui um bloco (e pode mudá-lo de lugar), realloc(NULL, n), por que realloc(p, 0) é indefinido no C23, o endereço antigo que morre, a parte nova que vem com lixo, com saídas reais do gcc 15, do AddressSanitizer e do Valgrind, e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">calloc e realloc</span></h1>
+
+<p class="intro">O <a href="malloc-free.html">malloc</a> entrega um bloco de memória do tamanho pedido, com lixo dentro, e o tamanho fica fixo até o <code>free</code>. Duas funções irmãs resolvem as duas limitações. O <code>calloc</code> ("<em>contiguous allocation</em>", reserva contínua; muita gente lê como "<em>clear allocation</em>", reserva limpa) entrega o bloco <strong>zerado</strong>. O <code>realloc</code> ("<em>re-allocate</em>", reservar de novo) <strong>muda o tamanho</strong> de um bloco que já existe, para mais ou para menos, sem perder o que está dentro. Nesta aula você aprende as duas, com os cuidados que cada uma exige.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A reservar memória já zerada com <code>calloc(quantidade, tamanho)</code>.</li>
+  <li>Por que o <code>calloc</code> é mais seguro com quantidades enormes (ele confere a multiplicação).</li>
+  <li>A aumentar e diminuir um bloco com <code>realloc</code>, e por que ele pode <strong>mudar o bloco de lugar</strong>.</li>
+  <li>O que fazem <code>realloc(NULL, n)</code> e <code>realloc(p, 0)</code> (este último, indefinido no C23).</li>
+  <li>Os dois erros clássicos do <code>realloc</code>: usar o endereço antigo e ler a parte nova sem dar valor a ela, como o gcc, o ASan e o Valgrind os mostram, e por que o editor do guia esconde os dois.</li>
+</ul>
+</div>
+
+<p>Esta aula continua <a href="malloc-free.html">malloc e free</a>; leia aquela primeiro. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o armário limpo e a troca de armário</h2>
+<p>Lembre do guarda-volumes da aula anterior. O <code>malloc</code> te dá um armário como o último cliente deixou. Agora o balcão oferece mais dois serviços:</p>
+<ul>
+  <li><strong>"Quero 4 gavetas de 4 bytes, limpas."</strong> O atendente separa o armário, passa um pano em tudo e só então te entrega o número. É o <code>calloc</code>: você diz <strong>quantas</strong> coisas e o <strong>tamanho</strong> de cada uma, e recebe tudo zerado.</li>
+  <li><strong>"Meu armário ficou pequeno."</strong> Se o armário do lado estiver vago, o atendente derruba a parede e o seu armário cresce ali mesmo. Se não estiver, ele pega um armário maior em outro corredor, <strong>muda as suas coisas</strong> para lá, libera o antigo e te entrega o <strong>número novo</strong>. É o <code>realloc</code>. O número antigo não vale mais, e o espaço a mais do armário novo vem sem limpeza.</li>
+</ul>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Recebe</th><th>Devolve</th><th>O conteúdo</th></tr>
+<tr><td><code>malloc(bytes)</code></td><td>quantos bytes</td><td>um bloco novo, ou <code>NULL</code></td><td>lixo</td></tr>
+<tr><td><code>calloc(quantidade, tamanho)</code></td><td>quantos itens e o tamanho de cada um</td><td>um bloco novo, ou <code>NULL</code></td><td>tudo zero</td></tr>
+<tr><td><code>realloc(p, bytes)</code></td><td>um bloco que já existe e o tamanho novo</td><td>o bloco com o tamanho novo (talvez em outro lugar), ou <code>NULL</code></td><td>o conteúdo antigo é mantido; a parte nova é lixo</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. <code>calloc</code>: memória que começa zerada</h2>
+<p>A Ana é mesária na eleição do grêmio da escola. São 4 candidatos, numerados de 0 a 3, e cada voto soma 1 no contador do candidato. Contadores precisam começar em zero, e é isso que o <code>calloc</code> garante:</p>
+
+<pre class="file" data-file="votos.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int candidatos = 4;
+    int *votos = calloc(candidatos, sizeof *votos);
+    if (votos == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+
+    int urna[] = {2, 0, 2, 3, 1, 2, 0, 2};
+    int total = sizeof urna / sizeof urna[0];
+    for (int i = 0; i &lt; total; i++) {
+        votos[urna[i]]++;
+    }
+
+    for (int c = 0; c &lt; candidatos; c++) {
+        printf("Candidato %d: %d votos\n", c, votos[c]);
+    }
+    free(votos);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>calloc(candidatos, sizeof *votos)</dt><dd>Dois argumentos, separados por vírgula: <strong>quantos</strong> itens (4) e o <strong>tamanho de cada um</strong> (o de um <code>int</code>, 4 bytes). O <code>calloc</code> faz a conta, reserva 16 bytes e põe zero em todos. Compare com o <code>malloc</code>, que recebe a conta já feita: <code>malloc(candidatos * sizeof *votos)</code>.</dd>
+  <dt>if (votos == NULL)</dt><dd>Como o <code>malloc</code>, o <code>calloc</code> devolve <code>NULL</code> quando não consegue. A conferência é a mesma.</dd>
+  <dt>int total = sizeof urna / sizeof urna[0];</dt><dd>Quantos votos há na urna: o tamanho do array inteiro dividido pelo tamanho de um item (aula <a href="sizeof.html">sizeof</a>). Aqui, 8.</dd>
+  <dt>votos[urna[i]]++;</dt><dd>Lê de dentro para fora: <code>urna[i]</code> é o número do candidato que recebeu o voto <code>i</code>; <code>votos[…]++</code> soma 1 no contador dele. Só funciona porque cada contador começou em 0.</dd>
+  <dt>free(votos);</dt><dd>Um bloco do <code>calloc</code> é devolvido com o mesmo <code>free</code> de sempre.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra votos.c -o votos
+$ ./votos
+Candidato 0: 2 votos
+Candidato 1: 1 votos
+Candidato 2: 4 votos
+Candidato 3: 1 votos</pre>
+
+<h3>E se fosse <code>malloc</code>?</h3>
+<p>Com <code>malloc</code>, o erro é traiçoeiro: às vezes o bloco vem zerado <strong>por sorte</strong> (memória que o sistema acabou de entregar ao programa costuma vir com zeros), e o programa parece certo. Esta versão apura duas urnas, a da manhã e a da tarde, cada uma com o seu bloco do <code>malloc</code>:</p>
+
+<pre class="file" data-file="urnas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+#define CANDIDATOS 6
+
+void apurar(const char *nome, const int *urna, int total) {
+    int *votos = malloc(CANDIDATOS * sizeof *votos);
+    if (votos == NULL) {
+        return;
+    }
+    for (int i = 0; i &lt; total; i++) {
+        votos[urna[i]]++;
+    }
+    printf("%s:", nome);
+    for (int c = 0; c &lt; CANDIDATOS; c++) {
+        printf(" %d", votos[c]);
+    }
+    printf("\n");
+    free(votos);
+}
+
+int main(void) {
+    int manha[] = {0, 1, 1, 2, 3, 4, 5, 5};
+    int tarde[] = {5, 4, 3, 2, 1, 0};
+    apurar("Manhã", manha, 8);
+    apurar("Tarde", tarde, 6);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra urnas.c -o urnas      « nenhum aviso
+$ ./urnas
+Manhã: 1 2 1 1 1 2
+Tarde: 1560991578 6 1 1 2 3</pre>
+
+<p>A manhã saiu certa: o bloco era memória nova, cheia de zeros. A tarde saiu absurda: o segundo <code>malloc</code> recebeu <strong>o mesmo bloco</strong> que a manhã tinha acabado de devolver, ainda com as contagens da manhã (e com as anotações internas do <code>malloc</code> por cima das primeiras). Cada candidato recebeu um voto à tarde; o resultado certo seria <code>1 1 1 1 1 1</code>. No <strong>editor do guia</strong> o erro também aparece, com outra cara: <code>Tarde: 2 3 2 2 2 3</code>, as contagens da manhã somadas às da tarde. Nenhum compilador avisa, porque o problema só existe durante a execução.</p>
+
+<div class="tryc" data-goal="out:Tarde: 1 1 1 1 1 1,src:calloc\s*\(">
+<p class="try-task"><strong>Missão:</strong> rode e veja a apuração da tarde sair errada. Troque o <code>malloc</code> de <code>apurar</code> por um <code>calloc</code> (lembre: dois argumentos, a quantidade e o tamanho de cada item). A saída deve mostrar <code>Tarde: 1 1 1 1 1 1</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+#define CANDIDATOS 6
+
+void apurar(const char *nome, const int *urna, int total) {
+    int *votos = malloc(CANDIDATOS * sizeof *votos);
+    if (votos == NULL) {
+        return;
+    }
+    for (int i = 0; i &lt; total; i++) {
+        votos[urna[i]]++;
+    }
+    printf("%s:", nome);
+    for (int c = 0; c &lt; CANDIDATOS; c++) {
+        printf(" %d", votos[c]);
+    }
+    printf("\n");
+    free(votos);
+}
+
+int main(void) {
+    int manha[] = {0, 1, 1, 2, 3, 4, 5, 5};
+    int tarde[] = {5, 4, 3, 2, 1, 0};
+    apurar("Manhã", manha, 8);
+    apurar("Tarde", tarde, 6);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+#define CANDIDATOS 6
+
+void apurar(const char *nome, const int *urna, int total) {
+    int *votos = calloc(CANDIDATOS, sizeof *votos);
+    if (votos == NULL) {
+        return;
+    }
+    for (int i = 0; i &lt; total; i++) {
+        votos[urna[i]]++;
+    }
+    printf("%s:", nome);
+    for (int c = 0; c &lt; CANDIDATOS; c++) {
+        printf(" %d", votos[c]);
+    }
+    printf("\n");
+    free(votos);
+}
+
+int main(void) {
+    int manha[] = {0, 1, 1, 2, 3, 4, 5, 5};
+    int tarde[] = {5, 4, 3, 2, 1, 0};
+    apurar("Manhã", manha, 8);
+    apurar("Tarde", tarde, 6);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>A outra forma: <code>malloc</code> + <code>memset</code></h3>
+<p>Também dá para zerar um bloco do <code>malloc</code> depois, com o <code>memset</code> ("memory set", preencher memória) da <code>string.h</code>:</p>
+
+<pre class="file" data-file="memset.c">int *votos = malloc(CANDIDATOS * sizeof *votos);
+if (votos == NULL) {
+    return;
+}
+memset(votos, 0, CANDIDATOS * sizeof *votos);
+</pre>
+
+<p>O <code>memset(votos, 0, bytes)</code> escreve o byte <code>0</code> em cada um dos <code>bytes</code> bytes a partir de <code>votos</code>. O resultado é igual ao do <code>calloc</code>, mas em duas linhas e com a conta repetida. Prefira o <code>calloc</code> quando o bloco é novo; o <code>memset</code> serve para zerar de novo um bloco que já está em uso (por exemplo, para apurar outra urna no mesmo bloco).</p>
+
+<div class="note">
+<strong>Zero em todos os bytes = 0, 0.0 e NULL</strong>
+<p>O <code>calloc</code> (e o <code>memset</code> com 0) zeram <strong>bytes</strong>. Para <code>int</code> e <code>char</code>, isso é o número 0 em qualquer computador. Para <code>double</code> e para ponteiros, a norma do C não garante, mas em todas as máquinas comuns de hoje (Linux, Windows, macOS, o editor do guia) todos os bytes zero também são <code>0.0</code> e <code>NULL</code>.</p>
+</div>
+
+<hr>
+
+<h2>2. O <code>calloc</code> confere a multiplicação</h2>
+<p>Há um segundo motivo para preferir o <code>calloc</code>, e ele é de segurança. O <code>malloc(n * sizeof *p)</code> faz a conta <strong>antes</strong> de chamar a função, com o tipo <code>size_t</code>, que tem um limite (<code>SIZE_MAX</code>). Se <code>n</code> for absurdo, a conta passa do limite e <strong>dá a volta</strong>, como um hodômetro que passa de 999999 para 000000 (aula <a href="inteiros.html">Inteiros</a>). O <code>calloc</code> recebe os dois números separados e confere a conta por dentro:</p>
+
+<pre class="file" data-file="estouro.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    /* uma quantidade absurda, como a que viria de um arquivo estragado */
+    size_t n = SIZE_MAX / sizeof(int) + 2;
+
+    printf("n * sizeof(int) = %zu bytes\n", n * sizeof(int));
+
+    int *a = malloc(n * sizeof *a);
+    printf("malloc: %s\n", a == NULL ? "NULL" : "devolveu um bloco!");
+
+    int *b = calloc(n, sizeof *b);
+    printf("calloc: %s\n", b == NULL ? "NULL" : "devolveu um bloco!");
+
+    free(a);
+    free(b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estouro.c -o estouro
+estouro.c: In function ‘main’:
+estouro.c:14:14: warning: product ‘4611686018427387905 * 4’ of arguments 1 and 2 exceeds ‘SIZE_MAX’ [-Walloc-size-larger-than=]
+   14 |     int *b = calloc(n, sizeof *b);
+      |              ^~~~~~~~~~~~~~~~~~~~
+In file included from estouro.c:3:
+/usr/include/stdlib.h:679:14: note: in a call to allocation function ‘calloc’ declared here
+  679 | extern void *calloc (size_t __nmemb, size_t __size)
+      |              ^~~~~~
+$ ./estouro
+n * sizeof(int) = 4 bytes
+malloc: devolveu um bloco!
+calloc: NULL</pre>
+
+<dl class="anatomy">
+  <dt>SIZE_MAX / sizeof(int) + 2</dt><dd><code>SIZE_MAX</code> (de <code>stdint.h</code>) é o maior <code>size_t</code>. Esta quantidade de <code>int</code> ocupa um pouco mais de bytes do que existe: 4 bytes além do limite. Na vida real, um número assim vem de um arquivo estragado ou de alguém mal-intencionado.</dd>
+  <dt>n * sizeof(int) = 4 bytes</dt><dd>A conta deu a volta e sobrou <strong>4</strong>. O <code>malloc</code> recebeu esse 4 e, feliz, entregou um bloco de 4 bytes. Um programa que agora gravasse <code>n</code> inteiros nesse bloco escreveria muito além do fim: é assim que muitos ataques a programas em C começam.</dd>
+  <dt>calloc: NULL</dt><dd>O <code>calloc</code> percebeu que <code>n × 4</code> não cabe num <code>size_t</code> e devolveu <code>NULL</code>, como se faltasse memória. O <code>if</code> de sempre trata o caso.</dd>
+  <dt>warning: product … exceeds ‘SIZE_MAX’ [-Walloc-size-larger-than=]</dt><dd>"O produto dos argumentos 1 e 2 passa do <code>SIZE_MAX</code>". Aqui o gcc conseguiu fazer a conta na compilação, porque <code>n</code> é fixo. Repare que ele avisou sobre o <code>calloc</code> (que vê os dois números) e <strong>não</strong> sobre o <code>malloc</code> (que só vê o 4 já estragado). Quando o número vem de fora, durante a execução, não há aviso nenhum.</dd>
+</dl>
+
+<p>No editor do guia, a saída é a mesma (lá o <code>size_t</code> tem 4 bytes, e a conta também dá a volta para 4), sem o aviso. Se você precisar usar <code>malloc</code> com um <code>n</code> que vem de fora, confira antes: <code>if (n &gt; SIZE_MAX / sizeof *p) { /* grande demais */ }</code>.</p>
+
+<hr>
+
+<h2>3. <code>realloc</code>: um bloco maior</h2>
+<p>A lista de compras da Ana tinha 3 preços, e ela lembrou de mais 2. Em vez de reservar outro bloco e copiar tudo à mão, o <code>realloc</code> aumenta o bloco que já existe:</p>
+
+<pre class="file" data-file="cresce.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    double *precos = malloc(3 * sizeof *precos);
+    if (precos == NULL) {
+        return 1;
+    }
+    precos[0] = 12.50;
+    precos[1] = 4.99;
+    precos[2] = 7.80;
+    printf("Antes:  %p\n", (void *)precos);
+
+    double *maior = realloc(precos, 5 * sizeof *precos);
+    if (maior == NULL) {
+        free(precos);
+        return 1;
+    }
+    precos = maior;
+    printf("Depois: %p\n", (void *)precos);
+
+    precos[3] = 3.25;
+    precos[4] = 9.90;
+    for (int i = 0; i &lt; 5; i++) {
+        printf("Item %d: R$ %.2f\n", i + 1, precos[i]);
+    }
+    free(precos);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>realloc(precos, 5 * sizeof *precos)</dt><dd>Dois argumentos: o bloco atual e o <strong>tamanho novo, total, em bytes</strong> (não "quantos a mais"). Aqui, 5 preços de 8 bytes: 40 bytes.</dd>
+  <dt>double *maior = …</dt><dd>O resultado vai para uma variável <strong>nova</strong>. Se o <code>realloc</code> falhar, ele devolve <code>NULL</code> e <strong>não mexe</strong> no bloco antigo; com a variável auxiliar, <code>precos</code> continua apontando para os 3 preços, que ainda podem ser usados ou liberados. Escrever <code>precos = realloc(precos, …)</code> perderia o bloco antigo numa falha (a aula <a href="array-dinamico.html">Array que Cresce</a> mostra esse vazamento no Valgrind).</dd>
+  <dt>if (maior == NULL) { free(precos); return 1; }</dt><dd>Não deu para crescer: o programa libera o bloco antigo, que ainda é dele, e desiste.</dd>
+  <dt>precos = maior;</dt><dd>Deu certo: daqui em diante a lista é o bloco que o <code>realloc</code> devolveu. Os 3 preços antigos estão lá dentro, nas mesmas posições.</dd>
+  <dt>precos[3] = 3.25; precos[4] = 9.90;</dt><dd>As posições novas existem, mas vêm sem valor (seção 6): o programa dá valor a elas antes de ler.</dd>
+  <dt>free(precos);</dt><dd>Um <code>free</code> só, do bloco atual. O antigo, se o <code>realloc</code> trocou de lugar, já foi liberado por ele.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra cresce.c -o cresce
+$ ./cresce
+Antes:  0x55e538acd010
+Depois: 0x55e538ace040      « o bloco mudou de lugar
+Item 1: R$ 12.50
+Item 2: R$ 4.99
+Item 3: R$ 7.80
+Item 4: R$ 3.25
+Item 5: R$ 9.90</pre>
+
+<p>Os dois endereços são diferentes: o espaço logo depois do bloco estava ocupado (pelo <em>buffer</em> que o primeiro <code>printf</code> reservou para ele mesmo), então o <code>realloc</code> pegou um armário em outro lugar, copiou os 3 preços e liberou o antigo. No <strong>editor do guia</strong>, os dois endereços saem iguais (<code>0x801670</code>): lá havia espaço livre logo depois, e o bloco cresceu ali mesmo. Os dois comportamentos estão certos, e o seu programa não tem como saber qual vai acontecer. Por isso a regra: <strong>depois do <code>realloc</code>, use só o ponteiro que ele devolveu</strong>.</p>
+
+<h3>Por que não reservar já o tamanho grande?</h3>
+<p>Quando você sabe o tamanho final, reserve de uma vez. O <code>realloc</code> é para quando não sabe: itens chegando um a um, um arquivo de tamanho desconhecido, o usuário que vai digitando. Cada troca de lugar copia o bloco inteiro, então chamar <code>realloc</code> para cada item novo fica lento com muitos itens. A aula <a href="array-dinamico.html">Array que Cresce</a> mostra a técnica usada na prática: dobrar a capacidade a cada vez que lota.</p>
+
+<hr>
+
+<h2>4. <code>realloc</code> para diminuir</h2>
+<p>O <code>realloc</code> também encolhe. A Ana reservou espaço para 100 notas, mas a turma só tinha 3. Para devolver a sobra:</p>
+
+<pre class="file" data-file="encolhe.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *notas = malloc(100 * sizeof *notas);
+    if (notas == NULL) {
+        return 1;
+    }
+    int usadas = 3;
+    notas[0] = 7;
+    notas[1] = 9;
+    notas[2] = 8;
+    printf("Antes:  %p (100 lugares)\n", (void *)notas);
+
+    int *justo = realloc(notas, usadas * sizeof *notas);
+    if (justo != NULL) {
+        notas = justo;
+    }
+    printf("Depois: %p (%d lugares)\n", (void *)notas, usadas);
+    for (int i = 0; i &lt; usadas; i++) {
+        printf("%d ", notas[i]);
+    }
+    printf("\n");
+    free(notas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra encolhe.c -o encolhe
+$ ./encolhe
+Antes:  0x560a58a08010 (100 lugares)
+Depois: 0x560a58a08010 (3 lugares)      « encolheu no mesmo lugar
+7 9 8</pre>
+
+<p>Os 3 primeiros valores ficam; o resto do bloco é devolvido. Encolher quase sempre acontece no mesmo lugar, mas a norma do C não promete: use o ponteiro devolvido, como sempre. Repare no <code>if (justo != NULL)</code>: se o <code>realloc</code> falhasse ao encolher (raríssimo), o bloco de 100 continuaria valendo, e o programa segue com ele. Para poucos bytes, encolher não vale o trabalho; vale para blocos grandes que vão ficar muito tempo na memória.</p>
+
+<hr>
+
+<h2>5. Os casos especiais: <code>NULL</code> e zero</h2>
+
+<h3><code>realloc(NULL, n)</code> é um <code>malloc(n)</code></h3>
+<p>Se o primeiro argumento é <code>NULL</code>, o <code>realloc</code> simplesmente reserva um bloco novo. Isso deixa o código de uma lista que cresce mais simples: o ponteiro começa em <code>NULL</code> e o mesmo <code>realloc</code> serve para a primeira reserva e para as seguintes (veja <a href="array-dinamico.html">Array que Cresce</a>).</p>
+
+<h3><code>realloc(p, 0)</code>: não use <span class="versao">C23</span></h3>
+<p>Pedir tamanho zero é uma armadilha. Até o C17, cada biblioteca decidia o que fazer; no <strong>C23</strong> virou <a href="comportamento-indefinido.html">comportamento indefinido</a>, ou seja, proibido. Veja como as duas bibliotecas deste guia respondem ao mesmo programa:</p>
+
+<pre class="file" data-file="zero.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *v = malloc(4 * sizeof *v);
+    if (v == NULL) {
+        return 1;
+    }
+    v[0] = 1;
+    int *r = realloc(v, 0);
+    printf("realloc(v, 0) devolveu %s\n", r == NULL ? "NULL" : "um ponteiro");
+    free(r);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra zero.c -o zero      « nenhum aviso
+$ ./zero
+realloc(v, 0) devolveu NULL</pre>
+
+<p>A glibc liberou o bloco e devolveu <code>NULL</code>. No <strong>editor do guia</strong>, a wasi-libc mostra <code>realloc(v, 0) devolveu um ponteiro</code>: um bloco novo, de tamanho zero. Um programa que confia num dos dois comportamentos quebra no outro: com a glibc, um <code>if (r == NULL)</code> que pensa "falhou, <code>v</code> ainda vale" acaba usando um bloco já liberado. Para liberar, use <code>free(p)</code>. Para encolher, peça pelo menos 1 item.</p>
+
+<hr>
+
+<h2>6. Depois do <code>realloc</code>, o endereço antigo morre</h2>
+<p>O erro mais comum com <code>realloc</code> acontece quando ele fica dentro de uma função. A Ana escreveu uma função que acrescenta um preço à lista:</p>
+
+<pre class="file" data-file="adicionar.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void adicionar(double *lista, int n, double preco) {
+    double *maior = realloc(lista, (n + 1) * sizeof *lista);
+    if (maior == NULL) {
+        return;
+    }
+    maior[n] = preco;
+}
+
+int main(void) {
+    double *precos = malloc(3 * sizeof *precos);
+    if (precos == NULL) {
+        return 1;
+    }
+    precos[0] = 12.50;
+    precos[1] = 4.99;
+    precos[2] = 7.80;
+    printf("Lista com 3 itens.\n");
+
+    adicionar(precos, 3, 9.90);
+
+    for (int i = 0; i &lt; 4; i++) {
+        printf("Item %d: R$ %.2f\n", i + 1, precos[i]);
+    }
+    free(precos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra adicionar.c -o adicionar      « nenhum aviso
+$ ./adicionar
+Lista com 3 itens.
+Item 1: R$ 0.00
+Item 2: R$ 0.00
+Item 3: R$ 0.00
+Item 4: R$ 0.00</pre>
+
+<p>Os preços sumiram. O que houve: <code>lista</code> é uma <strong>cópia</strong> do endereço que estava em <code>precos</code> (parâmetros recebem cópias; aula <a href="passagem-ponteiro.html">Passar por Ponteiro</a>). O <code>realloc</code> mudou o bloco de lugar, liberou o antigo e devolveu o endereço novo em <code>maior</code>, uma variável local que morre no fim da função. O <code>precos</code> do <code>main</code> nunca soube da mudança: continua apontando para o bloco <strong>liberado</strong>. Três erros de uma vez: o <code>main</code> lê memória liberada, dá <code>free</code> num bloco já liberado e o bloco novo fica perdido. O ASan mostra o primeiro deles, e conta quem liberou:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address adicionar.c -o adicionar-asan
+$ ./adicionar-asan
+=================================================================
+==432198==ERROR: AddressSanitizer: heap-use-after-free on address 0x7ba3095e0040 at pc 0x55bea7cf743a bp 0x7ffc413b9b30 sp 0x7ffc413b9b20
+READ of size 8 at 0x7ba3095e0040 thread T0
+    #0 0x55bea7cf7439 in main /home/ana/c/adicionar.c:25
+«…»
+0x7ba3095e0040 is located 0 bytes inside of 24-byte region [0x7ba3095e0040,0x7ba3095e0058)
+freed by thread T0 here:
+    #0 0x7f730a72a6cf in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:81
+    #1 0x55bea7cf72bf in adicionar /home/ana/c/adicionar.c:5
+    #2 0x55bea7cf73fc in main /home/ana/c/adicionar.c:22
+«…»
+previously allocated by thread T0 here:
+    #0 0x7f730a72b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x55bea7cf7322 in main /home/ana/c/adicionar.c:13
+«… o resto do relatório …»</pre>
+
+<p>Leitura de 8 bytes (um <code>double</code>) na linha 25, o <code>printf</code>, num bloco de 24 bytes (os 3 preços) que foi <strong>liberado pelo <code>realloc</code></strong> (<code>freed by thread T0 here: … in realloc</code>) dentro de <code>adicionar</code>, na linha 5. É a pista típica deste erro: "liberado por <code>realloc</code>" quer dizer "alguém continuou usando o endereço de antes".</p>
+
+<div class="warning">
+<strong>No editor do guia, o programa parece certo</strong>
+<p>O mesmo <code>adicionar.c</code> no editor mostra os 4 preços certinhos (<code>Item 4: R$ 9.90</code>) e termina com 0. Lá, o bloco cresceu no mesmo lugar, então o endereço antigo continuou valendo por acaso. O erro está no código do mesmo jeito: basta o <code>realloc</code> precisar mudar de lugar. Teste programas com <code>realloc</code> no seu Linux, com <code>-fsanitize=address</code> (que, de propósito, muda o bloco de lugar <strong>sempre</strong>, para pegar este erro).</p>
+</div>
+
+<p>O conserto: a função <strong>devolve</strong> o endereço novo, e quem chama guarda. Se o <code>realloc</code> falhar, a função devolve <code>NULL</code>, e quem chama ainda tem a lista antiga (a outra forma, passar o endereço do ponteiro, está em <a href="ponteiro-ponteiro.html">Ponteiro para Ponteiro</a>).</p>
+
+<div class="tryc" data-goal="out:Item 4: R$ 9.90,src:double\s*\*\s*adicionar\s*\(,src:=\s*adicionar\s*\(">
+<p class="try-task"><strong>Missão:</strong> aqui no editor o programa até mostra os 4 preços, mas você já sabe que é sorte. Conserte: mude <code>adicionar</code> para devolver <code>double *</code> (o <code>maior</code>, ou <code>NULL</code> se o <code>realloc</code> falhar) e, no <code>main</code>, guarde o resultado numa variável (<code>double *nova = adicionar(precos, 3, 9.90);</code>), confira o <code>NULL</code> e só então faça <code>precos = nova;</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void adicionar(double *lista, int n, double preco) {
+    double *maior = realloc(lista, (n + 1) * sizeof *lista);
+    if (maior == NULL) {
+        return;
+    }
+    maior[n] = preco;
+}
+
+int main(void) {
+    double *precos = malloc(3 * sizeof *precos);
+    if (precos == NULL) {
+        return 1;
+    }
+    precos[0] = 12.50;
+    precos[1] = 4.99;
+    precos[2] = 7.80;
+    printf("Lista com 3 itens.\n");
+
+    adicionar(precos, 3, 9.90);
+
+    for (int i = 0; i &lt; 4; i++) {
+        printf("Item %d: R$ %.2f\n", i + 1, precos[i]);
+    }
+    free(precos);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+double *adicionar(double *lista, int n, double preco) {
+    double *maior = realloc(lista, (n + 1) * sizeof *lista);
+    if (maior == NULL) {
+        return NULL;
+    }
+    maior[n] = preco;
+    return maior;
+}
+
+int main(void) {
+    double *precos = malloc(3 * sizeof *precos);
+    if (precos == NULL) {
+        return 1;
+    }
+    precos[0] = 12.50;
+    precos[1] = 4.99;
+    precos[2] = 7.80;
+    printf("Lista com 3 itens.\n");
+
+    double *nova = adicionar(precos, 3, 9.90);
+    if (nova == NULL) {
+        free(precos);
+        return 1;
+    }
+    precos = nova;
+
+    for (int i = 0; i &lt; 4; i++) {
+        printf("Item %d: R$ %.2f\n", i + 1, precos[i]);
+    }
+    free(precos);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>7. A parte nova não vem zerada</h2>
+<p>O <code>realloc</code> copia o conteúdo antigo, mas o espaço <strong>a mais</strong> vem como o <code>malloc</code> entrega: com lixo. Isso vale até para um bloco que nasceu do <code>calloc</code>. Aqui, 2 contadores zerados crescem para 8:</p>
+
+<pre class="file" data-file="novoslugares.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *votos = calloc(2, sizeof *votos);
+    if (votos == NULL) {
+        return 1;
+    }
+
+    int *rascunho = malloc(8 * sizeof *rascunho);
+    if (rascunho == NULL) {
+        free(votos);
+        return 1;
+    }
+    for (int i = 0; i &lt; 8; i++) {
+        rascunho[i] = 99;
+    }
+    free(rascunho);
+
+    int *maior = realloc(votos, 8 * sizeof *votos);
+    if (maior == NULL) {
+        free(votos);
+        return 1;
+    }
+    votos = maior;
+    for (int i = 0; i &lt; 8; i++) {
+        printf("%d ", votos[i]);
+    }
+    printf("\n");
+    free(votos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g novoslugares.c -o novoslugares
+$ ./novoslugares
+0 0 0 0 0 0 0 0</pre>
+
+<p>No gcc, saiu tudo zero, <strong>por sorte</strong>: o <code>realloc</code> da glibc pegou memória nova do sistema. No <strong>editor do guia</strong>, o mesmo programa mostra <code>0 0 0 59777 99 99 99 99</code>: os dois contadores antigos zerados, e depois o lixo deixado pelo <code>rascunho</code>. O Valgrind não depende da sorte: ele sabe que os 6 contadores novos nunca receberam valor, e reclama quando o <code>printf</code> da linha 27 os usa. Com <code>--track-origins=yes</code>, ele diz de onde veio o valor sem dono:</p>
+
+<pre class="term" data-cwd="~/c">$ valgrind --track-origins=yes ./novoslugares
+«… o cabeçalho …»
+==432294== Use of uninitialised value of size 8
+==432294==    at 0x48CD062: _itoa_word (_fitoa_word.c:38)
+==432294==    by 0x48D861C: __printf_buffer (vfprintf-process-arg.c:155)
+==432294==    by 0x48DA767: __vfprintf_internal (vfprintf-internal.c:1548)
+==432294==    by 0x48CE132: printf (printf.c:33)
+==432294==    by 0x40012E8: main (novoslugares.c:27)
+==432294==  Uninitialised value was created by a heap allocation
+==432294==    at 0x485807F: realloc (vg_replace_malloc.c:1804)
+==432294==    by 0x400128D: main (novoslugares.c:20)
+«… mais erros parecidos, todos com a mesma origem …»</pre>
+
+<p>"Valor não inicializado, criado por uma reserva no heap: <code>realloc</code>, na linha 20." O conserto é dar valor aos lugares novos logo depois do <code>realloc</code>, com um laço (<code>for (int i = 2; i &lt; 8; i++) votos[i] = 0;</code>) ou com <code>memset(votos + 2, 0, 6 * sizeof *votos);</code>. Repare no <code>votos + 2</code>: o endereço do terceiro contador, o primeiro lugar novo (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>).</p>
+
+<hr>
+
+<h2>Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Bloco novo que você vai preencher inteiro logo em seguida (lendo do teclado, copiando)</td><td><code>malloc(n * sizeof *p)</code></td></tr>
+<tr><td>Bloco novo que precisa começar com zeros (contadores, somas, marcações "ainda não visto")</td><td><code>calloc(n, sizeof *p)</code></td></tr>
+<tr><td>Quantidade <code>n</code> vinda de fora (usuário, arquivo, rede)</td><td><code>calloc</code>, ou <code>malloc</code> com a conferência <code>n &gt; SIZE_MAX / sizeof *p</code></td></tr>
+<tr><td>Zerar de novo um bloco que já existe</td><td><code>memset(p, 0, n * sizeof *p)</code></td></tr>
+<tr><td>Aumentar ou diminuir um bloco, mantendo o conteúdo</td><td><code>realloc</code>, sempre numa variável auxiliar</td></tr>
+<tr><td>Uma lista que cresce item a item</td><td><code>realloc</code> dobrando a capacidade (aula <a href="array-dinamico.html">Array que Cresce</a>)</td></tr>
+<tr><td>Liberar</td><td><code>free(p)</code>, nunca <code>realloc(p, 0)</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Os valores somem ou viram lixo depois de uma função que chama <code>realloc</code></strong>
+<p><strong>O que significa:</strong> a função fez o <code>realloc</code> numa cópia do ponteiro, e quem chamou continua com o endereço antigo, já liberado. No gcc aparecem valores errados (como <code>R$ 0.00</code>) ou um aborto no <code>free</code>; no editor do guia, o programa costuma parecer certo. O ASan mostra <code>heap-use-after-free</code> com <code>freed by thread T0 here: … in realloc</code>.</p>
+<p><strong>Como consertar:</strong> a função devolve o ponteiro novo (<code>precos = nova;</code> em quem chama, depois de conferir o <code>NULL</code>) ou recebe o endereço do ponteiro (<code>double **</code>). Nunca guarde endereços de dentro do bloco (<code>&amp;precos[0]</code>) de antes de um <code>realloc</code>; guarde índices.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Use of uninitialised value</code> … <code>created by a heap allocation</code> … <code>realloc</code></strong>
+<p><strong>O que significa:</strong> o programa leu a parte nova de um bloco que cresceu, antes de dar valor a ela. O <code>realloc</code> não zera, nem quando o bloco veio do <code>calloc</code>.</p>
+<p><strong>Como consertar:</strong> logo depois do <code>realloc</code>, dê valor às posições novas (laço ou <code>memset</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: product ‘…’ of arguments 1 and 2 exceeds ‘SIZE_MAX’ [-Walloc-size-larger-than=]</code></strong>
+<p><strong>O que significa:</strong> o gcc fez a conta <code>quantidade × tamanho</code> na compilação e viu que ela não cabe num <code>size_t</code>. O <code>calloc</code> vai devolver <code>NULL</code>.</p>
+<p><strong>Como consertar:</strong> confira o número de itens; quase sempre é uma conta errada ou um valor de teste absurdo. Sem o aviso (quando o número vem de fora), o <code>if (p == NULL)</code> trata o caso.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: too few arguments to function ‘calloc’; expected 2, have 1</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra umarg.c -o umarg
+umarg.c: In function ‘main’:
+umarg.c:4:18: error: too few arguments to function ‘calloc’; expected 2, have 1
+    4 |     int *votos = calloc(4 * sizeof *votos);
+      |                  ^~~~~~
+In file included from umarg.c:1:
+/usr/include/stdlib.h:679:14: note: declared here
+  679 | extern void *calloc (size_t __nmemb, size_t __size)
+      |              ^~~~~~</pre>
+<p><strong>O que significa:</strong> "poucos argumentos para a função <code>calloc</code>: esperava 2, recebeu 1". O <code>calloc</code> foi chamado como se fosse o <code>malloc</code>, com a conta já feita. A <code>note</code> mostra a declaração da glibc, com os dois parâmetros (<code>__nmemb</code>, "número de membros", e <code>__size</code>, o tamanho de cada um). No editor, o Clang diz <code>error: too few arguments to function call, expected 2, have 1</code>.</p>
+<p><strong>Como consertar:</strong> separe a quantidade do tamanho com uma vírgula: <code>calloc(4, sizeof *votos)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa se comporta diferente no editor e no Linux depois de <code>realloc(p, 0)</code></strong>
+<p><strong>O que significa:</strong> o tamanho zero é comportamento indefinido no C23: a glibc libera e devolve <code>NULL</code>; a wasi-libc do editor devolve um bloco novo.</p>
+<p><strong>Como consertar:</strong> para liberar, <code>free(p)</code>. Se o tamanho novo vem de uma conta, trate o zero antes de chamar o <code>realloc</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que faz</th></tr>
+<tr><td><code>void *calloc(size_t n, size_t tamanho);</code></td><td>Reserva <code>n</code> itens de <code>tamanho</code> bytes, todos os bytes zero; <code>NULL</code> se não deu ou se <code>n × tamanho</code> não cabe num <code>size_t</code>.</td></tr>
+<tr><td><code>void *realloc(void *p, size_t bytes);</code></td><td>Muda o bloco <code>p</code> para <code>bytes</code> bytes (o total). Mantém o conteúdo até o menor dos dois tamanhos; a parte nova é lixo. Pode mudar de lugar. <code>NULL</code> se não deu, e aí <code>p</code> continua valendo.</td></tr>
+<tr><td><code>T *maior = realloc(p, n * sizeof *p);</code><br><code>if (maior != NULL) p = maior;</code></td><td>O jeito seguro: só troca o ponteiro quando deu certo.</td></tr>
+<tr><td><code>realloc(NULL, bytes)</code></td><td>O mesmo que <code>malloc(bytes)</code>.</td></tr>
+<tr><td><code>realloc(p, 0)</code></td><td>Comportamento indefinido no C23. Use <code>free(p)</code>.</td></tr>
+<tr><td><code>memset(p, 0, bytes)</code></td><td>Põe zero em <code>bytes</code> bytes a partir de <code>p</code> (<code>string.h</code>).</td></tr>
+<tr><td><code>SIZE_MAX</code></td><td>O maior <code>size_t</code> (<code>stdint.h</code>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Contadores zerados</h3>
+<p>Complete para reservar 10 contadores <code>int</code> que começam em zero:</p>
+<div class="ex-code">int *cont = calloc(<input data-answer="10, sizeof *cont|10, sizeof(int)|10, sizeof(*cont)|10,sizeof *cont|10,sizeof(int)" aria-label="argumentos">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. O tamanho novo</h3>
+<p>A lista <code>notas</code> tem 5 <code>double</code>. Complete para que ela passe a ter 8:</p>
+<div class="ex-code">double *maior = realloc(notas, <input data-answer="8 * sizeof *notas|8 * sizeof(double)|8*sizeof *notas|8*sizeof(double)|8 * sizeof(*notas)" aria-label="tamanho">);</div>
+</div>
+
+<div class="exercise">
+<h3>3. O malloc disfarçado</h3>
+<p>Qual valor no primeiro argumento faz o <code>realloc</code> funcionar igual ao <code>malloc</code>?</p>
+<div class="ex-code">realloc(<input data-answer="NULL|nullptr" aria-label="ponteiro">, 40)</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que <code>calloc(n, 4)</code> é mais seguro que <code>malloc(n * 4)</code> quando <code>n</code> vem de um arquivo?</p>
+<label><input type="radio" name="q4"> Porque o <code>calloc</code> é mais rápido</label>
+<label><input type="radio" name="q4"> Porque o <code>calloc</code> confere se <code>n × 4</code> cabe num <code>size_t</code>; no <code>malloc</code>, a conta pode dar a volta e virar um número pequeno</label>
+<label><input type="radio" name="q4"> Porque o <code>calloc</code> nunca devolve <code>NULL</code></label>
+<label><input type="radio" name="q4"> Porque o <code>malloc</code> não aceita números vindos de arquivos</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Depois de <code>int *maior = realloc(v, 10 * sizeof *v);</code> dar certo, o que é verdade?</p>
+<label><input type="radio" name="q5"> <code>v</code> e <code>maior</code> são sempre o mesmo endereço</label>
+<label><input type="radio" name="q5"> Os 10 inteiros estão zerados</label>
+<label><input type="radio" name="q5"> Os valores antigos estão em <code>maior</code>; <code>v</code> pode ter sido liberado e não deve mais ser usado</label>
+<label><input type="radio" name="q5"> É preciso dar <code>free(v)</code> e depois <code>free(maior)</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Um programa com <code>realloc</code> dentro de uma função funciona no editor do guia e mostra lixo no gcc. Qual é a explicação mais provável?</p>
+<label><input type="radio" name="q6"> Quem chamou a função continua com o endereço antigo; no editor o bloco cresceu no mesmo lugar, por acaso</label>
+<label><input type="radio" name="q6"> O gcc tem um defeito no <code>realloc</code></label>
+<label><input type="radio" name="q6"> Faltou <code>-std=c23</code> no gcc</label>
+<label><input type="radio" name="q6"> O editor zera a memória e o gcc não</label>
+</div>
+
+<h3>Missão final: o candidato que chegou atrasado</h3>
+
+<div class="tryc" data-goal="out:Candidato 2: 3 votos,out:Candidato 3: 2 votos,src:calloc\s*\(,src:realloc\s*\(,src:\[\s*(n|3)\s*\]\s*=\s*0|memset">
+<p class="try-task"><strong>Missão:</strong> a eleição começou com 3 candidatos e, à tarde, entrou o candidato 3. (1) Reserve os <code>n</code> contadores com <code>calloc</code>, no lugar do <code>NULL</code>. (2) No ponto marcado, aumente o bloco para <code>n + 1</code> contadores com <code>realloc</code>, numa variável auxiliar (se falhar, libere <code>votos</code> e saia com 1), dê zero ao contador novo (<code>maior[n] = 0;</code> ou <code>votos[n] = 0;</code>) e some 1 em <code>n</code>. A saída deve ser:</p>
+<pre class="out">Candidato 0: 2 votos
+Candidato 1: 2 votos
+Candidato 2: 3 votos
+Candidato 3: 2 votos</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void mostrar(const int *votos, int n) {
+    for (int c = 0; c &lt; n; c++) {
+        printf("Candidato %d: %d votos\n", c, votos[c]);
+    }
+}
+
+int main(void) {
+    int n = 3;
+    int *votos = NULL;   /* (1) reserve n contadores zerados */
+    if (votos == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+
+    int manha[] = {0, 2, 1, 2, 2};
+    for (int i = 0; i &lt; 5; i++) {
+        votos[manha[i]]++;
+    }
+
+    /* (2) entrou o candidato 3: cresça para n + 1, zere o novo e some 1 em n */
+
+    int tarde[] = {3, 1, 3, 0};
+    for (int i = 0; i &lt; 4; i++) {
+        votos[tarde[i]]++;
+    }
+
+    mostrar(votos, n);
+    free(votos);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void mostrar(const int *votos, int n) {
+    for (int c = 0; c &lt; n; c++) {
+        printf("Candidato %d: %d votos\n", c, votos[c]);
+    }
+}
+
+int main(void) {
+    int n = 3;
+    int *votos = calloc(n, sizeof *votos);
+    if (votos == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+
+    int manha[] = {0, 2, 1, 2, 2};
+    for (int i = 0; i &lt; 5; i++) {
+        votos[manha[i]]++;
+    }
+
+    int *maior = realloc(votos, (n + 1) * sizeof *votos);
+    if (maior == NULL) {
+        free(votos);
+        return 1;
+    }
+    votos = maior;
+    votos[n] = 0;
+    n++;
+
+    int tarde[] = {3, 1, 3, 0};
+    for (int i = 0; i &lt; 4; i++) {
+        votos[tarde[i]]++;
+    }
+
+    mostrar(votos, n);
+    free(votos);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Para conferir o que o editor não confere, rode a sua solução no Linux com <code>gcc -g -fsanitize=address</code> e com <code>valgrind --leak-check=full</code>: nenhum erro, e <code>All heap blocks were freed -- no leaks are possible</code>. Depois apague o <code>votos[n] = 0;</code> e rode no Valgrind de novo: aparece o <code>Conditional jump or move depends on uninitialised value(s)</code> da seção 7.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>calloc(quantidade, tamanho)</code> reserva um bloco com todos os bytes zero. Use para contadores e somas. A alternativa é <code>malloc</code> + <code>memset(p, 0, bytes)</code>.</li>
+  <li>O <code>calloc</code> confere se <code>quantidade × tamanho</code> cabe num <code>size_t</code>; o <code>malloc(n * tamanho)</code> não, e a conta pode dar a volta.</li>
+  <li><code>realloc(p, bytes)</code> muda o tamanho de um bloco (para mais ou para menos), mantendo o conteúdo. Ele pode mudar o bloco de lugar e liberar o antigo: use só o ponteiro devolvido, guardado numa variável auxiliar até conferir o <code>NULL</code>.</li>
+  <li>A parte nova de um bloco que cresceu vem com lixo, mesmo se ele nasceu do <code>calloc</code>.</li>
+  <li><code>realloc(NULL, n)</code> = <code>malloc(n)</code>. <code>realloc(p, 0)</code> é indefinido no C23: use <code>free</code>.</li>
+  <li>Uma função que faz <code>realloc</code> precisa devolver o ponteiro novo a quem chamou.</li>
+  <li>No editor do guia, o bloco costuma crescer no mesmo lugar, e o erro do endereço antigo fica escondido. No Linux, o ASan (<code>freed by … realloc</code>) e o Valgrind mostram.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
