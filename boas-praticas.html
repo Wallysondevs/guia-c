@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Boas Práticas — o checklist de um bom código C23 | Guia C</title>
+<meta name="description" content="Boas práticas em C para quem nunca programou: o checklist comentado de um bom código C23 — compilar com -Wall -Wextra (e -Werror), inicializar toda variável, conferir o retorno de scanf, malloc e fopen, nunca copiar texto sem o tamanho, todo malloc com seu free, respeitar os limites dos arrays, números com nome, funções pequenas e os sanitizers nos testes. Com os avisos reais do gcc 15 e um programa antes × depois.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Boas Práticas</span></h1>
+
+<p class="intro">O C deixa você fazer quase tudo, inclusive muita coisa errada sem reclamar. Um programa pode compilar, rodar e mostrar um número absurdo, funcionar hoje e quebrar amanhã, ou estragar a memória em silêncio. As <strong>boas práticas</strong> são hábitos que evitam esses problemas antes que eles apareçam. Esta página junta num <strong>checklist comentado</strong> as práticas que o guia foi ensinando e termina com um programa "antes × depois": um código cheio de problemas e a versão consertada, mudança por mudança.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Os itens do checklist de um bom código C, cada um com o porquê e a aula que o detalha.</li>
+  <li>Como usar os avisos do compilador (<code>-Wall -Wextra</code>) e o <code>-Werror</code> a seu favor.</li>
+  <li>Por que inicializar variáveis, conferir retornos e respeitar os limites dos arrays não é frescura.</li>
+  <li>Como transformar um programa ruim num bom, passo a passo (refatorar).</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/boas</code>. Cada item do checklist tem uma aula própria; aqui você os vê juntos e aprende a usá-los como rotina.</p>
+
+<hr>
+
+<h2>A ideia: o checklist do piloto</h2>
+<p>Antes de decolar, todo piloto, por mais experiente que seja, segue um checklist: combustível, portas, flaps. Não é porque esqueceu como se pilota — é porque, numa rotina repetida mil vezes, um item esquecido custa caro, e o checklist torna o esquecimento quase impossível.</p>
+
+<p>Programar é parecido. Você sabe o que é uma variável sem valor inicial, mas num programa de 300 linhas, às 23h, ela passa. O checklist abaixo é a sua lista antes de "decolar" (entregar o programa):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>#</th><th>Prática</th><th>Evita</th></tr>
+<tr><td>1</td><td>Compile com <code>-Wall -Wextra</code> (e <code>-Werror</code> em projetos)</td><td>Erros que o compilador já tinha visto</td></tr>
+<tr><td>2</td><td>Inicialize toda variável</td><td>Números "lixo"</td></tr>
+<tr><td>3</td><td>Confira o retorno de <code>scanf</code>, <code>malloc</code> e <code>fopen</code></td><td>Usar um dado que nunca chegou</td></tr>
+<tr><td>4</td><td>Nunca copie texto sem o tamanho</td><td>Estouro de buffer</td></tr>
+<tr><td>5</td><td>Todo <code>malloc</code> tem o seu <code>free</code></td><td>Vazamentos de memória</td></tr>
+<tr><td>6</td><td>Respeite os limites dos arrays (<code>i &lt; N</code>)</td><td>Ler e escrever fora do array</td></tr>
+<tr><td>7</td><td>Números com nome (<code>#define</code>, <code>const</code>)</td><td>Números soltos que ninguém entende</td></tr>
+<tr><td>8</td><td><code>int main(void)</code>, <code>return 0</code> e protótipos</td><td>Surpresas na compilação</td></tr>
+<tr><td>9</td><td>Funções pequenas, nomes claros</td><td>Código que ninguém entende</td></tr>
+<tr><td>10</td><td>Sanitizers e FORTIFY nos testes</td><td>Erros de memória que só aparecem às vezes</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Compile com <code>-Wall -Wextra</code></h2>
+<p>O compilador é o seu primeiro revisor, e de graça. As opções <code>-Wall</code> ("all warnings", todos os avisos) e <code>-Wextra</code> ("extra") ligam centenas de conferências que pegam os erros mais comuns <strong>antes</strong> de o programa rodar. Por isso o comando padrão do guia é sempre:</p>
+
+<pre class="term" data-cwd="~/c/boas">$ gcc -std=c23 -Wall -Wextra programa.c -o programa</pre>
+
+<p>Em um projeto que já está limpo, vá além com o <code>-Werror</code> ("warnings as errors", avisos como erros): ele transforma todo aviso em erro, e o programa só compila quando não sobra nenhum. Assim nenhum aviso é ignorado "para depois":</p>
+
+<pre class="term" data-cwd="~/c/boas">$ gcc -std=c23 -Wall -Wextra -Werror lixo.c -o lixo
+lixo.c: In function ‘main’:
+lixo.c:5:5: error: ‘contador’ is used uninitialized [-Werror=uninitialized]
+    5 |     printf("Contador: %d\n", contador);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cc1: all warnings being treated as errors
+$ echo $?
+1</pre>
+
+<p>O mesmo aviso que o compilador daria virou um <code>error</code>, e a compilação parou. Veja como ler essas mensagens em <a href="erros-compilacao.html">Lendo Erros do Compilador</a> e o que cada aviso quer dizer em <a href="avisos.html">Avisos (-Wall -Wextra)</a>.</p>
+
+<hr>
+
+<h2>2. Inicialize toda variável</h2>
+<p>Uma variável local que você declara e não dá valor <strong>não vale zero</strong>: ela vale o que estava naquele pedaço de memória, um número qualquer (o "lixo"). Usar esse valor é <a href="comportamento-indefinido.html">comportamento indefinido</a>. Com <code>-Wall -Wextra</code>, o gcc avisa:</p>
+
+<pre class="term" data-cwd="~/c/boas">$ gcc -std=c23 -Wall -Wextra lixo.c -o lixo
+lixo.c: In function ‘main’:
+lixo.c:5:5: warning: ‘contador’ is used uninitialized [-Wuninitialized]
+    5 |     printf("Contador: %d\n", contador);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+lixo.c:4:9: note: ‘contador’ was declared here
+    4 |     int contador;
+      |         ^~~~~~~~</pre>
+
+<p><em>‘contador’ is used uninitialized</em> = "<code>contador</code> é usado sem valor inicial". O conserto é sempre o mesmo: <strong>dê um valor na hora de declarar</strong> — <code>int contador = 0;</code>, <code>double soma = 0.0;</code>, <code>char nome[30] = "";</code>. No editor do guia, o Clang diz a mesma coisa com outras palavras: <code>warning: variable 'contador' is uninitialized when used here</code>.</p>
+
+<div class="tryc" data-goal="out:Média: 8.0,src:soma\s*=\s*0">
+<p class="try-task"><strong>Missão:</strong> este programa soma três notas, mas <code>soma</code> começa sem valor inicial — o resultado pode ser qualquer coisa. Inicialize-a com <code>double soma = 0.0;</code>. A média certa de 7, 8 e 9 é <code>8.0</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define QTD 3
+
+int main(void) {
+    double soma;
+    double notas[QTD] = {7, 8, 9};
+    for (int i = 0; i &lt; QTD; i++) {
+        soma += notas[i];
+    }
+    printf("Média: %.1f\n", soma / QTD);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define QTD 3
+
+int main(void) {
+    double soma = 0.0;
+    double notas[QTD] = {7, 8, 9};
+    for (int i = 0; i &lt; QTD; i++) {
+        soma += notas[i];
+    }
+    printf("Média: %.1f\n", soma / QTD);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Confira o retorno de <code>scanf</code>, <code>malloc</code> e <code>fopen</code></h2>
+<p>Muitas funções do C devolvem um valor que diz se deram certo, e é tentador ignorá-lo. Mas se você usa o resultado assim mesmo, pode estar usando um dado que nunca chegou:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Devolve</th><th>Confira</th></tr>
+<tr><td><a href="scanf.html"><code>scanf</code></a></td><td>quantos valores leu</td><td><code>if (scanf("%d", &amp;x) != 1) { ... }</code></td></tr>
+<tr><td><a href="malloc-free.html"><code>malloc</code></a></td><td>o endereço, ou <code>NULL</code> se faltou memória</td><td><code>if (p == NULL) { ... }</code></td></tr>
+<tr><td><a href="arquivos.html"><code>fopen</code></a></td><td>o arquivo, ou <code>NULL</code> se não abriu</td><td><code>if (arquivo == NULL) { perror(...); }</code></td></tr>
+</table>
+</div>
+
+<p>O caso do <code>scanf</code> é o mais comum. Se a pessoa digita <code>abc</code> onde o programa espera um número, o <code>scanf</code> não lê nada e devolve <code>0</code>; sem conferir, a variável fica com o valor que já tinha (quase sempre lixo), e o programa segue com um número inventado. Veja o "antes × depois" na missão do fim da página. A aula <a href="validar-entrada.html">Validar a Entrada</a> mostra os detalhes.</p>
+
+<hr>
+
+<h2>4. Nunca copie texto sem o tamanho</h2>
+<p>Copiar texto para um array sem dizer quanto cabe é a porta do <strong>estouro de buffer</strong>, o erro mais perigoso do C. Fuja de <code>gets</code>, <code>strcpy</code>, <code>strcat</code>, <code>sprintf</code> e <code>scanf("%s")</code> sem limite; prefira <a href="fgets.html"><code>fgets</code></a>, <code>snprintf</code> e <code>%29s</code>, que recebem o tamanho do destino. A aula <a href="seguranca.html">Segurança (Buffer Overflow)</a> é inteira sobre isso, com os estouros acontecendo de verdade.</p>
+
+<hr>
+
+<h2>5. Todo <code>malloc</code> tem o seu <code>free</code></h2>
+<p>Toda memória que você reserva com <a href="malloc-free.html"><code>malloc</code></a> precisa ser devolvida com <code>free</code> quando não for mais usada. Esquecer é um <a href="vazamentos.html">vazamento de memória</a>: o programa vai comendo memória até acabar. A regra prática é ler cada <code>malloc</code> e já pensar em onde vai o <code>free</code>. E, depois de liberar, faça <code>p = NULL;</code>: assim um <code>free</code> repetido por engano não vira um erro (veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>).</p>
+
+<div class="warning">
+<strong>O compilador não cobra o <code>free</code></strong>
+<p>Um programa com vazamento compila sem um aviso sequer. Quem pega vazamentos é o <a href="sanitizers.html">AddressSanitizer</a> (ou o <a href="valgrind.html">Valgrind</a>), rodando os seus testes. Por isso o item 10.</p>
+</div>
+
+<hr>
+
+<h2>6. Respeite os limites dos arrays</h2>
+<p>Um array de <code>N</code> posições vai de <code>0</code> a <code>N - 1</code>. O laço certo é <code>for (int i = 0; i &lt; N; i++)</code> — com <code>&lt;</code>, nunca <code>&lt;=</code>. Trocar por <code>&lt;=</code> faz o laço tocar em <code>v[N]</code>, que não existe, e estragar a memória vizinha (o mesmo estouro da aula de <a href="seguranca.html">Segurança</a>; veja também o cenário do <a href="projeto-notas.html">Boletim de Notas</a>). Esse erro passa calado na compilação — por isso vale decorar: <strong>o índice vai até <code>N - 1</code>, o laço usa <code>&lt;</code></strong>.</p>
+
+<hr>
+
+<h2>7. Números com nome</h2>
+<p>Um <code>30</code> solto no meio do código não diz nada: é o tamanho da turma? a idade máxima? Dê um nome a ele com <a href="constantes.html"><code>#define</code> ou <code>const</code></a>. O código fica legível e, quando o número mudar, você muda num lugar só:</p>
+
+<pre class="file" data-file="exemplo.c">#define MAX_ALUNOS 30
+#define MEDIA_APROVACAO 6.0
+
+struct Aluno turma[MAX_ALUNOS];
+if (nota &gt;= MEDIA_APROVACAO) { /* aprovado */ }
+</pre>
+
+<p>Qualquer pessoa entende <code>MAX_ALUNOS</code> e <code>MEDIA_APROVACAO</code>; ninguém precisa adivinhar o que era o <code>30</code> ou o <code>6.0</code>. No C23, para valores que são constantes de verdade, você pode usar também <code>constexpr int MAX_ALUNOS = 30;</code> <span class="versao">C23</span>.</p>
+
+<hr>
+
+<h2>8. <code>int main(void)</code>, <code>return 0</code> e protótipos</h2>
+<ul>
+  <li>Escreva <code>int main(void)</code> — o <code>void</code> diz "este programa não recebe argumentos aqui". Deixe o <code>return 0;</code> no fim para dizer ao sistema que deu tudo certo (o C99+ aceita omiti-lo só no <code>main</code>, mas escrevê-lo é mais claro).</li>
+  <li>Declare cada função <strong>antes</strong> de usá-la, com um <a href="prototipos.html">protótipo</a>, ou ponha a função inteira acima de quem a chama. No C23, chamar uma função que o compilador ainda não viu é um <strong>erro</strong>, não um aviso.</li>
+</ul>
+
+<hr>
+
+<h2>9. Funções pequenas, nomes claros</h2>
+<p>Uma <a href="funcoes.html">função</a> deve fazer <strong>uma</strong> coisa e ter um nome que diga qual. <code>double media(const double notas[], int n)</code> se entende sozinha; um <code>main</code> de 200 linhas, não. Nomes claros valem para tudo: <code>soma</code>, <code>maior</code>, <code>qtd_alunos</code> — não <code>x</code>, <code>a2</code>, <code>tmp3</code>. O bom nome é um comentário que nunca fica desatualizado.</p>
+
+<hr>
+
+<h2>10. Sanitizers e FORTIFY nos testes</h2>
+<p>Os piores erros de C — estouros, vazamentos, uso de memória liberada — não aparecem na compilação e às vezes nem quando você roda o programa à mão. Para caçá-los, compile a versão de teste com os fiscais e rode os seus <a href="testes.html">testes</a>:</p>
+
+<pre class="term" data-cwd="~/c/boas">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address programa.c -o programa
+$ ./programa    « rode os testes aqui</pre>
+
+<p>O <a href="sanitizers.html">AddressSanitizer</a> aponta a linha de cada erro de memória; na versão final, <code>-O2 -D_FORTIFY_SOURCE=2</code> protege de graça contra estouros (veja <a href="seguranca.html">Segurança</a>). Nenhum dos dois roda no editor do guia, só no seu Linux.</p>
+
+<hr>
+
+<h2>O programa antes × depois</h2>
+<p>Juntando tudo. Este programa calcula a média de duas notas que a pessoa digita. Ele até "funciona" num teste rápido, mas tem três dos problemas do checklist:</p>
+
+<pre class="file" data-file="antes.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double n1, n2;
+    double soma;
+    printf("Nota 1: ");
+    scanf("%lf", &amp;n1);
+    printf("Nota 2: ");
+    scanf("%lf", &amp;n2);
+    soma = n1 + n2;
+    printf("Média: %.1f\n", soma / 2);
+    return 0;
+}
+</pre>
+
+<ul>
+  <li><strong>Item 3:</strong> os <code>scanf</code> não são conferidos. Se a pessoa digitar <code>abc</code>, <code>n1</code> fica com lixo e a média sai sem sentido.</li>
+  <li><strong>Item 7:</strong> o <code>2</code> solto é um número mágico (a quantidade de notas).</li>
+  <li><strong>Item 9:</strong> o cálculo e a leitura estão todos no <code>main</code>.</li>
+</ul>
+
+<p>A versão depois conserta os três:</p>
+
+<pre class="file" data-file="depois.c">#include &lt;stdio.h&gt;
+
+#define QTD_NOTAS 2
+
+int ler_nota(const char *rotulo, double *destino) {
+    printf("%s", rotulo);
+    return scanf("%lf", destino) == 1;
+}
+
+int main(void) {
+    double n1 = 0.0;
+    double n2 = 0.0;
+    if (!ler_nota("Nota 1: ", &amp;n1) || !ler_nota("Nota 2: ", &amp;n2)) {
+        printf("Nota inválida.\n");
+        return 1;
+    }
+    double media = (n1 + n2) / QTD_NOTAS;
+    printf("Média: %.1f\n", media);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int ler_nota(const char *rotulo, double *destino)</dt><dd>Uma função pequena, com nome claro, que mostra o rótulo, lê a nota e devolve <code>1</code> se conseguiu (item 9). O <code>const</code> no rótulo diz que a função não muda o texto (item do <a href="const-ponteiros.html">const</a>).</dd>
+  <dt>double n1 = 0.0;</dt><dd>Toda variável começa com valor (item 2).</dd>
+  <dt>if (!ler_nota(...) || !ler_nota(...))</dt><dd>Confere as duas leituras; se qualquer uma falhar, avisa e sai com código 1 (item 3).</dd>
+  <dt>(n1 + n2) / QTD_NOTAS</dt><dd>O <code>2</code> virou <code>QTD_NOTAS</code>, com nome (item 7).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/boas">$ gcc -std=c23 -Wall -Wextra depois.c -o depois
+$ ./depois
+Nota 1: 7
+Nota 2: 8
+Média: 7.5
+$ ./depois
+Nota 1: abc
+Nota inválida.
+$ echo $?
+1</pre>
+
+<p>Agora o texto inválido é recusado em vez de virar uma média maluca, e o código se lê como uma frase.</p>
+
+<div class="tryc" data-stdin="7\n8\n" data-goal="out:Média: 7.5,src:if\s*\(\s*scanf|scanf\([^)]*\)\s*==\s*1|scanf\([^)]*\)\s*!=\s*1">
+<p class="try-task"><strong>Missão final:</strong> complete a versão "depois". O programa já inicializa as variáveis, mas ainda não <strong>confere</strong> o <code>scanf</code>. Troque cada <code>scanf("%lf", &amp;nX);</code> solto por uma leitura conferida — por exemplo, <code>if (scanf("%lf", &amp;n1) != 1) { printf("Nota inválida.\n"); return 1; }</code>. Com as notas 7 e 8, a média é <code>7.5</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define QTD_NOTAS 2
+
+int main(void) {
+    double n1 = 0.0;
+    double n2 = 0.0;
+    printf("Nota 1: ");
+    scanf("%lf", &amp;n1);
+    printf("Nota 2: ");
+    scanf("%lf", &amp;n2);
+    double media = (n1 + n2) / QTD_NOTAS;
+    printf("Média: %.1f\n", media);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define QTD_NOTAS 2
+
+int main(void) {
+    double n1 = 0.0;
+    double n2 = 0.0;
+    printf("Nota 1: ");
+    if (scanf("%lf", &amp;n1) != 1) {
+        printf("Nota inválida.\n");
+        return 1;
+    }
+    printf("Nota 2: ");
+    if (scanf("%lf", &amp;n2) != 1) {
+        printf("Nota inválida.\n");
+        return 1;
+    }
+    double media = (n1 + n2) / QTD_NOTAS;
+    printf("Média: %.1f\n", media);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"No meu computador funciona, no do professor não"</strong>
+<p><strong>O que aconteceu:</strong> quase sempre é uma variável sem valor inicial (item 2) ou um <a href="comportamento-indefinido.html">comportamento indefinido</a>. O lixo que estava na memória era 0 na sua máquina e outro número na dele.</p>
+<p><strong>Como resolver:</strong> compile com <code>-Wall -Wextra</code> e rode com <code>-fsanitize=address,undefined</code> dos dois lados.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa ignora o que a pessoa digita e usa outro valor</strong>
+<p><strong>O que aconteceu:</strong> um <code>scanf</code> falhou (texto no lugar de número) e o retorno não foi conferido (item 3); a variável ficou com o valor de antes.</p>
+<p><strong>Como resolver:</strong> <code>if (scanf(...) != N) { ... }</code>, como na missão final.</p>
+</div>
+
+<div class="cenario">
+<strong>Muitos avisos "para arrumar depois", e nunca arrumados</strong>
+<p><strong>O que aconteceu:</strong> os avisos foram se acumulando até ninguém mais olhar, e o de verdade importante sumiu no meio.</p>
+<p><strong>Como resolver:</strong> mantenha a compilação <strong>sem nenhum aviso</strong>, e ligue <code>-Werror</code> no projeto (item 1).</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Tratar aviso como erro</h3>
+<p>Complete a opção que faz o gcc recusar o programa se houver qualquer aviso:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra <input data-answer="-Werror" aria-label="opção"> prog.c -o prog</div>
+</div>
+
+<div class="exercise">
+<h3>2. Variável com valor inicial</h3>
+<p>Complete a declaração de um contador que começa em zero:</p>
+<div class="ex-code">int total <input data-answer="= 0" aria-label="inicialização" size="5">;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Por que inicializar <code>int soma;</code> com <code>= 0</code>?</p>
+<label><input type="radio" name="q3"> Porque o C exige que toda variável tenha <code>= 0</code>.</label>
+<label><input type="radio" name="q3"> Para o programa ficar mais rápido.</label>
+<label><input type="radio" name="q3"> Porque, sem valor, a variável local vale um número qualquer (lixo), e usá-lo é comportamento indefinido.</label>
+<label><input type="radio" name="q3"> Porque o <code>printf</code> não aceita variáveis sem valor.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual é a forma segura de ler um número com o <code>scanf</code>?</p>
+<label><input type="radio" name="q4"> <code>scanf("%d", &amp;x);</code> e seguir em frente.</label>
+<label><input type="radio" name="q4"> <code>if (scanf("%d", &amp;x) != 1) { ... }</code>, conferindo o retorno.</label>
+<label><input type="radio" name="q4"> <code>scanf("%d", x);</code> sem o <code>&amp;</code>.</label>
+<label><input type="radio" name="q4"> Nunca usar o <code>scanf</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. O que o <code>-fsanitize=address</code> acha que o <code>-Wall -Wextra</code> não acha?</p>
+<label><input type="radio" name="q5"> Erros de digitação nas mensagens.</label>
+<label><input type="radio" name="q5"> Funções com nomes ruins.</label>
+<label><input type="radio" name="q5"> Números mágicos.</label>
+<label><input type="radio" name="q5"> Erros de memória que só aparecem enquanto o programa roda (estouros, vazamentos, uso depois do <code>free</code>).</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Compile sempre com <code>-Wall -Wextra</code>, e <code>-Werror</code> no projeto: o compilador é o seu primeiro revisor.</li>
+  <li>Inicialize toda variável; confira o retorno de <code>scanf</code>, <code>malloc</code> e <code>fopen</code>; nunca copie texto sem o tamanho.</li>
+  <li>Todo <code>malloc</code> tem o seu <code>free</code>; respeite os limites dos arrays (<code>i &lt; N</code>); dê nome aos números.</li>
+  <li><code>int main(void)</code> com <code>return 0</code>, protótipos antes de usar, funções pequenas com nomes claros.</li>
+  <li>Rode os <a href="sanitizers.html">sanitizers</a> nos testes e o FORTIFY na versão final: eles pegam o que o compilador não vê.</li>
+  <li>Boa prática não é enfeite: cada item evita uma categoria inteira de bugs.</li>
+</ul>
+<p>Próxima aula: <a href="projetos.html">Sobre os Projetos</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
