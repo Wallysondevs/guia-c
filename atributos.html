@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Atributos — [[nodiscard]], [[deprecated]] e outros | Guia C</title>
+<meta name="description" content="Atributos do C23 para quem está aprendendo C: [[nodiscard]] para não esquecer um retorno, [[maybe_unused]], [[deprecated]], [[fallthrough]] no switch e [[noreturn]] (e o antigo _Noreturn), com os avisos reais do gcc 15 e do Clang, e o __attribute__ do gcc.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Atributos</span></h1>
+
+<p class="intro">Às vezes você sabe uma coisa sobre o seu código que o compilador não tem como adivinhar: "o retorno desta função é importante, não jogue fora", "esta função é antiga, não use mais", "aqui no <code>switch</code> eu quero mesmo continuar no próximo <code>case</code>". Os <strong>atributos</strong> <span class="versao">C23</span> são etiquetas entre colchetes duplos, como <code>[[nodiscard]]</code>, que contam isso ao compilador. Em troca, ele <strong>avisa</strong> quando alguém usa o código do jeito errado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um atributo e onde se escreve <code>[[…]]</code>.</li>
+  <li><code>[[nodiscard]]</code>: avisar quando o retorno de uma função é ignorado.</li>
+  <li><code>[[maybe_unused]]</code>: calar o aviso de "variável não usada" quando isso é de propósito.</li>
+  <li><code>[[deprecated]]</code>: marcar algo como antigo, com uma mensagem para quem ainda usa.</li>
+  <li><code>[[fallthrough]]</code>: dizer que a "queda" para o próximo <code>case</code> do <code>switch</code> é intencional.</li>
+  <li><code>[[noreturn]]</code> e o antigo <code>_Noreturn</code>: funções que nunca voltam.</li>
+  <li>O <code>__attribute__((…))</code> do gcc, que veio antes de tudo isso.</li>
+</ul>
+</div>
+
+<p>Os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Atributos produzem <strong>avisos</strong>, por isso o <code>-Wall -Wextra</code> é importante aqui (aula <a href="avisos.html">Avisos</a>).</p>
+
+<hr>
+
+<h2>A ideia: etiquetas na caixa da mudança</h2>
+<p>Numa mudança, você escreve nas caixas: <strong>"FRÁGIL"</strong>, <strong>"ESTE LADO PARA CIMA"</strong>, <strong>"NÃO JOGAR FORA"</strong>. A etiqueta não muda o que está dentro da caixa. Ela muda o jeito como os outros a tratam: o carregador lê "FRÁGIL" e toma cuidado.</p>
+
+<p>Atributos são essas etiquetas. <code>[[nodiscard]]</code> é o "NÃO JOGAR FORA" de uma função: o programa funciona igual, mas o compilador passa a reclamar de quem joga o retorno fora. Se o compilador não conhece uma etiqueta, ele a ignora (com um aviso), em vez de dar erro.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Atributo</th><th>Etiqueta da caixa</th><th>Onde vai</th></tr>
+<tr><td><code>[[nodiscard]]</code></td><td>"Não jogue o resultado fora"</td><td>Função</td></tr>
+<tr><td><code>[[maybe_unused]]</code></td><td>"Pode ficar sem uso, está tudo bem"</td><td>Variável, parâmetro, função</td></tr>
+<tr><td><code>[[deprecated]]</code></td><td>"Antigo: use outro"</td><td>Função, variável, tipo</td></tr>
+<tr><td><code>[[fallthrough]]</code></td><td>"Continua no próximo, de propósito"</td><td>Dentro do <code>switch</code></td></tr>
+<tr><td><code>[[noreturn]]</code></td><td>"Daqui não se volta"</td><td>Função</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. <code>[[nodiscard]]</code>: não jogue o retorno fora</h2>
+<p>"Discard" é "descartar"; <em>no discard</em>, "não descarte". Veja um erro comum: a função <code>dobro</code> <strong>devolve</strong> o resultado, mas quem chamou achou que ela mudaria a variável:</p>
+
+<pre class="file" data-file="nodiscard.c">#include &lt;stdio.h&gt;
+
+[[nodiscard]] int dobro(int x) {
+    return x * 2;
+}
+
+int main(void) {
+    int preco = 5;
+    dobro(preco);
+    printf("Preço: %d\n", preco);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nodiscard.c -o nodiscard
+nodiscard.c: In function ‘main’:
+nodiscard.c:9:5: warning: ignoring return value of ‘dobro’, declared with attribute ‘nodiscard’ [-Wunused-result]
+    9 |     dobro(preco);
+      |     ^~~~~~~~~~~~
+nodiscard.c:3:19: note: declared here
+    3 | [[nodiscard]] int dobro(int x) {
+      |                   ^~~~~
+$ ./nodiscard
+Preço: 5                  « o dobro foi calculado e jogado fora</pre>
+
+<dl class="anatomy">
+  <dt>[[nodiscard]]</dt><dd>O atributo, entre <strong>dois</strong> pares de colchetes, antes da declaração da função.</dd>
+  <dt>int dobro(int x)</dt><dd>A função continua igual. O atributo só muda o que o compilador confere em quem a chama.</dd>
+  <dt>warning: ignoring return value of ‘dobro’</dt><dd>"Ignorando o valor de retorno de <code>dobro</code>": a linha 9 chamou a função e não guardou nem usou o resultado.</dd>
+  <dt>declared with attribute ‘nodiscard’</dt><dd>"Declarada com o atributo <code>nodiscard</code>": o aviso existe por causa da etiqueta.</dd>
+  <dt>[-Wunused-result]</dt><dd>O nome do aviso ("resultado não usado"). Ele vem ligado mesmo sem <code>-Wall</code>.</dd>
+</dl>
+
+<p>Sem o <code>[[nodiscard]]</code>, o gcc compilaria em silêncio e a Ana só descobriria o erro olhando a saída. O conserto é guardar o resultado: <code>preco = dobro(preco);</code>.</p>
+
+<h3>Com um motivo</h3>
+<p>Você pode explicar o porquê, entre parênteses. A mensagem aparece no aviso:</p>
+
+<pre class="file" data-file="nodiscard2.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+[[nodiscard("o novo saldo vem no retorno")]]
+int sacar(int saldo, int valor) {
+    return saldo - valor;
+}
+
+int main(void) {
+    int saldo = 100;
+    sacar(saldo, 30);
+    printf("Saldo: %d\n", saldo);
+    malloc(10);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nodiscard2.c -o nodiscard2
+nodiscard2.c: In function ‘main’:
+nodiscard2.c:11:5: warning: ignoring return value of ‘sacar’, declared with attribute ‘nodiscard’: "o novo saldo vem no retorno" [-Wunused-result]
+   11 |     sacar(saldo, 30);
+      |     ^~~~~~~~~~~~~~~~
+nodiscard2.c:5:5: note: declared here
+    5 | int sacar(int saldo, int valor) {
+      |     ^~~~~
+nodiscard2.c:13:5: warning: ignoring return value of ‘malloc’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   13 |     malloc(10);
+      |     ^~~~~~~~~~</pre>
+
+<p>Repare no segundo aviso: o <code>malloc</code> da biblioteca já vem com uma etiqueta parecida, <code>warn_unused_result</code> (a versão do gcc, mais antiga). Chamar <code>malloc</code> e jogar fora o endereço é sempre um erro: a memória fica reservada e ninguém consegue liberá-la (aula <a href="malloc-free.html">malloc e free</a>).</p>
+
+<p>O atributo pode ficar na mesma linha da função ou na linha de cima, como aqui: as duas formas são iguais.</p>
+
+<h3>Quando ignorar é de propósito</h3>
+<p>Se você quer mesmo descartar o resultado, escreva <code>(void)</code> antes da chamada. É um jeito de dizer "eu sei, e não quero":</p>
+
+<pre class="file" data-file="void.c">    (void) dobro(5);      // compila sem aviso
+</pre>
+
+<p>No Clang, o compilador do editor do guia, o aviso é <code>ignoring return value of function declared with 'nodiscard' attribute [-Wunused-result]</code>: a mesma ideia, sem o nome da função.</p>
+
+<div class="tryc" data-goal="out:Preço: 45,semaviso">
+<p class="try-task"><strong>Missão:</strong> rode e leia o aviso. O desconto de 10% foi calculado e jogado fora, e o preço continuou 50. Conserte a chamada para <strong>guardar</strong> o retorno em <code>preco</code>, até sair <code>Preço: 45</code> sem nenhum aviso.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+[[nodiscard]] int aplicar_desconto(int preco, int porcento) {
+    return preco - preco * porcento / 100;
+}
+
+int main(void) {
+    int preco = 50;
+    aplicar_desconto(preco, 10);
+    printf("Preço: %d\n", preco);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+[[nodiscard]] int aplicar_desconto(int preco, int porcento) {
+    return preco - preco * porcento / 100;
+}
+
+int main(void) {
+    int preco = 50;
+    preco = aplicar_desconto(preco, 10);
+    printf("Preço: %d\n", preco);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. <code>[[maybe_unused]]</code>: sem uso, de propósito</h2>
+<p>O <code>-Wall -Wextra</code> avisa sobre variáveis e parâmetros que nunca são usados, porque quase sempre isso é um esquecimento:</p>
+
+<pre class="file" data-file="unused0.c">#include &lt;stdio.h&gt;
+
+void saudar(int vezes, const char *nome) {
+    int teste = 0;
+    for (int i = 0; i &lt; vezes; i++) {
+        printf("Olá!\n");
+    }
+}
+
+int main(void) {
+    saudar(2, "Ana");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra unused0.c -o unused0
+unused0.c: In function ‘saudar’:
+unused0.c:4:9: warning: unused variable ‘teste’ [-Wunused-variable]
+    4 |     int teste = 0;
+      |         ^~~~~
+unused0.c:3:36: warning: unused parameter ‘nome’ [-Wunused-parameter]
+    3 | void saudar(int vezes, const char *nome) {
+      |                        ~~~~~~~~~~~~^~~~</pre>
+
+<p><em>Unused variable</em> = "variável não usada"; <em>unused parameter</em> = "parâmetro não usado". Às vezes, porém, é de propósito: a função ainda está pela metade, ou ela precisa ter aquele parâmetro porque vai ser guardada num ponteiro para função com um formato fixo (aula <a href="ponteiros-funcao.html">Ponteiros para Funções</a>). Nesses casos, a etiqueta <code>[[maybe_unused]]</code> ("talvez não usado") cala o aviso só ali:</p>
+
+<pre class="file" data-file="unused.c">void saudar(int vezes, [[maybe_unused]] const char *nome) {
+    [[maybe_unused]] int teste = 0;
+    for (int i = 0; i &lt; vezes; i++) {
+        printf("Olá!\n");
+    }
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra unused.c -o unused     « nenhum aviso</pre>
+
+<p>Antes do C23 o costume era escrever <code>(void) nome;</code> dentro da função, que "usa" o parâmetro sem fazer nada. Você ainda vai ver muito isso. Se a variável é só sobra (como <code>teste</code>), o melhor conserto é <strong>apagá-la</strong>; o <code>[[maybe_unused]]</code> é para quando ela precisa ficar.</p>
+
+<div class="tryc" data-goal="semaviso,out:Olá!,src:\[\[maybe_unused\]\]">
+<p class="try-task"><strong>Missão:</strong> a função <code>tratar</code> tem o formato que o sistema de botões da lojinha exige, por isso o parâmetro <code>codigo</code> precisa existir, mesmo sem uso. Rode e veja o aviso. Cale-o com <code>[[maybe_unused]]</code> no parâmetro (sem apagá-lo).</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void tratar(int codigo) {
+    printf("Olá! Botão apertado.\n");
+}
+
+int main(void) {
+    tratar(7);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void tratar([[maybe_unused]] int codigo) {
+    printf("Olá! Botão apertado.\n");
+}
+
+int main(void) {
+    tratar(7);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. <code>[[deprecated]]</code>: "isto é antigo, use outro"</h2>
+<p>"Deprecated" quer dizer <strong>obsoleto</strong>, "desaconselhado". Quando a Ana escreve uma versão melhor de uma função mas não pode apagar a velha (outras partes do programa ainda a usam), ela marca a velha:</p>
+
+<pre class="file" data-file="deprecated.c">#include &lt;stdio.h&gt;
+
+[[deprecated("use calcular_total_com_desconto")]]
+double calcular_total(double preco, int qtd) {
+    return preco * qtd;
+}
+
+[[deprecated]] int versao_antiga = 1;
+
+int main(void) {
+    printf("%.2f\n", calcular_total(2.5, 4));
+    printf("%d\n", versao_antiga);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra deprecated.c -o deprecated
+deprecated.c: In function ‘main’:
+deprecated.c:11:5: warning: ‘calcular_total’ is deprecated: use calcular_total_com_desconto [-Wdeprecated-declarations]
+   11 |     printf("%.2f\n", calcular_total(2.5, 4));
+      |     ^~~~~~
+deprecated.c:4:8: note: declared here
+    4 | double calcular_total(double preco, int qtd) {
+      |        ^~~~~~~~~~~~~~
+deprecated.c:12:5: warning: ‘versao_antiga’ is deprecated [-Wdeprecated-declarations]
+   12 |     printf("%d\n", versao_antiga);
+      |     ^~~~~~
+deprecated.c:8:20: note: declared here
+    8 | [[deprecated]] int versao_antiga = 1;
+      |                    ^~~~~~~~~~~~~
+$ ./deprecated
+10.00
+1</pre>
+
+<dl class="anatomy">
+  <dt>‘calcular_total’ is deprecated</dt><dd>"<code>calcular_total</code> está obsoleta". É só um aviso: o programa foi gerado e funciona.</dd>
+  <dt>: use calcular_total_com_desconto</dt><dd>A sua mensagem, dizendo o que usar no lugar. Sem mensagem (como no <code>versao_antiga</code>), o aviso só diz que é obsoleto.</dd>
+  <dt>note: declared here</dt><dd>Onde está a declaração marcada.</dd>
+</dl>
+
+<p>Repare que o aviso aparece em <strong>quem usa</strong>, não na declaração. Assim cada parte do programa que ainda depende da função velha fica marcada, e a Ana pode trocá-las aos poucos. Bibliotecas usam muito isso para avisar que algo vai sumir numa versão futura.</p>
+
+<hr>
+
+<h2>4. <code>[[fallthrough]]</code>: continuar no próximo <code>case</code></h2>
+<p>Num <code>switch</code>, sem <code>break</code>, o programa "cai" no <code>case</code> de baixo (aula <a href="switch.html">switch</a>). Quase sempre isso é um <code>break</code> esquecido, e o <code>-Wextra</code> do gcc avisa. Mas às vezes cair é exatamente o que se quer. Na gincana da escola, quem chega ao nível 3 ganha os prêmios dos níveis 3, 2 e 1:</p>
+
+<pre class="file" data-file="fall.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nivel = 2;
+    switch (nivel) {
+    case 3:
+        printf("Prêmio: viagem\n");
+    case 2:
+        printf("Prêmio: bicicleta\n");
+    case 1:
+        printf("Prêmio: chaveiro\n");
+        break;
+    default:
+        printf("Sem prêmio\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fall.c -o fall
+fall.c: In function ‘main’:
+fall.c:7:9: warning: this statement may fall through [-Wimplicit-fallthrough=]
+    7 |         printf("Prêmio: viagem\n");
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~
+fall.c:8:5: note: here
+    8 |     case 2:
+      |     ^~~~
+fall.c:9:9: warning: this statement may fall through [-Wimplicit-fallthrough=]
+    9 |         printf("Prêmio: bicicleta\n");
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+fall.c:10:5: note: here
+   10 |     case 1:
+      |     ^~~~
+$ ./fall
+Prêmio: bicicleta
+Prêmio: chaveiro</pre>
+
+<p><em>This statement may fall through</em> = "este comando pode cair (para o próximo)", e a nota <em>here</em> mostra para onde. O programa está certo, mas o gcc não tem como saber que a queda é proposital. Com <code>[[fallthrough]];</code> no fim do <code>case</code>, você diz isso a ele (e a quem ler o código):</p>
+
+<pre class="file" data-file="fall2.c">    switch (nivel) {
+    case 3:
+        printf("Prêmio: viagem\n");
+        [[fallthrough]];
+    case 2:
+        printf("Prêmio: bicicleta\n");
+        [[fallthrough]];
+    case 1:
+        printf("Prêmio: chaveiro\n");
+        break;
+    default:
+        printf("Sem prêmio\n");
+    }
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fall2.c -o fall2     « nenhum aviso</pre>
+
+<dl class="anatomy">
+  <dt>[[fallthrough]]</dt><dd>"Cair através": a queda é intencional.</dd>
+  <dt>;</dt><dd>Este atributo fica sozinho, como um comando vazio, e por isso termina com ponto e vírgula.</dd>
+  <dt>logo antes do próximo case</dt><dd>Ele só pode aparecer como o último comando antes de um <code>case</code> ou <code>default</code>. Em outro lugar, é erro.</dd>
+</dl>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>O Clang <strong>não</strong> liga esse aviso com <code>-Wall -Wextra</code>: o <code>fall.c</code> compila calado no editor. Para vê-lo, é preciso pedir <code>-Wimplicit-fallthrough</code>, como faz a missão final desta aula. Aí o Clang avisa <code>unannotated fall-through between switch labels</code> ("queda sem anotação entre rótulos do switch") e até sugere: <code>insert '[[fallthrough]];' to silence this warning</code>.</p>
+</div>
+
+<hr>
+
+<h2>5. <code>[[noreturn]]</code>: funções que nunca voltam</h2>
+<p>Algumas funções nunca devolvem o controle para quem as chamou: elas encerram o programa (com <code>exit</code>, aula <a href="exit.html">Encerrar o Programa</a>). O compilador não sabe disso, e essa ignorância gera um aviso falso:</p>
+
+<pre class="file" data-file="noreturn0.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void erro_fatal(const char *msg) {
+    fprintf(stderr, "Erro: %s\n", msg);
+    exit(1);
+}
+
+int ler_idade(int idade) {
+    if (idade &gt;= 0) {
+        return idade;
+    }
+    erro_fatal("idade negativa");
+}
+
+int main(void) {
+    printf("%d\n", ler_idade(29));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra noreturn0.c -o noreturn0
+noreturn0.c: In function ‘ler_idade’:
+noreturn0.c:14:1: warning: control reaches end of non-void function [-Wreturn-type]
+   14 | }
+      | ^</pre>
+
+<p>"O controle chega ao fim de uma função não-<code>void</code>": o gcc acha que, depois de <code>erro_fatal</code>, a <code>ler_idade</code> termina sem <code>return</code> (aula <a href="retorno.html">Valor de Retorno</a>). Marcando <code>erro_fatal</code> com <code>[[noreturn]]</code> ("não retorna"), o aviso some, porque agora o compilador sabe que nada depois dela vai rodar:</p>
+
+<pre class="file" data-file="noreturn.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+[[noreturn]] void erro_fatal(const char *msg) {
+    fprintf(stderr, "Erro: %s\n", msg);
+    exit(1);
+}
+
+int ler_idade(int idade) {
+    if (idade &gt;= 0) {
+        return idade;
+    }
+    erro_fatal("idade negativa");
+}
+
+int main(void) {
+    printf("%d\n", ler_idade(29));
+    printf("%d\n", ler_idade(-1));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra noreturn.c -o noreturn
+$ ./noreturn
+29
+Erro: idade negativa
+$ echo $?
+1</pre>
+
+<h3>E se ela voltar?</h3>
+<p>Prometer que não volta e voltar é grave. Sem o <code>exit</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ cat noreturn2.c
+#include &lt;stdio.h&gt;
+
+[[noreturn]] void erro_fatal(const char *msg) {
+    fprintf(stderr, "Erro: %s\n", msg);
+}
+
+int main(void) {
+    erro_fatal("teste");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra noreturn2.c -o noreturn2
+noreturn2.c: In function ‘erro_fatal’:
+noreturn2.c:5:1: warning: ‘noreturn’ function does return
+    5 | }
+      | ^
+$ ./noreturn2
+Erro: teste
+Instrução ilegal         (imagem do núcleo gravada) ./noreturn2
+$ echo $?
+132</pre>
+
+<p>"Função <code>noreturn</code> retorna": o gcc avisou, e o programa morreu com "Instrução ilegal" (código 132 = 128 + 4, o sinal <code>SIGILL</code>; aula <a href="sinais.html">Sinais</a>). Como o compilador confiou na promessa, ele não preparou nada para o caminho de volta. É <strong>comportamento indefinido</strong>: no editor do guia, o mesmo programa termina com "Falha de segmentação" (139). Nunca ignore esse aviso.</p>
+
+<h3>O antigo <code>_Noreturn</code></h3>
+<p>Antes do C23, a mesma etiqueta se escrevia <code>_Noreturn void erro_fatal(…)</code> <span class="versao">C11</span>, ou <code>noreturn</code> com <code>#include &lt;stdnoreturn.h&gt;</code>. O gcc 15 ainda aceita as duas, sem aviso, até em C23. Mas o C23 marcou essas formas como <strong>obsoletas</strong>: em código novo, use <code>[[noreturn]]</code>. As funções <code>exit</code> e <code>abort</code> da biblioteca já vêm marcadas assim.</p>
+
+<hr>
+
+<h2>6. Formas diferentes: <code>__attribute__</code> e outros atributos</h2>
+<p>Muito antes do C23, o gcc já tinha as suas etiquetas, com outra escrita: <code>__attribute__((…))</code>, com dois parênteses. Você vai encontrar isso em todo código C antigo e nos próprios cabeçalhos do sistema:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>C23</th><th>gcc (antigo)</th></tr>
+<tr><td><code>[[nodiscard]]</code></td><td><code>__attribute__((warn_unused_result))</code></td></tr>
+<tr><td><code>[[maybe_unused]]</code></td><td><code>__attribute__((unused))</code></td></tr>
+<tr><td><code>[[deprecated("msg")]]</code></td><td><code>__attribute__((deprecated("msg")))</code></td></tr>
+<tr><td><code>[[fallthrough]]</code></td><td><code>__attribute__((fallthrough))</code> ou o comentário <code>/* fall through */</code></td></tr>
+<tr><td><code>[[noreturn]]</code></td><td><code>__attribute__((noreturn))</code></td></tr>
+</table>
+</div>
+
+<p>Alguns atributos do gcc não têm equivalente no padrão. Um muito útil é o <code>format</code>, que faz o compilador conferir os <code>%d</code> e <code>%s</code> de uma função sua parecida com o <code>printf</code> (aula <a href="variadicas.html">Funções Variádicas</a>). No C23, ele pode ser escrito com colchetes e o "sobrenome" do compilador, <code>[[gnu::format(printf, 1, 2)]]</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ cat gnu.c
+#include &lt;stdio.h&gt;
+
+[[gnu::format(printf, 1, 2)]]
+void registrar(const char *formato, ...);
+
+int main(void) {
+    registrar("%d itens\n", "três");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra -c gnu.c          « -c: só compila, sem ligar
+gnu.c: In function ‘main’:
+gnu.c:7:17: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘char *’ [-Wformat=]
+    7 |     registrar("%d itens\n", "três");
+      |                ~^           ~~~~~~
+      |                 |           |
+      |                 int         char *
+      |                %s</pre>
+
+<p>O <code>1, 2</code> quer dizer "o formato é o 1º parâmetro, e os valores começam no 2º". Agora a função da Ana ganhou a mesma vigilância do <code>printf</code>.</p>
+
+<p>O C23 também criou <code>[[unsequenced]]</code> e <code>[[reproducible]]</code>, que prometem que uma função não tem efeitos colaterais, para o compilador otimizar. O gcc 15 os conhece (e exige que fiquem <strong>depois</strong> dos parênteses dos parâmetros: <code>int quadrado(int x) [[unsequenced]];</code>); o Clang do editor ainda os ignora com o aviso <code>unknown attribute 'unsequenced' ignored</code>. São recursos avançados, raros em código do dia a dia.</p>
+
+<h3>Qual usar</h3>
+<ul>
+  <li>Em código novo (C23), use os atributos com colchetes. São padrão e funcionam no gcc e no Clang.</li>
+  <li><code>[[nodiscard]]</code> vale ouro em funções que devolvem um resultado que <strong>precisa</strong> ser usado: um código de erro, memória reservada, um valor novo calculado.</li>
+  <li><code>[[maybe_unused]]</code> e <code>[[fallthrough]]</code> servem para manter o <code>-Wall -Wextra</code> sem avisos falsos. Aviso falso que fica na tela esconde os verdadeiros.</li>
+  <li><code>__attribute__</code> só quando precisar de um recurso do gcc que não tem versão padrão (prefira então a forma <code>[[gnu::…]]</code>).</li>
+</ul>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: ‘importante’ attribute ignored [-Wattributes]</code></strong>
+<p>Aparece com um atributo que o compilador não conhece, como <code>[[importante]] int x = 1;</code> (ou com um nome escrito errado, como <code>[[nodiscart]]</code>). O Clang diz <code>unknown attribute 'importante' ignored</code>.</p>
+<p><strong>O que significa:</strong> a etiqueta foi ignorada. O programa compila, mas sem a proteção que você queria.</p>
+<p><strong>Como consertar:</strong> confira a grafia. Os atributos padrão são <code>nodiscard</code>, <code>maybe_unused</code>, <code>deprecated</code>, <code>fallthrough</code>, <code>noreturn</code>, <code>unsequenced</code> e <code>reproducible</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ignoring return value of ‘f’, declared with attribute ‘nodiscard’</code></strong>
+<p><strong>O que significa:</strong> você chamou a função e não usou o resultado. Quase sempre é um erro de lógica: o resultado era a resposta.</p>
+<p><strong>Como consertar:</strong> guarde (<code>x = f(x);</code>) ou use o resultado (num <code>if</code>, num <code>printf</code>). Se descartar for mesmo intencional, escreva <code>(void) f(x);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: this statement may fall through [-Wimplicit-fallthrough=]</code></strong>
+<p><strong>O que significa:</strong> um <code>case</code> termina sem <code>break</code> e o programa vai continuar no próximo.</p>
+<p><strong>Como consertar:</strong> se foi esquecimento, ponha <code>break;</code>. Se é de propósito, ponha <code>[[fallthrough]];</code> como último comando do <code>case</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘noreturn’ function does return</code></strong>
+<p><strong>O que significa:</strong> uma função marcada <code>[[noreturn]]</code> tem um caminho que chega ao fim. Se esse caminho acontecer, o programa pode morrer de forma estranha (vimos "Instrução ilegal").</p>
+<p><strong>Como consertar:</strong> garanta que todo caminho termine com <code>exit</code>, <code>abort</code> ou outra função <code>[[noreturn]]</code>. Se a função às vezes volta, tire o atributo.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Atributo</th><th>Onde</th><th>O que faz</th></tr>
+<tr><td><code>[[nodiscard]]</code> / <code>[[nodiscard("motivo")]]</code></td><td>Função</td><td>Avisa (<code>-Wunused-result</code>) quando o retorno é ignorado</td></tr>
+<tr><td><code>[[maybe_unused]]</code></td><td>Variável, parâmetro, função</td><td>Cala os avisos de "não usado"</td></tr>
+<tr><td><code>[[deprecated]]</code> / <code>[[deprecated("use x")]]</code></td><td>Função, variável, tipo</td><td>Avisa (<code>-Wdeprecated-declarations</code>) em cada uso</td></tr>
+<tr><td><code>[[fallthrough]];</code></td><td>Último comando de um <code>case</code></td><td>Diz que a queda para o próximo <code>case</code> é intencional</td></tr>
+<tr><td><code>[[noreturn]]</code></td><td>Função</td><td>Promete que a função nunca volta (substitui <code>_Noreturn</code>)</td></tr>
+<tr><td><code>(void) f(x);</code></td><td>Chamada</td><td>Descarta o retorno de propósito, sem aviso</td></tr>
+<tr><td><code>[[gnu::format(printf, 1, 2)]]</code></td><td>Função</td><td>Atributo do gcc: confere o formato como no <code>printf</code></td></tr>
+<tr><td><code>__attribute__((…))</code></td><td>Vários</td><td>A escrita antiga do gcc</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Não jogue fora</h3>
+<p>Complete para o compilador avisar quando alguém ignorar o retorno de <code>calcular</code>:</p>
+<div class="ex-code">[[<input data-answer="nodiscard" aria-label="atributo">]] int calcular(int x);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Queda intencional</h3>
+<p>Complete a linha que vai no fim do <code>case</code> para dizer que cair no próximo é de propósito:</p>
+<div class="ex-code"><input data-answer="[[fallthrough]];" aria-label="linha"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. O que acontece quando você usa uma função marcada com <code>[[deprecated]]</code>?</p>
+<label><input type="radio" name="q3"> Erro de compilação</label>
+<label><input type="radio" name="q3"> Um aviso em cada lugar que a usa; o programa é gerado normalmente</label>
+<label><input type="radio" name="q3"> A função é removida do programa</label>
+<label><input type="radio" name="q3"> O programa mostra um aviso quando roda</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. A função <code>f</code> é <code>[[nodiscard]]</code>. Qual destas linhas compila <strong>sem</strong> aviso?</p>
+<label><input type="radio" name="q4"> <code>f(3);</code></label>
+<label><input type="radio" name="q4"> <code>f(3) ;;</code></label>
+<label><input type="radio" name="q4"> <code>(void) f(3);</code></label>
+<label><input type="radio" name="q4"> <code>[[maybe_unused]] f(3);</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Uma função marcada <code>[[noreturn]]</code> chega ao fim e volta. O que acontece?</p>
+<label><input type="radio" name="q5"> O gcc avisa, e voltar é comportamento indefinido: o programa pode morrer</label>
+<label><input type="radio" name="q5"> Nada: o atributo é só um comentário</label>
+<label><input type="radio" name="q5"> O compilador acrescenta um <code>exit</code> sozinho</label>
+<label><input type="radio" name="q5"> Erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual era a forma do C11 para "esta função não retorna"?</p>
+<label><input type="radio" name="q6"> <code>[[noreturn]]</code></label>
+<label><input type="radio" name="q6"> <code>static_assert</code></label>
+<label><input type="radio" name="q6"> <code>void noreturn()</code></label>
+<label><input type="radio" name="q6"> <code>_Noreturn</code></label>
+</div>
+
+<h3>Missão final: os prêmios da gincana</h3>
+
+<div class="tryc" data-flags="-std=c23 -Wall -Wextra -Wimplicit-fallthrough" data-goal="out:Prêmio: viagem,out:Prêmio: chaveiro,semaviso,src:\[\[fallthrough\]\]">
+<p class="try-task"><strong>Missão:</strong> esta caixa compila com <code>-Wimplicit-fallthrough</code>, então o Clang avisa sobre as quedas entre os <code>case</code>. Quem chega ao nível 3 deve ganhar os três prêmios, então as quedas são <strong>de propósito</strong>. Marque-as com <code>[[fallthrough]];</code> para o programa mostrar os três prêmios sem nenhum aviso (não use <code>break</code> nesses dois lugares).</p>
+<pre class="out">Prêmio: viagem
+Prêmio: bicicleta
+Prêmio: chaveiro</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nivel = 3;
+    switch (nivel) {
+    case 3:
+        printf("Prêmio: viagem\n");
+    case 2:
+        printf("Prêmio: bicicleta\n");
+    case 1:
+        printf("Prêmio: chaveiro\n");
+        break;
+    default:
+        printf("Sem prêmio\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nivel = 3;
+    switch (nivel) {
+    case 3:
+        printf("Prêmio: viagem\n");
+        [[fallthrough]];
+    case 2:
+        printf("Prêmio: bicicleta\n");
+        [[fallthrough]];
+    case 1:
+        printf("Prêmio: chaveiro\n");
+        break;
+    default:
+        printf("Sem prêmio\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Atributos <span class="versao">C23</span> são etiquetas <code>[[nome]]</code> que contam ao compilador algo que ele não adivinha. Eles não mudam o que o programa faz; mudam os avisos.</li>
+  <li><code>[[nodiscard]]</code>: aviso quando o retorno é ignorado. <code>(void) f();</code> descarta de propósito.</li>
+  <li><code>[[maybe_unused]]</code>: cala "unused variable/parameter" quando a falta de uso é intencional.</li>
+  <li><code>[[deprecated("use x")]]</code>: aviso em cada uso de algo antigo.</li>
+  <li><code>[[fallthrough]];</code>: a queda para o próximo <code>case</code> é proposital (o gcc avisa com <code>-Wextra</code>; o Clang só com <code>-Wimplicit-fallthrough</code>).</li>
+  <li><code>[[noreturn]]</code>: a função nunca volta. Substitui o <code>_Noreturn</code> do C11, que o C23 marcou como obsoleto. Voltar mesmo assim é comportamento indefinido.</li>
+  <li>O gcc tem a escrita antiga <code>__attribute__((…))</code> e atributos próprios, como <code>[[gnu::format(printf, 1, 2)]]</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
