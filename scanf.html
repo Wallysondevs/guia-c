@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C scanf — ler números e textos do teclado | Guia C</title>
+<meta name="description" content="Entrada com scanf em C para quem nunca programou: ler um número do teclado, o &amp; que entrega o endereço da variável, vários valores de uma vez, %d, %lf, %f, %c, %s e %i, o valor de retorno (quantos itens foram lidos, 0 e EOF), o espaço antes do %c, a largura no %s, e os erros reais (segfault sem &amp;, %f com double, stack smashing), com saídas do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Entrada com scanf</span></h1>
+
+<p class="intro">Até agora, todos os valores dos seus programas estavam escritos no próprio código: <code>int idade = 29;</code>. Para mudar a idade, só editando e compilando de novo. Um programa de verdade <strong>pergunta</strong>: qual é a sua idade? Quanto custa o produto? Nesta aula você vai aprender o <code>scanf</code>, a função do C que lê o que a pessoa digita no teclado e guarda numa variável, e as armadilhas que fazem dele a função mais perguntada nos fóruns de C: o <code>&amp;</code> esquecido, o <code>%lf</code> do <code>double</code> e o Enter que sobra.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como ler um número digitado com <code>scanf("%d", &amp;idade)</code>, e para que serve o <code>&amp;</code>.</li>
+  <li>Como ler vários valores de uma vez, e o que o <code>scanf</code> faz com espaços, Enters e outros caracteres.</li>
+  <li>As letras de cada tipo: <code>%d</code>, <code>%lf</code> (<code>double</code>), <code>%f</code> (<code>float</code>), <code>%c</code>, <code>%s</code> e <code>%i</code>, e onde elas são diferentes das do <code>printf</code>.</li>
+  <li>O <strong>valor de retorno</strong>: como saber se a pessoa digitou mesmo um número.</li>
+  <li>O espaço mágico do <code>" %c"</code> e a largura do <code>"%19s"</code>.</li>
+  <li>Os erros reais: <code>Falha de segmentação</code> sem o <code>&amp;</code>, o <code>R$ 0.00</code> do <code>%f</code> com <code>double</code> e o <code>stack smashing detected</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Nos terminais, o que vem logo depois de uma pergunta do programa (como o <code>29</code> em <code>Quantos anos você tem? 29</code>) foi <strong>digitado</strong> pela Ana, seguido de Enter.</p>
+
+<hr>
+
+<h2>A ideia: o formulário de papel</h2>
+<p>Lembra do <a href="formatos-printf.html">printf</a>? Ele é um formulário <strong>já preenchido</strong>: o texto tem lacunas (<code>%d</code>) e o programa coloca os valores nelas para mostrar na tela.</p>
+<p>O <code>scanf</code> é o caminho contrário. Ele é um formulário <strong>em branco</strong> que você entrega para a pessoa. O <code>%d</code> diz "aqui vai um número inteiro". A pessoa escreve, e o <code>scanf</code> lê o que foi escrito e guarda na <strong>gaveta</strong> que você indicou, a variável. Para isso ele precisa saber <strong>onde fica a gaveta</strong>, e é por isso que aparece o <code>&amp;</code>.</p>
+<p>O nome vem de <em>scan formatted</em>, "ler formatado" (o <code>printf</code> é <em>print formatted</em>, "imprimir formatado"). Ele mora no mesmo <code>&lt;stdio.h&gt;</code> do <code>printf</code>.</p>
+
+<hr>
+
+<h2>1. A primeira leitura</h2>
+
+<pre class="file" data-file="idade.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 0;
+    printf("Quantos anos você tem? ");
+    scanf("%d", &amp;idade);
+    printf("Daqui a 10 anos você terá %d anos.\n", idade + 10);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra idade.c -o idade
+$ ./idade
+Quantos anos você tem? 29                  « o programa parou e esperou; a Ana digitou 29 e apertou Enter
+Daqui a 10 anos você terá 39 anos.</pre>
+
+<dl class="anatomy">
+  <dt>int idade = 0;</dt><dd>A gaveta que vai receber o número. Começa com 0 para nunca ter lixo (aula <a href="variaveis.html">Variáveis</a>): logo abaixo você vai ver por que isso importa.</dd>
+  <dt>printf("Quantos anos você tem? ");</dt><dd>A pergunta, o <strong>prompt</strong>. Sem <code>\n</code> no fim, de propósito: assim o que a pessoa digita aparece na mesma linha da pergunta. O <code>scanf</code> não mostra nada sozinho; sem esse <code>printf</code>, o programa ficaria parado numa tela vazia, e a pessoa nem saberia que ele está esperando.</dd>
+  <dt>scanf(</dt><dd>Chama a função. O programa <strong>para</strong> aqui e espera a pessoa digitar e apertar Enter.</dd>
+  <dt>"%d"</dt><dd>O formato: "leia um número inteiro". É a mesma letra do <code>printf</code>.</dd>
+  <dt>&amp;idade</dt><dd>O <strong>endereço</strong> da variável <code>idade</code>: o lugar da memória onde ela mora. O <code>&amp;</code> se lê "endereço de". O <code>printf</code> só precisa do <strong>valor</strong> para mostrar (<code>idade</code>); o <code>scanf</code> precisa saber <strong>onde guardar</strong> (<code>&amp;idade</code>).</dd>
+  <dt>idade + 10</dt><dd>Depois do <code>scanf</code>, <code>idade</code> vale o que foi digitado e pode ser usada como qualquer variável.</dd>
+</dl>
+
+<div class="tip">
+<strong>Por que o <code>&amp;</code>? Uma prévia</strong>
+<p>Quando você chama uma função, o C entrega a ela uma <strong>cópia</strong> do valor. Se o <code>scanf</code> recebesse <code>idade</code>, receberia uma cópia do 0, e não teria como mudar a variável de verdade. Com <code>&amp;idade</code>, ele recebe o endereço e escreve direto na gaveta. Isso tem nome, <strong>ponteiro</strong>, e aulas inteiras: <a href="memoria.html">Memória e Endereços</a>, <a href="ponteiros.html">Ponteiros</a> e <a href="passagem-ponteiro.html">Passar por Ponteiro</a>. Por enquanto, guarde a regra: <strong>no <code>scanf</code>, número e caractere levam <code>&amp;</code></strong>.</p>
+</div>
+
+<h3>E se a pessoa digitar outra coisa?</h3>
+
+<pre class="term" data-cwd="~/c">$ ./idade
+Quantos anos você tem? abc
+Daqui a 10 anos você terá 10 anos.     « "abc" não é número: o scanf não guardou nada, e idade continuou 0
+$ ./idade
+Quantos anos você tem? 29 anos
+Daqui a 10 anos você terá 39 anos.     « leu o 29 e parou no espaço; o " anos" ficou sem ler</pre>
+
+<p>O <code>%d</code> lê <strong>algarismos</strong> (com um sinal <code>-</code> ou <code>+</code> na frente, se tiver) e para no primeiro caractere que não serve para um número. Com <code>abc</code>, ele para logo no <code>a</code>, sem ter lido nada, e a variável fica como estava. Foi por isso que ela começou com 0: sem o <code>= 0</code>, o programa mostraria um valor qualquer que estivesse na memória. A seção 4 mostra como o programa <strong>descobre</strong> que a leitura falhou.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> clique em Rodar. O programa vai parar na pergunta: clique no terminal da caixa, digite a sua idade e aperte Enter. Rode de novo e digite <code>abc</code>, depois <code>-5</code> e depois <code>  42</code> (com espaços antes). Depois troque a pergunta e a conta: pergunte quantas horas a pessoa dorme por noite e mostre quantas horas ela dorme por semana (<code>horas * 7</code>).</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 0;
+    printf("Quantos anos você tem? ");
+    scanf("%d", &amp;idade);
+    printf("Daqui a 10 anos você terá %d anos.\n", idade + 10);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Esqueci o <code>&amp;</code></h2>
+<p>É o erro número 1 de quem começa. Sem o <code>&amp;</code>, o <code>scanf</code> recebe o <strong>valor</strong> da variável (0) e acha que ele é um endereço:</p>
+
+<pre class="file" data-file="semE.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 0;
+    printf("Quantos anos você tem? ");
+    scanf("%d", idade);
+    printf("Você tem %d anos.\n", idade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semE.c -o semE
+semE.c: In function ‘main’:
+semE.c:6:13: warning: format ‘%d’ expects argument of type ‘int *’, but argument 2 has type ‘int’ [-Wformat=]
+    6 |     scanf("%d", idade);
+      |            ~^   ~~~~~
+      |             |   |
+      |             |   int
+      |             int *
+$ ./semE
+Quantos anos você tem? 29
+Falha de segmentação     (imagem do núcleo gravada) ./semE</pre>
+
+<ol class="passo">
+  <li>O aviso diz: "o formato <code>%d</code> espera um argumento do tipo <code>int *</code>, mas o argumento 2 é do tipo <code>int</code>". O <code>*</code> em <code>int *</code> quer dizer "endereço de um <code>int</code>". O desenho embaixo do código aponta as duas partes que não combinam: o <code>%d</code> e o <code>idade</code>.</li>
+  <li>Ele <strong>compilou</strong> mesmo assim: é só um aviso. Mas o programa tentou escrever o 29 no "endereço 0", que não pertence a ele, e o sistema o derrubou: <code>Falha de segmentação</code> (<em>segmentation fault</em>), código de saída 139.</li>
+  <li>Conserto: <code>scanf("%d", &amp;idade);</code>.</li>
+</ol>
+
+<div class="warning">
+<strong>Leia os avisos do scanf</strong>
+<p>O <code>-Wall</code> confere cada <code>%</code> do formato contra a variável que você passou. Um aviso <code>-Wformat</code> num <code>scanf</code> quase sempre é um programa que vai ler errado ou cair. No editor do guia, o Clang avisa com outras palavras (<code>format specifies type 'int *' but the argument has type 'int'</code>), e o programa <strong>não cai</strong>: mostra <code>Você tem 0 anos.</code>, porque a memória do WebAssembly é organizada de outro jeito (aula <a href="simulador.html">O Editor do Guia</a>). Não confie nisso: no Linux, cai.</p>
+</div>
+
+<hr>
+
+<h2>3. Vários valores de uma vez</h2>
+<p>Um formato pode ter várias lacunas. Cada uma precisa da sua variável, na mesma ordem, cada uma com o seu <code>&amp;</code>:</p>
+
+<pre class="file" data-file="soma.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 0;
+    int b = 0;
+    printf("Digite dois números: ");
+    scanf("%d %d", &amp;a, &amp;b);
+    printf("%d + %d = %d\n", a, b, a + b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra soma.c -o soma
+$ ./soma
+Digite dois números: 3 4
+3 + 4 = 7
+$ ./soma
+Digite dois números: 3          « a Ana apertou Enter depois do 3…
+4                               « …e o scanf continuou esperando o segundo número
+3 + 4 = 7
+$ ./soma
+Digite dois números: 3,4
+3 + 0 = 3                       « a vírgula não é espaço: o segundo %d não leu nada</pre>
+
+<p>Três regras explicam essas saídas:</p>
+<ol class="passo">
+  <li><strong><code>%d</code> pula os brancos antes do número.</strong> "Brancos" são espaços, tabulações e Enters. Por isso tanto faz digitar <code>3 4</code>, <code>3</code> Enter <code>4</code> ou <code>   3      4</code>: o resultado é o mesmo.</li>
+  <li><strong>Um espaço no formato</strong> (o de <code>"%d %d"</code>) quer dizer "pule quantos brancos houver, inclusive nenhum". Como o <code>%d</code> já pula brancos sozinho, aqui ele não muda nada; na seção 5 ele vai fazer toda a diferença.</li>
+  <li><strong>O <code>scanf</code> para no primeiro problema.</strong> Em <code>3,4</code>, o primeiro <code>%d</code> leu o 3 e parou na vírgula. O segundo <code>%d</code> encontrou a vírgula, que não é número nem branco, e desistiu. O <code>b</code> continuou 0.</li>
+</ol>
+
+<h3>Outros caracteres no formato</h3>
+<p>Qualquer outro caractere no formato precisa aparecer <strong>igualzinho</strong> na entrada. Isso serve para ler uma data com barras:</p>
+
+<pre class="file" data-file="data.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int dia = 0;
+    int mes = 0;
+    int ano = 0;
+    printf("Data (dia/mês/ano): ");
+    int lidos = scanf("%d/%d/%d", &amp;dia, &amp;mes, &amp;ano);
+    printf("Li %d valores: dia %d, mês %d, ano %d\n", lidos, dia, mes, ano);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra data.c -o data
+$ ./data
+Data (dia/mês/ano): 17/10/2026
+Li 3 valores: dia 17, mês 10, ano 2026
+$ ./data
+Data (dia/mês/ano): 17-10-2026
+Li 1 valores: dia 17, mês 0, ano 0     « esperava "/" e veio "-": parou depois do dia</pre>
+
+<p>O <code>int lidos = scanf(…)</code> é novidade: o <code>scanf</code> <strong>devolve</strong> um número, e esse número é o assunto da próxima seção. Um detalhe: com <code>"%d/%d/%d"</code>, a entrada <code>17 / 10 / 2026</code> (com espaços) também lê só o dia, porque a barra do formato tem de vir logo depois do número. Para aceitar espaços, ponha espaços no formato: <code>"%d /%d /%d"</code>.</p>
+
+<hr>
+
+<h2>4. O valor de retorno: deu certo?</h2>
+<p>O <code>scanf</code> devolve <strong>quantas lacunas conseguiu preencher</strong>. Este programa mostra esse número:</p>
+
+<pre class="file" data-file="retorno.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 0;
+    int b = 0;
+    int lidos = scanf("%d %d", &amp;a, &amp;b);
+    printf("scanf devolveu %d (a = %d, b = %d)\n", lidos, a, b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra retorno.c -o retorno
+$ ./retorno
+3 4
+scanf devolveu 2 (a = 3, b = 4)      « as duas lacunas preenchidas
+$ ./retorno
+3 x
+scanf devolveu 1 (a = 3, b = 0)      « só a primeira
+$ ./retorno
+x 4
+scanf devolveu 0 (a = 0, b = 0)      « nenhuma: parou logo no x
+$ ./retorno
+scanf devolveu -1 (a = 0, b = 0)     « a Ana apertou Ctrl+D sem digitar nada: fim da entrada</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O <code>scanf</code> devolveu</th><th>Significa</th></tr>
+<tr><td>o número de lacunas (aqui, 2)</td><td>Tudo lido.</td></tr>
+<tr><td>um número menor (1, 0)</td><td>Parou no meio: veio algo que não combina com o formato. As variáveis que faltaram ficaram como estavam.</td></tr>
+<tr><td><code>EOF</code> (vale -1)</td><td><em>End of file</em>, "fim do arquivo": a entrada acabou antes de ler qualquer coisa. No teclado do Linux, é o <kbd>Ctrl</kbd>+<kbd>D</kbd>; quando a entrada vem de um arquivo, é o fim dele.</td></tr>
+</table>
+</div>
+
+<h3>A receita de segurança</h3>
+<p>Um programa de verdade <strong>confere</strong> esse número antes de usar a variável. A forma mais comum usa um <code>if</code> ("se"), que tem aula própria (<a href="if-else.html">if e else</a>). Por enquanto, leia como uma frase: "<strong>se</strong> o <code>scanf</code> não leu 1 valor, avise e termine o programa".</p>
+
+<pre class="file" data-file="checada.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 0;
+    printf("Quantos anos você tem? ");
+    if (scanf("%d", &amp;idade) != 1) {
+        printf("Isso não é um número.\n");
+        return 1;
+    }
+    printf("Daqui a 10 anos você terá %d anos.\n", idade + 10);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra checada.c -o checada
+$ ./checada
+Quantos anos você tem? abc
+Isso não é um número.
+$ echo $?
+1                                    « o código de saída: 1 avisa que deu errado
+$ ./checada
+Quantos anos você tem? 17
+Daqui a 10 anos você terá 27 anos.</pre>
+
+<dl class="anatomy">
+  <dt>if (scanf("%d", &amp;idade) != 1)</dt><dd>Primeiro o <code>scanf</code> roda e lê. Depois o número que ele devolveu é comparado com 1 (<code>!=</code> é "diferente de"; aula <a href="operadores-comparacao.html">Operadores de Comparação</a>). Se for diferente, o bloco entre <code>{ }</code> roda.</dd>
+  <dt>return 1;</dt><dd>Termina o <code>main</code> ali mesmo, com código de saída 1. Por costume, 0 é "deu certo" e qualquer outro número é "deu errado". O resto do programa não roda.</dd>
+  <dt>!= 1</dt><dd>Compare com o <strong>número de lacunas</strong>: com <code>"%d %d"</code>, o certo é <code>!= 2</code>. Não use <code>== 0</code>: ele deixaria passar o <code>EOF</code> (-1) e as leituras pela metade.</dd>
+</dl>
+
+<div class="note">
+<strong>O gcc pode cobrar isso de você</strong>
+<p>Com otimização (<code>-O2</code>), o gcc do Ubuntu liga proteções extras da biblioteca C e reclama quando o retorno do <code>scanf</code> é jogado fora:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -O2 idade.c -o idade
+idade.c: In function ‘main’:
+idade.c:6:5: warning: ignoring return value of ‘scanf’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+    6 |     scanf("%d", &amp;idade);
+      |     ^~~~~~~~~~~~~~~~~~~</pre>
+<p>"Ignorando o valor de retorno do <code>scanf</code>, declarado com o atributo <em>warn_unused_result</em>" (avise se o resultado não for usado). Sem <code>-O2</code>, e no editor do guia, esse aviso não aparece: o hábito de conferir tem de ser seu.</p>
+</div>
+
+<hr>
+
+<h2>5. Letras e números com vírgula: <code>%c</code>, <code>%lf</code>, <code>%f</code></h2>
+
+<h3><code>double</code> é <code>%lf</code></h3>
+<p>Aqui o <code>scanf</code> é diferente do <code>printf</code>. No <code>printf</code>, <code>%f</code> serve para <code>double</code> e para <code>float</code> (aula <a href="formatos-printf.html">Formatos do printf</a>). No <code>scanf</code>, não: <code>%f</code> é só para <code>float</code>, e <code>double</code> exige <code>%lf</code> (de <em>long float</em>). A Ana errou isso na lojinha:</p>
+
+<pre class="file" data-file="preco.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 0.0;
+    printf("Preço do produto: ");
+    scanf("%f", &amp;preco);
+    printf("Com desconto: R$ %.2f\n", preco * 0.9);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra preco.c -o preco
+preco.c: In function ‘main’:
+preco.c:6:13: warning: format ‘%f’ expects argument of type ‘float *’, but argument 2 has type ‘double *’ [-Wformat=]
+    6 |     scanf("%f", &amp;preco);
+      |            ~^   ~~~~~~
+      |             |   |
+      |             |   double *
+      |             float *
+      |            %lf
+$ ./preco
+Preço do produto: 25.50
+Com desconto: R$ 0.00                « 25.50 com 10% de desconto deveria dar 22.95</pre>
+
+<p>O <code>%f</code> mandou o <code>scanf</code> gravar um <code>float</code> (4 bytes) numa gaveta de <code>double</code> (8 bytes), no formato do <code>float</code>. Lido como <code>double</code>, aquele padrão de bits vira um número minúsculo, praticamente 0. O gcc avisou e até mostrou o conserto embaixo do código: <code>%lf</code>. O editor do guia dá o mesmo <code>R$ 0.00</code>.</p>
+
+<p>Repare também que a entrada usa <strong>ponto</strong>: <code>25.50</code>. O <code>scanf</code> segue o formato americano, como o <code>printf</code> (aula <a href="ponto-flutuante.html">float e double</a>). Com <code>25,50</code>, ele lê o 25 e para na vírgula.</p>
+
+<div class="tryc" data-stdin="25.50" data-goal="out:Com desconto: R$ 22.95,semaviso">
+<p class="try-task"><strong>Missão:</strong> conserte o programa da Ana para ele mostrar o desconto certo, sem nenhum aviso. A entrada preparada é <code>25.50</code>, e a saída esperada é:</p>
+<pre class="out">Preço do produto: 25.50
+Com desconto: R$ 22.95</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 0.0;
+    printf("Preço do produto: ");
+    scanf("%f", &amp;preco);
+    printf("Com desconto: R$ %.2f\n", preco * 0.9);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 0.0;
+    printf("Preço do produto: ");
+    scanf("%lf", &amp;preco);
+    printf("Com desconto: R$ %.2f\n", preco * 0.9);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Com <code>float</code>, o <code>%f</code> é o certo. Os dois juntos:</p>
+
+<pre class="file" data-file="preco2.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 0.0;
+    float peso = 0.0f;
+    printf("Preço do quilo e peso: ");
+    scanf("%lf %f", &amp;preco, &amp;peso);
+    printf("Total: R$ %.2f\n", preco * peso);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra preco2.c -o preco2
+$ ./preco2
+Preço do quilo e peso: 25.50 1.5
+Total: R$ 38.25</pre>
+
+<h3><code>%c</code> e o Enter que sobra</h3>
+<p>O <code>%c</code> lê <strong>um caractere</strong> (aula <a href="char.html">Caracteres</a>). Mas, diferente do <code>%d</code>, ele <strong>não pula brancos</strong>: um espaço ou um Enter também é um caractere. Veja o que acontece com o pedido de camisetas:</p>
+
+<pre class="file" data-file="pedido.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int quantidade = 0;
+    char tamanho = '?';
+    printf("Quantas camisetas? ");
+    scanf("%d", &amp;quantidade);
+    printf("Tamanho (P, M ou G)? ");
+    scanf("%c", &amp;tamanho);
+    printf("Pedido: %d camiseta(s) tamanho [%c]\n", quantidade, tamanho);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pedido.c -o pedido
+$ ./pedido
+Quantas camisetas? 3
+Tamanho (P, M ou G)? Pedido: 3 camiseta(s) tamanho [      « nem deu tempo de digitar o tamanho!
+]</pre>
+
+<ol class="passo">
+  <li>A Ana digitou <code>3</code> e apertou Enter. Na entrada ficou: <code>3</code> <code>\n</code> (o Enter é o caractere <code>\n</code>; aula <a href="escapes.html">Escapes</a>).</li>
+  <li>O <code>%d</code> leu o <code>3</code> e parou antes do <code>\n</code>, que não faz parte do número. O <code>\n</code> <strong>sobrou</strong> na entrada.</li>
+  <li>O <code>%c</code> pegou o primeiro caractere que encontrou: o <code>\n</code> que sobrou. Por isso o programa nem esperou, e os colchetes mostram uma quebra de linha.</li>
+</ol>
+
+<p>O conserto é um <strong>espaço antes do <code>%c</code></strong>: <code>" %c"</code>. Lembra da regra da seção 3? O espaço no formato pula todos os brancos, inclusive o Enter que sobrou:</p>
+
+<pre class="term" data-cwd="~/c">$ grep '%c"' pedido.c
+    scanf(" %c", &amp;tamanho);              « o espaço entre a aspa e o %
+$ gcc -std=c23 -Wall -Wextra pedido.c -o pedido
+$ ./pedido
+Quantas camisetas? 3
+Tamanho (P, M ou G)? M
+Pedido: 3 camiseta(s) tamanho [M]</pre>
+
+<p>Regra prática: <strong>quase sempre que for ler um caractere com <code>scanf</code>, escreva <code>" %c"</code></strong>. O mesmo Enter que sobra atrapalha o <code>fgets</code>, que lê uma linha inteira; a aula <a href="fgets.html">Ler uma Linha</a> mostra o problema e dois consertos.</p>
+
+<div class="tryc" data-stdin="3\nM" data-goal="out:tamanho [M]">
+<p class="try-task"><strong>Missão:</strong> a entrada preparada é <code>3</code>, Enter, <code>M</code>. Conserte o formato do segundo <code>scanf</code> para o pedido sair com o tamanho certo:</p>
+<pre class="out">Pedido: 3 camiseta(s) tamanho [M]</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int quantidade = 0;
+    char tamanho = '?';
+    printf("Quantas camisetas? ");
+    scanf("%d", &amp;quantidade);
+    printf("Tamanho (P, M ou G)? ");
+    scanf("%c", &amp;tamanho);
+    printf("Pedido: %d camiseta(s) tamanho [%c]\n", quantidade, tamanho);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int quantidade = 0;
+    char tamanho = '?';
+    printf("Quantas camisetas? ");
+    scanf("%d", &amp;quantidade);
+    printf("Tamanho (P, M ou G)? ");
+    scanf(" %c", &amp;tamanho);
+    printf("Pedido: %d camiseta(s) tamanho [%c]\n", quantidade, tamanho);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>6. Textos: <code>%s</code> lê uma palavra</h2>
+<p>Para ler um texto, a variável é um <strong>array de <code>char</code></strong>, uma fileira de gavetas de letras (aula <a href="strings.html">Strings</a>). O <code>%s</code> lê uma <strong>palavra</strong>: pula os brancos do começo e para no primeiro espaço ou Enter.</p>
+
+<pre class="file" data-file="nome.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[20];
+    printf("Seu nome: ");
+    scanf("%19s", nome);
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nome.c -o nome
+$ ./nome
+Seu nome: Ana Maria
+Olá, Ana!                                  « parou no espaço: o "Maria" ficou sem ler
+$ ./nome
+Seu nome: Bartolomeu_de_Gusmao_Albuquerque
+Olá, Bartolomeu_de_Gusma!                  « só os 19 primeiros caracteres</pre>
+
+<dl class="anatomy">
+  <dt>char nome[20];</dt><dd>Espaço para 20 caracteres. Um deles fica reservado para o <code>'\0'</code>, a marca de fim do texto que o C coloca sozinho. Sobram 19 para as letras.</dd>
+  <dt>%19s</dt><dd>A <strong>largura</strong>: "leia no máximo 19 caracteres". Ela protege o array: o que passar disso fica na entrada, sem ler.</dd>
+  <dt>nome, sem &amp;</dt><dd>A exceção da regra do <code>&amp;</code>. O nome de um array já é o endereço do começo dele (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>). Número e <code>char</code> levam <code>&amp;</code>; array de <code>char</code>, não.</dd>
+</dl>
+
+<h3>Sem a largura: o estouro</h3>
+<p>Sem o 19, o <code>%s</code> escreve <strong>quantas letras vierem</strong>, mesmo que não caibam. Com <code>char nome[8];</code> e <code>scanf("%s", nome);</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estouro.c -o estouro
+$ ./estouro
+Seu nome: Maximiliano_Bartolomeu_de_Gusmao
+Olá, Maximiliano_Bartolomeu_de_Gusmao!
+*** stack smashing detected ***: terminated
+Abortado                   (imagem do núcleo gravada) ./estouro</pre>
+
+<p>Nenhum aviso na compilação. O nome de 32 letras não cabia nas 8 gavetas e o <code>scanf</code> escreveu por cima da memória vizinha. O Ubuntu compila os programas com uma proteção (o <em>stack protector</em>) que percebeu o estrago no fim do <code>main</code> e derrubou o programa: "esmagamento da pilha detectado". Nem sempre há essa sorte: um estouro desse tipo é a origem de muitas falhas de segurança, porque quem digita escolhe o que vai parar na memória. No editor do guia não há essa proteção, e o programa termina normalmente, com a memória estragada sem ninguém ver.</p>
+
+<div class="warning">
+<strong>Regra do guia: <code>%s</code> sempre com largura</strong>
+<p>A largura é o tamanho do array <strong>menos 1</strong>: <code>char nome[20]</code> → <code>"%19s"</code>; <code>char cidade[50]</code> → <code>"%49s"</code>. Para ler um nome com espaços (Ana Maria), use o <a href="fgets.html">fgets</a>.</p>
+</div>
+
+<hr>
+
+<h2>7. <code>%d</code> ou <code>%i</code>?</h2>
+<p>No <code>printf</code>, <code>%d</code> e <code>%i</code> são iguais. No <code>scanf</code>, o <code>%i</code> entende a <strong>base</strong> pelo jeito como o número começa, como no código C (aula <a href="inteiros.html">Inteiros</a>): <code>0x</code> é hexadecimal e um <code>0</code> na frente é octal (base 8).</p>
+
+<pre class="file" data-file="inteiro.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int d = 0;
+    int i = 0;
+    scanf("%d %i", &amp;d, &amp;i);
+    printf("%%d leu %d e %%i leu %d\n", d, i);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra inteiro.c -o inteiro
+$ ./inteiro
+010 010
+%d leu 10 e %i leu 8           « para o %i, 010 é octal: 1×8 + 0 = 8
+$ ./inteiro
+25 0x19
+%d leu 25 e %i leu 25          « 0x19 em hexadecimal: 1×16 + 9 = 25</pre>
+
+<p>Para a idade, o mês ou a quantidade, ninguém quer que <code>08</code> dê problema. Use <strong><code>%d</code></strong>; o <code>%i</code> só quando você quer mesmo aceitar <code>0x…</code>.</p>
+
+<hr>
+
+<h2>Letras do scanf × do printf</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo da variável</th><th><code>printf</code></th><th><code>scanf</code></th><th>Leva <code>&amp;</code>?</th></tr>
+<tr><td><code>int</code></td><td><code>%d</code></td><td><code>%d</code></td><td>sim</td></tr>
+<tr><td><code>unsigned int</code></td><td><code>%u</code></td><td><code>%u</code></td><td>sim</td></tr>
+<tr><td><code>long</code> / <code>long long</code></td><td><code>%ld</code> / <code>%lld</code></td><td><code>%ld</code> / <code>%lld</code></td><td>sim</td></tr>
+<tr><td><code>float</code></td><td><code>%f</code></td><td><code>%f</code></td><td>sim</td></tr>
+<tr><td><code>double</code></td><td><code>%f</code> (ou <code>%lf</code>)</td><td><strong><code>%lf</code></strong> (<code>%f</code> lê errado)</td><td>sim</td></tr>
+<tr><td><code>char</code></td><td><code>%c</code></td><td><strong><code>" %c"</code></strong> (com espaço antes)</td><td>sim</td></tr>
+<tr><td><code>char nome[20]</code></td><td><code>%s</code></td><td><strong><code>%19s</code></strong> (largura = tamanho − 1)</td><td><strong>não</strong></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de ler: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td><code>scanf</code> sem conferir</td><td><code>scanf("%d", &amp;n);</code></td><td>Só em testes rápidos. Se a pessoa digitar letras, o programa segue com um valor que ninguém digitou.</td></tr>
+<tr><td><code>scanf</code> conferindo o retorno</td><td><code>if (scanf("%d", &amp;n) != 1) { … }</code></td><td>O padrão deste guia para ler números nos exercícios.</td></tr>
+<tr><td>Uma pergunta por vez</td><td>dois <code>scanf("%d", …)</code></td><td>Mais claro para quem usa o programa: cada pergunta tem o seu prompt.</td></tr>
+<tr><td>Vários valores numa linha</td><td><code>scanf("%d %lf", &amp;q, &amp;p)</code></td><td>Quando os valores andam juntos (quantidade e preço, dia/mês/ano). Confira com <code>!= 2</code>, <code>!= 3</code>…</td></tr>
+<tr><td>Linha inteira</td><td><code>fgets(linha, sizeof linha, stdin)</code></td><td>Textos com espaços e programas que precisam ser à prova de qualquer entrada: aulas <a href="fgets.html">Ler uma Linha</a> e <a href="string-numero.html">Texto ↔ Número</a>.</td></tr>
+<tr><td><code>gets</code></td><td><code>gets(nome)</code></td><td><strong>Nunca.</strong> Não tem limite de tamanho; foi removido da linguagem no C11 (aula <a href="fgets.html">Ler uma Linha</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int *’, but argument 2 has type ‘int’</code></strong>
+<p><strong>O que significa:</strong> faltou o <code>&amp;</code>: o <code>scanf</code> recebeu o valor da variável em vez do endereço. Rodando, o programa cai com <code>Falha de segmentação</code>. No editor (Clang): <code>format specifies type 'int *' but the argument has type 'int'</code>.</p>
+<p><strong>Como consertar:</strong> <code>scanf("%d", &amp;idade);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%f’ expects argument of type ‘float *’, but argument 2 has type ‘double *’</code></strong>
+<p><strong>O que significa:</strong> a variável é <code>double</code> e o formato é o do <code>float</code>. O valor lido sai errado (no exemplo, <code>0.00</code>).</p>
+<p><strong>Como consertar:</strong> <code>%lf</code> para <code>double</code>. O gcc mostra o conserto na última linha do aviso.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa não esperou eu digitar a letra</strong>
+<p><strong>O que significa:</strong> um <code>%c</code> depois de outra leitura pegou o Enter que sobrou da anterior.</p>
+<p><strong>Como consertar:</strong> espaço antes do <code>%c</code>: <code>scanf(" %c", &amp;letra);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O número saiu 0 (ou um valor que ninguém digitou)</strong>
+<p><strong>O que significa:</strong> a entrada não combinou com o formato (letras no lugar de número, vírgula no lugar de ponto, um <code>-</code> no lugar da <code>/</code>) e o <code>scanf</code> desistiu sem guardar nada. A variável ficou com o valor de antes.</p>
+<p><strong>Como consertar:</strong> confira o retorno (<code>if (scanf(…) != 1)</code>) e avise a pessoa. Inicialize a variável, para o "valor de antes" nunca ser lixo.</p>
+</div>
+
+<div class="cenario">
+<strong><code>*** stack smashing detected ***: terminated</code> + <code>Abortado</code></strong>
+<p><strong>O que significa:</strong> um <code>%s</code> sem largura escreveu mais letras do que o array tinha de espaço. O gcc não avisa na compilação.</p>
+<p><strong>Como consertar:</strong> largura sempre: <code>char nome[20]</code> → <code>scanf("%19s", nome)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Só a primeira palavra do nome foi lida</strong>
+<p><strong>O que significa:</strong> o <code>%s</code> para no primeiro espaço. Não é defeito: é a regra dele.</p>
+<p><strong>Como consertar:</strong> para ler a linha inteira, use <a href="fgets.html">fgets</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>scanf("%d", &amp;n)</code></td><td>Lê um <code>int</code>, pulando os brancos antes dele.</td></tr>
+<tr><td><code>scanf("%d %d", &amp;a, &amp;b)</code></td><td>Lê dois inteiros, separados por espaços ou Enters.</td></tr>
+<tr><td><code>scanf("%d/%d/%d", …)</code></td><td>A <code>/</code> precisa aparecer igualzinha na entrada.</td></tr>
+<tr><td><code>scanf("%lf", &amp;x)</code></td><td>Lê um <code>double</code> (com ponto: <code>25.50</code>).</td></tr>
+<tr><td><code>scanf(" %c", &amp;c)</code></td><td>Lê um caractere, pulando os brancos (e o Enter que sobrou).</td></tr>
+<tr><td><code>scanf("%19s", nome)</code></td><td>Lê uma palavra de até 19 letras, sem <code>&amp;</code>.</td></tr>
+<tr><td>retorno</td><td>Quantas lacunas foram preenchidas; <code>EOF</code> (-1) se a entrada acabou.</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>No terminal do Linux, encerra a entrada (o <code>scanf</code> devolve <code>EOF</code>).</td></tr>
+</table>
+</div>
+<p>A tabela completa de formatos está em <a href="ref-printf.html">Referência: printf e scanf</a>.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O endereço</h3>
+<p>Complete para ler um número inteiro na variável <code>pontos</code>:</p>
+<div class="ex-code">scanf("%d", <input data-answer="&amp;pontos" aria-label="argumento">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. O formato do double</h3>
+<p>Complete o formato para ler a variável <code>double altura</code>:</p>
+<div class="ex-code">scanf("<input data-answer="%lf" aria-label="formato">", &amp;altura);</div>
+</div>
+
+<div class="exercise">
+<h3>3. A letra depois do número</h3>
+<p>Complete com o formato inteiro, <strong>com as aspas</strong>, para ler a resposta <code>s</code>/<code>n</code> depois de um <code>scanf("%d", …)</code>, sem pegar o Enter que sobrou:</p>
+<div class="ex-code">scanf(<input data-answer="&quot; %c&quot;" aria-label="formato">, &amp;resposta);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Com <code>int a = 0, b = 0;</code> e a entrada <code>8 x</code>, quanto <code>scanf("%d %d", &amp;a, &amp;b)</code> devolve?</p>
+<label><input type="radio" name="q4"> 2</label>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> 1</label>
+<label><input type="radio" name="q4"> -1</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Qual leitura está certa para <code>char cidade[30];</code>?</p>
+<label><input type="radio" name="q5"> <code>scanf("%s", &amp;cidade);</code></label>
+<label><input type="radio" name="q5"> <code>scanf("%29s", cidade);</code></label>
+<label><input type="radio" name="q5"> <code>scanf("%30s", cidade);</code></label>
+<label><input type="radio" name="q5"> <code>scanf("%c", cidade);</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. A Ana digitou <code>Ana Maria</code> para um <code>scanf("%19s", nome)</code>. O que fica em <code>nome</code>?</p>
+<label><input type="radio" name="q6"> <code>Ana</code></label>
+<label><input type="radio" name="q6"> <code>Ana Maria</code></label>
+<label><input type="radio" name="q6"> <code>Maria</code></label>
+<label><input type="radio" name="q6"> Nada: o <code>scanf</code> devolve 0</label>
+</div>
+
+<h3>Missão final: o caixa da lojinha</h3>
+
+<div class="tryc" data-stdin="3 12.50" data-goal="out:Total: R$ 37.50,src:!=\s*2,semaviso">
+<p class="try-task"><strong>Missão:</strong> o caixa da lojinha da Ana lê, <strong>numa linha só</strong>, a quantidade (um <code>int</code>) e o preço de cada item (um <code>double</code>), e mostra o total. A entrada preparada é <code>3 12.50</code>. Escreva o <code>scanf</code> que lê os dois valores e confira o retorno: se ele não for 2, mostre <code>Entrada inválida.</code> e termine com <code>return 1;</code>. Sem avisos. A saída deve terminar com:</p>
+<pre class="out">Total: R$ 37.50</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int quantidade = 0;
+    double preco = 0.0;
+    printf("Quantidade e preço: ");
+
+    // leia a quantidade e o preço aqui, conferindo o retorno
+
+    printf("Total: R$ %.2f\n", quantidade * preco);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int quantidade = 0;
+    double preco = 0.0;
+    printf("Quantidade e preço: ");
+
+    if (scanf("%d %lf", &amp;quantidade, &amp;preco) != 2) {
+        printf("Entrada inválida.\n");
+        return 1;
+    }
+
+    printf("Total: R$ %.2f\n", quantidade * preco);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Depois, troque o que está no campo <strong>Entrada</strong> da caixa e rode de novo. Com <code>abc</code>, o seu <code>!= 2</code> mostra <code>Entrada inválida.</code>. Com <code>3 12,50</code>, porém, o total sai <code>R$ 36.00</code>, sem reclamação: o <code>%lf</code> leu o 12, parou na vírgula, e as duas lacunas foram preenchidas. O retorno do <code>scanf</code> pega a entrada <strong>errada</strong>, mas não a entrada <strong>pela metade</strong>. Para conferir a linha inteira, existe o caminho do <a href="fgets.html">fgets</a> com <a href="string-numero.html">strtol e strtod</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>scanf("%d", &amp;n)</code> para o programa, espera a pessoa digitar e apertar Enter, e guarda o número em <code>n</code>. Mostre antes uma pergunta com <code>printf</code>.</li>
+  <li>O <code>&amp;</code> entrega o <strong>endereço</strong> da variável. Sem ele: aviso <code>-Wformat</code> e <code>Falha de segmentação</code>. Arrays de <code>char</code> (<code>%s</code>) não levam <code>&amp;</code>.</li>
+  <li><code>%d</code>, <code>%lf</code> e <code>%s</code> pulam os brancos antes do valor; o <code>%c</code> não pula, por isso use <code>" %c"</code>.</li>
+  <li>No <code>scanf</code>, <code>double</code> é <code>%lf</code>; <code>%f</code> é só para <code>float</code>. Números com ponto: <code>25.50</code>.</li>
+  <li>O <code>scanf</code> devolve quantas lacunas preencheu (ou <code>EOF</code>, -1). Confira sempre: <code>if (scanf(…) != 1)</code>.</li>
+  <li><code>%s</code> lê uma palavra; sempre com largura (<code>"%19s"</code> para <code>char nome[20]</code>). Para linhas com espaços, <a href="fgets.html">fgets</a>.</li>
+  <li>Próximo passo: <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>, para fazer contas com os valores que você leu.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
