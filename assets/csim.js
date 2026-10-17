@@ -368,7 +368,7 @@
       if (!f.length) { cumprida = true; status.textContent = "✔ Missão cumprida!"; status.className = "sim-status ok"; return; }
       var tipos = f.map(function (x) { return x.split(":")[0].trim(); });
       if (tipos.every(function (t) { return t === "src" || t === "exit"; })) status.textContent = "Missão em andamento… (ainda falta: " + f.join(", ") + ")";
-      else if (tipos.indexOf("compila") >= 0 || (tipos.indexOf("semaviso") >= 0 && !ctx.compilou)) status.textContent = "Missão em andamento… (o código ainda não compila)";
+      else if (tipos.indexOf("compila") >= 0 || (!ctx.compilou && tipos.some(function (t) { return t === "semaviso" || t === "out" || t === "outre" || t === "exit"; }))) status.textContent = "Missão em andamento… (o código ainda não compila)";
       else if (tipos.indexOf("semaviso") >= 0) status.textContent = "Missão em andamento… (o compilador ainda dá avisos)";
       else if (tipos.indexOf("erro") >= 0) status.textContent = "Missão em andamento… (a missão pede um erro de compilação" + (ctx.compilou ? "; o código ainda compila)" : " diferente)");
       else if (tipos.indexOf("aviso") >= 0) status.textContent = "Missão em andamento… (a missão pede um aviso do compilador)";

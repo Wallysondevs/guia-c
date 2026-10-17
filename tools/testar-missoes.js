@@ -191,7 +191,7 @@ async function main() {
             linha = verboso ? "  ✓ " + rot + " (compilou em " + sol.msCompilacao + " ms" + (sol.pch && sol.pch.length ? ", PCH " + sol.pch.join("+") : "") + ")\n" + mostrarExec(sol) : "";
             novoCache[chave] = { ok: true, aviso: avisos.join("; ") || undefined };
           }
-          if (nativo) { const d = comparar(Lab, cx, solucao, sol, meta); if (d.dif) nDifNativo++; linha += d.txt; }
+          if (nativo) { const d = comparar(Lab, cx, solucao, sol, meta); if (d.dif) nDifNativo++; linha = (linha || "  · " + rot) + d.txt; }
         } else {
           nLivres++;
           const r = await exec(abas);
@@ -200,7 +200,7 @@ async function main() {
           notaExec(r);
           linha = verboso ? "  · " + rot + " (compilou em " + r.msCompilacao + " ms" + (r.pch && r.pch.length ? ", PCH " + r.pch.join("+") : "") + ")\n" + mostrarExec(r) : "";
           novoCache[chave] = { ok: true, aviso: avisos.join("; ") || undefined };
-          if (nativo) { const d = comparar(Lab, cx, abas, r, null); if (d.dif) nDifNativo++; linha += d.txt; }
+          if (nativo) { const d = comparar(Lab, cx, abas, r, null); if (d.dif) nDifNativo++; linha = (linha || "  · " + rot) + d.txt; }
         }
       } catch (e) {
         nFalhas++; falhasPag++;
