@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Arrays Multidimensionais — tabelas com linhas e colunas | Guia C</title>
+<meta name="description" content="Arrays multidimensionais em C para quem nunca programou: a tabela int notas[3][4], linha e coluna, percorrer com dois for, média por linha e por coluna, como a tabela fica na memória, as formas de inicializar, jogo da velha com char, lista de palavras, três dimensões, passar para uma função e os erros clássicos (índices trocados, notas[1, 2]), com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Arrays Multidimensionais</span></h1>
+
+<p class="intro">Na aula de <a href="arrays.html">Arrays</a>, a Ana guardou uma nota por aluno numa fileira. Mas no fim do bimestre cada aluno tem <strong>quatro</strong> provas. O que ela tem agora é uma <strong>tabela</strong>, como uma planilha: uma linha para cada aluno, uma coluna para cada prova. O C guarda tabelas assim com um <strong>array de duas dimensões</strong> (um array <strong>bidimensional</strong>, ou <strong>matriz</strong>, como na matemática): <code>int notas[3][4]</code>, 3 linhas e 4 colunas. Tabuleiro de jogo, mapa de assentos do cinema, vendas por semana: tudo isso cabe em linhas e colunas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como criar uma tabela (<code>int notas[3][4]</code>) e acessar uma célula com <strong>dois índices</strong>: <code>notas[linha][coluna]</code>.</li>
+  <li>Como percorrer a tabela com <strong>dois <code>for</code></strong>, um dentro do outro.</li>
+  <li>Como somar uma linha (a média de um aluno) e uma coluna (a média de uma prova).</li>
+  <li>Como a tabela fica guardada na memória: linha depois de linha.</li>
+  <li>As formas de dar valores iniciais e qual tamanho pode ficar vazio.</li>
+  <li>Tabelas de <code>char</code> (jogo da velha, lista de palavras), três dimensões e como passar uma tabela para uma função.</li>
+  <li>Os erros clássicos: linha e coluna trocadas e o <code>notas[1, 2]</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Esta aula usa muito o que você viu em <a href="arrays.html">Arrays</a> e em <a href="lacos-aninhados.html">Laços Aninhados</a>.</p>
+
+<hr>
+
+<h2>A ideia: o prédio com andares e apartamentos</h2>
+<p>Num prédio, para achar um apartamento você precisa de <strong>dois números</strong>: o andar e a porta. "Andar 2, porta 3." Todos os andares têm o mesmo número de portas. Um array de duas dimensões é esse prédio:</p>
+<ul>
+  <li>o primeiro índice escolhe o <strong>andar</strong>, a <strong>linha</strong> da tabela;</li>
+  <li>o segundo índice escolhe a <strong>porta</strong> dentro do andar, a <strong>coluna</strong>;</li>
+  <li>todas as linhas têm o <strong>mesmo número</strong> de colunas, e todas as células guardam o <strong>mesmo tipo</strong>.</li>
+</ul>
+<p>E, como num array comum, os dois índices começam em <strong>0</strong>: o térreo é a linha 0 e a primeira porta é a coluna 0.</p>
+
+<hr>
+
+<h2>1. A primeira tabela</h2>
+<p>As notas de 3 alunos em 4 provas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Coluna 0 (prova 1)</th><th>Coluna 1 (prova 2)</th><th>Coluna 2 (prova 3)</th><th>Coluna 3 (prova 4)</th></tr>
+<tr><th>Linha 0 (aluno 1)</th><td>7</td><td>8</td><td>6</td><td>9</td></tr>
+<tr><th>Linha 1 (aluno 2)</th><td>5</td><td>6</td><td><strong>7</strong></td><td>8</td></tr>
+<tr><th>Linha 2 (aluno 3)</th><td>10</td><td>9</td><td>9</td><td>10</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="planilha.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[3][4] = {
+        {7, 8, 6, 9},
+        {5, 6, 7, 8},
+        {10, 9, 9, 10}
+    };
+    printf("Aluno 2, prova 3: %d\n", notas[1][2]);
+    printf("Aluno 3, prova 1: %d\n", notas[2][0]);
+    notas[1][0] = 7;
+    printf("Depois da revisão, aluno 2, prova 1: %d\n", notas[1][0]);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int notas[3][4]</dt><dd>Uma tabela de <code>int</code> com <strong>3 linhas</strong> e <strong>4 colunas</strong>: 3 × 4 = 12 células. O primeiro número é sempre o de linhas.</dd>
+  <dt>{ {7, 8, 6, 9}, … }</dt><dd>Chaves dentro de chaves: cada par de chaves de dentro é <strong>uma linha</strong>. Escrever uma linha por linha do código deixa o programa parecido com a tabela.</dd>
+  <dt>notas[1][2]</dt><dd>Linha 1 (o segundo aluno), coluna 2 (a terceira prova): vale 7, a célula em negrito na tabela acima.</dd>
+  <dt>notas[2][0]</dt><dd>Terceiro aluno, primeira prova: 10.</dd>
+  <dt>notas[1][0] = 7;</dt><dd>Cada célula funciona como uma variável comum: recebe valor com <code>=</code>. A primeira prova do aluno 2 foi revisada de 5 para 7.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra planilha.c -o planilha
+$ ./planilha
+Aluno 2, prova 3: 7
+Aluno 3, prova 1: 10
+Depois da revisão, aluno 2, prova 1: 7</pre>
+
+<div class="tip">
+<strong>Linha primeiro, coluna depois</strong>
+<p>Leia <code>notas[1][2]</code> como "na linha 1, a coluna 2". A ordem é a mesma da criação: <code>[3][4]</code> são 3 linhas de 4 colunas, então o primeiro índice vai de 0 a 2 e o segundo, de 0 a 3. Trocar a ordem é o erro mais comum desta aula (veja a seção 7).</p>
+</div>
+
+<hr>
+
+<h2>2. Percorrer a tabela com dois <code>for</code></h2>
+<p>Para passar por todas as células, use dois laços, um dentro do outro (aula <a href="lacos-aninhados.html">Laços Aninhados</a>): o de fora escolhe a linha e o de dentro anda pelas colunas dessa linha.</p>
+
+<pre class="file" data-file="tabela.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[3][4] = {
+        {7, 8, 6, 9},
+        {5, 6, 7, 8},
+        {10, 9, 9, 10}
+    };
+    for (int linha = 0; linha &lt; 3; linha++) {
+        printf("Aluno %d:", linha + 1);
+        for (int coluna = 0; coluna &lt; 4; coluna++) {
+            printf(" %3d", notas[linha][coluna]);
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>for (int linha = 0; linha &lt; 3; linha++)</dt><dd>O laço de fora: uma volta por aluno. O limite é o <strong>número de linhas</strong>, 3.</dd>
+  <dt>printf("Aluno %d:", linha + 1);</dt><dd>O começo da linha na tela, uma vez por aluno.</dd>
+  <dt>for (int coluna = 0; coluna &lt; 4; coluna++)</dt><dd>O laço de dentro: roda inteiro (4 voltas) a cada volta do de fora. O limite é o <strong>número de colunas</strong>, 4.</dd>
+  <dt>%3d</dt><dd>Cada número ocupa 3 casas, alinhado à direita, para as colunas ficarem retas (aula <a href="formatos-printf.html">Formatos do printf</a>).</dd>
+  <dt>printf("\n");</dt><dd>Depois do laço de dentro: terminou a linha da tabela, pula a linha na tela.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tabela.c -o tabela
+$ ./tabela
+Aluno 1:   7   8   6   9
+Aluno 2:   5   6   7   8
+Aluno 3:  10   9   9  10</pre>
+
+<p>Nomes como <code>linha</code> e <code>coluna</code> (ou <code>l</code> e <code>c</code>) ajudam muito. Com <code>i</code> e <code>j</code>, que você vai ver em muito código, é fácil trocar um pelo outro sem perceber.</p>
+
+<hr>
+
+<h2>3. Somar uma linha e somar uma coluna</h2>
+<p>A Ana quer duas coisas: a média de cada <strong>aluno</strong> (somar uma linha) e a média de cada <strong>prova</strong> (somar uma coluna). A diferença é só qual laço fica por fora.</p>
+
+<pre class="file" data-file="medias.c">#include &lt;stdio.h&gt;
+
+#define ALUNOS 3
+#define PROVAS 4
+
+int main(void) {
+    int notas[ALUNOS][PROVAS] = {
+        {7, 8, 6, 9},
+        {5, 6, 7, 8},
+        {10, 9, 9, 10}
+    };
+
+    printf("Média de cada aluno:\n");
+    for (int a = 0; a &lt; ALUNOS; a++) {
+        int soma = 0;
+        for (int p = 0; p &lt; PROVAS; p++) {
+            soma += notas[a][p];
+        }
+        printf("  aluno %d: %.2f\n", a + 1, (double) soma / PROVAS);
+    }
+
+    printf("Média de cada prova:\n");
+    for (int p = 0; p &lt; PROVAS; p++) {
+        int soma = 0;
+        for (int a = 0; a &lt; ALUNOS; a++) {
+            soma += notas[a][p];
+        }
+        printf("  prova %d: %.2f\n", p + 1, (double) soma / ALUNOS);
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#define ALUNOS 3 / #define PROVAS 4</dt><dd>Os dois tamanhos com nome (aula <a href="constantes.html">Constantes</a>). Com tabelas, isso evita a confusão "o 3 era de linhas ou de colunas?".</dd>
+  <dt>int soma = 0; (dentro do laço de fora)</dt><dd>Cada aluno começa uma soma nova. Se a <code>soma</code> fosse criada antes dos laços, o aluno 2 começaria com a soma do aluno 1.</dd>
+  <dt>notas[a][p] no primeiro bloco</dt><dd>O de fora é o aluno (linha) e o de dentro, a prova: soma <strong>uma linha</strong>.</dd>
+  <dt>notas[a][p] no segundo bloco</dt><dd>Os laços trocaram de lugar (a prova por fora), mas o acesso continua <code>notas[a][p]</code>, linha e depois coluna: soma <strong>uma coluna</strong>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra medias.c -o medias
+$ ./medias
+Média de cada aluno:
+  aluno 1: 7.50
+  aluno 2: 6.50
+  aluno 3: 9.50
+Média de cada prova:
+  prova 1: 7.33
+  prova 2: 7.67
+  prova 3: 7.33
+  prova 4: 9.00</pre>
+
+<p>Repare na regra de ouro: <strong>trocar a ordem dos laços não troca a ordem dos índices</strong>. O primeiro índice é sempre a linha, não importa qual laço está por fora.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> entrou um aluno novo na turma. Mude <code>ALUNOS</code> para 4 e acrescente uma quarta linha na tabela, por exemplo <code>{6, 7, 8, 9}</code>. Os laços se ajustam sozinhos. O que acontece com a média da prova 1? E se você mudar <code>ALUNOS</code> para 4 <strong>sem</strong> acrescentar a linha? (Dica: o que falta vira zero, como em <a href="arrays.html">Arrays</a>.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define ALUNOS 3
+#define PROVAS 4
+
+int main(void) {
+    int notas[ALUNOS][PROVAS] = {
+        {7, 8, 6, 9},
+        {5, 6, 7, 8},
+        {10, 9, 9, 10}
+    };
+    for (int p = 0; p &lt; PROVAS; p++) {
+        int soma = 0;
+        for (int a = 0; a &lt; ALUNOS; a++) {
+            soma += notas[a][p];
+        }
+        printf("prova %d: %.2f\n", p + 1, (double) soma / ALUNOS);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Como a tabela fica na memória</h2>
+<p>A memória do computador não tem linhas e colunas: é uma fileira só de bytes. O C guarda a tabela <strong>linha depois de linha</strong>: primeiro as 4 células da linha 0, logo depois as 4 da linha 1, e assim por diante. Em inglês isso se chama <em>row-major order</em>, "ordem por linhas".</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Posição na memória</th><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td><td>10</td><td>11</td></tr>
+<tr><th>Célula</th><td><code>[0][0]</code></td><td><code>[0][1]</code></td><td><code>[0][2]</code></td><td><code>[0][3]</code></td><td><code>[1][0]</code></td><td><code>[1][1]</code></td><td><code>[1][2]</code></td><td><code>[1][3]</code></td><td><code>[2][0]</code></td><td><code>[2][1]</code></td><td><code>[2][2]</code></td><td><code>[2][3]</code></td></tr>
+<tr><th>Valor</th><td>7</td><td>8</td><td>6</td><td>9</td><td>5</td><td>6</td><td>7</td><td>8</td><td>10</td><td>9</td><td>9</td><td>10</td></tr>
+</table>
+</div>
+
+<p>Para achar <code>notas[l][c]</code>, o computador calcula a posição <code>l × 4 + c</code>: pula <code>l</code> linhas inteiras de 4 e anda <code>c</code> células. <code>notas[1][2]</code> é a posição 1 × 4 + 2 = <strong>6</strong>, que guarda 7. É por isso que o compilador <strong>precisa saber quantas colunas</strong> a tabela tem: sem esse 4, ele não consegue fazer a conta.</p>
+
+<p>Na verdade, para o C, <code>int notas[3][4]</code> é um <strong>array de 3 elementos</strong>, em que cada elemento é <strong>um array de 4 <code>int</code></strong>. O <code>sizeof</code> mostra isso:</p>
+
+<pre class="file" data-file="memoria.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[3][4] = {
+        {7, 8, 6, 9},
+        {5, 6, 7, 8},
+        {10, 9, 9, 10}
+    };
+    printf("sizeof notas       = %zu bytes\n", sizeof notas);
+    printf("sizeof notas[0]    = %zu bytes (uma linha)\n", sizeof notas[0]);
+    printf("sizeof notas[0][0] = %zu bytes (um elemento)\n", sizeof notas[0][0]);
+    printf("linhas  = %zu\n", sizeof notas / sizeof notas[0]);
+    printf("colunas = %zu\n", sizeof notas[0] / sizeof notas[0][0]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra memoria.c -o memoria
+$ ./memoria
+sizeof notas       = 48 bytes
+sizeof notas[0]    = 16 bytes (uma linha)
+sizeof notas[0][0] = 4 bytes (um elemento)
+linhas  = 3
+colunas = 4</pre>
+
+<dl class="anatomy">
+  <dt>sizeof notas</dt><dd>A tabela inteira: 12 células × 4 bytes = 48.</dd>
+  <dt>sizeof notas[0]</dt><dd><code>notas[0]</code>, com <strong>um</strong> índice só, é a linha 0 inteira: um array de 4 <code>int</code>, 16 bytes.</dd>
+  <dt>sizeof notas / sizeof notas[0]</dt><dd>48 ÷ 16 = 3 linhas. É a mesma conta de <a href="sizeof.html">Tamanho dos Tipos</a>, um nível acima.</dd>
+  <dt>sizeof notas[0] / sizeof notas[0][0]</dt><dd>16 ÷ 4 = 4 colunas.</dd>
+</dl>
+
+<p>Uma prova de que as linhas ficam coladas: num <code>int m[2][3] = {{1, 2, 3}, {4, 5, 6}}</code>, pedir <code>m[0][3]</code> (a "quarta coluna" de uma linha que só tem 3) mostrou <code>m[0][3] = 4</code> no gcc, o primeiro valor da linha 1. <strong>Não faça isso em programa de verdade</strong>: a coluna 3 não existe e o acesso é comportamento indefinido (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>). O Clang do editor avisa: <code>warning: array index 3 is past the end of the array (that has type 'int[3]')</code>; o gcc não disse nada, nem com <code>-O2</code>.</p>
+
+<hr>
+
+<h2>5. As formas de dar valores iniciais</h2>
+
+<pre class="file" data-file="formas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a[2][3] = {{1, 2, 3}, {4, 5, 6}};
+    int b[2][3] = {1, 2, 3, 4, 5, 6};
+    int c[2][3] = {{1}, {4, 5}};
+    int d[][3] = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
+    int e[2][3] = {};
+
+    printf("a: %d %d %d / %d %d %d\n", a[0][0], a[0][1], a[0][2], a[1][0], a[1][1], a[1][2]);
+    printf("b: %d %d %d / %d %d %d\n", b[0][0], b[0][1], b[0][2], b[1][0], b[1][1], b[1][2]);
+    printf("c: %d %d %d / %d %d %d\n", c[0][0], c[0][1], c[0][2], c[1][0], c[1][1], c[1][2]);
+    printf("d tem %zu linhas\n", sizeof d / sizeof d[0]);
+    printf("e: %d %d %d / %d %d %d\n", e[0][0], e[0][1], e[0][2], e[1][0], e[1][1], e[1][2]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra formas.c -o formas
+formas.c: In function ‘main’:
+formas.c:5:19: warning: missing braces around initializer [-Wmissing-braces]
+    5 |     int b[2][3] = {1, 2, 3, 4, 5, 6};
+      |                   ^
+      |                    {      } {      }
+$ ./formas
+a: 1 2 3 / 4 5 6
+b: 1 2 3 / 4 5 6
+c: 1 0 0 / 4 5 0
+d tem 3 linhas
+e: 0 0 0 / 0 0 0</pre>
+
+<dl class="anatomy">
+  <dt>int a[2][3] = {{1, 2, 3}, {4, 5, 6}};</dt><dd>A forma completa: uma chave por linha. É a recomendada.</dd>
+  <dt>int b[2][3] = {1, 2, 3, 4, 5, 6};</dt><dd>Sem as chaves de dentro, os valores enchem a memória na ordem (linha 0, depois linha 1). Funciona, mas o gcc avisa <em>missing braces around initializer</em>, "faltam chaves no inicializador", e até desenha onde elas iriam: <code>{      } {      }</code>.</dd>
+  <dt>int c[2][3] = {{1}, {4, 5}};</dt><dd>Cada linha pode ter menos valores: o que falta <strong>naquela linha</strong> vira zero. Aqui as chaves fazem diferença: sem elas, <code>{1, 4, 5}</code> encheria a linha 0 inteira.</dd>
+  <dt>int d[][3] = {…};</dt><dd>O <strong>primeiro</strong> tamanho pode ficar vazio: o compilador conta as linhas (3). O das colunas, não (seção 7).</dd>
+  <dt>int e[2][3] = {};</dt><dd>Tudo zero <span class="versao">C23</span>. Antes do C23, <code>= {0}</code>.</dd>
+</dl>
+
+<hr>
+
+<h2>6. Outras tabelas</h2>
+
+<h3>Tabela de <code>char</code>: o jogo da velha</h3>
+<p>Qualquer tipo serve. Um tabuleiro de jogo da velha é uma tabela 3 × 3 de <code>char</code>, com <code>'X'</code>, <code>'O'</code> ou espaço em cada casa (aula <a href="char.html">Caracteres</a>):</p>
+
+<pre class="file" data-file="velha.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char tabuleiro[3][3] = {
+        {'X', 'O', ' '},
+        {' ', 'X', ' '},
+        {'O', ' ', ' '}
+    };
+    tabuleiro[2][2] = 'X';
+    for (int l = 0; l &lt; 3; l++) {
+        printf(" %c | %c | %c\n", tabuleiro[l][0], tabuleiro[l][1], tabuleiro[l][2]);
+        if (l &lt; 2) {
+            printf("---+---+---\n");
+        }
+    }
+    if (tabuleiro[0][0] == 'X' &amp;&amp; tabuleiro[1][1] == 'X' &amp;&amp; tabuleiro[2][2] == 'X') {
+        printf("X venceu na diagonal!\n");
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>tabuleiro[2][2] = 'X';</dt><dd>A jogada: linha 2, coluna 2, o canto de baixo à direita.</dd>
+  <dt>if (l &lt; 2)</dt><dd>Desenha a linha separadora entre as linhas do tabuleiro, mas não depois da última.</dd>
+  <dt>[0][0], [1][1], [2][2]</dt><dd>A diagonal principal: as casas em que linha e coluna são iguais.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra velha.c -o velha
+$ ./velha
+ X | O |
+---+---+---
+   | X |
+---+---+---
+ O |   | X
+X venceu na diagonal!</pre>
+
+<div class="tryc" data-goal="out:X venceu na linha 2!,src:tabuleiro\[1\]\[1\]\s*=\s*'X'">
+<p class="try-task"><strong>Missão:</strong> é a vez do X. Faça a jogada que fecha a <strong>linha do meio</strong> (a segunda linha) e rode. O programa tem de mostrar <code>X venceu na linha 2!</code>. Qual é a linha e qual é a coluna da casa vazia do meio?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char tabuleiro[3][3] = {
+        {'O', ' ', 'O'},
+        {'X', ' ', 'X'},
+        {' ', ' ', ' '}
+    };
+    // sua jogada aqui
+
+    for (int l = 0; l &lt; 3; l++) {
+        printf(" %c | %c | %c\n", tabuleiro[l][0], tabuleiro[l][1], tabuleiro[l][2]);
+    }
+    for (int l = 0; l &lt; 3; l++) {
+        if (tabuleiro[l][0] == 'X' &amp;&amp; tabuleiro[l][1] == 'X' &amp;&amp; tabuleiro[l][2] == 'X') {
+            printf("X venceu na linha %d!\n", l + 1);
+        }
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char tabuleiro[3][3] = {
+        {'O', ' ', 'O'},
+        {'X', ' ', 'X'},
+        {' ', ' ', ' '}
+    };
+    tabuleiro[1][1] = 'X';
+
+    for (int l = 0; l &lt; 3; l++) {
+        printf(" %c | %c | %c\n", tabuleiro[l][0], tabuleiro[l][1], tabuleiro[l][2]);
+    }
+    for (int l = 0; l &lt; 3; l++) {
+        if (tabuleiro[l][0] == 'X' &amp;&amp; tabuleiro[l][1] == 'X' &amp;&amp; tabuleiro[l][2] == 'X') {
+            printf("X venceu na linha %d!\n", l + 1);
+        }
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Uma lista de palavras</h3>
+<p>Uma palavra em C é um array de <code>char</code> com um <code>'\0'</code> no fim, a <strong>string</strong>, assunto da próxima aula (<a href="strings.html">Strings</a>). Uma lista de palavras, então, é uma tabela de <code>char</code>: cada linha é uma palavra.</p>
+
+<pre class="file" data-file="dias.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char dias[7][4] = {"dom", "seg", "ter", "qua", "qui", "sex", "sab"};
+    for (int i = 0; i &lt; 7; i++) {
+        printf("%d: %s\n", i, dias[i]);
+    }
+    printf("A segunda letra de \"%s\" é '%c'\n", dias[1], dias[1][1]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dias.c -o dias
+$ ./dias
+0: dom
+1: seg
+2: ter
+3: qua
+4: qui
+5: sex
+6: sab
+A segunda letra de "seg" é 'e'</pre>
+
+<dl class="anatomy">
+  <dt>char dias[7][4]</dt><dd>7 linhas (os dias) de 4 <code>char</code>: 3 letras + o <code>'\0'</code> que marca o fim de cada palavra.</dd>
+  <dt>dias[i] com %s</dt><dd>Com <strong>um</strong> índice, <code>dias[i]</code> é a linha inteira, a palavra, e o <code>%s</code> a mostra.</dd>
+  <dt>dias[1][1]</dt><dd>Com <strong>dois</strong> índices, uma letra: a da coluna 1 da linha 1, o <code>'e'</code> de <code>"seg"</code>.</dd>
+</dl>
+
+<p>Todas as linhas têm o mesmo tamanho, então a coluna precisa caber a <strong>maior</strong> palavra. Por isso escrevemos <code>"sab"</code> sem acento: o <code>á</code> ocupa 2 bytes e <code>"sáb"</code> não caberia em 4 (veja <a href="acentos-utf8.html">Acentos e UTF-8</a>). Para listas de palavras de tamanhos muito diferentes, existe outro jeito, um array de ponteiros, em <a href="ponteiros-strings.html">Ponteiros e Strings</a>.</p>
+
+<h3>Três dimensões (ou mais)</h3>
+<p>O C aceita quantos colchetes você quiser. A lojinha da Ana tem 2 filiais e anota as vendas de cada semana (4) de cada mês (3): <code>vendas[loja][mes][semana]</code>.</p>
+
+<pre class="file" data-file="tres.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    // 2 lojas, 3 meses, 4 semanas
+    int vendas[2][3][4] = {
+        {{5, 3, 4, 6}, {2, 2, 3, 1}, {7, 8, 6, 9}},
+        {{1, 0, 2, 3}, {4, 4, 5, 2}, {3, 3, 3, 3}}
+    };
+    int total = 0;
+    for (int loja = 0; loja &lt; 2; loja++) {
+        for (int mes = 0; mes &lt; 3; mes++) {
+            for (int semana = 0; semana &lt; 4; semana++) {
+                total += vendas[loja][mes][semana];
+            }
+        }
+    }
+    printf("Loja 2, mês 1, semana 4: %d\n", vendas[1][0][3]);
+    printf("Total vendido: %d\n", total);
+    printf("O array tem %zu bytes\n", sizeof vendas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tres.c -o tres
+$ ./tres
+Loja 2, mês 1, semana 4: 3
+Total vendido: 89
+O array tem 96 bytes       « 2 × 3 × 4 = 24 células × 4 bytes</pre>
+
+<p>Cada dimensão a mais pede mais um laço e multiplica o tamanho. Na prática, três dimensões já são raras; acima disso, quase sempre há um jeito mais claro de organizar os dados, como um array de <a href="structs.html">structs</a>.</p>
+
+<h3>Passar uma tabela para uma função</h3>
+<p>Funções têm aula própria (<a href="funcoes.html">Funções</a>), mas vale saber desde já: quando uma função recebe uma tabela, o parâmetro tem de dizer o número de <strong>colunas</strong>. O de linhas pode ficar vazio e vai num parâmetro à parte:</p>
+
+<pre class="file" data-file="funcao.c">#include &lt;stdio.h&gt;
+
+void mostra(int linhas, int m[][4]) {
+    for (int l = 0; l &lt; linhas; l++) {
+        for (int c = 0; c &lt; 4; c++) {
+            printf(" %3d", m[l][c]);
+        }
+        printf("\n");
+    }
+}
+
+int main(void) {
+    int notas[3][4] = {{7, 8, 6, 9}, {5, 6, 7, 8}, {10, 9, 9, 10}};
+    mostra(3, notas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra funcao.c -o funcao
+$ ./funcao
+   7   8   6   9
+   5   6   7   8
+  10   9   9  10</pre>
+
+<p>É a conta da seção 4: para achar <code>m[l][c]</code>, a função precisa saber quantas células pular por linha. Sem o 4 (<code>int m[][]</code>), o gcc recusa com o mesmo erro da seção 7. Os detalhes de como o array chega à função estão em <a href="parametros.html">Parâmetros</a> e <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>.</p>
+
+<hr>
+
+<h2>7. Quando dá errado</h2>
+
+<h3>Linha e coluna trocadas</h3>
+<p>A Ana quer somar todas as notas da tabela 3 × 4, mas inverteu os limites dos laços: a linha vai até 4 e a coluna até 3.</p>
+
+<pre class="file" data-file="trocado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[3][4] = {
+        {7, 8, 6, 9},
+        {5, 6, 7, 8},
+        {10, 9, 9, 10}
+    };
+    int soma = 0;
+    for (int linha = 0; linha &lt; 4; linha++) {
+        for (int coluna = 0; coluna &lt; 3; coluna++) {
+            soma += notas[linha][coluna];
+        }
+    }
+    printf("Soma de todas as notas: %d\n", soma);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra trocado.c -o trocado     « nenhum aviso
+$ ./trocado
+Soma de todas as notas: 481894723</pre>
+
+<p>A soma certa é 94. O laço pulou a última coluna de cada aluno e, na volta <code>linha = 3</code>, leu uma "quarta linha" que não existe, cheia do que estava na memória depois da tabela. Nenhum aviso. Como em <a href="arrays.html">Arrays</a>, o gcc só percebe com <code>-O2</code> (<code>warning: iteration 3 invokes undefined behavior</code>, "a volta 3 provoca comportamento indefinido"), e o <code>-fsanitize=address</code> pega na hora de rodar:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address trocado.c -o trocado
+$ ./trocado
+=================================================================
+==429329==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7b4715bf0060 at pc 0x55749b41165c bp 0x7fff2ed552e0 sp 0x7fff2ed552d0
+READ of size 4 at 0x7b4715bf0060 thread T0
+    #0 0x55749b41165b in main /home/ana/c/trocado.c:12
+…
+  This frame has 1 object(s):
+    [48, 96) 'notas' (line 4) &lt;== Memory access at offset 96 overflows this variable
+…</pre>
+
+<p>A tabela ocupa os bytes 48 a 95 (os 48 bytes da seção 4), e a leitura foi no 96, logo depois do fim: é o <code>notas[3][0]</code>.</p>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>No editor, o mesmo <code>trocado.c</code> mostrou <code>Soma de todas as notas: 67</code>, sem aviso nem erro: lá, o acesso fora do array passa calado e lê o que houver por perto. Outro número errado, mas que poderia passar por certo. Use <code>LINHAS</code> e <code>COLUNAS</code> com nome (como <code>ALUNOS</code> e <code>PROVAS</code> na seção 3) e esse erro fica muito mais difícil de cometer.</p>
+</div>
+
+<h3>A vírgula: <code>notas[1, 2]</code></h3>
+<p>Quem vem de outras linguagens (Python com NumPy, Pascal, C#) escreve os dois índices com vírgula. Em C, isso compila, mas faz outra coisa:</p>
+
+<pre class="file" data-file="virgula.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[3][4] = {
+        {7, 8, 6, 9},
+        {5, 6, 7, 8},
+        {10, 9, 9, 10}
+    };
+    printf("%d\n", notas[1, 2]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra virgula.c -o virgula
+virgula.c: In function ‘main’:
+virgula.c:9:27: warning: left-hand operand of comma expression has no effect [-Wunused-value]
+    9 |     printf("%d\n", notas[1, 2]);
+      |                           ^
+virgula.c:9:14: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘int *’ [-Wformat=]
+    9 |     printf("%d\n", notas[1, 2]);
+      |             ~^     ~~~~~~~~~~~
+      |              |          |
+      |              int        int *
+      |             %ls
+$ ./virgula
+-1373519120</pre>
+
+<dl class="anatomy">
+  <dt>left-hand operand of comma expression has no effect</dt><dd>"O operando da esquerda da expressão com vírgula não tem efeito." Dentro dos colchetes, <code>1, 2</code> é o <strong>operador vírgula</strong> do C: ele calcula o 1, joga fora e fica com o 2. Então <code>notas[1, 2]</code> é <code>notas[2]</code>.</dd>
+  <dt>argument 2 has type ‘int *’</dt><dd>E <code>notas[2]</code>, com um índice só, é a <strong>linha</strong> 2 inteira, não um número. O <code>printf</code> recebeu um endereço (<code>int *</code>, um ponteiro) e mostrou um número sem sentido. Ignore o <code>%ls</code> sugerido: o conserto é outro.</dd>
+</dl>
+
+<p>O conserto: um par de colchetes para cada índice, <code>notas[1][2]</code>.</p>
+
+<h3>As mensagens</h3>
+
+<div class="cenario">
+<strong><code>error: array type has incomplete element type ‘int[]’</code></strong>
+<p><strong>O que significa:</strong> você deixou vazio o tamanho das colunas (<code>int m[][] = …</code> ou o parâmetro <code>int m[][]</code>). A nota que vem junto diz tudo: <code>declaration of ‘m’ as multidimensional array must have bounds for all dimensions except the first</code>, "um array multidimensional precisa de tamanho em todas as dimensões, menos a primeira". Sem o número de colunas, o compilador não sabe onde cada linha começa. (O Clang do editor diz <code>array has incomplete element type 'int[]'</code>.)</p>
+<p><strong>Como consertar:</strong> escreva as colunas: <code>int m[][2] = {{1, 2}, {3, 4}};</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: missing braces around initializer [-Wmissing-braces]</code></strong>
+<p><strong>O que significa:</strong> os valores não estão separados por linha (<code>{1, 2, 3, 4, 5, 6}</code>). Funciona, mas é fácil errar onde cada linha começa.</p>
+<p><strong>Como consertar:</strong> uma chave por linha: <code>{{1, 2, 3}, {4, 5, 6}}</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: excess elements in array initializer</code> com <code>note: (near initialization for ‘m[0]’)</code></strong>
+<p><strong>O que significa:</strong> uma linha tem mais valores que colunas (<code>{1, 2, 3, 4}</code> numa tabela de 3 colunas). O <code>m[0]</code> da nota diz qual linha: a 0. O valor de sobra é descartado.</p>
+<p><strong>Como consertar:</strong> aumente as colunas ou tire o valor.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘int *’</code></strong>
+<p><strong>O que significa:</strong> faltou um índice (<code>notas[1]</code> em vez de <code>notas[1][2]</code>) ou você usou vírgula (<code>notas[1, 2]</code>). Com um índice só, você tem uma linha inteira, não uma célula.</p>
+<p><strong>Como consertar:</strong> dois pares de colchetes: <code>notas[linha][coluna]</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Soma ou média com um valor absurdo, sem nenhum aviso</strong>
+<p><strong>O que significa:</strong> algum índice passou do fim, quase sempre linhas e colunas trocadas nos limites dos laços.</p>
+<p><strong>Como consertar:</strong> confira se o laço do primeiro índice vai até o número de <strong>linhas</strong> e o do segundo até o de <strong>colunas</strong>. Dê nome aos tamanhos com <code>#define</code>. Para achar a linha culpada, compile com <code>-g -fsanitize=address</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>int m[3][4];</code></td><td>Tabela de 3 linhas e 4 colunas (12 <code>int</code>)</td></tr>
+<tr><td><code>int m[2][3] = {{1, 2, 3}, {4, 5, 6}};</code></td><td>Uma chave por linha (a forma recomendada)</td></tr>
+<tr><td><code>int m[2][3] = {{1}, {4, 5}};</code></td><td>O que falta em cada linha vira zero</td></tr>
+<tr><td><code>int m[][3] = {…};</code></td><td>O compilador conta as linhas; as colunas são obrigatórias</td></tr>
+<tr><td><code>int m[3][4] = {};</code></td><td>Tudo zero (C23; antes, <code>= {0}</code>)</td></tr>
+<tr><td><code>m[l][c]</code></td><td>A célula da linha <code>l</code>, coluna <code>c</code></td></tr>
+<tr><td><code>m[l]</code></td><td>A linha <code>l</code> inteira (um array de 4)</td></tr>
+<tr><td><code>for (l…) for (c…) m[l][c]</code></td><td>Percorre linha por linha</td></tr>
+<tr><td><code>sizeof m / sizeof m[0]</code></td><td>Número de linhas</td></tr>
+<tr><td><code>sizeof m[0] / sizeof m[0][0]</code></td><td>Número de colunas</td></tr>
+<tr><td><code>char palavras[7][4]</code></td><td>7 palavras de até 3 letras + <code>'\0'</code></td></tr>
+<tr><td><code>void f(int linhas, int m[][4])</code></td><td>Função que recebe uma tabela de 4 colunas</td></tr>
+<tr><td><code>m[1, 2]</code></td><td>Errado: é <code>m[2]</code> (operador vírgula). Use <code>m[1][2]</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Quantas células?</h3>
+<p>Quantos <code>int</code> cabem em <code>int assentos[10][12];</code>? Escreva só o número.</p>
+<div class="ex-code"><input data-answer="120" aria-label="células"> células</div>
+</div>
+
+<div class="exercise">
+<h3>2. O canto</h3>
+<p>Complete para acessar a célula do canto de baixo à direita de <code>int m[5][8]</code>:</p>
+<div class="ex-code">m[<input data-answer="4" aria-label="linha">][<input data-answer="7" aria-label="coluna">]</div>
+</div>
+
+<div class="exercise">
+<h3>3. O tamanho obrigatório</h3>
+<p>Complete a declaração para o compilador contar as linhas sozinho:</p>
+<div class="ex-code">int m[][<input data-answer="2" aria-label="colunas">] = {{1, 2}, {3, 4}, {5, 6}};</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Em <code>int m[2][3] = {{1, 2, 3}, {4, 5, 6}};</code>, quanto vale <code>m[1][0]</code>?</p>
+<label><input type="radio" name="q4"> 2</label>
+<label><input type="radio" name="q4"> 4</label>
+<label><input type="radio" name="q4"> 1</label>
+<label><input type="radio" name="q4"> Não existe</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Em que ordem as células de <code>int m[2][2]</code> ficam na memória?</p>
+<label><input type="radio" name="q5"> <code>[0][0] [1][0] [0][1] [1][1]</code></label>
+<label><input type="radio" name="q5"> Em qualquer ordem, depende do compilador</label>
+<label><input type="radio" name="q5"> <code>[0][0] [0][1] [1][0] [1][1]</code></label>
+<label><input type="radio" name="q5"> Cada linha num lugar diferente da memória</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. O que <code>m[1, 2]</code> faz em C?</p>
+<label><input type="radio" name="q6"> O mesmo que <code>m[1][2]</code></label>
+<label><input type="radio" name="q6"> Não compila</label>
+<label><input type="radio" name="q6"> Soma 1 e 2 e acessa <code>m[3]</code></label>
+<label><input type="radio" name="q6"> Joga o 1 fora e acessa <code>m[2]</code>, a linha 2 inteira</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. Para somar <strong>uma coluna</strong> de <code>notas[ALUNOS][PROVAS]</code>, qual laço fica por dentro?</p>
+<label><input type="radio" name="q7"> O dos alunos (linhas), e o acesso continua <code>notas[a][p]</code></label>
+<label><input type="radio" name="q7"> O das provas, e o acesso vira <code>notas[p][a]</code></label>
+<label><input type="radio" name="q7"> Tanto faz, o resultado é o mesmo</label>
+<label><input type="radio" name="q7"> Não dá: só se soma linha</label>
+</div>
+
+<h3>Missão final: o produto mais vendido</h3>
+
+<div class="tryc" data-goal="out:Produto 1: 22,out:Produto 2: 34,out:Produto 3: 10,out:Mais vendido: produto 2,src:for\s*\(,semaviso">
+<p class="try-task"><strong>Missão:</strong> a lojinha da Ana vende 3 produtos e anotou quantas unidades de cada um saíram em 4 semanas. Cada <strong>linha</strong> é um produto e cada <strong>coluna</strong> é uma semana. Complete o laço de dentro para somar a linha de cada produto e, depois, guarde em <code>campeao</code> o produto com o maior total. Sem avisos.</p>
+<pre class="out">Produto 1: 22
+Produto 2: 34
+Produto 3: 10
+Mais vendido: produto 2</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define PRODUTOS 3
+#define SEMANAS 4
+
+int main(void) {
+    int vendas[PRODUTOS][SEMANAS] = {
+        {5, 7, 4, 6},
+        {9, 8, 10, 7},
+        {3, 2, 4, 1}
+    };
+    int campeao = 0;
+    int maior_total = 0;
+
+    for (int p = 0; p &lt; PRODUTOS; p++) {
+        int total = 0;
+        // 1. some as semanas do produto p
+
+        printf("Produto %d: %d\n", p + 1, total);
+        // 2. se total for o maior até agora, guarde p em campeao
+
+    }
+    printf("Mais vendido: produto %d\n", campeao + 1);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define PRODUTOS 3
+#define SEMANAS 4
+
+int main(void) {
+    int vendas[PRODUTOS][SEMANAS] = {
+        {5, 7, 4, 6},
+        {9, 8, 10, 7},
+        {3, 2, 4, 1}
+    };
+    int campeao = 0;
+    int maior_total = 0;
+
+    for (int p = 0; p &lt; PRODUTOS; p++) {
+        int total = 0;
+        for (int s = 0; s &lt; SEMANAS; s++) {
+            total += vendas[p][s];
+        }
+        printf("Produto %d: %d\n", p + 1, total);
+        if (total &gt; maior_total) {
+            maior_total = total;
+            campeao = p;
+        }
+    }
+    printf("Mais vendido: produto %d\n", campeao + 1);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Aqui o "campeão provisório" pode começar em 0, ao contrário do que a aula <a href="arrays.html">Arrays</a> recomenda, porque vendas nunca são negativas. O <code>campeao</code> guarda o <strong>índice</strong> (0, 1 ou 2), e o <code>+ 1</code> só aparece na hora de mostrar.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um array de duas dimensões é uma <strong>tabela</strong>: <code>int m[3][4]</code> tem 3 linhas e 4 colunas. Acesse com <code>m[linha][coluna]</code>, os dois começando em 0.</li>
+  <li>Percorra com dois <code>for</code>: o de fora para as linhas e o de dentro para as colunas. Trocar a ordem dos laços (para somar colunas) não troca a ordem dos índices.</li>
+  <li>Na memória, a tabela é uma fileira só, <strong>linha depois de linha</strong>. Para o C, <code>m</code> é um array de linhas, e <code>m[l]</code> é uma linha inteira.</li>
+  <li>Inicialize com uma chave por linha. Só o <strong>primeiro</strong> tamanho pode ficar vazio; o das colunas é obrigatório, também nos parâmetros de função.</li>
+  <li>Tabelas servem para qualquer tipo: <code>char</code> para tabuleiros e listas de palavras; mais colchetes dão três dimensões ou mais.</li>
+  <li>Dê nome aos tamanhos (<code>#define LINHAS</code>, <code>COLUNAS</code>). Limites trocados leem fora da tabela sem aviso, e <code>m[1, 2]</code> é o operador vírgula: use <code>m[1][2]</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
