@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Ler Arquivos — fgetc, fgets, fscanf e sscanf | Guia C</title>
+<meta name="description" content="Ler arquivos de texto em C para quem nunca programou: letra por letra com fgetc (e por que o c é int), linha por linha com fgets, palavras e números com fscanf, linhas de CSV com fgets + sscanf, o erro do while (!feof) que repete a última linha, feof e ferror, com saídas reais do gcc 15 e missões no editor com arquivos em abas.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Ler Arquivos</span></h1>
+
+<p class="intro">Na aula <a href="arquivos.html">Arquivos</a>, você aprendeu a abrir e fechar. Agora vem o recheio: <strong>ler</strong> o que tem dentro. O C oferece três jeitos, como três jeitos de ler um livro: <strong>letra por letra</strong> (<code>fgetc</code>), <strong>linha por linha</strong> (<code>fgets</code>) e <strong>procurando palavras e números</strong> (<code>fscanf</code>). Nesta aula você vai usar os três com a lista de notas e o estoque da lojinha da Ana, descobrir como o programa percebe que o arquivo acabou e conhecer o erro mais famoso da leitura de arquivos, o <code>while (!feof(arq))</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ler um caractere por vez com <code>fgetc</code>, e por que a variável precisa ser <code>int</code>, e não <code>char</code>.</li>
+  <li>Ler uma linha por vez com <code>fgets</code>, tirar o <code>\n</code> e lidar com linhas maiores que o array.</li>
+  <li>Ler palavras e números com <code>fscanf</code>, conferindo o que ele devolve.</li>
+  <li>O jeito mais seguro de ler dados: <code>fgets</code> + <code>sscanf</code>, uma linha por vez.</li>
+  <li>Como saber se o arquivo acabou (<code>EOF</code>, <code>feof</code>) ou se deu erro (<code>ferror</code>).</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Os primeiros exemplos leem o arquivo <code>poema.txt</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ cat poema.txt
+Batatinha quando nasce
+espalha a rama pelo chão.
+Menininha quando dorme
+põe a mão no coração.</pre>
+
+<hr>
+
+<h2>A ideia: o dedo que corre pela página</h2>
+<p>Quando você lê um livro em voz alta, seu dedo vai marcando onde você está. A cada palavra lida, o dedo anda. Quando chega ao fim da última página, acabou: não adianta pedir mais.</p>
+<p>O arquivo aberto funciona assim. O <code>FILE *</code> guarda a <strong>posição</strong> (o dedo), que começa no primeiro byte. Toda leitura entrega o que está na posição e <strong>avança</strong>. Quando não há mais nada, as funções avisam com um valor especial: <code>EOF</code> (de <em>end of file</em>, fim de arquivo) ou <code>NULL</code>, conforme a função.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Lê</th><th>Devolve no fim do arquivo</th><th>Bom para</th></tr>
+<tr><td><code>fgetc(arq)</code></td><td>Um caractere (um byte)</td><td><code>EOF</code></td><td>Contar, copiar, olhar byte a byte</td></tr>
+<tr><td><code>fgets(linha, tam, arq)</code></td><td>Uma linha, até <code>tam - 1</code> bytes</td><td><code>NULL</code></td><td>Quase tudo: textos, listas, CSV</td></tr>
+<tr><td><code>fscanf(arq, formato, …)</code></td><td>Palavras e números, como o <code>scanf</code></td><td><code>EOF</code></td><td>Arquivos simples e bem comportados</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Letra por letra: fgetc</h2>
+<p>O <code>fgetc</code> ("file get character", pegar um caractere do arquivo) devolve o próximo byte do arquivo. Este programa conta quantos bytes e quantas linhas o poema tem:</p>
+
+<pre class="file" data-file="letras.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("poema.txt", "r");
+    if (arq == NULL) {
+        perror("poema.txt");
+        return 1;
+    }
+
+    int c;
+    long bytes = 0, linhas = 0;
+    while ((c = fgetc(arq)) != EOF) {
+        bytes++;
+        if (c == '\n') {
+            linhas++;
+        }
+    }
+    fclose(arq);
+
+    printf("%ld bytes, %ld linhas\n", bytes, linhas);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int c;</dt><dd>A variável que recebe cada caractere é <strong><code>int</code></strong>, e não <code>char</code>. O <code>fgetc</code> precisa devolver 256 valores de byte (0 a 255) <strong>e mais um</strong>, o <code>EOF</code>, que vale -1. Um <code>char</code> não tem espaço para os 257 (veja "Quando dá errado").</dd>
+  <dt>(c = fgetc(arq))</dt><dd>Lê um byte, guarda em <code>c</code>, e a posição do arquivo anda uma casa. Os parênteses em volta são obrigatórios: sem eles, o <code>!=</code> seria feito antes do <code>=</code> (aula <a href="precedencia.html">Precedência</a>).</dd>
+  <dt>!= EOF</dt><dd>Enquanto não chegou ao fim, o laço continua. <code>EOF</code> é uma constante do <code>stdio.h</code>.</dd>
+  <dt>if (c == '\n')</dt><dd>Cada <code>'\n'</code> termina uma linha: contar os <code>'\n'</code> é contar as linhas.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra letras.c -o letras
+$ ./letras
+99 bytes, 4 linhas
+$ wc -c -l poema.txt               « o comando wc conta igual
+ 4 99 poema.txt</pre>
+
+<p>99 bytes, mas o poema tem só 94 caracteres (contando as 4 quebras de linha): cada letra acentuada (<code>ã</code>, <code>õ</code>, <code>ç</code>) ocupa <strong>2 bytes</strong> em UTF-8, e o <code>fgetc</code> lê bytes, não letras (aula <a href="acentos-utf8.html">Acentos e UTF-8</a>). O comando <code>wc</code> (de <em>word count</em>) do terminal confirma as contas.</p>
+
+<div class="tryc" data-goal="out:99 bytes\, 4 linhas\, 12 espaços">
+<p class="try-task"><strong>Missão:</strong> a caixa tem o programa e o arquivo <code>poema.txt</code> numa aba. Conte também os <strong>espaços</strong>: crie a variável <code>espacos</code>, some 1 a cada <code>' '</code> e mostre no fim, para a saída ficar <code>99 bytes, 4 linhas, 12 espaços</code>.</p>
+<pre class="script" data-file="letras.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("poema.txt", "r");
+    if (arq == NULL) {
+        perror("poema.txt");
+        return 1;
+    }
+
+    int c;
+    long bytes = 0, linhas = 0;
+    while ((c = fgetc(arq)) != EOF) {
+        bytes++;
+        if (c == '\n') {
+            linhas++;
+        }
+    }
+    fclose(arq);
+
+    printf("%ld bytes, %ld linhas\n", bytes, linhas);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="poema.txt">Batatinha quando nasce
+espalha a rama pelo chão.
+Menininha quando dorme
+põe a mão no coração.
+
+</pre>
+<pre class="solucao" data-file="letras.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("poema.txt", "r");
+    if (arq == NULL) {
+        perror("poema.txt");
+        return 1;
+    }
+
+    int c;
+    long bytes = 0, linhas = 0, espacos = 0;
+    while ((c = fgetc(arq)) != EOF) {
+        bytes++;
+        if (c == '\n') {
+            linhas++;
+        }
+        if (c == ' ') {
+            espacos++;
+        }
+    }
+    fclose(arq);
+
+    printf("%ld bytes, %ld linhas, %ld espaços\n", bytes, linhas, espacos);
+    return 0;
+}
+</pre>
+</div>
+
+<p>A linha em branco no fim da aba <code>poema.txt</code> está ali de propósito: é o <code>\n</code> que termina a última linha, como no arquivo da Ana.</p>
+
+<hr>
+
+<h2>2. Linha por linha: fgets</h2>
+<p>Ler letra por letra é bom para contar. Para trabalhar com o conteúdo, quase sempre você quer uma <strong>linha inteira</strong>. O <code>fgets</code> ("file get string") é o mesmo que você usou para ler do teclado na aula <a href="fgets.html">Ler uma Linha</a>; só troca o <code>stdin</code> pelo arquivo:</p>
+
+<pre class="file" data-file="numerar.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("poema.txt", "r");
+    if (arq == NULL) {
+        perror("poema.txt");
+        return 1;
+    }
+
+    char linha[100];
+    int n = 0;
+    while (fgets(linha, sizeof linha, arq) != NULL) {
+        linha[strcspn(linha, "\n")] = '\0';
+        n++;
+        printf("%2d | %s\n", n, linha);
+    }
+    fclose(arq);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>char linha[100];</dt><dd>O "balde" onde cada linha é despejada: até 99 bytes mais o <code>'\0'</code>.</dd>
+  <dt>fgets(linha, sizeof linha, arq)</dt><dd>Lê do arquivo até encontrar um <code>'\n'</code> (que vem junto) ou até encher o balde, o que acontecer primeiro. Devolve <code>linha</code> se leu alguma coisa, ou <code>NULL</code> se o arquivo já tinha acabado.</dd>
+  <dt>!= NULL</dt><dd>O laço para no fim do arquivo. É o jeito certo de escrever esse laço.</dd>
+  <dt>linha[strcspn(linha, "\n")] = '\0';</dt><dd>Corta o <code>'\n'</code> do fim, trocando-o por <code>'\0'</code>, o mesmo truque da aula <a href="fgets.html">fgets</a>. Se a linha não tem <code>'\n'</code>, não muda nada.</dd>
+  <dt>"%2d | %s\n"</dt><dd>O número da linha com 2 casas e o texto. O <code>\n</code> aqui é do <code>printf</code>, já que o da linha foi cortado.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra numerar.c -o numerar
+$ ./numerar
+ 1 | Batatinha quando nasce
+ 2 | espalha a rama pelo chão.
+ 3 | Menininha quando dorme
+ 4 | põe a mão no coração.</pre>
+
+<h3>Linha maior que o balde</h3>
+<p>O que acontece se a linha não cabe no array? Com <code>char linha[16]</code>, cabem 15 bytes por vez:</p>
+
+<pre class="file" data-file="pedacos.c">    char linha[16];
+    while (fgets(linha, sizeof linha, arq) != NULL) {
+        printf("[%s]\n", linha);
+    }
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pedacos.c -o pedacos
+$ ./pedacos
+[Batatinha quand]
+[o nasce
+]
+[espalha a rama ]
+[pelo chão.
+]
+[Menininha quand]
+[o dorme
+]
+[põe a mão no ]
+[coração.
+]</pre>
+
+<p>Nada se perde e nada transborda: o <code>fgets</code> nunca escreve além dos 16 bytes. Ele entrega a linha em <strong>pedaços</strong>, e o pedaço que termina com <code>'\n'</code> (repare no <code>]</code> que foi para a linha de baixo) é o último daquela linha. O primeiro pedaço da quarta linha tem só 13 caracteres (<code>põe a mão no </code>) porque <code>õ</code> e <code>ã</code> ocupam 2 bytes cada. Para os seus programas, a lição é: <strong>use um array folgado</strong> (algumas centenas de bytes, para um texto comum) e, se a linha puder ser maior, confira se o pedaço termina com <code>'\n'</code>.</p>
+
+<hr>
+
+<h2>3. Palavras e números: fscanf</h2>
+<p>A Ana guarda as notas da turma em <code>notas.txt</code>, um aluno por linha, com o nome e a nota separados por espaço:</p>
+
+<pre class="term" data-cwd="~/c">$ cat notas.txt
+Ana 8.5
+Bruno 6.0
+Carla 9.5
+Davi 7.0</pre>
+
+<p>O <code>fscanf</code> ("file scan formatted") é o <a href="scanf.html">scanf</a> dos arquivos: o mesmo formato, com o arquivo como primeiro argumento.</p>
+
+<pre class="file" data-file="notas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("notas.txt", "r");
+    if (arq == NULL) {
+        perror("notas.txt");
+        return 1;
+    }
+
+    char nome[50];
+    double nota;
+    double soma = 0.0;
+    int n = 0;
+    while (fscanf(arq, "%49s %lf", nome, &amp;nota) == 2) {
+        printf("%-6s %4.1f\n", nome, nota);
+        soma += nota;
+        n++;
+    }
+    fclose(arq);
+
+    if (n &gt; 0) {
+        printf("Média de %d alunos: %.2f\n", n, soma / n);
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>fscanf(arq, "%49s %lf", nome, &amp;nota)</dt><dd>Pula espaços e quebras de linha, lê uma palavra (até 49 letras, para caber em <code>nome[50]</code>) e depois um número <code>double</code> (<code>%lf</code>). O <code>nome</code> não leva <code>&amp;</code> porque é um array; a <code>nota</code> leva.</dd>
+  <dt>== 2</dt><dd>O <code>fscanf</code> devolve <strong>quantos valores conseguiu preencher</strong>. Pedimos dois; só seguimos se vieram os dois. No fim do arquivo ele devolve <code>EOF</code>, que também é diferente de 2, e o laço para.</dd>
+  <dt>if (n &gt; 0)</dt><dd>Evita dividir por zero se o arquivo estiver vazio.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra notas.c -o notas
+$ ./notas
+Ana     8.5
+Bruno   6.0
+Carla   9.5
+Davi    7.0
+Média de 4 alunos: 7.75</pre>
+
+<h3>Quando o arquivo não está perfeito</h3>
+<p>Arquivos escritos por pessoas têm erros. Na <code>notas2.txt</code>, alguém digitou <code>Carla oito</code> em vez de <code>Carla 9.5</code>. O mesmo programa, lendo esse arquivo:</p>
+
+<pre class="term" data-cwd="~/c">$ cat notas2.txt
+Ana 8.5
+Bruno 6.0
+Carla oito
+Davi 7.0
+$ ./notas2
+Ana     8.5
+Bruno   6.0
+Média de 2 alunos: 7.25</pre>
+
+<p>Em <code>Carla oito</code>, o <code>%lf</code> não conseguiu ler um número, o <code>fscanf</code> devolveu 1, e o laço parou ali. O programa não travou nem mostrou lixo, porque conferiu o <code>== 2</code>, mas o <strong>Davi ficou de fora</strong>, e nada avisou o usuário. E o <code>fscanf</code> não diz em que linha estava: para ele, o arquivo é uma sequência de palavras, e as quebras de linha são só mais espaços. Por isso, para dados de verdade, existe um jeito melhor.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode com o <code>notas.txt</code> da aba. Depois mude o arquivo: troque a nota da Carla por <code>oito</code>; ponha duas notas na mesma linha (<code>Ana 8.5 Bruno 6.0</code>); escreva <code>Ana Maria 8.5</code>. Para cada caso, adivinhe a saída antes de rodar.</p>
+<pre class="script" data-file="notas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("notas.txt", "r");
+    if (arq == NULL) {
+        perror("notas.txt");
+        return 1;
+    }
+
+    char nome[50];
+    double nota;
+    double soma = 0.0;
+    int n = 0;
+    while (fscanf(arq, "%49s %lf", nome, &amp;nota) == 2) {
+        printf("%-6s %4.1f\n", nome, nota);
+        soma += nota;
+        n++;
+    }
+    fclose(arq);
+
+    if (n &gt; 0) {
+        printf("Média de %d alunos: %.2f\n", n, soma / n);
+    }
+    return 0;
+}
+</pre>
+<pre class="script" data-file="notas.txt">Ana 8.5
+Bruno 6.0
+Carla 9.5
+Davi 7.0
+
+</pre>
+</div>
+
+<hr>
+
+<h2>4. O jeito seguro: fgets + sscanf</h2>
+<p>A solução usada em programas de verdade junta o melhor dos dois: o <code>fgets</code> lê <strong>uma linha inteira</strong> (assim você sabe o número da linha e uma linha ruim nunca contamina a seguinte), e o <code>sscanf</code> ("string scan formatted") separa os valores <strong>de dentro da linha</strong>, como um <code>fscanf</code> que lê de uma string (aula <a href="string-numero.html">Texto ↔ Número</a>).</p>
+
+<p>O estoque da Ana está num arquivo <strong>CSV</strong> (<em>comma-separated values</em>, valores separados por vírgula; no Brasil, as planilhas costumam usar ponto e vírgula). Cada linha tem nome, quantidade e preço. Os nomes têm espaços, e uma linha tem um erro de digitação:</p>
+
+<pre class="term" data-cwd="~/c">$ cat estoque.csv
+Caderno;12;15.90
+Caneta azul;40;2.50
+Borracha;vinte;1.75
+Cola branca;8;4.25</pre>
+
+<pre class="file" data-file="estoque.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("estoque.csv", "r");
+    if (arq == NULL) {
+        perror("estoque.csv");
+        return 1;
+    }
+
+    char linha[200];
+    int num = 0;
+    double total = 0.0;
+    while (fgets(linha, sizeof linha, arq) != NULL) {
+        num++;
+        char nome[50];
+        int qtd;
+        double preco;
+        if (sscanf(linha, "%49[^;];%d;%lf", nome, &amp;qtd, &amp;preco) != 3) {
+            printf("Linha %d ignorada: %s", num, linha);
+            continue;
+        }
+        printf("%-14s %3d x R$ %6.2f\n", nome, qtd, preco);
+        total += qtd * preco;
+    }
+    fclose(arq);
+    printf("Valor do estoque: R$ %.2f\n", total);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>fgets(linha, sizeof linha, arq)</dt><dd>Uma linha do arquivo por volta do laço, como na seção 2.</dd>
+  <dt>num++</dt><dd>Conta as linhas, para a mensagem de erro dizer <strong>onde</strong> está o problema.</dd>
+  <dt>sscanf(linha, …)</dt><dd>Lê da string <code>linha</code>, e não do arquivo. Se der errado, só esta linha é perdida: a próxima volta do laço começa limpa, com o próximo <code>fgets</code>.</dd>
+  <dt>%49[^;]</dt><dd>Um formato especial: "leia até 49 caracteres que <strong>não</strong> sejam <code>;</code>". Diferente do <code>%s</code>, ele aceita espaços, então <code>Caneta azul</code> entra inteiro.</dd>
+  <dt>;%d;%lf</dt><dd>Um <code>;</code> no formato precisa aparecer na linha. Depois vêm a quantidade (<code>int</code>), outro <code>;</code> e o preço (<code>double</code>).</dd>
+  <dt>!= 3</dt><dd>Três valores pedidos, três esperados. Se não, avisa e pula para a próxima linha com <code>continue</code> (aula <a href="break-continue.html">break e continue</a>). A <code>linha</code> ainda tem o <code>'\n'</code> do fim, por isso esse <code>printf</code> não precisa de outro.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estoque.c -o estoque
+$ ./estoque
+Caderno         12 x R$  15.90
+Caneta azul     40 x R$   2.50
+Linha 3 ignorada: Borracha;vinte;1.75
+Cola branca      8 x R$   4.25
+Valor do estoque: R$ 324.80</pre>
+
+<p>Compare com o <code>fscanf</code> da seção 3: a linha ruim foi <strong>avisada, com o número</strong>, e a leitura <strong>continuou</strong> na linha seguinte. A Cola branca entrou na conta.</p>
+
+<hr>
+
+<h2>5. O arquivo acabou ou deu erro? feof e ferror</h2>
+<p>Quando uma leitura devolve <code>EOF</code> ou <code>NULL</code>, há dois motivos possíveis: o arquivo acabou (o normal) ou aconteceu um erro no meio (um pendrive arrancado, um disco com defeito). Depois do laço, duas funções dizem qual foi:</p>
+<ul>
+  <li><code>feof(arq)</code> ("end of file"): verdadeiro se a leitura parou porque o arquivo acabou;</li>
+  <li><code>ferror(arq)</code> ("file error"): verdadeiro se a leitura parou por um erro.</li>
+</ul>
+
+<pre class="file" data-file="fimerro.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("poema.txt", "r");
+    if (arq == NULL) {
+        perror("poema.txt");
+        return 1;
+    }
+
+    char linha[100];
+    int n = 0;
+    while (fgets(linha, sizeof linha, arq) != NULL) {
+        n++;
+    }
+
+    if (ferror(arq)) {
+        printf("Erro de leitura depois de %d linhas!\n", n);
+    } else if (feof(arq)) {
+        printf("Cheguei ao fim: %d linhas.\n", n);
+    }
+    fclose(arq);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fimerro.c -o fimerro
+$ ./fimerro
+Cheguei ao fim: 4 linhas.</pre>
+
+<p>Um erro de leitura é raro, mas dá para ver um. No Linux, o <code>fopen</code> consegue abrir uma <strong>pasta</strong> com <code>"r"</code>, mas a primeira leitura falha. A Ana trocou o nome do arquivo por <code>"relatorios"</code>, uma pasta, e pôs um <code>perror</code> depois do laço:</p>
+
+<pre class="file" data-file="pasta_ler.c">    FILE *arq = fopen("relatorios", "r");
+    /* … o mesmo if (arq == NULL) … */
+    char linha[100];
+    while (fgets(linha, sizeof linha, arq) != NULL) {
+        printf("%s", linha);
+    }
+    if (ferror(arq)) {
+        perror("fgets");
+    }
+</pre>
+
+<pre class="term" data-cwd="~/c">$ ./pasta_ler
+fgets: Is a directory</pre>
+
+<p>O <code>fopen</code> deu certo, o <code>fgets</code> devolveu <code>NULL</code> logo na primeira vez, e o <code>ferror</code> revelou que não era fim de arquivo: era um erro, "é uma pasta". Sem o <code>ferror</code>, o programa acharia que leu um arquivo vazio.</p>
+
+<div class="warning">
+<strong>feof responde sobre o passado</strong>
+<p>O <code>feof</code> não "olha adiante" para ver se ainda há algo para ler. Ele só fica verdadeiro <strong>depois</strong> que uma leitura tentou passar do fim e falhou. Por isso ele serve para depois do laço, e não para a condição do laço. O erro clássico de usá-lo no <code>while</code> está logo abaixo.</p>
+</div>
+
+<hr>
+
+<h2>Formas de ler: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th><th>Laço</th></tr>
+<tr><td>Contar, procurar ou copiar caracteres</td><td><code>fgetc</code></td><td><code>while ((c = fgetc(arq)) != EOF)</code>, com <code>int c</code></td></tr>
+<tr><td>Mostrar ou processar um texto linha por linha</td><td><code>fgets</code></td><td><code>while (fgets(linha, sizeof linha, arq) != NULL)</code></td></tr>
+<tr><td>Ler dados (CSV, listas, configuração)</td><td><code>fgets</code> + <code>sscanf</code></td><td>O <code>fgets</code> no laço; o <code>sscanf</code> dentro, conferindo o retorno</td></tr>
+<tr><td>Um arquivo pequeno, gerado pelo seu próprio programa</td><td><code>fscanf</code></td><td><code>while (fscanf(arq, …) == N)</code></td></tr>
+<tr><td>Os bytes da memória (arquivo binário)</td><td><code>fread</code></td><td>Aula <a href="arquivos-binarios.html">Arquivos Binários</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A última linha aparece duas vezes: <code>while (!feof(arq))</code></strong>
+<pre class="file" data-file="feof.c">    char linha[100];
+    while (!feof(arq)) {
+        fgets(linha, sizeof linha, arq);
+        printf("&gt; %s", linha);
+    }
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra feof.c -o feof
+$ ./feof
+&gt; Batatinha quando nasce
+&gt; espalha a rama pelo chão.
+&gt; Menininha quando dorme
+&gt; põe a mão no coração.
+&gt; põe a mão no coração.        « repetida!</pre>
+<p><strong>O que aconteceu:</strong> depois de ler a 4ª linha, o arquivo está no fim, mas o <code>feof</code> ainda é falso, porque nenhuma leitura tentou passar dele (seção 5). O laço dá mais uma volta, o <code>fgets</code> falha e devolve <code>NULL</code> sem mexer em <code>linha</code>, e o <code>printf</code> mostra a linha antiga de novo. Nenhum compilador avisa. No editor do guia sai igual.</p>
+<p><strong>Como resolver:</strong> ponha a própria leitura na condição: <code>while (fgets(linha, sizeof linha, arq) != NULL)</code>. Deixe o <code>feof</code> para depois do laço.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa para no meio do arquivo: <code>char c</code> com <code>fgetc</code></strong>
+<pre class="file" data-file="charerrado.c">    char c;
+    int bytes = 0;
+    while ((c = fgetc(arq)) != EOF) {
+        bytes++;
+    }
+    printf("Li %d bytes\n", bytes);
+</pre>
+<pre class="term" data-cwd="~/c">$ printf 'abc\377def' &gt; dados.bin        « 7 bytes; o do meio vale 255
+$ xxd dados.bin
+00000000: 6162 63ff 6465 66                        abc.def
+$ gcc -std=c23 -Wall -Wextra charerrado.c -o charerrado
+$ ./charerrado
+Li 3 bytes</pre>
+<p><strong>O que aconteceu:</strong> o arquivo tem 7 bytes, mas o programa parou no 4º, o byte <code>ff</code> (255). Guardado num <code>char</code>, que no Linux vai de -128 a 127, o 255 vira -1, que é o valor de <code>EOF</code>: o laço achou que o arquivo tinha acabado. Em computadores em que <code>char</code> não tem sinal (muitos ARM), acontece o contrário: o <code>EOF</code> nunca aparece e o laço não termina. Nenhum aviso, nem com <code>-Wall -Wextra</code>.</p>
+<p><strong>Como resolver:</strong> a variável do <code>fgetc</code> é <strong>sempre</strong> <code>int c</code>. Depois de conferir que não é <code>EOF</code>, você pode usá-la como caractere à vontade.</p>
+</div>
+
+<div class="cenario">
+<strong>Dados trocados: o retorno do <code>fscanf</code> não foi conferido</strong>
+<pre class="file" data-file="travou.c">    while (fscanf(arq, "%49s %lf", nome, &amp;nota) != EOF) {
+        printf("%s: %.1f\n", nome, nota);
+    }
+</pre>
+<pre class="term" data-cwd="~/c">$ ./travou
+Ana: 8.5
+Bruno: 6.0
+Carla: 6.0               « a nota do Bruno, que sobrou na variável
+oito: 6.0                « "oito" lido como nome
+Davi: 7.0</pre>
+<p><strong>O que aconteceu:</strong> com o <code>notas2.txt</code> (o da <code>Carla oito</code>), o laço só parava no <code>EOF</code>. Quando o <code>%lf</code> falhou em <code>oito</code>, o <code>fscanf</code> devolveu 1 (só o nome), o programa usou a <code>nota</code> velha, e na volta seguinte leu <code>oito</code> como se fosse um nome. Com outros arquivos, um laço assim pode até ficar <strong>preso para sempre</strong>, tentando ler o mesmo texto que não é número.</p>
+<p><strong>Como resolver:</strong> compare com a quantidade de valores pedidos (<code>== 2</code>), ou use <code>fgets</code> + <code>sscanf</code> (seção 4).</p>
+</div>
+
+<div class="cenario">
+<strong>Nomes cortados: <code>%s</code> para no espaço</strong>
+<p><strong>O que aconteceu:</strong> com <code>fscanf(arq, "%49s %lf", …)</code>, uma linha <code>Ana Maria 8.5</code> dá o nome <code>Ana</code>, e o <code>%lf</code> tenta ler <code>Maria</code> como número e falha. O <code>%s</code> lê uma palavra, e não uma frase.</p>
+<p><strong>Como resolver:</strong> use um separador que não aparece nos nomes (<code>Ana Maria;8.5</code>) e leia com <code>%49[^;]</code>, como no <code>estoque.c</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> logo na primeira leitura</strong>
+<p><strong>O que aconteceu:</strong> o <code>fopen</code> devolveu <code>NULL</code> (o arquivo não existe ou o nome está errado) e o programa leu mesmo assim. É o primeiro cenário da aula <a href="arquivos.html">Arquivos</a>.</p>
+<p><strong>Como resolver:</strong> <code>if (arq == NULL) { perror(nome); return 1; }</code> logo depois do <code>fopen</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>int c = fgetc(arq);</code></td><td>Lê um byte; <code>EOF</code> no fim. A variável é <code>int</code>.</td></tr>
+<tr><td><code>while ((c = fgetc(arq)) != EOF)</code></td><td>Lê o arquivo inteiro, um byte por vez.</td></tr>
+<tr><td><code>fgets(linha, sizeof linha, arq)</code></td><td>Lê uma linha (com o <code>\n</code>), no máximo <code>sizeof linha - 1</code> bytes; <code>NULL</code> no fim.</td></tr>
+<tr><td><code>linha[strcspn(linha, "\n")] = '\0';</code></td><td>Tira o <code>\n</code> do fim da linha.</td></tr>
+<tr><td><code>fscanf(arq, "%49s %lf", nome, &amp;nota)</code></td><td>Lê uma palavra e um número; devolve quantos leu, ou <code>EOF</code>.</td></tr>
+<tr><td><code>sscanf(linha, "%49[^;];%d", nome, &amp;qtd)</code></td><td>Separa os valores de uma linha já lida.</td></tr>
+<tr><td><code>%49[^;]</code></td><td>Lê até 49 caracteres que não sejam <code>;</code> (aceita espaços).</td></tr>
+<tr><td><code>feof(arq)</code></td><td>Depois do laço: a leitura parou porque o arquivo acabou?</td></tr>
+<tr><td><code>ferror(arq)</code></td><td>Depois do laço: a leitura parou por um erro?</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O tipo certo</h3>
+<p>Complete o tipo da variável que recebe o <code>fgetc</code>:</p>
+<div class="ex-code"><input data-answer="int" aria-label="tipo"> c = fgetc(arq);</div>
+</div>
+
+<div class="exercise">
+<h3>2. O fim do fgets</h3>
+<p>Complete a condição do laço que lê o arquivo linha por linha:</p>
+<div class="ex-code">while (fgets(linha, sizeof linha, arq) != <input data-answer="NULL" aria-label="valor do fim">) { … }</div>
+</div>
+
+<div class="exercise">
+<h3>3. Quantos valores?</h3>
+<p>Complete para o laço continuar só quando o <code>fscanf</code> conseguir ler o nome <strong>e</strong> a idade:</p>
+<div class="ex-code">while (fscanf(arq, "%49s %d", nome, &amp;idade) == <input data-answer="2" aria-label="quantidade">) { … }</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Um arquivo tem 3 linhas, e o programa usa <code>while (!feof(arq)) { fgets(…); printf(…); }</code>. Quantas linhas aparecem na tela?</p>
+<label><input type="radio" name="q4"> 3</label>
+<label><input type="radio" name="q4"> 4: a última aparece duas vezes</label>
+<label><input type="radio" name="q4"> 2: a primeira é pulada</label>
+<label><input type="radio" name="q4"> Nenhuma: o laço não começa</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Com <code>char linha[10]</code>, quantos bytes do arquivo o <code>fgets(linha, sizeof linha, arq)</code> lê, no máximo, de uma vez?</p>
+<label><input type="radio" name="q5"> 10</label>
+<label><input type="radio" name="q5"> 11</label>
+<label><input type="radio" name="q5"> 9</label>
+<label><input type="radio" name="q5"> A linha inteira, qualquer que seja o tamanho</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que <code>fgets</code> + <code>sscanf</code> é melhor que <code>fscanf</code> para ler um CSV?</p>
+<label><input type="radio" name="q6"> Porque uma linha com erro não atrapalha as seguintes, e você sabe o número da linha.</label>
+<label><input type="radio" name="q6"> Porque o <code>sscanf</code> é mais rápido.</label>
+<label><input type="radio" name="q6"> Porque o <code>fscanf</code> não lê números.</label>
+<label><input type="radio" name="q6"> Porque o <code>fgets</code> converte os números sozinho.</label>
+</div>
+
+<h3>Missão final: o estoque da lojinha</h3>
+<div class="tryc" data-goal="out:Caneta azul     40 x R$   2.50,out:Linha 3 ignorada: Borracha;vinte;1.75,out:Valor do estoque: R$ 324.80,src:sscanf\s*\(">
+<p class="try-task"><strong>Missão:</strong> o programa já lê o <code>estoque.csv</code> (na outra aba) linha por linha, mas não separa os valores. Dentro do laço, use <code>sscanf</code> para tirar da <code>linha</code> o nome, a quantidade e o preço. Se não vierem os 3 valores, mostre <code>Linha N ignorada: …</code> com o número da linha e pule para a próxima com <code>continue</code>. A saída deve ser:</p>
+<pre class="out">Caderno         12 x R$  15.90
+Caneta azul     40 x R$   2.50
+Linha 3 ignorada: Borracha;vinte;1.75
+Cola branca      8 x R$   4.25
+Valor do estoque: R$ 324.80</pre>
+<p class="try-task">O aviso de <code>num</code> "não usada" some quando você usar o número da linha na mensagem.</p>
+<pre class="script" data-file="estoque.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("estoque.csv", "r");
+    if (arq == NULL) {
+        perror("estoque.csv");
+        return 1;
+    }
+
+    char linha[200];
+    int num = 0;
+    double total = 0.0;
+    while (fgets(linha, sizeof linha, arq) != NULL) {
+        num++;
+        char nome[50] = "";
+        int qtd = 0;
+        double preco = 0.0;
+        /* separe nome, qtd e preco da linha com sscanf;
+           se não vierem os 3, avise e pule a linha */
+
+        printf("%-14s %3d x R$ %6.2f\n", nome, qtd, preco);
+        total += qtd * preco;
+    }
+    fclose(arq);
+    printf("Valor do estoque: R$ %.2f\n", total);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="estoque.csv">Caderno;12;15.90
+Caneta azul;40;2.50
+Borracha;vinte;1.75
+Cola branca;8;4.25
+
+</pre>
+<pre class="solucao" data-file="estoque.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arq = fopen("estoque.csv", "r");
+    if (arq == NULL) {
+        perror("estoque.csv");
+        return 1;
+    }
+
+    char linha[200];
+    int num = 0;
+    double total = 0.0;
+    while (fgets(linha, sizeof linha, arq) != NULL) {
+        num++;
+        char nome[50] = "";
+        int qtd = 0;
+        double preco = 0.0;
+        if (sscanf(linha, "%49[^;];%d;%lf", nome, &amp;qtd, &amp;preco) != 3) {
+            printf("Linha %d ignorada: %s", num, linha);
+            continue;
+        }
+        printf("%-14s %3d x R$ %6.2f\n", nome, qtd, preco);
+        total += qtd * preco;
+    }
+    fclose(arq);
+    printf("Valor do estoque: R$ %.2f\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Se quiser ir além: acrescente ao <code>estoque.csv</code> uma linha sem o preço (<code>Régua;5</code>) e outra em branco, e veja as duas serem avisadas. Depois mostre também quantas linhas foram ignoradas no total.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Toda leitura entrega o que está na posição atual e <strong>avança</strong>. No fim do arquivo, <code>fgetc</code> e <code>fscanf</code> devolvem <code>EOF</code>, e <code>fgets</code> devolve <code>NULL</code>.</li>
+  <li><code>fgetc</code> lê um byte; guarde em <strong><code>int c</code></strong>, nunca em <code>char</code>. Acentos em UTF-8 são 2 bytes.</li>
+  <li><code>fgets</code> lê uma linha com o <code>\n</code> e nunca passa do tamanho do array; uma linha grande vem em pedaços.</li>
+  <li><code>fscanf</code> lê palavras e números; confira se ele devolveu a quantidade pedida (<code>== 2</code>), e não só <code>!= EOF</code>.</li>
+  <li>Para dados de verdade, leia a linha com <code>fgets</code> e separe com <code>sscanf</code>: a linha ruim é avisada e a leitura continua.</li>
+  <li>Ponha a leitura na condição do laço. <code>feof</code> e <code>ferror</code> servem <strong>depois</strong> do laço, para saber por que ele parou; <code>while (!feof(arq))</code> repete a última linha.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
