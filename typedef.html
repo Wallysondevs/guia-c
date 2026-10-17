@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C typedef — dar um apelido a um tipo | Guia C</title>
+<meta name="description" content="typedef em C para quem nunca programou: criar apelidos como typedef double Dinheiro, por que o apelido não é um tipo novo, as três formas de typedef com struct, a struct que aponta para ela mesma (unknown type name), por que não esconder ponteiros num typedef, typedef × #define, os typedef da biblioteca (size_t, FILE, int32_t) e o sufixo _t, com mensagens reais do gcc 15 e do Clang e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">typedef</span></h1>
+
+<p class="intro">O <code>typedef</code> (de <em>type definition</em>, "definição de tipo") dá um <strong>apelido</strong> a um tipo que já existe. Com ele, <code>struct Aluno</code> pode virar só <code>Aluno</code>, e um <code>double</code> que guarda dinheiro pode se chamar <code>Dinheiro</code>. Ele não cria nada de novo na memória e não muda o que o programa faz: só deixa o código mais curto e mais fácil de ler. Você já usou vários typedef sem saber: <code>size_t</code>, <code>FILE</code> e <code>int32_t</code> são apelidos criados assim, dentro dos cabeçalhos da biblioteca.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A criar um apelido com <code>typedef tipo Apelido;</code>.</li>
+  <li>Por que o apelido <strong>não</strong> é um tipo novo, e o que isso deixa passar.</li>
+  <li>As três formas de usar <code>typedef</code> com <code>struct</code>, e qual escolher.</li>
+  <li>Como escrever uma struct que aponta para ela mesma (o erro <code>unknown type name</code>).</li>
+  <li>Por que não esconder um ponteiro num typedef, e por que <code>typedef</code> é melhor que <code>#define</code> para tipos.</li>
+  <li>De onde vêm <code>size_t</code>, <code>FILE</code> e <code>int32_t</code>, e o que quer dizer o <code>_t</code>.</li>
+</ul>
+</div>
+
+<p>Esta aula supõe que você já leu <a href="structs.html">Structs</a> e <a href="structs-ponteiros.html">Structs e Ponteiros</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/td</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o apelido</h2>
+<p>Na escola da Ana, o professor de matemática se chama José Carlos de Oliveira, mas todo mundo o chama de <strong>Zé</strong>. "Zé" não é outra pessoa: é o mesmo professor, com um nome mais curto. Quem o chama de "Zé" e quem o chama de "José Carlos" está falando dele do mesmo jeito, e ninguém precisa avisar a secretaria.</p>
+
+<p>O <code>typedef</code> é isso para os tipos: <code>typedef struct Aluno Aluno;</code> diz ao compilador "quando eu escrever <code>Aluno</code>, entenda <code>struct Aluno</code>". O tipo é o mesmo; só ganhou um nome a mais.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na escola</th><th>Em C</th></tr>
+<tr><td>O nome completo: José Carlos de Oliveira</td><td>O tipo original: <code>struct Aluno</code>, <code>double</code>, <code>unsigned long</code></td></tr>
+<tr><td>O apelido: Zé</td><td>O nome do <code>typedef</code>: <code>Aluno</code>, <code>Dinheiro</code>, <code>size_t</code></td></tr>
+<tr><td>"Zé" e "José Carlos" são a mesma pessoa</td><td>O apelido e o original são o <strong>mesmo tipo</strong>: dá para misturar à vontade</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro <code>typedef</code></h2>
+<p>A lojinha da Ana guarda preços em <code>double</code>. Para deixar claro, no código, quais <code>double</code> são dinheiro, ela cria um apelido:</p>
+
+<pre class="file" data-file="dinheiro.c">#include &lt;stdio.h&gt;
+
+typedef double Dinheiro;
+
+int main(void) {
+    Dinheiro preco = 19.90;
+    Dinheiro desconto = 2.50;
+    double pago = preco - desconto;
+
+    printf("Preço: R$ %.2f\n", preco);
+    printf("Pago:  R$ %.2f\n", pago);
+    printf("sizeof(Dinheiro) = %zu, sizeof(double) = %zu\n",
+           sizeof(Dinheiro), sizeof(double));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>typedef double Dinheiro;</dt><dd>A forma é <code>typedef</code> + o tipo que já existe + o apelido novo + <code>;</code>. Um jeito de lembrar: escreva uma declaração de variável comum (<code>double Dinheiro;</code>) e ponha <code>typedef</code> na frente. O que seria o nome da variável vira o nome do tipo. Fica fora das funções, no começo do arquivo, para valer no arquivo todo.</dd>
+  <dt>Dinheiro preco = 19.90;</dt><dd>Daqui em diante, <code>Dinheiro</code> pode ser usado em qualquer lugar onde caberia <code>double</code>: variáveis, parâmetros, retorno de funções, <code>sizeof</code>.</dd>
+  <dt>double pago = preco - desconto;</dt><dd>Misturar <code>Dinheiro</code> e <code>double</code> é permitido, sem conversão nenhuma: é o mesmo tipo.</dd>
+  <dt>%.2f</dt><dd>O <code>printf</code> nem sabe que existe <code>Dinheiro</code>: para ele é um <code>double</code>, e o formato continua sendo o do <code>double</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra dinheiro.c -o dinheiro
+$ ./dinheiro
+Preço: R$ 19.90
+Pago:  R$ 17.40
+sizeof(Dinheiro) = 8, sizeof(double) = 8</pre>
+
+<p>Os dois <code>sizeof</code> dão 8: <code>Dinheiro</code> é um <code>double</code>, byte por byte. A vantagem aparece no dia em que a Ana decidir guardar os preços em centavos, num <code>long long</code>: ela muda <strong>uma</strong> linha (<code>typedef long long Dinheiro;</code>) em vez de caçar quais dos <code>double</code> do programa eram dinheiro. (Os <code>%.2f</code> também teriam de mudar; o <code>typedef</code> não resolve tudo.)</p>
+
+<h3>O apelido não protege nada</h3>
+<p>Como o apelido é o mesmo tipo, o compilador não reclama se você trocar um pelo outro. A Ana criou dois apelidos para <code>int</code>:</p>
+
+<pre class="file" data-file="mistura.c">#include &lt;stdio.h&gt;
+
+typedef int Idade;
+typedef int Ano;
+
+void fazer_aniversario(Idade *idade) {
+    (*idade)++;
+}
+
+int main(void) {
+    Idade ana = 29;
+    Ano hoje = 2026;
+
+    fazer_aniversario(&amp;ana);
+    fazer_aniversario(&amp;hoje);
+
+    printf("Ana tem %d anos; estamos em %d.\n", ana, hoje);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra mistura.c -o mistura      « nenhum aviso
+$ ./mistura
+Ana tem 30 anos; estamos em 2027.</pre>
+
+<p>O <code>fazer_aniversario(&amp;hoje)</code> é claramente um engano (o ano fez aniversário?), mas <code>Ano *</code> e <code>Idade *</code> são os dois <code>int *</code>, e nem o gcc nem o Clang avisam. O <code>typedef</code> serve para <strong>documentar</strong> a intenção para quem lê, não para o compilador conferir. Se você quiser que o compilador barre a mistura, embrulhe o valor numa struct (<code>typedef struct { int valor; } Ano;</code>): duas structs diferentes nunca se misturam.</p>
+
+<hr>
+
+<h2>2. <code>typedef</code> com <code>struct</code></h2>
+<p>Este é o uso mais comum. Em C, o nome do tipo de uma struct são <strong>duas palavras</strong>: <code>struct Aluno</code> (aula <a href="structs.html">Structs</a>). Com um <code>typedef</code>, vira uma só. Dá para escrever a struct e o apelido de uma vez:</p>
+
+<pre class="file" data-file="ficha.c">#include &lt;stdio.h&gt;
+
+typedef struct Aluno {
+    char nome[30];
+    double nota;
+} Aluno;
+
+void mostrar(const Aluno *a) {
+    printf("%s: %.1f\n", a-&gt;nome, a-&gt;nota);
+}
+
+int main(void) {
+    Aluno ana = {"Ana", 9.5};
+    struct Aluno bia = {"Bia", 8.0};
+    mostrar(&amp;ana);
+    mostrar(&amp;bia);
+    printf("Uma ficha ocupa %zu bytes.\n", sizeof(Aluno));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>typedef struct Aluno { … } Aluno;</dt><dd>Duas coisas numa frase só: define a struct <code>struct Aluno</code> (o "tipo" do <code>typedef</code> é a struct inteira, com as chaves) e dá a ela o apelido <code>Aluno</code> (a palavra entre o <code>}</code> e o <code>;</code>).</dd>
+  <dt>struct Aluno / Aluno</dt><dd>Repare que o nome aparece duas vezes, igual. Não há conflito: o C guarda os nomes de struct (as "etiquetas", <em>tags</em>, que vêm depois da palavra <code>struct</code>) numa lista separada dos outros nomes. <code>struct Aluno</code> e <code>Aluno</code> podem conviver, e aqui são o mesmo tipo.</dd>
+  <dt>const Aluno *a</dt><dd>Um ponteiro para uma ficha que a função não vai mudar (aula <a href="structs-ponteiros.html">Structs e Ponteiros</a>). Sem o apelido, seria <code>const struct Aluno *a</code>.</dd>
+  <dt>struct Aluno bia</dt><dd>O nome completo continua valendo: <code>ana</code> e <code>bia</code> são do mesmo tipo, e as duas vão para o mesmo <code>mostrar</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra ficha.c -o ficha
+$ ./ficha
+Ana: 9.5
+Bia: 8.0
+Uma ficha ocupa 40 bytes.</pre>
+
+<p>(Os 40 bytes são os 30 do nome, 2 de enchimento e os 8 da nota; veja <a href="sizeof.html">sizeof</a>.)</p>
+
+<h3>As três formas</h3>
+<p>Você vai encontrar três jeitos de escrever a mesma coisa:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Código</th><th>O que dá para escrever depois</th></tr>
+<tr><td>a) struct e typedef separados</td><td><code>struct Aluno { … };</code><br><code>typedef struct Aluno Aluno;</code></td><td><code>Aluno</code> e <code>struct Aluno</code></td></tr>
+<tr><td>b) Tudo junto, com etiqueta</td><td><code>typedef struct Aluno { … } Aluno;</code></td><td><code>Aluno</code> e <code>struct Aluno</code></td></tr>
+<tr><td>c) Tudo junto, sem etiqueta (struct "anônima")</td><td><code>typedef struct { … } Aluno;</code></td><td>Só <code>Aluno</code></td></tr>
+</table>
+</div>
+
+<p>As três funcionam para quase tudo. A forma (c) é a mais curta, e muito usada (aparece em <a href="arquivos-binarios.html">Arquivos Binários</a>); o preço é que a struct não tem nome próprio, e <code>struct Aluno</code> deixa de existir. As formas (a) e (b) são necessárias quando a struct precisa falar dela mesma, como você vai ver na seção 3. Este guia usa a (b) quando precisa da etiqueta e a (c) quando não precisa.</p>
+
+<div class="tryc" data-goal="out:Herói em (3\, 2),src:typedef\s+struct,src:^\s*Ponto\s+heroi">
+<p class="try-task"><strong>Missão:</strong> o mapa do jogo da Ana escreve <code>struct Ponto</code> seis vezes. Crie o apelido <code>Ponto</code> (com qualquer uma das três formas) e use-o em todo lugar: na função <code>somar</code> e nas variáveis do <code>main</code>. A saída continua <code>Herói em (3, 2)</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+struct Ponto {
+    int x;
+    int y;
+};
+
+struct Ponto somar(struct Ponto a, struct Ponto b) {
+    struct Ponto r = {a.x + b.x, a.y + b.y};
+    return r;
+}
+
+int main(void) {
+    struct Ponto heroi = {2, 3};
+    struct Ponto passo = {1, -1};
+    heroi = somar(heroi, passo);
+    printf("Herói em (%d, %d)\n", heroi.x, heroi.y);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+typedef struct Ponto {
+    int x;
+    int y;
+} Ponto;
+
+Ponto somar(Ponto a, Ponto b) {
+    Ponto r = {a.x + b.x, a.y + b.y};
+    return r;
+}
+
+int main(void) {
+    Ponto heroi = {2, 3};
+    Ponto passo = {1, -1};
+    heroi = somar(heroi, passo);
+    printf("Herói em (%d, %d)\n", heroi.x, heroi.y);
+    return 0;
+}
+</pre>
+</div>
+
+<p>O mesmo vale para <code>enum</code> e <code>union</code>: <code>typedef enum { … } Status;</code> e <code>typedef union { … } Valor;</code> (aulas <a href="enums.html">Enums</a> e <a href="unions.html">Unions</a>).</p>
+
+<hr>
+
+<h2>3. A struct que aponta para ela mesma</h2>
+<p>Um nó de <a href="listas-ligadas.html">lista ligada</a> guarda um valor e um ponteiro para o próximo nó, que é do mesmo tipo. Com a forma (c), sem etiqueta, parece natural escrever assim:</p>
+
+<pre class="file" data-file="autoref.c">#include &lt;stdio.h&gt;
+
+typedef struct {
+    int valor;
+    No *prox;
+} No;
+
+int main(void) {
+    No b = {2, NULL};
+    No a = {1, &amp;b};
+    printf("%d %d\n", a.valor, a.prox-&gt;valor);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra autoref.c -o autoref
+autoref.c:5:5: error: unknown type name ‘No’
+    5 |     No *prox;
+      |     ^~
+autoref.c: In function ‘main’:
+autoref.c:10:16: error: initialization of ‘int *’ from incompatible pointer type ‘No *’ [-Wincompatible-pointer-types]
+   10 |     No a = {1, &amp;b};
+      |                ^
+autoref.c:10:16: note: (near initialization for ‘a.prox’)
+autoref.c:11:38: error: request for member ‘valor’ in something not a structure or union
+   11 |     printf("%d %d\n", a.valor, a.prox-&gt;valor);
+      |                                      ^~</pre>
+
+<dl class="anatomy">
+  <dt>error: unknown type name ‘No’</dt><dd>"Nome de tipo desconhecido: <code>No</code>". O compilador lê o arquivo de cima para baixo, e o apelido <code>No</code> só passa a existir no <code>} No;</code> do fim. Na linha 5, dentro das chaves, ele ainda não existe. É o erro que importa; os outros dois são consequência.</dd>
+  <dt>initialization of ‘int *’ from incompatible pointer type</dt><dd>Sem saber o que é <code>No</code>, o gcc tratou o campo <code>prox</code> como <code>int *</code> para continuar lendo, e aí <code>&amp;b</code> (um <code>No *</code>) não combina. Corrija o primeiro erro e este some.</dd>
+</dl>
+
+<p>O Clang, no editor, mostra só o primeiro: <code>error: unknown type name 'No'</code>. O conserto é usar a <strong>etiqueta</strong>, que já existe desde o <code>struct No</code> do começo:</p>
+
+<pre class="file" data-file="autoref2.c">#include &lt;stdio.h&gt;
+
+typedef struct No {
+    int valor;
+    struct No *prox;
+} No;
+
+int main(void) {
+    No b = {2, NULL};
+    No a = {1, &amp;b};
+    for (No *p = &amp;a; p != NULL; p = p-&gt;prox) {
+        printf("%d\n", p-&gt;valor);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra autoref2.c -o autoref2
+$ ./autoref2
+1
+2</pre>
+
+<p>Dentro das chaves, o campo usa o nome completo, <code>struct No *prox</code>; fora delas, o apelido <code>No</code> já vale. A outra saída é a forma (a) com o <code>typedef</code> <strong>antes</strong> da struct: <code>typedef struct No No;</code> numa linha e, depois, <code>struct No { int valor; No *prox; };</code>. Isso funciona porque um <code>typedef</code> pode apontar para uma struct que ainda vai ser descrita (uma <em>declaração adiantada</em>); assim o apelido já vale lá dentro.</p>
+
+<div class="tryc" data-goal="outre:1\n2\n3\n">
+<p class="try-task"><strong>Missão:</strong> a fila de pedidos da Ana não compila: rode e leia o <code>unknown type name</code>. Conserte dando uma etiqueta à struct (<code>typedef struct Item { … } Item;</code>) e usando <code>struct Item *prox;</code> dentro das chaves. A saída deve ser os números 1, 2 e 3, um por linha.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+typedef struct {
+    int pedido;
+    Item *prox;
+} Item;
+
+int main(void) {
+    Item c = {3, NULL};
+    Item b = {2, &amp;c};
+    Item a = {1, &amp;b};
+    for (Item *p = &amp;a; p != NULL; p = p-&gt;prox) {
+        printf("%d\n", p-&gt;pedido);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+typedef struct Item {
+    int pedido;
+    struct Item *prox;
+} Item;
+
+int main(void) {
+    Item c = {3, NULL};
+    Item b = {2, &amp;c};
+    Item a = {1, &amp;b};
+    for (Item *p = &amp;a; p != NULL; p = p-&gt;prox) {
+        printf("%d\n", p-&gt;pedido);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Não esconda o ponteiro</h2>
+<p>Dá para fazer <code>typedef</code> de um ponteiro: <code>typedef char *Texto;</code>. Parece prático, mas confunde, e o caso do <code>const</code> mostra por quê. A Ana quis prometer que <code>mostrar</code> não muda o texto:</p>
+
+<pre class="file" data-file="texto.c">#include &lt;stdio.h&gt;
+
+typedef char *Texto;
+
+void mostrar(const Texto t) {
+    t[0] = 'A';
+    printf("%s\n", t);
+}
+
+int main(void) {
+    char nome[] = "ana";
+    mostrar(nome);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra texto.c -o texto      « nenhum aviso
+$ ./texto
+Ana</pre>
+
+<p>A função mudou o texto, e o compilador aceitou. O motivo: <code>const Texto</code> não é "<code>const</code> + <code>char *</code>" colados como palavras. O <code>const</code> vale para o tipo <strong>inteiro</strong> do apelido, que é o ponteiro: <code>const Texto t</code> quer dizer <code>char *const t</code>, "o ponteiro <code>t</code> não muda" (não pode apontar para outro lugar), e as letras continuam livres. A promessa que a Ana queria era <code>const char *t</code>, "as letras não mudam" (aula <a href="const-ponteiros.html">const e Ponteiros</a>). Sem o apelido, o compilador barra a escrita:</p>
+
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra texto2.c -o texto2      « o mesmo programa, com const char *t
+texto2.c: In function ‘mostrar’:
+texto2.c:4:10: error: assignment of read-only location ‘*t’
+    4 |     t[0] = 'A';
+      |          ^</pre>
+
+<p>"Atribuição a um lugar só de leitura, <code>*t</code>". No editor, o Clang diz <code>error: read-only variable is not assignable</code>. Moral: deixe o <code>*</code> à vista. Quem lê <code>char *t</code> sabe na hora que é um ponteiro, que pode ser <code>NULL</code> e que talvez precise de <code>free</code>; quem lê <code>Texto t</code> não sabe. A exceção aceita é o <strong>ponteiro para função</strong>, cujo tipo é tão difícil de ler que o apelido ajuda muito: <code>typedef int (*Operacao)(int, int);</code> (aula <a href="ponteiros-funcao.html">Ponteiros para Funções</a>).</p>
+
+<h3>Apelido para um array</h3>
+<p>Também dá, e às vezes é útil para tamanhos fixos que se repetem:</p>
+
+<pre class="file" data-file="nome.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+typedef char Nome[16];
+
+int main(void) {
+    Nome cliente = "Ana";
+    Nome outro;
+    strcpy(outro, "Bia");
+    printf("%s e %s, %zu bytes cada\n", cliente, outro, sizeof(Nome));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra nome.c -o nome
+$ ./nome
+Ana e Bia, 16 bytes cada</pre>
+
+<p><code>typedef char Nome[16];</code> segue a mesma receita: a declaração <code>char Nome[16];</code> com <code>typedef</code> na frente. <code>Nome cliente</code> é um <code>char cliente[16]</code>. Cuidado com o mesmo problema de antes: um <code>Nome</code> passado para uma função vira um <code>char *</code>, como qualquer array (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>), e o <code>sizeof</code> lá dentro dá o tamanho de um ponteiro (8 no gcc), não 16.</p>
+
+<hr>
+
+<h2>5. <code>typedef</code> × <code>#define</code></h2>
+<p>Um <code>#define</code> (aula <a href="macros.html">Macros</a>) também parece criar um nome para um tipo. Mas ele só <strong>troca texto</strong> antes da compilação, e com ponteiros isso dá errado:</p>
+
+<pre class="file" data-file="define.c">#include &lt;stdio.h&gt;
+
+#define TEXTO char *
+
+int main(void) {
+    TEXTO primeiro = "Ana", segundo = "Bia";
+    printf("%s e %s\n", primeiro, segundo);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra define.c -o define
+define.c: In function ‘main’:
+define.c:6:39: error: initialization of ‘char’ from ‘char *’ makes integer from pointer without a cast [-Wint-conversion]
+    6 |     TEXTO primeiro = "Ana", segundo = "Bia";
+      |                                       ^~~~~
+define.c:7:19: warning: format ‘%s’ expects argument of type ‘char *’, but argument 3 has type ‘int’ [-Wformat=]
+    7 |     printf("%s e %s\n", primeiro, segundo);
+      |                  ~^               ~~~~~~~
+      |                   |               |
+      |                   char *          int
+      |                  %d</pre>
+
+<p>O pré-processador trocou <code>TEXTO</code> por <code>char *</code>, e a linha virou <code>char * primeiro = "Ana", segundo = "Bia";</code>. Numa declaração com vírgula, o <code>*</code> vale só para o primeiro nome: <code>segundo</code> é um <code>char</code>, uma letra só, e não cabe um texto nele ("inicializar um <code>char</code> com um <code>char *</code> transforma ponteiro em inteiro"). No editor, o Clang diz <code>error: incompatible pointer to integer conversion initializing 'char' with an expression of type 'char[4]' [-Wint-conversion]</code>. Com <code>typedef char *Texto;</code>, os dois seriam ponteiros, porque o <code>typedef</code> é entendido pelo compilador como um tipo de verdade, e não como texto colado. Para tipos, use sempre <code>typedef</code>.</p>
+
+<hr>
+
+<h2>6. Os typedef da biblioteca e o <code>_t</code></h2>
+<p>Lembra do <code>size_t</code>, do <code>FILE</code>, do <code>int32_t</code>? São todos apelidos, criados nos cabeçalhos que você inclui. Dá para ver no Linux da Ana com o comando <code>grep</code>, que procura um texto dentro de arquivos:</p>
+
+<pre class="term">$ grep -n 'typedef.*size_t;' /usr/lib/gcc/x86_64-linux-gnu/15/include/stddef.h
+229:typedef __SIZE_TYPE__ size_t;
+231:typedef long ssize_t;
+$ grep -n 'typedef' /usr/include/x86_64-linux-gnu/bits/types/FILE.h
+7:typedef struct _IO_FILE FILE;
+$ grep -n 'typedef.* int32_t;' /usr/include/x86_64-linux-gnu/bits/stdint-intn.h
+26:typedef __int32_t int32_t;
+$ grep -n '__int32_t;' /usr/include/x86_64-linux-gnu/bits/types.h
+41:typedef signed int __int32_t;</pre>
+
+<dl class="anatomy">
+  <dt>typedef __SIZE_TYPE__ size_t;</dt><dd><code>__SIZE_TYPE__</code> é um nome que o próprio gcc define com o tipo certo para a máquina: <code>unsigned long</code> no Linux de 64 bits. É por isso que o <code>size_t</code> tem 8 bytes no gcc e 4 no editor do guia: o apelido é o mesmo, o tipo por trás muda. O código que usa <code>size_t</code> funciona nos dois sem mudar nada. Essa é a maior utilidade do <code>typedef</code>: <strong>esconder o que muda de máquina para máquina</strong>.</dd>
+  <dt>typedef struct _IO_FILE FILE;</dt><dd>O <code>FILE</code> do <code>fopen</code> (aula <a href="arquivos.html">Arquivos</a>) é uma struct da glibc com um apelido, na forma (a). Você só usa <code>FILE *</code> e nunca mexe nos campos lá dentro.</dd>
+  <dt>int32_t → __int32_t → signed int</dt><dd>Um apelido de um apelido: no fim, um <code>int32_t</code> é um <code>int</code> comum (aula <a href="stdint.html">Inteiros de Tamanho Fixo</a>).</dd>
+</dl>
+
+<div class="note">
+<strong>O sufixo <code>_t</code></strong>
+<p>O <code>_t</code> de <code>size_t</code>, <code>time_t</code> e <code>int32_t</code> quer dizer <em>type</em>, "tipo". É a convenção da biblioteca padrão. A norma POSIX (a dos sistemas como o Linux) reserva para ela mesma todos os nomes terminados em <code>_t</code>, para poder criar tipos novos no futuro sem bater nos seus. Por isso, nos seus programas, prefira nomes como <code>Aluno</code>, <code>Dinheiro</code> e <code>Ponto</code>, com letra maiúscula, que é o estilo deste guia. Você vai ver muito código com <code>aluno_t</code>; funciona, só não é o recomendado.</p>
+</div>
+
+<div class="tip">
+<strong>O primo do C23: <code>typeof</code></strong> <span class="versao">C23</span>
+<p>O <code>typeof(expressão)</code> dá o tipo de uma variável ou expressão, sem você precisar escrevê-lo: <code>typeof(preco) troco = 50 - preco;</code> cria <code>troco</code> com o mesmo tipo de <code>preco</code> (num programa com <code>Dinheiro preco = 19.90;</code>, ele mostrou <code>Troco: R$ 30.10 (8 bytes)</code> no gcc e no editor). Ele não substitui o <code>typedef</code>, que dá um <strong>nome</strong> ao tipo; é útil dentro de macros. Veja <a href="novidades.html">Novidades do C99 ao C23</a>.</p>
+</div>
+
+<hr>
+
+<h2>Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Recomendação</th></tr>
+<tr><td>Uma struct, enum ou union usada em vários lugares</td><td><code>typedef</code>, forma (c) <code>typedef struct { … } Nome;</code></td></tr>
+<tr><td>Uma struct que aponta para ela mesma (listas, árvores)</td><td>Forma (b) <code>typedef struct Nome { … struct Nome *prox; } Nome;</code> ou (a) com o typedef antes</td></tr>
+<tr><td>Um número com um significado (dinheiro, medida, identificador)</td><td><code>typedef</code>, sabendo que ele documenta mas não protege</td></tr>
+<tr><td>Um tipo que muda de máquina para máquina</td><td>Os da biblioteca (<code>size_t</code>, <code>int32_t</code>) ou um <code>typedef</code> seu num cabeçalho</td></tr>
+<tr><td>Ponteiro para função</td><td><code>typedef</code>: fica muito mais legível</td></tr>
+<tr><td>Ponteiro comum (<code>char *</code>, <code>Aluno *</code>)</td><td>Sem <code>typedef</code>: deixe o <code>*</code> à vista</td></tr>
+<tr><td>Nome para um tipo com <code>#define</code></td><td>Não: use <code>typedef</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Nem todo mundo usa typedef em struct</strong>
+<p>Alguns projetos grandes, como o núcleo do Linux, proíbem <code>typedef</code> para structs: preferem escrever <code>struct aluno</code> sempre, para que fique claro, em cada linha, que aquilo é uma struct. Outros, como muitas bibliotecas de jogos e de interface gráfica, usam <code>typedef</code> em tudo. As duas escolhas são boas; o importante é seguir a do projeto em que você está.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: unknown type name ‘Aluno’; use ‘struct’ keyword to refer to the type</code></strong>
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra semtypedef.c -o semtypedef
+semtypedef.c: In function ‘main’:
+semtypedef.c:9:5: error: unknown type name ‘Aluno’; use ‘struct’ keyword to refer to the type
+    9 |     Aluno ana = {"Ana", 9.5};
+      |     ^~~~~
+      |     struct
+«… mais erros, todos consequência deste …»</pre>
+<p><strong>O que significa:</strong> o programa tem <code>struct Aluno { … };</code> mas nenhum <code>typedef</code>, e usa <code>Aluno</code> sozinho. O gcc até sugere: "use a palavra <code>struct</code>". No editor, o Clang diz <code>error: must use 'struct' tag to refer to type 'Aluno'</code>.</p>
+<p><strong>Como consertar:</strong> escreva <code>struct Aluno ana</code>, ou crie o apelido: <code>typedef struct Aluno Aluno;</code> depois da struct.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: unknown type name ‘No’</code> dentro da própria struct</strong>
+<p><strong>O que significa:</strong> a struct usa o apelido antes de ele existir (seção 3).</p>
+<p><strong>Como consertar:</strong> dê uma etiqueta à struct e use <code>struct No *prox;</code> dentro das chaves, ou ponha <code>typedef struct No No;</code> antes da struct.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: storage size of ‘ana’ isn’t known</code> com <code>struct Aluno ana</code></strong>
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra incompleto.c -o incompleto
+incompleto.c: In function ‘main’:
+incompleto.c:9:12: error: variable ‘ana’ has initializer but incomplete type
+    9 |     struct Aluno ana = {"Ana", 9.5};
+      |            ^~~~~
+«… avisos de "excess elements in struct initializer" …»
+incompleto.c:9:18: error: storage size of ‘ana’ isn’t known
+    9 |     struct Aluno ana = {"Ana", 9.5};
+      |                  ^~~</pre>
+<p><strong>O que significa:</strong> a struct foi criada na forma (c), <code>typedef struct { … } Aluno;</code>, sem etiqueta. Então <code>struct Aluno</code> não existe: o compilador acha que é <strong>outra</strong> struct, ainda não descrita ("tipo incompleto"), e não sabe quantos bytes ela tem ("o tamanho de <code>ana</code> não é conhecido"). No editor: <code>error: variable has incomplete type 'struct Aluno'</code>.</p>
+<p><strong>Como consertar:</strong> escreva só <code>Aluno ana</code>, ou dê a etiqueta à struct (forma b).</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: conflicting types for ‘Idade’; have ‘long int’</code></strong>
+<pre class="term" data-cwd="~/c/td">$ gcc -std=c23 -Wall -Wextra conflito.c -o conflito
+conflito.c:5:14: error: conflicting types for ‘Idade’; have ‘long int’
+    5 | typedef long Idade;
+      |              ^~~~~
+conflito.c:4:13: note: previous declaration of ‘Idade’ with type ‘Idade’ {aka ‘int’}
+    4 | typedef int Idade;
+      |             ^~~~~</pre>
+<p><strong>O que significa:</strong> o mesmo apelido foi definido duas vezes com tipos diferentes (as linhas 4 e 5). Repetir o <strong>mesmo</strong> <code>typedef</code> (as linhas 3 e 4 do programa, <code>typedef int Idade;</code> duas vezes) é permitido desde o C11; com tipos diferentes, não. O <code>{aka ‘int’}</code> ("também conhecido como") é como o gcc mostra o tipo por trás de um apelido. No editor: <code>error: typedef redefinition with different types ('long' vs 'int')</code>.</p>
+<p><strong>Como consertar:</strong> deixe um <code>typedef</code> só, num cabeçalho incluído por todos os arquivos que usam o apelido (aula <a href="headers.html">Arquivos de Cabeçalho</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>makes integer from pointer without a cast</code> num tipo criado com <code>#define</code></strong>
+<p><strong>O que significa:</strong> o <code>#define</code> de um tipo com <code>*</code> só faz do primeiro nome de uma declaração com vírgula um ponteiro (seção 5).</p>
+<p><strong>Como consertar:</strong> troque o <code>#define</code> por <code>typedef</code>, ou declare cada variável numa linha.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que cria</th></tr>
+<tr><td><code>typedef double Dinheiro;</code></td><td><code>Dinheiro</code> = <code>double</code></td></tr>
+<tr><td><code>typedef struct { … } Aluno;</code></td><td><code>Aluno</code> = uma struct sem etiqueta</td></tr>
+<tr><td><code>typedef struct No { … struct No *prox; } No;</code></td><td><code>No</code> = <code>struct No</code>, que aponta para ela mesma</td></tr>
+<tr><td><code>typedef struct No No;</code></td><td>O apelido antes da descrição da struct (declaração adiantada)</td></tr>
+<tr><td><code>typedef enum { … } Status;</code> / <code>typedef union { … } Valor;</code></td><td>Apelidos para enum e union</td></tr>
+<tr><td><code>typedef char Nome[16];</code></td><td><code>Nome x;</code> = <code>char x[16];</code></td></tr>
+<tr><td><code>typedef int (*Operacao)(int, int);</code></td><td>Apelido para ponteiro de função</td></tr>
+<tr><td><code>typedef char *Texto;</code></td><td>Funciona, mas evite: <code>const Texto</code> é <code>char *const</code></td></tr>
+<tr><td><code>size_t</code>, <code>FILE</code>, <code>int32_t</code>, <code>time_t</code></td><td>Apelidos da biblioteca; o <code>_t</code> é reservado pelo POSIX</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Um apelido simples</h3>
+<p>Complete para que <code>Nota</code> seja um apelido de <code>double</code>:</p>
+<div class="ex-code"><input data-answer="typedef" aria-label="palavra"> double Nota;</div>
+</div>
+
+<div class="exercise">
+<h3>2. O nome que fica</h3>
+<p>Depois de <code>typedef struct { int x; int y; } Ponto;</code>, complete a declaração da variável <code>p</code>:</p>
+<div class="ex-code"><input data-answer="Ponto" aria-label="tipo"> p = {1, 2};</div>
+</div>
+
+<div class="exercise">
+<h3>3. A etiqueta</h3>
+<p>Complete o campo para a struct apontar para ela mesma:</p>
+<div class="ex-code">typedef struct Celula { int valor; <input data-answer="struct Celula" aria-label="tipo"> *prox; } Celula;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com <code>typedef int Metros;</code> e <code>typedef int Segundos;</code>, o que acontece se uma função que recebe <code>Metros</code> for chamada com uma variável <code>Segundos</code>?</p>
+<label><input type="radio" name="q4"> Erro de compilação: os tipos são diferentes</label>
+<label><input type="radio" name="q4"> Compila sem aviso: os dois são <code>int</code></label>
+<label><input type="radio" name="q4"> Aviso <code>-Wincompatible-pointer-types</code></label>
+<label><input type="radio" name="q4"> O programa converte segundos em metros</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Com <code>typedef char *Texto;</code>, o que é <code>const Texto t</code>?</p>
+<label><input type="radio" name="q5"> <code>const char *t</code>: as letras não podem mudar</label>
+<label><input type="radio" name="q5"> Um erro de compilação</label>
+<label><input type="radio" name="q5"> <code>char *const t</code>: o ponteiro não pode mudar, mas as letras sim</label>
+<label><input type="radio" name="q5"> Um texto vazio</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que <code>size_t</code> tem 8 bytes no gcc do Linux e 4 no editor do guia?</p>
+<label><input type="radio" name="q6"> Porque é um <code>typedef</code>, e cada sistema o define com o tipo certo para a máquina</label>
+<label><input type="radio" name="q6"> Porque o editor tem um defeito</label>
+<label><input type="radio" name="q6"> Porque o <code>_t</code> muda o tamanho</label>
+<label><input type="radio" name="q6"> Porque o Clang não conhece o <code>size_t</code></label>
+</div>
+
+<h3>Missão final: o estoque da lojinha</h3>
+
+<div class="tryc" data-goal="out:Valor do estoque: R$ 364.50,src:typedef\s+double\s+Dinheiro\s*;,src:typedef\s+struct">
+<p class="try-task"><strong>Missão:</strong> o programa usa os tipos <code>Dinheiro</code> e <code>Produto</code>, mas ninguém os criou, e ele não compila. Escreva os dois <code>typedef</code> no lugar do comentário: <code>Dinheiro</code> como apelido de <code>double</code>, e <code>Produto</code> como uma struct com os campos <code>nome</code> (<code>char[20]</code>), <code>quantidade</code> (<code>int</code>) e <code>preco</code> (<code>Dinheiro</code>), nessa ordem. A última linha da saída deve ser <code>Valor do estoque: R$ 364.50</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+/* crie aqui os tipos Dinheiro e Produto */
+
+Dinheiro valor_estoque(const Produto *itens, int n) {
+    Dinheiro total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += itens[i].quantidade * itens[i].preco;
+    }
+    return total;
+}
+
+int main(void) {
+    Produto loja[] = {
+        {"Caderno", 10, 12.50},
+        {"Caneta", 30, 1.99},
+        {"Mochila", 2, 89.90},
+    };
+    int n = sizeof loja / sizeof loja[0];
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-8s %3d x R$ %6.2f\n", loja[i].nome, loja[i].quantidade, loja[i].preco);
+    }
+    printf("Valor do estoque: R$ %.2f\n", valor_estoque(loja, n));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+typedef double Dinheiro;
+
+typedef struct {
+    char nome[20];
+    int quantidade;
+    Dinheiro preco;
+} Produto;
+
+Dinheiro valor_estoque(const Produto *itens, int n) {
+    Dinheiro total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += itens[i].quantidade * itens[i].preco;
+    }
+    return total;
+}
+
+int main(void) {
+    Produto loja[] = {
+        {"Caderno", 10, 12.50},
+        {"Caneta", 30, 1.99},
+        {"Mochila", 2, 89.90},
+    };
+    int n = sizeof loja / sizeof loja[0];
+    for (int i = 0; i &lt; n; i++) {
+        printf("%-8s %3d x R$ %6.2f\n", loja[i].nome, loja[i].quantidade, loja[i].preco);
+    }
+    printf("Valor do estoque: R$ %.2f\n", valor_estoque(loja, n));
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que o <code>typedef double Dinheiro;</code> tem de vir <strong>antes</strong> do <code>Produto</code>, que o usa: o compilador lê de cima para baixo. Depois de passar na missão, experimente trocar o <code>double</code> por <code>float</code> só na linha do <code>typedef</code>: o resto do programa se ajusta sozinho.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>typedef tipo Apelido;</code> dá um nome novo a um tipo que já existe. A receita: escreva a declaração como se fosse uma variável e ponha <code>typedef</code> na frente.</li>
+  <li>O apelido é o <strong>mesmo</strong> tipo: mistura sem aviso. Ele documenta a intenção, mas não protege.</li>
+  <li>Com struct: <code>typedef struct { … } Aluno;</code> (sem etiqueta) ou <code>typedef struct Aluno { … } Aluno;</code> (com etiqueta). Uma struct que aponta para ela mesma precisa da etiqueta: <code>struct No *prox;</code>, senão dá <code>unknown type name</code>.</li>
+  <li>Não esconda ponteiros num <code>typedef</code> (<code>const Texto</code> é <code>char *const</code>); a exceção é o ponteiro para função.</li>
+  <li>Para tipos, use <code>typedef</code>, não <code>#define</code>: o <code>#define</code> só troca texto, e <code>TEXTO a, b;</code> faz de <code>b</code> um <code>char</code>.</li>
+  <li><code>size_t</code>, <code>FILE</code> e <code>int32_t</code> são typedef da biblioteca; é por isso que o <code>size_t</code> muda de tamanho entre o gcc (8 bytes) e o editor (4). O sufixo <code>_t</code> é reservado pelo POSIX.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
