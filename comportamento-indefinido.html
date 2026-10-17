@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Comportamento Indefinido — UB, -O2 e sanitizers | Guia C</title>
+<meta name="description" content="Comportamento indefinido (UB) em C para quem está começando: índice fora do array, estouro de int com sinal, variável sem valor, i = i++, ponteiro solto e deslocamento grande; o mesmo programa com -O0 e -O2; como se proteger com -Wall -Wextra e -fsanitize=undefined,address; definido pela implementação e não especificado. Saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Comportamento Indefinido</span></h1>
+
+<p class="intro">Em muitas linguagens, um erro de programação sempre dá uma mensagem: "índice fora do limite", "variável sem valor". Em C, vários erros <strong>não dão mensagem nenhuma</strong>. O programa compila, roda e mostra um número qualquer. Ou funciona hoje e quebra amanhã. Ou funciona no seu computador e quebra no do colega. Ou muda de resposta só porque você pediu ao compilador para otimizar. Isso tem um nome oficial: <strong>comportamento indefinido</strong> (em inglês, <em>undefined behavior</em>, ou só <strong>UB</strong>). Esta aula mostra o que é, por que o C tem isso, os casos que mais aparecem e, principalmente, como se proteger.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é comportamento indefinido e por que o compilador "pode fazer qualquer coisa".</li>
+  <li>Seis casos clássicos: variável sem valor, índice fora do array, estouro de <code>int</code>, <code>i = i++</code>, ponteiro solto e deslocamento grande demais.</li>
+  <li>Por que o mesmo programa dá resultados diferentes com <code>-O0</code> e com <code>-O2</code> (e no editor do guia).</li>
+  <li>Como se proteger: <code>-Wall -Wextra</code>, <code>-O2</code> para ver mais avisos e os <strong>sanitizers</strong> <code>-fsanitize=undefined,address</code>.</li>
+  <li>A diferença entre <strong>indefinido</strong>, <strong>definido pela implementação</strong> e <strong>não especificado</strong>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/ub</code>, com o comando padrão do guia (<code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>, explicado em <a href="compilar.html">Compilar com gcc</a>) e, às vezes, com <code>-O2</code> no fim. O <code>-O2</code> liga as <strong>otimizações</strong>: o compilador reescreve o seu programa por dentro para ele ficar mais rápido. Sem nada, vale <code>-O0</code> ("nível zero", sem otimizar). Os resultados que você vai ver são os daquele dia, naquela máquina. Esse é justamente o ponto: com UB, outro dia, outro compilador ou outra opção podem dar outra coisa.</p>
+
+<div class="note">
+<strong>No editor do guia, muito UB passa calado</strong>
+<p>O editor compila com o Clang e roda o programa como WebAssembly, dentro do navegador, onde a memória é organizada de outro jeito. Lá, um ponteiro nulo derruba o programa (<code>Falha de segmentação</code>, código 139, como no Linux), mas índice fora do array, ponteiro para variável que já morreu e memória já liberada passam <strong>sem nenhum sinal</strong>. Os sanitizers também não existem no editor. Por isso as falhas desta aula aparecem nos terminais do laboratório; nas caixas "Experimente", o objetivo é ver as respostas mudarem e <strong>corrigir</strong> o código.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: um contrato com o compilador</h2>
+<p>A linguagem C é definida por um documento, o <strong>padrão</strong> (veja <a href="versoes.html">Versões do C</a>). Ele funciona como um contrato. Para cada coisa que você escreve, o padrão diz o que deve acontecer: <code>2 + 3</code> dá <code>5</code>; <code>printf("oi")</code> escreve <code>oi</code>.</p>
+
+<p>Mas, para algumas situações, o padrão diz: "<strong>isto o programa não pode fazer</strong>; se fizer, não prometo nada". Ler uma variável que nunca recebeu valor, acessar a posição 4 de um array de 4, passar do maior <code>int</code>. É como o contrato de aluguel que diz "é proibido fazer churrasco na varanda": ele não explica o que acontece se você fizer, porque parte do princípio de que você não vai fazer.</p>
+
+<p>E o compilador leva o contrato ao pé da letra. Para gerar um programa mais rápido, ele <strong>supõe que o UB nunca acontece</strong>. Se acontece, as suposições dele viram mentiras, e o resultado pode ser qualquer coisa: um número esquisito, um travamento, um laço infinito ou, o pior de todos, a resposta certa (por sorte).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo de problema</th><th>Quando aparece</th><th>Exemplo</th></tr>
+<tr><td>Erro de compilação</td><td>Ao compilar, sempre</td><td>Faltou um <code>;</code> (veja <a href="erros-compilacao.html">Lendo Erros do Compilador</a>)</td></tr>
+<tr><td>Erro que o programa trata</td><td>Ao rodar, sempre do mesmo jeito</td><td><code>fopen</code> devolve <code>NULL</code> e o programa avisa (veja <a href="errno.html">errno e perror</a>)</td></tr>
+<tr><td><strong>Comportamento indefinido</strong></td><td>Talvez nunca, talvez às vezes, talvez de jeitos diferentes</td><td><code>notas[4]</code> num array de 4: pode mostrar lixo, pode travar, pode "funcionar"</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>"Funcionou" não prova nada</strong>
+<p>Com UB, um programa que deu a resposta certa no seu teste <strong>não está certo</strong>: ele só teve sorte desta vez. Trocar a otimização, o compilador, a versão do compilador ou até uma linha sem relação pode mudar o resultado. Por isso o objetivo não é "decorar o que o UB faz", e sim <strong>nunca escrever UB</strong>.</p>
+</div>
+
+<hr>
+
+<h2>1. Variável sem valor inicial</h2>
+<p>Uma variável local criada sem valor (<code>int pontos;</code>) guarda o que já estava naquele pedaço da memória: o "lixo" (veja <a href="variaveis.html">Variáveis</a>). Ler esse valor antes de dar um valor de verdade é UB.</p>
+
+<pre class="file" data-file="lixo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos;
+    printf("Pontos: %d\n", pontos);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra lixo.c -o lixo
+lixo.c: In function ‘main’:
+lixo.c:5:5: warning: ‘pontos’ is used uninitialized [-Wuninitialized]
+    5 |     printf("Pontos: %d\n", pontos);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+lixo.c:4:9: note: ‘pontos’ was declared here
+    4 |     int pontos;
+      |         ^~~~~~
+$ ./lixo
+Pontos: 0                « zero por acaso: era o que estava na memória</pre>
+
+<p>O <code>-Wall</code> avisou: <em>used uninitialized</em> = "usada sem ter sido inicializada". E o programa mostrou <code>0</code>. Parece inofensivo, mas aquele zero <strong>não é garantido</strong>: era só o que havia na memória naquele momento. Num programa maior, no mesmo lugar, aparece <code>32767</code> ou <code>-1094795586</code>.</p>
+
+<p>O caso traiçoeiro é quando a variável recebe valor <strong>só às vezes</strong>:</p>
+
+<pre class="file" data-file="talvez.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 7;
+    int bonus;
+    if (nota &gt; 8) {
+        bonus = 2;
+    }
+    printf("Nota final: %d\n", nota + bonus);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra talvez.c -o talvez      « nenhum aviso!
+$ ./talvez
+Nota final: 7
+$ gcc -std=c23 -Wall -Wextra -O2 talvez.c -o talvez-O2
+talvez.c: In function ‘main’:
+talvez.c:9:5: warning: ‘bonus’ is used uninitialized [-Wuninitialized]
+    9 |     printf("Nota final: %d\n", nota + bonus);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+talvez.c:5:9: note: ‘bonus’ was declared here
+    5 |     int bonus;
+      |         ^~~~~
+$ ./talvez-O2
+Nota final: 7</pre>
+
+<p>Sem otimização, o gcc <strong>não avisou nada</strong>. Com <code>-O2</code>, ele analisa o programa com mais cuidado (para otimizar, precisa saber de onde vem cada valor) e aí percebe o problema. Essa é a primeira lição prática: <strong>compile de vez em quando com <code>-O2</code></strong> só para ver os avisos extras. O Clang do editor é mais esperto aqui: já sem otimização ele avisa <code>variable 'bonus' is used uninitialized whenever 'if' condition is false</code> ("usada sem valor sempre que a condição do <code>if</code> for falsa").</p>
+
+<p><strong>Como evitar:</strong> toda variável nasce com valor. <code>int bonus = 0;</code> custa nada e elimina o problema.</p>
+
+<hr>
+
+<h2>2. Índice fora do array</h2>
+<p>Um array de 4 posições tem os índices 0, 1, 2 e 3 (veja <a href="arrays.html">Arrays</a>). O C <strong>não confere</strong> o índice: <code>notas[4]</code> lê o que estiver logo depois do array na memória. Ler ou escrever ali é UB. O erro mais comum é o <code>&lt;=</code> no lugar do <code>&lt;</code>:</p>
+
+<pre class="file" data-file="fora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    int soma = 0;
+    for (int i = 0; i &lt;= 4; i++) {
+        soma += notas[i];
+    }
+    printf("Soma: %d\n", soma);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra fora.c -o fora
+$ ./fora
+Soma: 30                « 7 + 8 + 6 + 9 = 30: "certo", por sorte</pre>
+
+<p>O laço passou por <code>i = 4</code> e somou o que havia depois do array. Desta vez, por acaso, era um zero, e a soma saiu certa. Nenhum aviso, nenhuma mensagem. É o pior tipo de erro: o que <strong>esconde</strong> que existe. Se o vizinho na memória fosse outra variável, a soma viria errada; se o índice fosse 1000, o programa provavelmente morreria.</p>
+
+<p>Agora o mesmo arquivo com <code>-O2</code>:</p>
+
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra -O2 fora.c -o fora-O2
+fora.c: In function ‘main’:
+fora.c:7:22: warning: iteration 4 invokes undefined behavior [-Waggressive-loop-optimizations]
+    7 |         soma += notas[i];
+      |                 ~~~~~^~~
+fora.c:6:23: note: within this loop
+    6 |     for (int i = 0; i &lt;= 4; i++) {
+      |                     ~~^~~~</pre>
+
+<p><em>Iteration 4 invokes undefined behavior</em> = "a volta número 4 provoca comportamento indefinido"; <em>within this loop</em> = "dentro deste laço". O otimizador do gcc percebeu que o laço lê <code>notas[4]</code>. Ele não precisa avisar (o padrão não obriga), mas desta vez avisou. Não conte com isso em todos os casos.</p>
+
+<p><strong>Como evitar:</strong> use sempre <code>i &lt; tamanho</code>, e calcule o tamanho com <code>sizeof notas / sizeof notas[0]</code> em vez de escrever o número à mão (veja <a href="sizeof.html">sizeof</a>). Para achar o erro quando ele já existe, o sanitizer da seção <a href="#proteger">Como se proteger</a> aponta a linha exata.</p>
+
+<hr>
+
+<h2>3. Estouro de inteiro com sinal</h2>
+<p>Um <code>int</code> vai até 2.147.483.647 (<code>INT_MAX</code>, de <code>limits.h</code>; veja <a href="inteiros.html">Inteiros</a>). Passar disso num tipo <strong>com sinal</strong> (<code>int</code>, <code>long</code>, <code>long long</code>) é UB. Na prática o número costuma "dar a volta" e virar negativo, mas o compilador tem o direito de supor que isso <strong>nunca</strong> acontece, e ele usa esse direito:</p>
+
+<pre class="file" data-file="estouro.c">#include &lt;limits.h&gt;
+#include &lt;stdio.h&gt;
+
+int cabe_mais_um(int x) {
+    return x + 1 &gt; x;
+}
+
+int main(void) {
+    int x = INT_MAX;
+    printf("INT_MAX     = %d\n", x);
+    printf("INT_MAX + 1 = %d\n", x + 1);
+    printf("cabe mais um? %d\n", cabe_mais_um(x));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>cabe_mais_um</dt><dd>Pergunta: "<code>x + 1</code> é maior que <code>x</code>?". Em C, uma comparação vale <code>1</code> (verdade) ou <code>0</code> (falso).</dd>
+  <dt>x + 1</dt><dd>Com <code>x = INT_MAX</code>, essa conta passa do limite: é aqui que mora o UB.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra estouro.c -o estouro
+$ ./estouro
+INT_MAX     = 2147483647
+INT_MAX + 1 = -2147483648      « deu a volta e ficou negativo
+cabe mais um? 1                « mas aqui diz que x + 1 é MAIOR que x!</pre>
+
+<p>O programa se contradiz: a segunda linha mostra que <code>INT_MAX + 1</code> virou negativo, e a terceira diz que <code>x + 1 &gt; x</code>. O gcc raciocinou assim: "<code>x + 1 &gt; x</code> é sempre verdade, porque estouro não existe", e trocou a conta inteira por <code>1</code>, mesmo sem <code>-O2</code>. Nenhum aviso.</p>
+
+<p>No editor do guia, que usa o Clang, a resposta depende da otimização. Rode as duas caixas abaixo: o código é o mesmo, só muda a linha de compilação.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente (sem otimização):</strong> clique em <strong>Rodar</strong> e veja a última linha.</p>
+<pre class="script">#include &lt;limits.h&gt;
+#include &lt;stdio.h&gt;
+
+int cabe_mais_um(int x) {
+    return x + 1 &gt; x;
+}
+
+int main(void) {
+    int x = INT_MAX;
+    printf("INT_MAX + 1 = %d\n", x + 1);
+    printf("cabe mais um? %d\n", cabe_mais_um(x));
+    return 0;
+}
+</pre>
+</div>
+
+<div class="tryc" data-flags="-std=c23 -Wall -Wextra -O2">
+<p class="try-task"><strong>Experimente (com <code>-O2</code>):</strong> o mesmo código. Compare a última linha com a da caixa de cima.</p>
+<pre class="script">#include &lt;limits.h&gt;
+#include &lt;stdio.h&gt;
+
+int cabe_mais_um(int x) {
+    return x + 1 &gt; x;
+}
+
+int main(void) {
+    int x = INT_MAX;
+    printf("INT_MAX + 1 = %d\n", x + 1);
+    printf("cabe mais um? %d\n", cabe_mais_um(x));
+    return 0;
+}
+</pre>
+</div>
+
+<p>No editor, sem otimização, o Clang faz a conta de verdade: <code>-2147483648 &gt; 2147483647</code> é falso, e sai <code>cabe mais um? 0</code>. Com <code>-O2</code>, ele faz o mesmo raciocínio do gcc e sai <code>1</code>. Três compilações, duas respostas, nenhum erro.</p>
+
+<p>Pode ficar pior. Este laço dobra <code>i</code> até ele estourar e ficar negativo:</p>
+
+<pre class="file" data-file="laco.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int passos = 0;
+    for (int i = 1; i &gt; 0; i *= 2) {
+        passos++;
+    }
+    printf("Passos: %d\n", passos);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra laco.c -o laco
+$ ./laco
+Passos: 31
+$ gcc -std=c23 -Wall -Wextra -O2 laco.c -o laco-O2
+$ timeout 3 ./laco-O2
+$ echo $?
+124                            « o timeout teve de matar o programa: laço infinito</pre>
+
+<p>Sem otimização, depois de 31 dobras o <code>i</code> deu a volta, ficou negativo, e o laço parou. Com <code>-O2</code>, o gcc concluiu que "um número positivo dobrado continua positivo" (verdade, se não houver estouro) e <strong>apagou</strong> o teste <code>i &gt; 0</code>: o laço virou infinito. O <code>timeout 3</code> mata o programa depois de 3 segundos e devolve o código 124. No editor do guia, com <code>-O2</code>, o Clang foi por outro caminho ainda: o programa morre com <code>Falha de segmentação</code> (código 139). Um código, três comportamentos.</p>
+
+<p><strong>Como evitar:</strong> escolha um tipo em que o resultado caiba (<code>long long</code> vai até 9,2 × 10<sup>18</sup>) e confira antes de fazer contas perto do limite. Os tipos <strong>sem sinal</strong> (<code>unsigned</code>) não têm UB no estouro: o padrão manda dar a volta (<code>UINT_MAX + 1</code> vale 0). Mas uma conta que dá a volta sem você querer também é um erro, só que definido.</p>
+
+<div class="tryc" data-goal="out:Total: 3000000000">
+<p class="try-task"><strong>Missão:</strong> a lojinha da Ana vendeu R$ 1 bilhão em cada um de três meses (sonhar não custa). Rode e veja o total negativo: a soma estourou o <code>int</code>. Troque o tipo de <code>total</code> para <code>long long</code> e o formato do <code>printf</code> para <code>%lld</code>, para a saída ser <code>Total: 3000000000</code>. (No editor, <code>long</code> tem só 4 bytes e também não serve; veja <a href="sizeof.html">sizeof</a>.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int vendas[3] = {1000000000, 1000000000, 1000000000};
+    int total = 0;
+    for (int i = 0; i &lt; 3; i++) {
+        total += vendas[i];
+    }
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int vendas[3] = {1000000000, 1000000000, 1000000000};
+    long long total = 0;
+    for (int i = 0; i &lt; 3; i++) {
+        total += vendas[i];
+    }
+    printf("Total: %lld\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. <code>i = i++</code>: mudar a mesma variável duas vezes</h2>
+<p>O <code>++</code> faz duas coisas: devolve um valor <strong>e</strong> muda a variável (veja <a href="incremento.html">++ e --</a>). Se a mesma expressão muda a mesma variável duas vezes, ou muda e lê em outro pedaço, o padrão não diz em que ordem as coisas acontecem. Isso é UB.</p>
+
+<pre class="file" data-file="incr.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i = 5;
+    i = i++;
+    printf("i = %d\n", i);
+    int n = 1;
+    printf("%d %d\n", n++, n++);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra incr.c -o incr
+incr.c: In function ‘main’:
+incr.c:5:7: warning: operation on ‘i’ may be undefined [-Wsequence-point]
+    5 |     i = i++;
+      |     ~~^~~~~
+incr.c:8:29: warning: operation on ‘n’ may be undefined [-Wsequence-point]
+    8 |     printf("%d %d\n", n++, n++);
+      |                            ~^~
+$ ./incr
+i = 5
+2 1                            « o gcc calculou o segundo n++ primeiro
+$ clang -std=c23 -Wall -Wextra incr.c -o incr-clang
+incr.c:5:10: warning: multiple unsequenced modifications to 'i' [-Wunsequenced]
+    5 |     i = i++;
+      |       ~  ^
+incr.c:8:24: warning: multiple unsequenced modifications to 'n' [-Wunsequenced]
+    8 |     printf("%d %d\n", n++, n++);
+      |                        ^    ~~
+2 warnings generated.
+$ ./incr-clang
+i = 5
+1 2                            « o clang, na ordem da esquerda para a direita</pre>
+
+<p>Os dois compiladores avisaram, cada um com suas palavras: <em>operation on ‘i’ may be undefined</em> = "a operação em <code>i</code> pode ser indefinida"; <em>multiple unsequenced modifications</em> = "várias modificações sem ordem definida". E a segunda linha saiu <strong>diferente</strong>: <code>2 1</code> no gcc, <code>1 2</code> no Clang (e no editor do guia, que também é Clang).</p>
+
+<p><strong>Como evitar:</strong> uma mudança por linha. Em vez de <code>i = i++;</code> (que não faz sentido nem quando "funciona"), escreva <code>i++;</code>. Em vez de <code>printf("%d %d\n", n++, n++);</code>, faça as contas antes:</p>
+
+<pre class="file" data-file="incr-certo.c">int primeiro = n;
+int segundo = n + 1;
+n += 2;
+printf("%d %d\n", primeiro, segundo);
+</pre>
+
+<hr>
+
+<h2>5. Ponteiro solto</h2>
+<p>Um <strong>ponteiro solto</strong> (em inglês, <em>dangling pointer</em>, "ponteiro pendurado") aponta para uma memória que <strong>já não é mais sua</strong>. Usá-lo é UB. Dois jeitos clássicos de criar um:</p>
+
+<h3>Endereço de uma variável local que já morreu</h3>
+<p>As variáveis locais de uma função somem quando ela termina (veja <a href="pilha-heap.html">Pilha e Heap</a>). Devolver o endereço de uma delas entrega um endereço de uma "casa demolida":</p>
+
+<pre class="file" data-file="solto.c">#include &lt;stdio.h&gt;
+
+int *criar_contador(void) {
+    int contador = 10;
+    return &amp;contador;
+}
+
+int main(void) {
+    int *p = criar_contador();
+    printf("Contador: %d\n", *p);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra solto.c -o solto
+solto.c: In function ‘criar_contador’:
+solto.c:5:12: warning: function returns address of local variable [-Wreturn-local-addr]
+    5 |     return &amp;contador;
+      |            ^~~~~~~~~
+$ ./solto
+Falha de segmentação     (imagem do núcleo gravada) ./solto
+$ echo $?
+139</pre>
+
+<p><em>Function returns address of local variable</em> = "a função devolve o endereço de uma variável local". O gcc sabe que esse endereço não vale nada depois do <code>return</code>, então fez a função devolver um <strong>ponteiro nulo</strong> no lugar dele (dá para ver isso no código de máquina com <code>gcc -S</code>). Por isso o programa morreu com <strong>Falha de segmentação</strong> (código 139 = 128 + 11, o número do sinal <code>SIGSEGV</code>; veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>). No editor do guia, o mesmo código mostra o aviso do Clang (<code>address of stack memory associated with local variable 'contador' returned</code>) e depois imprime <code>Contador: 10</code>, como se estivesse tudo bem.</p>
+
+<h3>Memória usada depois do <code>free</code></h3>
+<pre class="file" data-file="usado.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *precos = malloc(3 * sizeof(int));
+    if (precos == NULL) {
+        return 1;
+    }
+    precos[0] = 5;
+    free(precos);
+    printf("Primeiro preço: %d\n", precos[0]);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra usado.c -o usado
+usado.c: In function ‘main’:
+usado.c:11:5: warning: pointer ‘precos’ used after ‘free’ [-Wuse-after-free]
+   11 |     printf("Primeiro preço: %d\n", precos[0]);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+usado.c:10:5: note: call to ‘free’ here
+   10 |     free(precos);
+      |     ^~~~~~~~~~~~
+$ ./usado
+Primeiro preço: -158117063     « o 5 sumiu: a memória já foi reaproveitada</pre>
+
+<p><em>Used after ‘free’</em> = "usado depois do <code>free</code>". Depois do <code>free</code>, a biblioteca pode reaproveitar aquela memória para o que quiser, e foi o que ela fez. O número muda a cada execução. No editor do guia, o mesmo código imprime <code>Primeiro preço: 5</code>, sem aviso nenhum.</p>
+
+<p><strong>Como evitar:</strong> nunca devolva o endereço de uma variável local (devolva o valor, ou use <code>malloc</code>; veja <a href="malloc-free.html">malloc e free</a>). Depois de <code>free(p);</code>, escreva <code>p = NULL;</code>: se alguém usar <code>p</code> de novo, o programa morre na hora, no lugar certo, em vez de ler lixo em silêncio.</p>
+
+<hr>
+
+<h2>6. Deslocamento grande demais</h2>
+<p>O operador <code>&lt;&lt;</code> empurra os bits de um número para a esquerda (veja <a href="operadores-bits.html">Operadores de Bits</a>). Um <code>unsigned int</code> tem 32 bits, então só dá para deslocar de 0 a 31 posições. Deslocar 32 ou mais (ou um número negativo de posições) é UB.</p>
+
+<pre class="file" data-file="desloca.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int bits = 32;
+    unsigned int um = 1;
+    printf("1 &lt;&lt; %d = %u\n", bits, um &lt;&lt; bits);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra desloca.c -o desloca
+$ ./desloca
+1 &lt;&lt; 32 = 1                    « o processador usou só "32 resto 32" = 0 posições
+$ gcc -std=c23 -Wall -Wextra -O2 desloca.c -o desloca-O2
+$ ./desloca-O2
+1 &lt;&lt; 32 = 0                    « o compilador fez a conta antes e "empurrou tudo para fora"</pre>
+
+<p>Sem otimização, o deslocamento foi feito pelo processador, que só olha os 5 últimos bits do 32 (ou seja, desloca 0 posições) e devolve 1. Com <code>-O2</code>, o próprio gcc calculou a conta na hora de compilar e deu 0. No editor do guia acontece igual: <code>1</code> sem otimização, <code>0</code> com <code>-O2</code>. E nenhum dos dois compiladores avisou, porque <code>bits</code> é uma variável.</p>
+
+<p><strong>Como evitar:</strong> confira o tamanho antes (<code>if (bits &lt; 32)</code>) ou use um tipo maior (<code>uint64_t</code>, de <a href="stdint.html">stdint.h</a>, aceita até 63).</p>
+
+<hr>
+
+<h2>Por que o C tem comportamento indefinido?</h2>
+<p>Parece um defeito, e de certo modo é. Mas foi uma escolha, por três motivos:</p>
+<ol class="passo">
+  <li><strong>Velocidade.</strong> Conferir cada índice, cada conta e cada ponteiro custa tempo. O C deixa a conferência por sua conta e, em troca, gera um programa tão rápido quanto o processador permite. É por isso que o C roda em sistemas operacionais, jogos e aparelhos com pouca memória.</li>
+  <li><strong>Processadores diferentes.</strong> Em 1989 havia máquinas que, num estouro de <code>int</code>, davam a volta, outras que paravam o programa, outras que guardavam os números negativos de outro jeito. Em vez de obrigar todas a fazer igual (e deixar algumas mais lentas), o padrão disse: "não faça isso".</li>
+  <li><strong>Otimização.</strong> Saber que o UB "não acontece" deixa o compilador simplificar o código: apagar testes que "sempre dão verdade", trocar contas por constantes, reorganizar laços. Foi exatamente o que você viu no <code>laco.c</code>.</li>
+</ol>
+<p>O preço é que a responsabilidade é <strong>sua</strong>. A boa notícia: existem ferramentas que fazem a conferência por você enquanto você testa.</p>
+
+<hr>
+
+<h2 id="proteger">Como se proteger</h2>
+
+<h3>1. Avisos: <code>-Wall -Wextra</code> (e <code>-O2</code> de vez em quando)</h3>
+<p>O comando padrão do guia já pega muita coisa: variável sem valor, <code>i = i++</code>, endereço de variável local, uso depois do <code>free</code> (veja <a href="avisos.html">Avisos</a>). Compilar também com <code>-O2</code> mostra avisos que só a análise do otimizador encontra, como o do <code>talvez.c</code> e o do <code>fora.c</code>. Regra do guia: <strong>trate todo aviso como erro</strong>. Se quiser que o gcc trate de verdade, acrescente <code>-Werror</code>.</p>
+
+<h3>2. Sanitizers: <code>-fsanitize=undefined,address</code></h3>
+<p>Avisos olham o código <strong>antes</strong> de rodar e não pegam tudo (o <code>desloca.c</code> e o <code>laco.c</code> passaram calados). Os <strong>sanitizers</strong> ("higienizadores") fazem o contrário: acrescentam conferências ao programa, que vigiam cada operação <strong>enquanto ele roda</strong>. São dois:</p>
+<ul>
+  <li><code>-fsanitize=undefined</code> (o <strong>UBSan</strong>): estouro de inteiro com sinal, deslocamento grande, índice fora de um array de tamanho conhecido, divisão por zero…</li>
+  <li><code>-fsanitize=address</code> (o <strong>ASan</strong>): leitura ou escrita fora de um array ou de um bloco do <code>malloc</code>, uso depois do <code>free</code>, <code>free</code> duplo.</li>
+</ul>
+<p>Junte os dois e acrescente <code>-g</code>, que guarda o nome do arquivo e o número das linhas para o relatório. Veja o <code>laco.c</code> e o <code>desloca.c</code>:</p>
+
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=undefined laco.c -o laco-san
+$ ./laco-san
+laco.c:5:30: runtime error: signed integer overflow: 1073741824 * 2 cannot be represented in type 'int'
+Passos: 31
+$ gcc -std=c23 -Wall -Wextra -g -fsanitize=undefined desloca.c -o desloca-san
+$ ./desloca-san
+desloca.c:6:39: runtime error: shift exponent 32 is too large for 32-bit type 'unsigned int'
+1 &lt;&lt; 32 = 1</pre>
+
+<dl class="anatomy">
+  <dt>laco.c:5:30</dt><dd>Arquivo, linha e coluna exatos do problema.</dd>
+  <dt>runtime error</dt><dd>"Erro em tempo de execução": aconteceu enquanto o programa rodava, não ao compilar.</dd>
+  <dt>signed integer overflow: 1073741824 * 2 cannot be represented in type 'int'</dt><dd>"Estouro de inteiro com sinal: 1073741824 × 2 não cabe num <code>int</code>". Até os números da conta aparecem.</dd>
+  <dt>shift exponent 32 is too large for 32-bit type</dt><dd>"O tamanho do deslocamento, 32, é grande demais para um tipo de 32 bits".</dd>
+</dl>
+
+<p>O UBSan avisa e deixa o programa continuar. O ASan é mais bravo: no primeiro erro de memória, ele mostra um relatório e <strong>para o programa</strong>. Veja o <code>fora.c</code>, aquele da soma "certa por sorte":</p>
+
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address,undefined fora.c -o fora-san
+$ ./fora-san
+fora.c:7:22: runtime error: index 4 out of bounds for type 'int [4]'
+fora.c:7:22: runtime error: load of address 0x72640a8f0030 with insufficient space for an object of type 'int'
+0x72640a8f0030: note: pointer points here
+ 09 00 00 00  00 00 00 00 00 00 00 00  00 80 8e 0a 64 72 00 00  00 00 00 00 00 00 00 00  00 00 00 00
+              ^
+=================================================================
+==34762==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x72640a8f0030 at pc 0x59b429016554 bp 0x7ffdae8321d0 sp 0x7ffdae8321c0
+READ of size 4 at 0x72640a8f0030 thread T0
+    #0 0x59b429016553 in main /home/ana/c/ub/fora.c:7
+    #1 0x76640ce2a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #2 0x76640ce2a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #3 0x59b429016204 in _start (/home/ana/c/ub/fora-san+0x1204) (BuildId: 08a9be074c613b3a7c8f96ae0799dcaea7be8e21)
+
+Address 0x72640a8f0030 is located in stack of thread T0 at offset 48 in frame
+    #0 0x59b4290162d8 in main /home/ana/c/ub/fora.c:3
+
+  This frame has 1 object(s):
+    [32, 48) 'notas' (line 4) &lt;== Memory access at offset 48 overflows this variable
+HINT: this may be a false positive if your program uses some custom stack unwind mechanism, swapcontext or vfork
+      (longjmp and C++ exceptions *are* supported)
+SUMMARY: AddressSanitizer: stack-buffer-overflow /home/ana/c/ub/fora.c:7 in main
+Shadow bytes around the buggy address:
+…                              « mais umas 30 linhas com o mapa da memória</pre>
+
+<p>Parece muito, mas você só precisa de três linhas:</p>
+<dl class="anatomy">
+  <dt>index 4 out of bounds for type 'int [4]'</dt><dd>(do UBSan) "Índice 4 fora dos limites do tipo <code>int[4]</code>". Já diz tudo.</dd>
+  <dt>stack-buffer-overflow … READ of size 4</dt><dd>(do ASan) "Estouro de um array na pilha: leitura de 4 bytes" (um <code>int</code>).</dd>
+  <dt>#0 … in main /home/ana/c/ub/fora.c:7</dt><dd>Onde: a função <code>main</code>, linha 7 do <code>fora.c</code>. O <code>#0</code> é sempre o lugar do erro; as linhas <code>#1</code>, <code>#2</code> são quem chamou quem.</dd>
+  <dt>'notas' (line 4) &lt;== Memory access at offset 48 overflows this variable</dt><dd>"O acesso passou do fim desta variável": o array <code>notas</code>, criado na linha 4.</dd>
+</dl>
+
+<p>O uso depois do <code>free</code> também é pego, e o relatório mostra <strong>três</strong> lugares: onde a memória foi usada, onde foi liberada e onde foi reservada:</p>
+
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address usado.c -o usado-san
+usado.c: In function ‘main’:
+usado.c:11:5: warning: pointer ‘precos’ used after ‘free’ [-Wuse-after-free]
+   11 |     printf("Primeiro preço: %d\n", precos[0]);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+usado.c:10:5: note: call to ‘free’ here
+   10 |     free(precos);
+      |     ^~~~~~~~~~~~
+$ ./usado-san
+=================================================================
+==34781==ERROR: AddressSanitizer: heap-use-after-free on address 0x7963053e0010 at pc 0x652e7a1af2f8 bp 0x7ffde9e17c00 sp 0x7ffde9e17bf0
+READ of size 4 at 0x7963053e0010 thread T0
+    #0 0x652e7a1af2f7 in main /home/ana/c/ub/usado.c:11      « usou aqui
+…
+freed by thread T0 here:
+    #0 0x7d430652a3ff in free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:51
+    #1 0x652e7a1af2c0 in main /home/ana/c/ub/usado.c:10      « liberou aqui
+…
+previously allocated by thread T0 here:
+    #0 0x7d430652b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x652e7a1af25e in main /home/ana/c/ub/usado.c:5       « reservou aqui
+…
+SUMMARY: AddressSanitizer: heap-use-after-free /home/ana/c/ub/usado.c:11 in main</pre>
+
+<p><em>Heap-use-after-free</em> = "uso, depois do <code>free</code>, de memória do heap". Os <code>…</code> marcam linhas que tiramos para caber na tela (as do sistema, iguais em todo relatório). Os sanitizers têm aula própria: <a href="sanitizers.html">Sanitizers</a>. Outra ferramenta que pega erros de memória, sem recompilar, é o <a href="valgrind.html">Valgrind</a>.</p>
+
+<div class="tip">
+<strong>Quando usar cada coisa</strong>
+<p>Enquanto escreve e testa: <code>gcc -std=c23 -Wall -Wextra -g -fsanitize=undefined,address</code>. O programa fica umas duas vezes mais lento e gasta mais memória, mas avisa na hora, na linha certa. Para entregar a versão final: tire os sanitizers e use <code>-O2</code>. Um programa sem UB dá a mesma resposta nos dois jeitos; se a resposta muda, é sinal de UB escondido.</p>
+</div>
+
+<div class="note">
+<strong>E no editor do guia?</strong>
+<p>Os sanitizers não existem no editor. Com <code>-fsanitize=undefined</code>, a compilação falha na ligação: <code>wasm-ld: error: … undefined symbol: __ubsan_handle_add_overflow</code> ("símbolo não definido"), porque a biblioteca do UBSan não foi feita para WebAssembly. Use-os no seu computador (veja <a href="instalar-linux.html">Instalar no Linux</a>).</p>
+</div>
+
+<hr>
+
+<h2>Indefinido, definido pela implementação e não especificado</h2>
+<p>O padrão tem três graus de "não sei dizer exatamente". Só o primeiro é proibido:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nome</th><th>O que o padrão diz</th><th>Exemplos</th><th>Pode usar?</th></tr>
+<tr><td><strong>Comportamento indefinido</strong> (<em>undefined</em>)</td><td>"Não prometo nada."</td><td>Índice fora, estouro de <code>int</code>, variável sem valor, <code>i = i++</code></td><td>Nunca</td></tr>
+<tr><td><strong>Definido pela implementação</strong> (<em>implementation-defined</em>)</td><td>"Cada compilador escolhe, mas tem de escolher uma coisa só e <strong>escrever no manual</strong>."</td><td><code>sizeof(long)</code>, se <code>char</code> tem sinal, <code>-8 &gt;&gt; 1</code></td><td>Sim, sabendo que muda de máquina para máquina</td></tr>
+<tr><td><strong>Não especificado</strong> (<em>unspecified</em>)</td><td>"Há algumas opções certas; o compilador escolhe qualquer uma, e nem precisa avisar qual."</td><td>A ordem em que os argumentos de uma função são calculados</td><td>Sim, desde que o resultado não dependa da escolha</td></tr>
+</table>
+</div>
+
+<h3>Definido pela implementação</h3>
+<pre class="file" data-file="impl.c">#include &lt;limits.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("sizeof(int)  = %zu\n", sizeof(int));
+    printf("sizeof(long) = %zu\n", sizeof(long));
+    printf("LONG_MAX     = %ld\n", LONG_MAX);
+    printf("char vai de %d a %d\n", CHAR_MIN, CHAR_MAX);
+    printf("-8 &gt;&gt; 1      = %d\n", -8 &gt;&gt; 1);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra impl.c -o impl
+$ ./impl
+sizeof(int)  = 4
+sizeof(long) = 8
+LONG_MAX     = 9223372036854775807
+char vai de -128 a 127
+-8 &gt;&gt; 1      = -4</pre>
+
+<p>Nada disso é erro, e cada resposta é sempre a mesma <strong>neste</strong> compilador, nesta máquina. Mas mude de máquina e muda a resposta. Rode no editor do guia, que é uma máquina de 32 bits:</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e compare com a saída do gcc acima. Quais linhas mudaram?</p>
+<pre class="script">#include &lt;limits.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("sizeof(int)  = %zu\n", sizeof(int));
+    printf("sizeof(long) = %zu\n", sizeof(long));
+    printf("LONG_MAX     = %ld\n", LONG_MAX);
+    printf("char vai de %d a %d\n", CHAR_MIN, CHAR_MAX);
+    printf("-8 &gt;&gt; 1      = %d\n", -8 &gt;&gt; 1);
+    return 0;
+}
+</pre>
+</div>
+
+<p>No editor, <code>sizeof(long)</code> dá <code>4</code> e <code>LONG_MAX</code> dá <code>2147483647</code>. O resto é igual. É por isso que o guia usa <code>long long</code> (pelo menos 64 bits em qualquer lugar) ou os tipos de <a href="stdint.html">stdint.h</a> (<code>int64_t</code>, exatamente 64 bits) quando o tamanho importa.</p>
+
+<h3>Não especificado</h3>
+<pre class="file" data-file="ordem.c">#include &lt;stdio.h&gt;
+
+int mostra(const char *nome, int valor) {
+    printf("calculando %s\n", nome);
+    return valor;
+}
+
+int main(void) {
+    printf("soma = %d\n", mostra("a", 1) + mostra("b", 2));
+    printf("%d %d\n", mostra("primeiro", 1), mostra("segundo", 2));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ub">$ gcc -std=c23 -Wall -Wextra ordem.c -o ordem
+$ ./ordem
+calculando a
+calculando b
+soma = 3
+calculando segundo             « o gcc calculou o 2º argumento antes do 1º
+calculando primeiro
+1 2
+$ clang -std=c23 -Wall -Wextra ordem.c -o ordem-clang
+$ ./ordem-clang
+calculando a
+calculando b
+soma = 3
+calculando primeiro            « o clang, da esquerda para a direita
+calculando segundo
+1 2</pre>
+
+<p>O padrão não diz qual argumento é calculado primeiro, e cada compilador escolheu um jeito. Isso <strong>não é</strong> UB: as duas respostas finais (<code>soma = 3</code> e <code>1 2</code>) estão certas e iguais. O problema só aparece quando o resultado <strong>depende</strong> da ordem, como no <code>printf("%d %d\n", n++, n++)</code> da seção 4. Aí a mistura de "ordem não especificada" com "mudar a mesma variável duas vezes" vira UB.</p>
+
+<p><strong>Regra prática:</strong> se a ordem importa, faça cada cálculo numa linha, guarde em variáveis e só depois use.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Funciona com <code>-O0</code> e quebra com <code>-O2</code> (ou o contrário)</strong>
+<p><strong>O que significa:</strong> quase sempre há UB no programa. O otimizador não "estragou" nada: ele confiou no contrato, e o seu código quebrou o contrato.</p>
+<p><strong>Como consertar:</strong> compile com <code>-g -fsanitize=undefined,address</code>, rode de novo com as mesmas entradas e leia a primeira linha <code>runtime error</code> ou <code>ERROR: AddressSanitizer</code>. Ela aponta a linha.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘x’ is used uninitialized</code> (gcc) / <code>variable 'x' is uninitialized when used here</code> (clang)</strong>
+<p><strong>O que significa:</strong> o programa lê uma variável antes de dar valor a ela. O valor lido é lixo.</p>
+<p><strong>Como consertar:</strong> dê um valor na declaração apontada pela <code>note: ‘x’ was declared here</code>: <code>int x = 0;</code>. Lembre que o gcc só vê alguns casos com <code>-O2</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: iteration 4 invokes undefined behavior</code></strong>
+<p><strong>O que significa:</strong> o otimizador descobriu que, em alguma volta do laço, o código faz UB (quase sempre um índice que passa do fim do array).</p>
+<p><strong>Como consertar:</strong> olhe a condição apontada por <code>note: within this loop</code>. Troque <code>i &lt;= N</code> por <code>i &lt; N</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: operation on ‘i’ may be undefined [-Wsequence-point]</code></strong>
+<p><strong>O que significa:</strong> a mesma expressão muda <code>i</code> duas vezes (ou muda e lê em outro pedaço), como em <code>i = i++</code> ou <code>f(i++, i)</code>. No Clang: <code>multiple unsequenced modifications to 'i'</code>.</p>
+<p><strong>Como consertar:</strong> separe em linhas: uma mudança por linha.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: function returns address of local variable</code></strong>
+<p><strong>O que significa:</strong> a função devolve <code>&amp;variavel_local</code>, que deixa de existir no <code>return</code>. Com o gcc, o resultado vira um ponteiro nulo e o programa morre com <code>Falha de segmentação</code>.</p>
+<p><strong>Como consertar:</strong> devolva o <strong>valor</strong> (<code>int</code> em vez de <code>int *</code>), receba um ponteiro para onde guardar o resultado (veja <a href="passagem-ponteiro.html">Passar por Ponteiro</a>) ou reserve com <code>malloc</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>runtime error: signed integer overflow: … cannot be represented in type 'int'</code></strong>
+<p><strong>O que significa:</strong> (do <code>-fsanitize=undefined</code>) uma conta passou do maior (ou do menor) valor do tipo.</p>
+<p><strong>Como consertar:</strong> use um tipo maior (<code>long long</code>, <code>int64_t</code>) ou confira antes da conta: <code>if (x &gt; INT_MAX - y)</code> quer dizer que <code>x + y</code> não cabe.</p>
+</div>
+
+<div class="cenario">
+<strong><code>ERROR: AddressSanitizer: stack-buffer-overflow</code> / <code>heap-buffer-overflow</code> / <code>heap-use-after-free</code></strong>
+<p><strong>O que significa:</strong> (do <code>-fsanitize=address</code>) leitura ou escrita fora de um array local (<em>stack</em>, pilha), fora de um bloco do <code>malloc</code> (<em>heap</em>) ou num bloco já liberado.</p>
+<p><strong>Como consertar:</strong> vá para a linha <code>#0 … arquivo.c:N</code> do primeiro bloco. Confira o índice (<code>&lt;</code> e não <code>&lt;=</code>), o tamanho pedido ao <code>malloc</code> ou se o <code>free</code> veio cedo demais.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>UB</th><th>Exemplo</th><th>Quem pega</th><th>Como evitar</th></tr>
+<tr><td>Variável sem valor</td><td><code>int x; printf("%d", x);</code></td><td><code>-Wall</code> (alguns casos só com <code>-O2</code>)</td><td><code>int x = 0;</code></td></tr>
+<tr><td>Índice fora do array</td><td><code>notas[4]</code> num <code>int notas[4]</code></td><td><code>-fsanitize=address</code>, às vezes <code>-O2</code></td><td><code>i &lt; tamanho</code></td></tr>
+<tr><td>Estouro de inteiro com sinal</td><td><code>INT_MAX + 1</code></td><td><code>-fsanitize=undefined</code></td><td>Tipo maior; conferir antes</td></tr>
+<tr><td>Mudar a variável duas vezes</td><td><code>i = i++;</code></td><td><code>-Wall</code> (<code>-Wsequence-point</code>)</td><td>Uma mudança por linha</td></tr>
+<tr><td>Endereço de local que morreu</td><td><code>return &amp;local;</code></td><td><code>-Wall</code> (<code>-Wreturn-local-addr</code>)</td><td>Devolver o valor ou usar <code>malloc</code></td></tr>
+<tr><td>Uso depois do <code>free</code></td><td><code>free(p); p[0];</code></td><td><code>-Wall</code> (casos simples), <code>-fsanitize=address</code></td><td><code>p = NULL;</code> logo depois do <code>free</code></td></tr>
+<tr><td>Ponteiro nulo</td><td><code>int *p = NULL; *p = 1;</code></td><td>O sistema (Falha de segmentação)</td><td>Conferir <code>if (p != NULL)</code></td></tr>
+<tr><td>Deslocamento grande</td><td><code>1u &lt;&lt; 32</code></td><td><code>-fsanitize=undefined</code></td><td><code>bits &lt; 32</code>, ou <code>uint64_t</code></td></tr>
+<tr><td>Divisão inteira por zero</td><td><code>x / 0</code></td><td>O sistema (Exceção de ponto flutuante)</td><td>Conferir o divisor</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A condição certa</h3>
+<p>Complete a condição para o laço percorrer as 5 posições de <code>int v[5]</code> sem passar do fim:</p>
+<div class="ex-code">for (int i = 0; i <input data-answer="&lt; 5|&lt;5" aria-label="condição">; i++)</div>
+</div>
+
+<div class="exercise">
+<h3>2. O sanitizer de UB</h3>
+<p>Complete a opção do gcc que confere estouro de <code>int</code> e deslocamento grande enquanto o programa roda:</p>
+<div class="ex-code">gcc -g <input data-answer="-fsanitize=undefined" aria-label="opção"> conta.c -o conta</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Um programa mostra a resposta certa com <code>-O0</code> e uma resposta errada com <code>-O2</code>. O que é mais provável?</p>
+<label><input type="radio" name="q3"> Um defeito no gcc</label>
+<label><input type="radio" name="q3"> O <code>-O2</code> deixa as contas menos precisas</label>
+<label><input type="radio" name="q3"> O programa tem comportamento indefinido, e o otimizador confiou que ele não acontecia</label>
+<label><input type="radio" name="q3"> O computador estava sem memória</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual destas linhas tem comportamento indefinido (supondo <code>int x = INT_MAX;</code> e <code>unsigned int u = UINT_MAX;</code>)?</p>
+<label><input type="radio" name="q4"> <code>u = u + 1;</code></label>
+<label><input type="radio" name="q4"> <code>x = x + 1;</code></label>
+<label><input type="radio" name="q4"> <code>x = x - 1;</code></label>
+<label><input type="radio" name="q4"> <code>u = u - 1;</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. <code>sizeof(long)</code> dá 8 no gcc do laboratório e 4 no editor do guia. Isso é:</p>
+<label><input type="radio" name="q5"> Comportamento indefinido</label>
+<label><input type="radio" name="q5"> Um erro do editor</label>
+<label><input type="radio" name="q5"> Não especificado</label>
+<label><input type="radio" name="q5"> Definido pela implementação: cada compilador escolhe e documenta</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Um programa com um índice fora do array deu a resposta certa em todos os seus testes. O que se pode concluir?</p>
+<label><input type="radio" name="q6"> Nada: com UB, a resposta certa pode ser sorte, e o erro precisa ser corrigido</label>
+<label><input type="radio" name="q6"> Que o programa está correto</label>
+<label><input type="radio" name="q6"> Que o C confere o índice sozinho</label>
+<label><input type="radio" name="q6"> Que o erro só aparece no Windows</label>
+</div>
+
+<h3>Missão final: a média das notas</h3>
+<div class="tryc" data-goal="semaviso,out:Média: 7.5,src:i\s*&lt;\s*4\b">
+<p class="try-task"><strong>Missão:</strong> o programa da Ana calcula a média de 4 notas, mas tem <strong>dois</strong> comportamentos indefinidos: uma variável sem valor inicial e um laço que passa do fim do array. Conserte os dois: o compilador não pode dar nenhum aviso, o laço tem de usar <code>i &lt; 4</code> e a saída tem de ser <code>Média: 7.5</code>. (No editor, o laço errado pode até dar a média certa, por sorte; por isso a missão confere o código também.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    int soma;
+    for (int i = 0; i &lt;= 4; i++) {
+        soma += notas[i];
+    }
+    printf("Média: %.1f\n", soma / 4.0);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 8, 6, 9};
+    int soma = 0;
+    for (int i = 0; i &lt; 4; i++) {
+        soma += notas[i];
+    }
+    printf("Média: %.1f\n", soma / 4.0);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Comportamento indefinido (UB)</strong> é o que o padrão proíbe sem dizer o que acontece. O compilador supõe que nunca acontece; se acontece, o resultado pode ser qualquer coisa, inclusive a resposta certa por sorte.</li>
+  <li>Casos clássicos: variável sem valor, índice fora do array, estouro de <code>int</code> com sinal, <code>i = i++</code>, ponteiro solto (local que morreu, uso depois do <code>free</code>), ponteiro nulo e deslocamento de 32 bits ou mais.</li>
+  <li>O mesmo programa pode mudar com <code>-O0</code> e <code>-O2</code>, com gcc e Clang, no laboratório e no editor do guia: o <code>laco.c</code> parou, travou e caiu, conforme a compilação.</li>
+  <li>Proteja-se: <code>-Wall -Wextra</code> sempre, <code>-O2</code> de vez em quando para ver mais avisos, e <code>-g -fsanitize=undefined,address</code> enquanto testa (no seu computador; o editor não tem sanitizers).</li>
+  <li><strong>Definido pela implementação</strong> (<code>sizeof(long)</code>) muda de máquina para máquina, mas é documentado; <strong>não especificado</strong> (a ordem dos argumentos) tem várias respostas certas. Só o indefinido é proibido.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
