@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Funções — criar, chamar e organizar o código | Guia C</title>
+<meta name="description" content="Funções em C para quem nunca programou: por que usar, como definir e chamar, o tipo void, a diferença entre () e (void) que mudou no C23, onde a função fica no arquivo e os erros reais do gcc 15 (too many arguments, void value not ignored, redefinition), com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Funções</span></h1>
+
+<p class="intro">Até aqui, todo o seu código morava dentro do <code>main</code>. Isso funciona para programas pequenos, mas logo o <code>main</code> vira uma parede de linhas repetidas. Uma <strong>função</strong> é um pedaço de código com <strong>nome</strong>: você escreve uma vez e usa quantas vezes quiser, só chamando o nome. Nesta aula você vai criar suas primeiras funções, entender o que significa o <code>void</code>, descobrir por que <code>()</code> e <code>(void)</code> eram coisas diferentes até o C23 e ler os erros que o compilador mostra quando algo sai do lugar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma função e por que ela deixa o programa mais curto e mais fácil de consertar.</li>
+  <li>Como <strong>definir</strong> uma função (escrever) e como <strong>chamar</strong> (usar).</li>
+  <li>Em que ordem as linhas rodam quando o programa entra e sai de uma função.</li>
+  <li>O que o <code>void</code> quer dizer antes do nome e dentro dos parênteses.</li>
+  <li>A diferença entre <code>void f()</code> e <code>void f(void)</code>, e o que mudou no <span class="versao">C23</span>.</li>
+  <li>Onde a função fica no arquivo, e por que função dentro de função não é C padrão.</li>
+  <li>Os erros mais comuns: <code>too many arguments</code>, <code>void value not ignored</code>, <code>redefinition</code> e o parêntese esquecido.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> (cada opção é explicada em <a href="compilar.html">Compilar com gcc</a>). Você pode repetir cada um no editor do guia, que compila C de verdade no navegador.</p>
+
+<hr>
+
+<h2>A ideia: uma receita com nome</h2>
+<p>Pense no caderno de receitas da avó da Ana. Lá está escrito, uma vez só, como fazer a <strong>massa básica</strong>. Depois, a receita de pizza diz apenas "faça a massa básica", e a de pão de queijo também. Ninguém copia o passo a passo da massa em cada receita: basta citar o <strong>nome</strong>.</p>
+
+<p>Em C é igual:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No caderno de receitas</th><th>Em C</th><th>Nome técnico</th></tr>
+<tr><td>Escrever, uma vez, como se faz a massa básica</td><td>Escrever o código da função, com nome e corpo</td><td><strong>definir</strong> a função</td></tr>
+<tr><td>"Agora, faça a massa básica"</td><td>Escrever o nome da função seguido de <code>()</code></td><td><strong>chamar</strong> a função</td></tr>
+<tr><td>Voltar para a receita da pizza e continuar</td><td>O programa volta para a linha seguinte à chamada</td><td><strong>retornar</strong></td></tr>
+</table>
+</div>
+
+<p>Você já usa funções desde a primeira aula, só que escritas por outras pessoas: <code>printf</code> é uma função da biblioteca do C, e o próprio <code>main</code> é uma função, a que o sistema chama quando o programa começa. Agora você vai escrever as suas.</p>
+
+<hr>
+
+<h2>1. Criar e chamar uma função</h2>
+<p>A loja da Ana abre e cumprimenta cada cliente com a mesma frase. Vamos colocar a frase numa função chamada <code>cumprimentar</code>:</p>
+
+<pre class="file" data-file="ola.c">#include &lt;stdio.h&gt;
+
+void cumprimentar(void) {
+    printf("Olá! Bem-vindo à lojinha da Ana.\n");
+}
+
+int main(void) {
+    printf("Abrindo a loja...\n");
+    cumprimentar();
+    cumprimentar();
+    printf("Fim.\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>void cumprimentar(void) { … }</dt><dd>A <strong>definição</strong> da função: diz o nome e o que ela faz. Fica <strong>fora</strong> do <code>main</code>, antes dele.</dd>
+  <dt>void (antes do nome)</dt><dd>"Vazio": a função <strong>não devolve</strong> nenhum valor para quem a chamou. Ela só faz uma coisa (aqui, escrever na tela) e termina. Funções que devolvem um resultado ficam para <a href="retorno.html">Valor de Retorno</a>.</dd>
+  <dt>cumprimentar</dt><dd>O <strong>nome</strong>. Segue as mesmas regras dos nomes de variáveis (<a href="identificadores.html">Nomes de Variáveis</a>): letras, números e <code>_</code>, sem acento, sem começar com número. Use um verbo que diga o que a função faz.</dd>
+  <dt>(void) (dentro dos parênteses)</dt><dd>A função <strong>não recebe</strong> nenhuma informação. Funções que recebem valores ficam para <a href="parametros.html">Parâmetros</a>.</dd>
+  <dt>{ … }</dt><dd>O <strong>corpo</strong>: as linhas que rodam cada vez que a função é chamada.</dd>
+  <dt>cumprimentar();</dt><dd>A <strong>chamada</strong>: "rode agora o corpo de <code>cumprimentar</code>". Os parênteses são obrigatórios, mesmo vazios, e o <code>;</code> termina o comando, como qualquer outro.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ola.c -o ola
+$ ./ola
+Abrindo a loja...
+Olá! Bem-vindo à lojinha da Ana.
+Olá! Bem-vindo à lojinha da Ana.
+Fim.</pre>
+
+<p>A frase aparece duas vezes, porque a função foi chamada duas vezes. O texto dela, porém, está escrito <strong>uma vez só</strong> no código.</p>
+
+<h3>Em que ordem as linhas rodam</h3>
+<p>O programa sempre começa pelo <code>main</code>, mesmo que a função esteja escrita antes dele no arquivo. Definir uma função não a executa: é como escrever a receita no caderno sem cozinhar nada. Ela só roda quando alguém a chama.</p>
+<ol class="passo">
+  <li>O <code>main</code> começa e mostra <code>Abrindo a loja...</code>.</li>
+  <li>A linha <code>cumprimentar();</code> faz o programa <strong>pular</strong> para dentro da função e rodar o corpo: aparece a frase de boas-vindas.</li>
+  <li>Ao chegar no <code>}</code> da função, o programa <strong>volta</strong> para o <code>main</code>, logo depois da chamada.</li>
+  <li>A segunda chamada repete a viagem: pula, mostra a frase, volta.</li>
+  <li>O <code>main</code> mostra <code>Fim.</code> e termina com <code>return 0;</code>.</li>
+</ol>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode o programa. Depois chame <code>cumprimentar();</code> uma terceira vez, antes do <code>Fim.</code>. Por último, mude o texto dentro da função e rode de novo: as três frases mudam juntas.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void cumprimentar(void) {
+    printf("Olá! Bem-vindo à lojinha da Ana.\n");
+}
+
+int main(void) {
+    printf("Abrindo a loja...\n");
+    cumprimentar();
+    cumprimentar();
+    printf("Fim.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Por que usar funções</h2>
+<p>A Ana imprime um recibo para cada venda. Sem funções, a linha de <code>=</code> aparece repetida quatro vezes:</p>
+
+<pre class="file" data-file="recibo1.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("==============================\n");
+    printf("   LOJINHA DA ANA\n");
+    printf("==============================\n");
+    printf("Caderno ......... R$ 12,50\n");
+    printf("Caneta .......... R$  3,00\n");
+    printf("==============================\n");
+    printf("Total ........... R$ 15,50\n");
+    printf("==============================\n");
+    return 0;
+}
+</pre>
+
+<p>Com uma função <code>linha</code>, o desenho da linha fica num lugar só:</p>
+
+<pre class="file" data-file="recibo2.c">#include &lt;stdio.h&gt;
+
+void linha(void) {
+    printf("==============================\n");
+}
+
+int main(void) {
+    linha();
+    printf("   LOJINHA DA ANA\n");
+    linha();
+    printf("Caderno ......... R$ 12,50\n");
+    printf("Caneta .......... R$  3,00\n");
+    linha();
+    printf("Total ........... R$ 15,50\n");
+    linha();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra recibo2.c -o recibo2
+$ ./recibo2
+==============================
+   LOJINHA DA ANA
+==============================
+Caderno ......... R$ 12,50
+Caneta .......... R$  3,00
+==============================
+Total ........... R$ 15,50
+==============================</pre>
+
+<p>A saída é idêntica à do <code>recibo1.c</code>. Então, o que ganhamos?</p>
+<ul>
+  <li><strong>Consertar num lugar só.</strong> Se a Ana quiser a linha com <code>-</code> em vez de <code>=</code>, muda uma linha, e não quatro. Com o código copiado, é fácil esquecer uma das cópias.</li>
+  <li><strong>Ler como uma frase.</strong> <code>linha();</code> diz <em>o que</em> acontece; quem lê não precisa contar sinais de igual.</li>
+  <li><strong>Dividir o problema.</strong> Um programa grande vira várias funções pequenas, cada uma com uma tarefa. Fica mais fácil pensar, testar e achar erros em cada pedaço.</li>
+  <li><strong>Reaproveitar.</strong> Uma função boa pode ir para outro programa (em <a href="headers.html">Arquivos .h e .c</a> você vai ver como guardar funções num arquivo separado).</li>
+</ul>
+
+<h3>Uma função pode chamar outra</h3>
+<p>O corpo de uma função pode chamar outras funções. Aqui, <code>cabecalho</code> usa <code>linha</code>:</p>
+
+<pre class="file" data-file="chama.c">#include &lt;stdio.h&gt;
+
+void linha(void) {
+    printf("==============================\n");
+}
+
+void cabecalho(void) {
+    linha();
+    printf("   LOJINHA DA ANA\n");
+    linha();
+}
+
+int main(void) {
+    cabecalho();
+    printf("Caderno ......... R$ 12,50\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra chama.c -o chama
+$ ./chama
+==============================
+   LOJINHA DA ANA
+==============================
+Caderno ......... R$ 12,50</pre>
+
+<p>O caminho foi: <code>main</code> chama <code>cabecalho</code>, que chama <code>linha</code>, que volta para <code>cabecalho</code>, que mostra o nome da loja, chama <code>linha</code> de novo, e só então volta para o <code>main</code>. Cada função lembra de onde foi chamada e volta exatamente para lá. Repare que <code>linha</code> está escrita <strong>acima</strong> de <code>cabecalho</code>: a seção 4 explica por quê.</p>
+
+<hr>
+
+<h2>3. O <code>void</code> e os parênteses</h2>
+<p>A primeira linha de uma função (antes da <code>{</code>) se chama <strong>cabeçalho</strong> ou <strong>assinatura</strong>. Ela tem três partes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Em <code>void linha(void)</code></th><th>Pergunta que responde</th><th>Aula</th></tr>
+<tr><td>Tipo de retorno</td><td><code>void</code></td><td>O que a função <strong>devolve</strong> quando termina?</td><td><a href="retorno.html">Valor de Retorno</a></td></tr>
+<tr><td>Nome</td><td><code>linha</code></td><td>Como ela é chamada?</td><td>esta</td></tr>
+<tr><td>Lista de parâmetros</td><td><code>(void)</code></td><td>O que ela <strong>recebe</strong> para trabalhar?</td><td><a href="parametros.html">Parâmetros</a></td></tr>
+</table>
+</div>
+
+<p>Só para você reconhecer quando encontrar (as próximas aulas explicam com calma), uma função que recebe um número e devolve outro tem esta cara:</p>
+
+<pre class="file" data-file="trecho.c">int dobro(int n) {      // recebe um int (n) e devolve um int
+    return n * 2;
+}
+</pre>
+
+<p>Nesta aula, todas as funções são <code>void</code> e <code>(void)</code>: não recebem nada e não devolvem nada. Por isso, usar o "resultado" de uma delas é erro:</p>
+
+<pre class="file" data-file="usarvoid.c">#include &lt;stdio.h&gt;
+
+void linha(void) {
+    printf("----------\n");
+}
+
+int main(void) {
+    int x = linha();
+    printf("%d\n", x);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra usarvoid.c -o usarvoid
+usarvoid.c: In function ‘main’:
+usarvoid.c:8:13: error: void value not ignored as it ought to be
+    8 |     int x = linha();
+      |             ^~~~~</pre>
+
+<p><em>Void value not ignored as it ought to be</em> = "valor vazio não foi ignorado, como deveria ser". A função não devolve nada, então não há o que guardar em <code>x</code>. O Clang, no editor, diz <code>initializing 'int' with an expression of incompatible type 'void'</code> ("inicializando um <code>int</code> com uma expressão de tipo incompatível, <code>void</code>").</p>
+
+<h3><code>()</code> × <code>(void)</code>: uma diferença que o C23 apagou</h3>
+<p>Você vai encontrar muito código (e muitos cursos) escrito assim, com os parênteses vazios:</p>
+
+<pre class="file" data-file="vazio.c">#include &lt;stdio.h&gt;
+
+void linha() {
+    printf("----------\n");
+}
+
+int main(void) {
+    linha();
+    linha(5);
+    return 0;
+}
+</pre>
+
+<p>Repare na linha 9: <code>linha(5)</code> passa um número para uma função que não usa número nenhum. É um engano. O que acontece depende da <strong>versão</strong> do C:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra vazio.c -o vazio
+vazio.c: In function ‘main’:
+vazio.c:9:5: error: too many arguments to function ‘linha’; expected 0, have 1
+    9 |     linha(5);
+      |     ^~~~~ ~
+vazio.c:3:6: note: declared here
+    3 | void linha() {
+      |      ^~~~~
+$ gcc -std=c17 -Wall -Wextra vazio.c -o vazio      « o mesmo arquivo, no padrão C17
+$ ./vazio
+----------
+----------                      « compilou sem um único aviso, e o 5 foi ignorado</pre>
+
+<dl class="anatomy">
+  <dt>too many arguments to function ‘linha’</dt><dd>"Argumentos demais para a função <code>linha</code>". <strong>Argumento</strong> é o valor que vai entre os parênteses na chamada.</dd>
+  <dt>expected 0, have 1</dt><dd>"Esperava 0, recebeu 1".</dd>
+  <dt>note: declared here</dt><dd>"Declarada aqui": o compilador mostra o cabeçalho da função, para você comparar.</dd>
+</dl>
+
+<p>Por que o C17 aceitou? Por causa de uma regra que vem do C de 1978 (o "K&amp;R C", veja <a href="versoes.html">Versões do C</a>):</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Cabeçalho</th><th>Até o C17 significa</th><th>No C23 significa</th></tr>
+<tr><td><code>void linha()</code></td><td>"não estou dizendo quais parâmetros ela tem": o compilador aceita <strong>qualquer</strong> chamada, com qualquer número de argumentos, sem conferir</td><td>"não recebe nada" (igual a <code>(void)</code>)</td></tr>
+<tr><td><code>void linha(void)</code></td><td>"não recebe nada": chamar com argumento é erro</td><td>"não recebe nada"</td></tr>
+</table>
+</div>
+
+<p>O <span class="versao">C23</span> acabou com a ambiguidade: agora <code>()</code> e <code>(void)</code> querem dizer a mesma coisa. Como o gcc 15 já usa o C23 por padrão, o engano é pego. Mas se o seu código for compilado como C17 ou mais antigo (muitos projetos fazem isso), o <code>()</code> volta a esconder erros. O Clang, compilando como C17, ao menos avisa: <code>passing arguments to 'linha' without a prototype is deprecated in all versions of C and is not supported in C23</code> ("passar argumentos para <code>linha</code> sem protótipo está obsoleto em todas as versões do C e não é aceito no C23").</p>
+
+<div class="tip">
+<strong>Regra do guia: escreva <code>(void)</code></strong>
+<p>Para uma função que não recebe nada, escreva <code>void linha(void)</code> e <code>int main(void)</code>. Funciona igual em todas as versões do C, e quem lê entende na hora. O <code>(void)</code> vale só no <strong>cabeçalho</strong>; na chamada, os parênteses ficam vazios: <code>linha();</code>.</p>
+</div>
+
+<hr>
+
+<h2>4. Onde a função fica no arquivo</h2>
+<p>O compilador lê o arquivo <strong>de cima para baixo</strong>, uma vez só. Quando ele encontra <code>linha();</code>, precisa já saber que <code>linha</code> existe. Por isso, nesta aula, as funções sempre aparecem <strong>acima</strong> do <code>main</code> (e acima de quem as chama). Veja o que acontece com a ordem trocada:</p>
+
+<pre class="file" data-file="depois.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    linha();
+    return 0;
+}
+
+void linha(void) {
+    printf("----------\n");
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra depois.c -o depois
+depois.c: In function ‘main’:
+depois.c:4:5: error: implicit declaration of function ‘linha’ [-Wimplicit-function-declaration]
+    4 |     linha();
+      |     ^~~~~
+depois.c: At top level:
+depois.c:8:6: warning: conflicting types for ‘linha’; have ‘void(void)’
+    8 | void linha(void) {
+      |      ^~~~~
+depois.c:4:5: note: previous implicit declaration of ‘linha’ with type ‘void(void)’
+    4 |     linha();
+      |     ^~~~~</pre>
+
+<p><em>Implicit declaration of function ‘linha’</em> = "declaração implícita da função <code>linha</code>": na linha 4, o compilador ainda não conhecia essa função. O aviso que vem depois (<em>conflicting types</em>, "tipos em conflito") é uma consequência do primeiro erro: ao encontrar a função de verdade na linha 8, o gcc a compara com o que tinha imaginado na linha 4. Conserte o primeiro erro e os dois somem. Há dois consertos: mover a função para cima, ou escrever no topo um <strong>protótipo</strong>, uma linha que avisa "existe uma função <code>linha</code>, ela vem mais abaixo". Os protótipos têm aula própria: <a href="prototipos.html">Protótipos (Declarar Antes de Usar)</a>.</p>
+
+<h3>Função dentro de função: não é C padrão</h3>
+<p>Cada função é escrita <strong>fora</strong> das outras, lado a lado no arquivo. Uma curiosidade: o gcc aceita uma função dentro de outra, como uma <strong>extensão</strong> própria (um "extra" que só ele oferece):</p>
+
+<pre class="file" data-file="aninhada.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    void oi(void) {
+        printf("oi\n");
+    }
+    oi();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aninhada.c -o aninhada
+$ ./aninhada
+oi                              « o gcc aceitou, sem aviso
+$ gcc -std=c23 -Wall -Wextra -pedantic aninhada.c -o aninhada
+aninhada.c: In function ‘main’:
+aninhada.c:4:5: warning: ISO C forbids nested functions [-Wpedantic]
+    4 |     void oi(void) {
+      |     ^~~~</pre>
+
+<p>Com <code>-pedantic</code> ("exigente": avise tudo o que não é do padrão), o gcc confessa: <em>ISO C forbids nested functions</em>, "o C padrão (ISO) proíbe funções aninhadas". O Clang, o compilador do editor, nem compila: <code>error: function definition is not allowed here</code> ("definição de função não é permitida aqui"). Um código assim só funciona num compilador. <strong>Não use</strong>: escreva <code>oi</code> fora do <code>main</code>, acima dele.</p>
+
+<div class="tryc" data-goal="outre:^Pedido 1\n----------\nPedido 2\n----------\n$,src:void\s+separador\s*\(\s*void\s*\)">
+<p class="try-task"><strong>Missão:</strong> o programa repete <code>printf("----------\n");</code> duas vezes. Crie uma função <code>void separador(void)</code>, <strong>acima</strong> do <code>main</code>, que mostra essa linha, e troque os dois <code>printf</code> repetidos por chamadas <code>separador();</code>. A saída tem de continuar a mesma.</p>
+<pre class="out">Pedido 1
+----------
+Pedido 2
+----------</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Pedido 1\n");
+    printf("----------\n");
+    printf("Pedido 2\n");
+    printf("----------\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void separador(void) {
+    printf("----------\n");
+}
+
+int main(void) {
+    printf("Pedido 1\n");
+    separador();
+    printf("Pedido 2\n");
+    separador();
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de organizar o arquivo</h2>
+<p>Existem dois jeitos comuns de arrumar as funções num arquivo <code>.c</code>. Os dois compilam e dão o mesmo resultado:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Jeito</th><th>Como fica</th><th>Vantagem</th><th>Quando usar</th></tr>
+<tr><td>Funções primeiro, <code>main</code> no fim</td><td><code>linha</code>, depois <code>cabecalho</code>, depois <code>main</code></td><td>Simples: nada a mais para escrever</td><td>Programas de um arquivo, como os desta aula</td></tr>
+<tr><td>Protótipos no topo, <code>main</code> logo depois, funções no fim</td><td><code>void linha(void);</code> no topo; o <code>main</code>; as definições embaixo</td><td>Quem abre o arquivo vê o <code>main</code> (o "resumo" do programa) primeiro; a ordem das funções deixa de importar</td><td>Programas maiores; é o primeiro passo para os arquivos <code>.h</code> (<a href="prototipos.html">Protótipos</a>)</td></tr>
+</table>
+</div>
+
+<p>O que <strong>não</strong> existe em C: duas funções com o mesmo nome (mesmo que recebam coisas diferentes) e função dentro de função. Se você vem de outra linguagem que permite isso, a aula <a href="parametros.html">Parâmetros</a> mostra o erro.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘linha’</code></strong>
+<p><strong>O que significa:</strong> você chamou a função numa linha em que o compilador ainda não a conhecia. Ou ela está escrita mais abaixo, ou o nome está diferente (<code>Linha</code>, <code>linah</code>), ou faltou um <code>#include</code> (para <code>printf</code>, o <code>&lt;stdio.h&gt;</code>).</p>
+<p><strong>Como consertar:</strong> confira o nome letra por letra; mova a definição para cima de quem a chama ou escreva um protótipo no topo (<a href="prototipos.html">Protótipos</a>). No editor, o Clang escreve <code>use of undeclared identifier 'linha'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: too many arguments to function ‘linha’; expected 0, have 1</code></strong>
+<p><strong>O que significa:</strong> a chamada passou valores entre os parênteses, mas a função não recebe nenhum.</p>
+<p><strong>Como consertar:</strong> tire o valor da chamada (<code>linha();</code>) ou, se a função deveria mesmo receber um valor, acrescente um parâmetro (<a href="parametros.html">Parâmetros</a>). No editor: <code>too many arguments to function call, expected 0, have 1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: void value not ignored as it ought to be</code></strong>
+<p><strong>O que significa:</strong> você tentou guardar ou usar o "resultado" de uma função <code>void</code>, que não devolve nada.</p>
+<p><strong>Como consertar:</strong> chame a função sozinha na linha (<code>linha();</code>). Se você precisa de um resultado, a função tem de devolver um, com outro tipo e <code>return</code> (<a href="retorno.html">Valor de Retorno</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: statement with no effect [-Wunused-value]</code> na linha <code>linha;</code></strong>
+<p><strong>O que significa:</strong> faltaram os parênteses. Sem eles, <code>linha;</code> só cita o nome da função e não a chama: o programa compila, mas a linha não aparece. O gcc avisa que o comando "não tem efeito"; o Clang, <code>expression result unused</code> ("resultado da expressão não usado").</p>
+<p><strong>Como consertar:</strong> escreva <code>linha();</code>. Toda chamada leva parênteses, mesmo vazios.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: redefinition of ‘linha’</code></strong>
+<p><strong>O que significa:</strong> existem duas funções com o mesmo nome no arquivo. A <code>note: previous definition of ‘linha’</code> aponta a primeira.</p>
+<p><strong>Como consertar:</strong> apague uma delas ou dê outro nome (<code>linha_dupla</code>, por exemplo). Em C, cada nome de função é único no programa inteiro.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expected identifier or ‘(’ before ‘{’ token</code></strong>
+<p><strong>O que significa:</strong> provavelmente sobrou um <code>;</code> no fim do cabeçalho: <code>void linha(void);</code> seguido de <code>{</code>. Com o <code>;</code>, o cabeçalho vira um protótipo, e a <code>{</code> da linha de baixo fica sem dono.</p>
+<p><strong>Como consertar:</strong> na <strong>definição</strong>, nada de <code>;</code> entre o <code>)</code> e a <code>{</code>. O <code>;</code> vai na <strong>chamada</strong> (<code>linha();</code>) e no protótipo.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>void nome(void) { … }</code></td><td>Define uma função que não recebe nada e não devolve nada</td></tr>
+<tr><td><code>nome();</code></td><td>Chama a função: roda o corpo e volta para a linha seguinte</td></tr>
+<tr><td><code>void</code> antes do nome</td><td>A função não devolve valor</td></tr>
+<tr><td><code>(void)</code> no cabeçalho</td><td>A função não recebe valores (em qualquer versão do C)</td></tr>
+<tr><td><code>()</code> vazio no cabeçalho</td><td>C23: o mesmo que <code>(void)</code>. Até o C17: "parâmetros não informados", sem conferência</td></tr>
+<tr><td><code>void nome(void);</code></td><td>Protótipo: avisa que a função existe e vem depois (<a href="prototipos.html">Protótipos</a>)</td></tr>
+<tr><td><code>int main(void)</code></td><td>A função por onde todo programa começa</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Chamar a função</h3>
+<p>Complete a linha do <code>main</code> que chama a função <code>apitar</code>, definida como <code>void apitar(void)</code>:</p>
+<div class="ex-code"><input data-answer="apitar();" aria-label="chamada"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O tipo que não devolve nada</h3>
+<p>Complete o cabeçalho de uma função que só mostra um texto e não devolve valor:</p>
+<div class="ex-code"><input data-answer="void" aria-label="tipo de retorno"> aviso(void) {</div>
+</div>
+
+<div class="exercise">
+<h3>3. Sem parâmetros, do jeito seguro</h3>
+<p>Complete os parênteses para dizer, em qualquer versão do C, que a função não recebe nada:</p>
+<div class="ex-code">void menu(<input data-answer="void" aria-label="parâmetros">) {</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Um programa define <code>void ola(void)</code> acima do <code>main</code>, mas o <code>main</code> não chama <code>ola</code>. O que acontece com o texto de dentro de <code>ola</code>?</p>
+<label><input type="radio" name="q4"> Aparece uma vez, antes do <code>main</code></label>
+<label><input type="radio" name="q4"> Não aparece: definir não executa, só a chamada executa</label>
+<label><input type="radio" name="q4"> Aparece no fim do programa</label>
+<label><input type="radio" name="q4"> O programa não compila</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Com <code>void linha()</code> e a chamada <code>linha(5);</code>, o que o gcc 15 faz com <code>-std=c17</code>?</p>
+<label><input type="radio" name="q5"> Erro: too many arguments</label>
+<label><input type="radio" name="q5"> Aviso: too many arguments</label>
+<label><input type="radio" name="q5"> Compila sem aviso nenhum: até o C17, <code>()</code> não diz quantos parâmetros a função tem</label>
+<label><input type="radio" name="q5"> Mostra o número 5</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O que a linha <code>linha;</code> (sem parênteses) faz?</p>
+<label><input type="radio" name="q6"> Nada: só cita o nome, não chama a função (o gcc avisa <code>statement with no effect</code>)</label>
+<label><input type="radio" name="q6"> Chama a função normalmente</label>
+<label><input type="radio" name="q6"> Erro de compilação</label>
+<label><input type="radio" name="q6"> Chama a função duas vezes</label>
+</div>
+
+<h3>Missão final: o recibo da lojinha</h3>
+
+<div class="tryc" data-goal="outre:^==========\n  LOJINHA DA ANA\n==========\nCaderno   R\$ 12\,50\n==========\nObrigada e volte sempre!\n$,src:void\s+linha\s*\(\s*void\s*\),src:void\s+cabecalho\s*\(\s*void\s*\),src:void\s+rodape\s*\(\s*void\s*\),semaviso">
+<p class="try-task"><strong>Missão:</strong> monte o recibo com três funções, todas <code>void</code> e <code>(void)</code>, escritas acima do <code>main</code>:</p>
+<ul class="try-task">
+  <li><code>linha</code>: mostra <code>==========</code> (dez sinais de igual);</li>
+  <li><code>cabecalho</code>: chama <code>linha</code>, mostra <code>  LOJINHA DA ANA</code> (com dois espaços na frente) e chama <code>linha</code> de novo;</li>
+  <li><code>rodape</code>: chama <code>linha</code> e mostra <code>Obrigada e volte sempre!</code>.</li>
+</ul>
+<p class="try-task">O <code>main</code> já está pronto. A saída tem de ser exatamente esta, sem avisos:</p>
+<pre class="out">==========
+  LOJINHA DA ANA
+==========
+Caderno   R$ 12,50
+==========
+Obrigada e volte sempre!</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+// escreva aqui as funções linha, cabecalho e rodape
+
+int main(void) {
+    cabecalho();
+    printf("Caderno   R$ 12,50\n");
+    rodape();
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void linha(void) {
+    printf("==========\n");
+}
+
+void cabecalho(void) {
+    linha();
+    printf("  LOJINHA DA ANA\n");
+    linha();
+}
+
+void rodape(void) {
+    linha();
+    printf("Obrigada e volte sempre!\n");
+}
+
+int main(void) {
+    cabecalho();
+    printf("Caderno   R$ 12,50\n");
+    rodape();
+    return 0;
+}
+</pre>
+</div>
+
+<p>Se você escreveu <code>cabecalho</code> acima de <code>linha</code>, o compilador reclamou com <code>implicit declaration</code> (no editor, <code>use of undeclared identifier</code>): quem é chamado tem de vir antes de quem chama. Na aula <a href="prototipos.html">Protótipos</a> você aprende a se livrar dessa preocupação.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Função = pedaço de código com nome. <strong>Definir</strong> escreve a receita; <strong>chamar</strong> (<code>nome();</code>) executa. O programa pula para a função e volta para a linha seguinte.</li>
+  <li>Funções evitam código repetido: conserta-se num lugar só, e o programa fica mais fácil de ler e dividir.</li>
+  <li><code>void</code> antes do nome: não devolve nada (usar o "resultado" dá <code>void value not ignored</code>). <code>(void)</code> nos parênteses: não recebe nada.</li>
+  <li>Até o C17, <code>()</code> vazio queria dizer "parâmetros não informados", e chamadas erradas passavam caladas. No <span class="versao">C23</span>, <code>()</code> = <code>(void)</code>. Escreva sempre <code>(void)</code>.</li>
+  <li>A função tem de ser conhecida antes de ser chamada: escreva-a acima (ou use um protótipo). Cada função fica fora das outras; função aninhada é extensão do gcc, não é C padrão.</li>
+  <li>Erros típicos: <code>implicit declaration</code>, <code>too many arguments</code>, <code>redefinition</code>, <code>statement with no effect</code> (faltou o <code>()</code>).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
