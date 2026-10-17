@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C const e Ponteiros — const int *, int *const e parâmetros que só leem | Guia C</title>
+<meta name="description" content="const com ponteiros em C para quem nunca programou: const int *p (não muda o valor), int *const p (não muda o endereço), const int *const p, a regra de ler da direita para a esquerda, parâmetros const que prometem só ler, const char * para literais, -Wwrite-strings, o strchr do C23 e os erros reais do gcc 15 (assignment of read-only location, discards const qualifier), com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">const e Ponteiros</span></h1>
+
+<p class="intro">Na aula <a href="constantes.html">Constantes</a> você usou <code>const</code> para lacrar uma variável: <code>const int dias = 7;</code> não muda mais. Com ponteiros, o <code>const</code> pode lacrar <strong>duas</strong> coisas diferentes: o valor para onde o ponteiro aponta, ou o próprio ponteiro. Parece um detalhe, mas é uma das ferramentas mais úteis do C: é assim que uma função promete "eu só vou ler o seu array" e o compilador cobra a promessa. Nesta aula você vai aprender as três combinações, uma regra para ler qualquer declaração e os erros que o <code>const</code> pega antes de o programa rodar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre <code>const int *p</code>, <code>int *const p</code> e <code>const int *const p</code>.</li>
+  <li>A regra para ler essas declarações: da direita para a esquerda.</li>
+  <li>Como escrever funções que só leem um array ou uma string (<code>const int *v</code>, <code>const char *s</code>).</li>
+  <li>Por que o compilador reclama quando um ponteiro "perde" o <code>const</code>.</li>
+  <li>Por que literais de texto pedem <code>const char *</code>, o que a opção <code>-Wwrite-strings</code> faz e o que o <span class="versao">C23</span> mudou no <code>strchr</code>.</li>
+</ul>
+</div>
+
+<p>Os programas foram compilados na máquina da Ana, na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o visitante, o zelador e o segurança</h2>
+<p>No museu da cidade há três tipos de gente andando pelas salas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quem</th><th>Pode olhar e mudar o quadro?</th><th>Pode ir para outra sala?</th><th>Em C</th></tr>
+<tr><td><strong>O visitante</strong></td><td>Só olhar: tocar no quadro é proibido</td><td>Sim, anda à vontade</td><td><code>const int *p</code></td></tr>
+<tr><td><strong>O zelador de uma sala</strong></td><td>Sim: limpa, troca a moldura</td><td>Não: ele é daquela sala</td><td><code>int *const p</code></td></tr>
+<tr><td><strong>O segurança de um quadro</strong></td><td>Só olhar</td><td>Não: fica parado ali</td><td><code>const int *const p</code></td></tr>
+</table>
+</div>
+
+<p>O ponteiro é a pessoa; a variável apontada é o quadro. O <code>const</code> antes do <code>*</code> proíbe <strong>tocar no quadro</strong>; o <code>const</code> depois do <code>*</code> proíbe <strong>mudar de sala</strong>.</p>
+
+<hr>
+
+<h2>1. <code>const int *p</code>: ponteiro para valor constante</h2>
+<p>É o mais comum dos três. Através de <code>p</code> você pode <strong>ler</strong> o valor, mas não <strong>escrever</strong>:</p>
+
+<pre class="file" data-file="leitura.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 7;
+    const int *p = &amp;nota;
+
+    printf("*p = %d\n", *p);
+    *p = 10;
+    printf("*p = %d\n", *p);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>const int *p</dt><dd>"<code>p</code> é um ponteiro para um <code>int</code> constante". O <code>const</code> está grudado no <code>int</code>: é o <strong>valor apontado</strong> que fica lacrado, quando visto por <code>p</code>.</dd>
+  <dt>printf("*p = %d\n", *p);</dt><dd>Ler pelo ponteiro: permitido.</dd>
+  <dt>*p = 10;</dt><dd>Escrever pelo ponteiro: proibido.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra leitura.c -o leitura
+leitura.c: In function ‘main’:
+leitura.c:8:8: error: assignment of read-only location ‘*p’
+    8 |     *p = 10;
+      |        ^</pre>
+
+<p><em>Assignment of read-only location ‘*p’</em> = "atribuição a um local só de leitura, <code>*p</code>". O erro aparece na <strong>compilação</strong>: o programa nem chega a ser gerado. No editor, o Clang diz <code>read-only variable is not assignable</code> ("variável só de leitura não aceita atribuição").</p>
+
+<h3>O <code>const</code> vale para o ponteiro, não para a variável</h3>
+<p>Repare que <code>nota</code> não é <code>const</code>. O lacre é só do "visitante" <code>p</code>: quem olha por ele não pode mexer, mas a própria variável continua mudando normalmente. E o ponteiro pode andar para outro lugar:</p>
+
+<pre class="file" data-file="anda.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[3] = {7, 9, 6};
+    const int *p = notas;
+
+    printf("%d\n", *p);
+    p++;
+    printf("%d\n", *p);
+
+    notas[1] = 10;
+    printf("%d\n", *p);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra anda.c -o anda
+$ ./anda
+7
+9          « o p++ funcionou: o ponteiro andou
+10         « a nota mudou pelo nome do array, e o p vê a mudança</pre>
+
+<dl class="anatomy">
+  <dt>p++</dt><dd>Mudar o <strong>endereço</strong> guardado em <code>p</code> é permitido: o visitante foi para a sala ao lado.</dd>
+  <dt>notas[1] = 10;</dt><dd>O array não é <code>const</code>: por ele, a escrita é livre. O <code>p</code>, que aponta para <code>notas[1]</code>, mostra o valor novo.</dd>
+</dl>
+
+<p>Por isso <code>const int *p</code> se lê melhor como "ponteiro <strong>que só lê</strong>" do que "ponteiro para algo que nunca muda".</p>
+
+<div class="tryc" data-goal="erro:read-only">
+<p class="try-task"><strong>Missão:</strong> provoque o erro. A função <code>mostrar</code> recebe as notas como <code>const int *</code>. Rode e veja que funciona. Depois, dentro da função, antes do <code>for</code>, tente zerar a primeira nota com <code>notas[0] = 0;</code> e rode de novo: o compilador tem de recusar.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void mostrar(const int *notas, int n) {
+    for (int i = 0; i &lt; n; i++) {
+        printf("%d ", notas[i]);
+    }
+    printf("\n");
+}
+
+int main(void) {
+    int notas[4] = {7, 9, 6, 8};
+    mostrar(notas, 4);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void mostrar(const int *notas, int n) {
+    notas[0] = 0;
+    for (int i = 0; i &lt; n; i++) {
+        printf("%d ", notas[i]);
+    }
+    printf("\n");
+}
+
+int main(void) {
+    int notas[4] = {7, 9, 6, 8};
+    mostrar(notas, 4);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. <code>int *const p</code>: ponteiro constante</h2>
+<p>Agora o <code>const</code> vem <strong>depois</strong> do <code>*</code>. O lacre é no próprio ponteiro: ele aponta para uma variável só, para sempre, mas pode mudar o valor dela à vontade. É o zelador da sala:</p>
+
+<pre class="file" data-file="fixo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 0;
+    int vidas = 3;
+    int *const placar = &amp;pontos;
+
+    *placar = 100;
+    printf("pontos = %d\n", pontos);
+    placar = &amp;vidas;
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fixo.c -o fixo
+fixo.c: In function ‘main’:
+fixo.c:10:12: error: assignment of read-only variable ‘placar’
+   10 |     placar = &amp;vidas;
+      |            ^</pre>
+
+<dl class="anatomy">
+  <dt>int *const placar = &amp;pontos;</dt><dd>"<code>placar</code> é um ponteiro constante para <code>int</code>". Como ele não pode mudar depois, tem de receber o endereço <strong>na declaração</strong>.</dd>
+  <dt>*placar = 100;</dt><dd>Mudar o valor apontado: permitido (a linha 8 não deu erro).</dd>
+  <dt>placar = &amp;vidas;</dt><dd>Fazer o ponteiro apontar para outra variável: proibido. <em>Assignment of read-only variable ‘placar’</em> = "atribuição à variável só de leitura <code>placar</code>". Repare na diferença: aqui é <em>variable</em> (o ponteiro); na seção 1 era <em>location ‘*p’</em> (o lugar apontado).</dd>
+</dl>
+
+<p>No editor, o Clang é bem explícito: <code>cannot assign to variable 'placar' with const-qualified type 'int *const'</code> ("não dá para atribuir à variável <code>placar</code>, de tipo <code>int *const</code>").</p>
+
+<p>Esta forma aparece bem menos que a primeira. Ela serve para deixar claro que um ponteiro nunca vai trocar de alvo, por exemplo um ponteiro que sempre aponta para o placar do jogo.</p>
+
+<hr>
+
+<h2>3. <code>const int *const p</code>: tudo lacrado</h2>
+<p>Com dois <code>const</code>, um de cada lado do <code>*</code>, o ponteiro não muda de alvo <strong>e</strong> não muda o valor. Só lê, sempre o mesmo lugar: o segurança parado na frente do quadro.</p>
+
+<pre class="file" data-file="tudo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 7;
+    int outra = 9;
+    const int *const p = &amp;nota;
+
+    printf("%d\n", *p);
+    *p = 8;
+    p = &amp;outra;
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tudo.c -o tudo
+tudo.c: In function ‘main’:
+tudo.c:9:8: error: assignment of read-only location ‘*(const int *)p’
+    9 |     *p = 8;
+      |        ^
+tudo.c:10:7: error: assignment of read-only variable ‘p’
+   10 |     p = &amp;outra;
+      |       ^</pre>
+
+<p>Dois erros, um para cada lacre: <em>read-only location</em> (o valor) e <em>read-only variable</em> (o ponteiro). A leitura da linha 8 continua permitida.</p>
+
+<h3>As três formas lado a lado</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Declaração</th><th>Ler <code>*p</code></th><th>Mudar <code>*p</code></th><th>Mudar <code>p</code> (<code>p++</code>, <code>p = &amp;y</code>)</th><th>No museu</th></tr>
+<tr><td><code>int *p</code></td><td>sim</td><td>sim</td><td>sim</td><td>funcionário com a chave de tudo</td></tr>
+<tr><td><code>const int *p</code></td><td>sim</td><td><strong>não</strong></td><td>sim</td><td>visitante</td></tr>
+<tr><td><code>int *const p</code></td><td>sim</td><td>sim</td><td><strong>não</strong></td><td>zelador de uma sala</td></tr>
+<tr><td><code>const int *const p</code></td><td>sim</td><td><strong>não</strong></td><td><strong>não</strong></td><td>segurança de um quadro</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>4. A regra: leia da direita para a esquerda</h2>
+<p>Para entender qualquer declaração, comece pelo nome e leia <strong>para a esquerda</strong>, trocando <code>*</code> por "ponteiro para":</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Declaração</th><th>Lida da direita para a esquerda</th></tr>
+<tr><td><code>int *p</code></td><td><code>p</code> é um ponteiro para <code>int</code></td></tr>
+<tr><td><code>int const *p</code></td><td><code>p</code> é um ponteiro para <code>const int</code></td></tr>
+<tr><td><code>int *const p</code></td><td><code>p</code> é um ponteiro <strong>constante</strong> para <code>int</code></td></tr>
+<tr><td><code>int const *const p</code></td><td><code>p</code> é um ponteiro constante para <code>const int</code></td></tr>
+</table>
+</div>
+
+<p>O único caso que foge da leitura é o <code>const</code> no começo: <code>const int *p</code> e <code>int const *p</code> são <strong>a mesma coisa</strong>. O C deixa o <code>const</code> ficar antes ou depois do tipo; o que importa é se ele está à esquerda ou à direita do <code>*</code>.</p>
+
+<pre class="file" data-file="direita.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int x = 1;
+    int const *a = &amp;x;
+    const int *b = &amp;x;
+    printf("%d %d\n", *a, *b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra direita.c -o direita
+$ ./direita
+1 1</pre>
+
+<p><code>a</code> e <code>b</code> são do mesmo tipo. Quase todo código em C escreve <code>const int *</code>, com o <code>const</code> na frente, e este guia também. Se ficar em dúvida, procure o <code>*</code>: <strong><code>const</code> antes do <code>*</code> lacra o valor; depois do <code>*</code>, lacra o ponteiro</strong>.</p>
+
+<hr>
+
+<h2>5. Parâmetros <code>const</code>: a função promete só ler</h2>
+<p>É aqui que o <code>const</code> com ponteiros brilha. Quando uma função recebe um array, ela recebe um ponteiro para os itens originais (<a href="ponteiros-arrays.html">Ponteiros e Arrays</a>) e poderia mudá-los. Um <code>const</code> no parâmetro é uma <strong>promessa escrita no cabeçalho</strong>: "esta função só lê". O carrinho da lojinha da Ana:</p>
+
+<pre class="file" data-file="carrinho.c">#include &lt;stdio.h&gt;
+
+double total(const double *precos, int n) {
+    double soma = 0.0;
+    for (int i = 0; i &lt; n; i++) {
+        soma += precos[i];
+    }
+    return soma;
+}
+
+void desconto(double *precos, int n, double porcento) {
+    for (int i = 0; i &lt; n; i++) {
+        precos[i] = precos[i] * (1 - porcento / 100);
+    }
+}
+
+int main(void) {
+    double carrinho[3] = {12.50, 30.00, 7.50};
+
+    printf("Total: R$ %.2f\n", total(carrinho, 3));
+    desconto(carrinho, 3, 10);
+    printf("Com 10%% de desconto: R$ %.2f\n", total(carrinho, 3));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>double total(const double *precos, int n)</dt><dd>Só soma: o <code>const</code> avisa a quem chama que os preços voltam intactos.</dd>
+  <dt>void desconto(double *precos, int n, double porcento)</dt><dd>Muda os preços de propósito: sem <code>const</code>. Só de olhar os dois cabeçalhos, você já sabe qual função mexe no carrinho.</dd>
+  <dt>total(carrinho, 3)</dt><dd>O <code>carrinho</code> não é <code>const</code>, mas pode ser passado para um parâmetro <code>const</code>: ganhar um lacre é sempre permitido (o funcionário pode visitar o museu como visitante).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra carrinho.c -o carrinho
+$ ./carrinho
+Total: R$ 50.00
+Com 10% de desconto: R$ 45.00</pre>
+
+<p>E se alguém, um dia, escrever dentro de <code>total</code> uma linha que muda um preço (um engano, ou uma "melhoria" apressada)? O compilador recusa:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra constdentro.c -o constdentro
+constdentro.c: In function ‘total’:
+constdentro.c:5:19: error: assignment of read-only location ‘*(precos + (sizetype)((long unsigned int)i * 8))’
+    5 |         precos[i] = 0;
+      |                   ^</pre>
+
+<p>A mensagem parece assustadora, mas é a mesma da seção 1: <em>read-only location</em>. O trecho entre aspas é o jeito do gcc escrever <code>precos[i]</code> por dentro (a conta do endereço: <code>precos</code> mais <code>i</code> vezes 8 bytes, o tamanho de um <code>double</code>). Leia só o começo e a linha marcada.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode o carrinho. Depois acrescente, dentro do <code>for</code> de <code>total</code>, a linha <code>precos[i] = 0;</code> e veja o compilador recusar. Por último, tire o <code>const</code> do cabeçalho de <code>total</code>: o programa compila, e o segundo total sai R$ 0.00, porque a função "só de leitura" zerou o carrinho.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+double total(const double *precos, int n) {
+    double soma = 0.0;
+    for (int i = 0; i &lt; n; i++) {
+        soma += precos[i];
+    }
+    return soma;
+}
+
+void desconto(double *precos, int n, double porcento) {
+    for (int i = 0; i &lt; n; i++) {
+        precos[i] = precos[i] * (1 - porcento / 100);
+    }
+}
+
+int main(void) {
+    double carrinho[3] = {12.50, 30.00, 7.50};
+
+    printf("Total: R$ %.2f\n", total(carrinho, 3));
+    desconto(carrinho, 3, 10);
+    printf("Com 10%% de desconto: R$ %.2f\n", total(carrinho, 3));
+    return 0;
+}
+</pre>
+</div>
+
+<div class="tip">
+<strong>A regra das funções</strong>
+<p>Todo parâmetro ponteiro que a função <strong>não</strong> usa para escrever deve ser <code>const</code>: <code>const int *v</code>, <code>const double *precos</code>, <code>const char *texto</code>. A própria biblioteca do C faz assim: o cabeçalho do <code>strlen</code> é <code>size_t strlen(const char *s);</code>, e o do <code>strcpy</code> é <code>char *strcpy(char *destino, const char *origem);</code> (o destino muda; a origem, não).</p>
+</div>
+
+<hr>
+
+<h2>6. Tirar o <code>const</code>: o compilador reclama</h2>
+<p>Ganhar um lacre é livre; <strong>perder</strong> um lacre, não. Passar um array <code>const</code> para uma função que pode escrever nele quebraria a promessa:</p>
+
+<pre class="file" data-file="passarconst.c">#include &lt;stdio.h&gt;
+
+void desconto(double *precos, int n, double porcento) {
+    for (int i = 0; i &lt; n; i++) {
+        precos[i] = precos[i] * (1 - porcento / 100);
+    }
+}
+
+int main(void) {
+    const double tabela[3] = {12.50, 30.00, 7.50};
+    desconto(tabela, 3, 10);
+    printf("%.2f\n", tabela[0]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra passarconst.c -o passarconst
+passarconst.c: In function ‘main’:
+passarconst.c:11:14: warning: passing argument 1 of ‘desconto’ discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+   11 |     desconto(tabela, 3, 10);
+      |              ^~~~~~
+passarconst.c:3:23: note: expected ‘double *’ but argument is of type ‘const double *’
+    3 | void desconto(double *precos, int n, double porcento) {
+      |               ~~~~~~~~^~~~~~
+$ ./passarconst
+11.25           « a tabela "constante" mudou</pre>
+
+<dl class="anatomy">
+  <dt>discards ‘const’ qualifier from pointer target type</dt><dd>"Descarta o qualificador <code>const</code> do tipo apontado". <strong>Qualificador</strong> é o nome técnico de palavras como <code>const</code>, que "qualificam" um tipo.</dd>
+  <dt>note: expected ‘double *’ but argument is of type ‘const double *’</dt><dd>A função espera um ponteiro que pode escrever, e recebeu um que só pode ler.</dd>
+  <dt>11.25</dt><dd>É só um aviso, então o programa foi gerado, e a tabela que era para ser constante foi alterada (12,50 menos 10%). Mudar algo declarado <code>const</code> é <a href="comportamento-indefinido.html">comportamento indefinido</a>: aqui "funcionou", mas poderia dar outro resultado ou derrubar o programa.</dd>
+</dl>
+
+<p>No editor, o aviso do Clang é <code>passing 'const double[3]' to parameter of type 'double *' discards qualifiers</code>. Trate esse aviso como erro: ou a função deveria ter <code>const</code> no parâmetro, ou você está mesmo tentando mudar algo que prometeu não mudar.</p>
+
+<h3>O resultado depende do compilador</h3>
+<p>O mesmo acontece ao guardar o endereço de uma variável <code>const</code> num ponteiro comum:</p>
+
+<pre class="file" data-file="descarta.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    const int limite = 10;
+    int *p = &amp;limite;
+
+    *p = 20;
+    printf("limite = %d\n", limite);
+    printf("*p     = %d\n", *p);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra descarta.c -o descarta
+descarta.c: In function ‘main’:
+descarta.c:5:14: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+    5 |     int *p = &amp;limite;
+      |              ^
+$ ./descarta
+limite = 20
+*p     = 20
+$ gcc -std=c23 -Wall -Wextra -O2 descarta.c -o descarta 2&gt;/dev/null     « o mesmo, com otimização
+$ ./descarta
+limite = 10            « o gcc confiou no const e usou o 10 direto
+*p     = 20</pre>
+
+<p>O mesmo programa mostrou duas respostas diferentes. Com <code>-O2</code> (otimização, explicada em <a href="compilar.html">Compilar</a>), o gcc confiou na promessa do <code>const</code> e escreveu o 10 direto no <code>printf</code>, sem ler a variável. No editor, também sai <code>limite = 10</code>. Esse é o preço do comportamento indefinido: o resultado muda conforme o compilador e as opções. Um <code>const</code> só protege se ninguém o descartar.</p>
+
+<hr>
+
+<h2>7. Strings: <code>const char *</code></h2>
+<p>Você viu em <a href="ponteiros-strings.html">Ponteiros e Strings</a> que <code>char *aviso = "a prova foi adiada";</code> aponta para um literal que fica numa área só de leitura, e que passar esse ponteiro para uma função que escreve derruba o programa, <strong>sem aviso</strong> do compilador. Com <code>const</code>, o aviso aparece:</p>
+
+<pre class="file" data-file="literal.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+void gritar(char *s) {
+    for (char *p = s; *p != '\0'; p++) {
+        *p = toupper(*p);
+    }
+}
+
+int main(void) {
+    const char *aviso = "a prova foi adiada";
+    gritar(aviso);
+    printf("%s\n", aviso);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra literal.c -o literal
+literal.c: In function ‘main’:
+literal.c:12:12: warning: passing argument 1 of ‘gritar’ discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+   12 |     gritar(aviso);
+      |            ^~~~~
+literal.c:4:19: note: expected ‘char *’ but argument is of type ‘const char *’
+    4 | void gritar(char *s) {
+      |             ~~~~~~^
+$ ./literal
+Falha de segmentação     (imagem do núcleo gravada) ./literal</pre>
+
+<p>O programa ainda morre (era só um aviso), mas agora o compilador apontou a linha exata do problema <strong>antes</strong> de você rodar. Sem o <code>const</code>, a mesma falha passava calada. No editor, o programa não cai (mostra <code>A PROVA FOI ADIADA</code>), mas o aviso do Clang aparece igual: <code>passing 'const char *' to parameter of type 'char *' discards qualifiers</code>.</p>
+
+<p>O conserto depende da intenção: se o texto deve mudar, use um array (<code>char aviso[] = "…";</code>); se a função só lê, ela deve receber <code>const char *s</code>.</p>
+
+<h3>A opção <code>-Wwrite-strings</code></h3>
+<p>Por uma razão histórica, o C deixa escrever <code>char *nome = "Ana";</code> sem <code>const</code> e sem aviso, mesmo com <code>-Wall -Wextra</code>. A opção <code>-Wwrite-strings</code> faz o gcc tratar os literais como <code>const char</code>, e aí a falta do <code>const</code> aparece:</p>
+
+<pre class="term" data-cwd="~/c">$ cat wstrings.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char *nome = "Ana";
+    printf("%s\n", nome);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra wstrings.c -o wstrings                     « nenhum aviso
+$ gcc -std=c23 -Wall -Wextra -Wwrite-strings wstrings.c -o wstrings
+wstrings.c: In function ‘main’:
+wstrings.c:4:18: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+    4 |     char *nome = "Ana";
+      |                  ^~~~~</pre>
+
+<p>É uma opção que vale a pena ligar nos seus projetos. O conserto é escrever <code>const char *nome = "Ana";</code>.</p>
+
+<h3>O <code>strchr</code> do C23 guarda o <code>const</code></h3>
+<p>Até o C17, o <code>strchr</code> (que procura uma letra, <a href="funcoes-string.html">Funções de String</a>) recebia um <code>const char *</code> e devolvia um <code>char *</code> comum: um jeito escondido de perder o <code>const</code>. No <span class="versao">C23</span>, ele passou a devolver um ponteiro com o mesmo <code>const</code> do que recebeu. A glibc do laboratório (versão 2.43) já faz isso:</p>
+
+<pre class="term" data-cwd="~/c">$ cat strchr23.c
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *email = "ana@escola.br";
+    char *arroba = strchr(email, '@');
+    printf("%s\n", arroba + 1);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra strchr23.c -o strchr23
+strchr23.c: In function ‘main’:
+strchr23.c:6:20: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+    6 |     char *arroba = strchr(email, '@');
+      |                    ^~~~~~
+$ ./strchr23
+escola.br
+$ gcc -std=c17 -Wall -Wextra strchr23.c -o strchr23                     « no C17, nenhum aviso</pre>
+
+<p>O conserto é <code>const char *arroba = strchr(email, '@');</code>. O mesmo vale para <code>strrchr</code>, <code>strstr</code>, <code>strpbrk</code> e <code>memchr</code>. O editor do guia ainda não tem essa novidade: lá o <code>strchr23.c</code> compila sem aviso, mesmo com <code>-std=c23</code>.</p>
+
+<hr>
+
+<h2>Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Declaração</th></tr>
+<tr><td>Função que só lê um array</td><td><code>int soma(const int *v, int n)</code></td></tr>
+<tr><td>Função que só lê uma string</td><td><code>int contar(const char *s, char c)</code></td></tr>
+<tr><td>Função que muda o array ou a string</td><td><code>void zerar(int *v, int n)</code>, <code>void gritar(char *s)</code></td></tr>
+<tr><td>Ponteiro para um literal de texto</td><td><code>const char *msg = "Olá";</code></td></tr>
+<tr><td>Lista de textos fixos</td><td><code>const char *dias[] = {…};</code></td></tr>
+<tr><td>Ponteiro que nunca deve trocar de alvo</td><td><code>int *const p = &amp;x;</code> (raro)</td></tr>
+<tr><td>Parâmetro simples por valor (<code>int n</code>)</td><td>Sem <code>const</code>: a função já recebe uma cópia. (<code>const int n</code> é permitido, mas não protege nada de quem chama.)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: assignment of read-only location ‘*p’</code></strong>
+<p><strong>O que significa:</strong> você escreveu no valor apontado por um ponteiro para <code>const</code> (<code>const int *p</code> ou um parâmetro <code>const</code>). No editor: <code>read-only variable is not assignable</code>.</p>
+<p><strong>Como consertar:</strong> se a função não deveria mudar o valor, o erro achou um engano: tire a linha. Se ela deve mesmo mudar, tire o <code>const</code> do parâmetro, e quem chama passa a saber que os dados podem mudar.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: assignment of read-only variable ‘p’</code></strong>
+<p><strong>O que significa:</strong> o ponteiro é constante (<code>int *const p</code>) e você tentou fazê-lo apontar para outro lugar, com <code>p = …</code> ou <code>p++</code>. (Também aparece com uma variável comum <code>const</code>, como em <a href="constantes.html">Constantes</a>.)</p>
+<p><strong>Como consertar:</strong> se o ponteiro precisa andar, o <code>const</code> está do lado errado: você provavelmente queria <code>const int *p</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: … discards ‘const’ qualifier from pointer target type</code></strong>
+<p><strong>O que significa:</strong> um ponteiro para <code>const</code> foi passado (ou guardado) como ponteiro comum, que pode escrever. É só aviso, mas qualquer escrita por ele é comportamento indefinido: pode "funcionar", mudar de resultado com <code>-O2</code> ou derrubar o programa (literais). No editor: <code>discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]</code>.</p>
+<p><strong>Como consertar:</strong> ponha <code>const</code> no parâmetro ou na variável que recebe. Se a função precisa escrever, passe uma cópia que seja sua (um array comum).</p>
+</div>
+
+<div class="cenario">
+<strong>Forçar com um cast: <code>(int *) &amp;limite</code></strong>
+<p><strong>O que significa:</strong> um cast (<a href="conversao-tipos.html">Conversão de Tipos</a>) faz o aviso sumir, mas não muda nada na memória: escrever num objeto <code>const</code> continua sendo comportamento indefinido.</p>
+<p><strong>Como consertar:</strong> não use cast para tirar <code>const</code>. Se aparecer a vontade, o desenho das funções está pedindo outro <code>const</code> em algum parâmetro.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que quer dizer</th></tr>
+<tr><td><code>const int *p</code> (= <code>int const *p</code>)</td><td>Ponteiro para <code>int</code> constante: lê <code>*p</code>, não escreve; <code>p</code> pode andar</td></tr>
+<tr><td><code>int *const p = &amp;x;</code></td><td>Ponteiro constante: escreve <code>*p</code>; <code>p</code> não muda de alvo</td></tr>
+<tr><td><code>const int *const p = &amp;x;</code></td><td>Nada muda: nem <code>*p</code>, nem <code>p</code></td></tr>
+<tr><td>Regra</td><td><code>const</code> à esquerda do <code>*</code> lacra o valor; à direita, o ponteiro</td></tr>
+<tr><td><code>f(const int *v, int n)</code></td><td>A função promete só ler o array</td></tr>
+<tr><td><code>const char *s</code></td><td>Texto só para ler (literais, parâmetros de leitura)</td></tr>
+<tr><td><code>int *</code> → <code>const int *</code></td><td>Sempre permitido (ganhar lacre)</td></tr>
+<tr><td><code>const int *</code> → <code>int *</code></td><td>Aviso <code>discards ‘const’ qualifier</code> (perder lacre)</td></tr>
+<tr><td><code>-Wwrite-strings</code></td><td>Opção do gcc: literais viram <code>const char</code> e <code>char *p = "…"</code> passa a avisar</td></tr>
+<tr><td><code>strchr</code> no C23</td><td>Recebe <code>const char *</code>, devolve <code>const char *</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Só olhar</h3>
+<p>Complete o parâmetro de uma função que só lê as notas:</p>
+<div class="ex-code">double media(<input data-answer="const int|int const" aria-label="tipo"> *notas, int n)</div>
+</div>
+
+<div class="exercise">
+<h3>2. Endereço fixo</h3>
+<p>Complete para criar um ponteiro que sempre aponta para <code>pontos</code>, mas pode mudar o valor dele:</p>
+<div class="ex-code">int *<input data-answer="const" aria-label="palavra"> placar = &amp;pontos;</div>
+</div>
+
+<div class="exercise">
+<h3>3. O literal</h3>
+<p>Complete a declaração certa de um ponteiro para um literal de texto:</p>
+<div class="ex-code"><input data-answer="const char|char const" aria-label="tipo"> *msg = "Bom dia";</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com <code>const int *p = &amp;x;</code>, qual linha <strong>não</strong> compila?</p>
+<label><input type="radio" name="q4"> <code>p++;</code></label>
+<label><input type="radio" name="q4"> <code>*p = 5;</code></label>
+<label><input type="radio" name="q4"> <code>printf("%d", *p);</code></label>
+<label><input type="radio" name="q4"> <code>x = 5;</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Uma variável <code>int nota</code> (sem <code>const</code>) pode ser passada para um parâmetro <code>const int *</code>?</p>
+<label><input type="radio" name="q5"> Não: dá erro de compilação</label>
+<label><input type="radio" name="q5"> Só com um cast</label>
+<label><input type="radio" name="q5"> Sim: ganhar um <code>const</code> é sempre permitido</label>
+<label><input type="radio" name="q5"> Sim, mas a variável vira <code>const</code> para sempre</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. <code>int const *p</code> e <code>const int *p</code> são…</p>
+<label><input type="radio" name="q6"> A mesma coisa: ponteiro para <code>int</code> constante</label>
+<label><input type="radio" name="q6"> Diferentes: o primeiro é um ponteiro constante</label>
+<label><input type="radio" name="q6"> O primeiro não compila</label>
+<label><input type="radio" name="q6"> Diferentes: o segundo é um ponteiro constante</label>
+</div>
+
+<h3>Missão final: o total do cardápio, sem mexer nos preços</h3>
+
+<div class="tryc" data-goal="out:Total do pedido: R$ 54.90,semaviso,src:const\s+double\s*\*|double\s+const\s*\*">
+<p class="try-task"><strong>Missão:</strong> a tabela de preços da lanchonete é <code>const</code>: ninguém pode mudá-la. A função <code>total</code> ainda está incompleta e o compilador avisa que ela "descarta o <code>const</code>". Faça as duas coisas:</p>
+<ul class="try-task">
+  <li>escreva o corpo de <code>total</code>, somando os <code>n</code> preços;</li>
+  <li>prometa no cabeçalho que a função só lê os preços, para o aviso de <code>const</code> sumir.</li>
+</ul>
+<p class="try-task">A saída tem de ser esta, sem nenhum aviso:</p>
+<pre class="out">Total do pedido: R$ 54.90</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+double total(double *precos, int n) {
+    double soma = 0.0;
+    // some os n preços
+    return soma;
+}
+
+int main(void) {
+    const double cardapio[4] = {12.50, 30.00, 7.50, 4.90};
+    printf("Total do pedido: R$ %.2f\n", total(cardapio, 4));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+double total(const double *precos, int n) {
+    double soma = 0.0;
+    for (int i = 0; i &lt; n; i++) {
+        soma += precos[i];
+    }
+    return soma;
+}
+
+int main(void) {
+    const double cardapio[4] = {12.50, 30.00, 7.50, 4.90};
+    printf("Total do pedido: R$ %.2f\n", total(cardapio, 4));
+    return 0;
+}
+</pre>
+</div>
+
+<p>Com o <code>const</code> no parâmetro, o cabeçalho conta toda a história: <code>total</code> recebe preços e devolve um número, sem mudar nada. Se, um dia, alguém escrever <code>precos[i] = 0;</code> dentro dela, o compilador recusa com <code>read-only location</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>const</code> à <strong>esquerda</strong> do <code>*</code> (<code>const int *p</code>): o valor não muda por <code>p</code>, mas <code>p</code> pode andar. É o mais usado.</li>
+  <li><code>const</code> à <strong>direita</strong> do <code>*</code> (<code>int *const p</code>): <code>p</code> não troca de alvo, mas o valor pode mudar. Com os dois (<code>const int *const p</code>), nada muda.</li>
+  <li>Leia da direita para a esquerda: "<code>p</code> é um ponteiro (constante?) para <code>int</code> (constante?)". <code>const int</code> = <code>int const</code>.</li>
+  <li>Parâmetro ponteiro que só lê leva <code>const</code>: <code>const int *v</code>, <code>const char *s</code>. A biblioteca do C faz assim (<code>strlen</code>, <code>strcpy</code>).</li>
+  <li>Ganhar <code>const</code> é livre; perder dá o aviso <code>discards ‘const’ qualifier</code>. Escrever num objeto <code>const</code> é comportamento indefinido.</li>
+  <li>Literais de texto: <code>const char *</code>. A opção <code>-Wwrite-strings</code> ajuda a pegar os esquecidos. No C23, <code>strchr</code> e companhia devolvem <code>const char *</code> quando recebem um.</li>
+  <li>Próxima aula: <a href="ponteiro-ponteiro.html">Ponteiro para Ponteiro</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
