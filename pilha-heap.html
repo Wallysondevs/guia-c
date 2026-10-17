@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Pilha e Heap — onde as variáveis moram e quanto tempo vivem | Guia C</title>
+<meta name="description" content="Pilha e heap em C para quem está começando: o mapa da memória de um programa (código, literais, globais, static, heap e pilha), o tempo de vida de cada variável, por que não devolver o endereço de uma variável local, o estouro de pilha de 8 MB com um array local enorme e por que o heap existe, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<style>
+svg.mem{display:block;width:100%;height:auto;margin:0 auto}
+svg.mem text{font-family:"Ubuntu Mono",ui-monospace,Menlo,Consolas,monospace;font-size:15px;fill:var(--text)}
+svg.mem .nome{font-weight:bold;font-size:16px}
+svg.mem .tipo,svg.mem .end{fill:var(--muted);font-size:13px}
+svg.mem .caixa{fill:var(--code-bg);stroke:var(--border);stroke-width:2}
+svg.mem .pilha{fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:2}
+svg.mem .heap{fill:var(--note-bg);stroke:var(--note-border);stroke-width:2}
+svg.mem .dados{fill:var(--sidebar-bg);stroke:var(--border);stroke-width:2}
+svg.mem .livre{fill:none;stroke:var(--border);stroke-width:1.5;stroke-dasharray:6 5}
+svg.mem .ruim{fill:var(--warn-bg);stroke:var(--warn-border);stroke-width:2}
+svg.mem .seta{stroke:var(--accent);stroke-width:2;fill:none}
+svg.mem .ponta{fill:var(--accent)}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Pilha e Heap</span></h1>
+
+<p class="intro">Quando um programa roda, a memória dele não é uma bagunça só: ela é dividida em <strong>regiões</strong>, cada uma com uma função e uma regra de quanto tempo as coisas vivem lá. As duas que mais importam para você são a <strong>pilha</strong> (onde moram as variáveis locais, que nascem e morrem sozinhas) e o <strong>heap</strong> (onde mora a memória que você pede com <code>malloc</code> e devolve com <code>free</code>). Entender essa divisão explica erros que parecem mágica, como um array que derruba o programa antes da primeira linha, e prepara o terreno para as próximas aulas de memória dinâmica.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O mapa da memória de um programa: código, literais, globais e <code>static</code>, heap e pilha.</li>
+  <li>O <strong>tempo de vida</strong> de cada tipo de variável: quem cria, quem apaga e quando.</li>
+  <li>Como a pilha funciona (as "bandejas" de cada função) e por que nunca se devolve o endereço de uma variável local.</li>
+  <li>Por que um array local enorme causa <strong>estouro de pilha</strong> (o limite de 8 MB).</li>
+  <li>Por que o heap existe e quando usá-lo.</li>
+</ul>
+</div>
+
+<p>Esta aula supõe que você já leu <a href="memoria.html">Memória e Endereços</a> e <a href="ponteiros.html">Ponteiros</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: a pilha de bandejas e o guarda-volumes</h2>
+<p>Pense no restaurante por quilo onde a Ana almoça.</p>
+<ul>
+  <li>Na entrada há uma <strong>pilha de bandejas</strong>. Cada cliente que chega pega a bandeja de cima; quem sai devolve a sua, que volta para o topo. Ninguém precisa anotar nada: a pilha se organiza sozinha, é rapidíssima, mas tem altura limitada e cada bandeja tem um tamanho fixo.</li>
+  <li>No fundo do salão há um <strong>guarda-volumes</strong>. Você pede um armário do tamanho que precisar, recebe o <strong>número</strong> dele e ele fica seu até você <strong>devolver a chave</strong>. Cabe muita coisa e dura o quanto você quiser, mas você precisa lembrar de devolver; se esquecer, o armário fica ocupado para sempre.</li>
+</ul>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No restaurante</th><th>No programa</th></tr>
+<tr><td>A pilha de bandejas</td><td>A <strong>pilha</strong> (<em>stack</em>): uma "bandeja" por função em andamento, com as variáveis locais dela</td></tr>
+<tr><td>Pegar e devolver bandeja</td><td>Automático: a bandeja aparece quando a função começa e some quando ela termina</td></tr>
+<tr><td>O guarda-volumes</td><td>O <strong>heap</strong> (em português às vezes "monte"): memória pedida durante a execução</td></tr>
+<tr><td>O número do armário</td><td>O endereço que o <code>malloc</code> devolve, guardado num ponteiro</td></tr>
+<tr><td>Devolver a chave</td><td><code>free(ponteiro)</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O mapa da memória</h2>
+<p>Este programa cria uma coisa em cada região e mostra onde cada uma mora. Não se preocupe com o <code>malloc</code>: ele tem aula própria, <a href="malloc-free.html">malloc e free</a>. Aqui ele só serve para pegar um pedaço do heap.</p>
+
+<pre class="file" data-file="mapa.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int recorde = 1200;              // global
+const char *saudacao = "Olá";    // o ponteiro é global; o texto é um literal
+
+int main(void) {
+    int vidas = 3;                       // local: na pilha
+    static int partidas = 0;             // static: junto das globais
+    int *pontos = malloc(sizeof *pontos); // memória do heap
+    if (pontos == NULL) return 1;
+    *pontos = 0;
+
+    printf("código  (main)     %p\n", (void *)main);
+    printf("literal (\"Olá\")    %p\n", (void *)saudacao);
+    printf("global  recorde    %p\n", (void *)&amp;recorde);
+    printf("static  partidas   %p\n", (void *)&amp;partidas);
+    printf("heap    *pontos    %p\n", (void *)pontos);
+    printf("pilha   vidas      %p\n", (void *)&amp;vidas);
+    printf("pilha   pontos     %p\n", (void *)&amp;pontos);
+
+    free(pontos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra mapa.c -o mapa
+$ ./mapa
+código  (main)     0x640e6c7cc1a9
+literal ("Olá")    0x640e6c7cd004
+global  recorde    0x640e6c7cf010
+static  partidas   0x640e6c7cf024
+heap    *pontos    0x640ea99d8010
+pilha   vidas      0x7ffcfb4d886c
+pilha   pontos     0x7ffcfb4d8870
+$ ./mapa
+código  (main)     0x57e7ee3541a9      « outra execução, outros números
+literal ("Olá")    0x57e7ee355004
+global  recorde    0x57e7ee357010
+static  partidas   0x57e7ee357024
+heap    *pontos    0x57e812bcf010
+pilha   vidas      0x7fff892311dc
+pilha   pontos     0x7fff892311e0</pre>
+
+<p>Os números mudam a cada execução (o Linux sorteia onde cada região começa, uma proteção chamada <strong>ASLR</strong>), mas a <strong>ordem</strong> é sempre a mesma: código, literais e globais lá embaixo, perto uns dos outros; o heap um pouco acima; e a pilha lá no alto, perto de <code>0x7ff…</code>. Repare também que <code>pontos</code> (o ponteiro) mora na pilha, enquanto <code>*pontos</code> (a memória para onde ele aponta) mora no heap: são duas coisas diferentes em dois lugares diferentes.</p>
+
+<figure>
+<svg class="mem" viewBox="0 0 660 470" style="max-width:660px" role="img" aria-label="Mapa da memória: no alto a pilha, que cresce para baixo; espaço livre; o heap, que cresce para cima; globais e static; literais; código">
+<defs><marker id="ph-seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="ponta" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+<text class="end" x="20" y="22">endereços altos (0x7ff…)</text>
+<rect class="pilha" x="20" y="32" width="300" height="80" rx="6"/>
+<text class="nome" x="36" y="58">Pilha (stack)</text>
+<text class="end" x="36" y="80">vidas, pontos (o ponteiro)</text>
+<text class="end" x="36" y="100">uma bandeja por função</text>
+<line class="seta" x1="170" y1="116" x2="170" y2="150" marker-end="url(#ph-seta)"/>
+<text class="end" x="180" y="140">cresce para baixo</text>
+<rect class="livre" x="20" y="158" width="300" height="70" rx="6"/>
+<text class="end" x="170" y="198" text-anchor="middle">espaço livre</text>
+<line class="seta" x1="170" y1="270" x2="170" y2="236" marker-end="url(#ph-seta)"/>
+<text class="end" x="180" y="256">cresce para cima</text>
+<rect class="heap" x="20" y="276" width="300" height="56" rx="6"/>
+<text class="nome" x="36" y="300">Heap</text>
+<text class="end" x="36" y="320">*pontos (o que o malloc deu)</text>
+<rect class="dados" x="20" y="340" width="300" height="36" rx="6"/>
+<text x="36" y="363"><tspan class="nome">Dados</tspan><tspan class="end">  recorde, partidas</tspan></text>
+<rect class="dados" x="20" y="382" width="300" height="36" rx="6"/>
+<text x="36" y="405"><tspan class="nome">Literais</tspan><tspan class="end">  "Olá" (só leitura)</tspan></text>
+<rect class="dados" x="20" y="424" width="300" height="36" rx="6"/>
+<text x="36" y="447"><tspan class="nome">Código</tspan><tspan class="end">  main (só leitura)</tspan></text>
+<text class="end" x="340" y="80">0x7ffcfb4d886c</text>
+<text class="end" x="340" y="310">0x640ea99d8010</text>
+<text class="end" x="340" y="363">0x640e6c7cf010</text>
+<text class="end" x="340" y="405">0x640e6c7cd004</text>
+<text class="end" x="340" y="447">0x640e6c7cc1a9</text>
+<text class="end" x="500" y="80">vive enquanto a</text>
+<text class="end" x="500" y="96">função roda</text>
+<text class="end" x="500" y="304">vive até o free</text>
+<text class="end" x="500" y="363">vivem o programa</text>
+<text class="end" x="500" y="379">inteiro</text>
+</svg>
+<figcaption>O mapa simplificado de um programa no Linux de 64 bits, com os endereços da primeira execução. Na figura, os endereços altos estão em cima. O espaço livre entre a pilha e o heap é enorme (bem maior do que o desenho sugere).</figcaption>
+</figure>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Região</th><th>O que mora lá</th><th>Quem cria e apaga</th><th>Tempo de vida</th></tr>
+<tr><td><strong>Código</strong> (<em>text</em>)</td><td>As instruções das funções</td><td>O sistema, ao carregar o programa</td><td>O programa inteiro (só leitura)</td></tr>
+<tr><td><strong>Literais</strong> (<em>rodata</em>, "read-only data")</td><td>Textos entre aspas, como <code>"Olá"</code></td><td>O sistema</td><td>O programa inteiro (só leitura)</td></tr>
+<tr><td><strong>Dados</strong> (<em>data</em> e <em>bss</em>)</td><td>Variáveis globais e variáveis <code>static</code></td><td>O sistema; começam com o valor escrito ou com zero</td><td>O programa inteiro</td></tr>
+<tr><td><strong>Heap</strong></td><td>O que você pede com <code>malloc</code>, <code>calloc</code>, <code>realloc</code></td><td><strong>Você</strong>: <code>malloc</code> cria, <code>free</code> apaga</td><td>Até o <code>free</code> (ou até o programa acabar)</td></tr>
+<tr><td><strong>Pilha</strong></td><td>Variáveis locais e parâmetros</td><td>Automático: a função começa, elas nascem; a função termina, elas somem</td><td>Enquanto a função está rodando</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>No editor do guia, o mapa é outro</strong>
+<p>No editor, o programa roda em WebAssembly, dentro do navegador, e a memória é arrumada de outro jeito. O mesmo <code>mapa.c</code> mostrou lá:</p>
+<pre class="term">código  (main)     0x1
+literal ("Olá")    0x800000
+global  recorde    0x800a30
+static  partidas   0x800bb4
+heap    *pontos    0x801700
+pilha   vidas      0x7ffff8
+pilha   pontos     0x7ffff4</pre>
+<p>A pilha fica <strong>embaixo</strong> (de <code>0x0</code> a <code>0x7fffff</code>, exatamente 8 MB, crescendo em direção ao zero), os literais e as globais começam em <code>0x800000</code>, e o heap vem logo depois deles. As funções nem moram na memória comum: o "endereço" <code>0x1</code> é a posição de <code>main</code> numa tabela de funções. As regiões são as mesmas; só a arrumação muda. E os números não mudam entre execuções, porque o editor não usa ASLR.</p>
+</div>
+
+<hr>
+
+<h2>2. A pilha: uma bandeja por função</h2>
+<p>Cada vez que uma função começa, ela ganha uma <strong>bandeja</strong> (o nome técnico é <em>stack frame</em>, "quadro da pilha") com espaço para as suas variáveis locais e parâmetros. Quando ela termina, a bandeja é devolvida. Veja as bandejas se empilhando: <code>main</code> chama <code>primeira</code>, que chama <code>segunda</code>; depois <code>main</code> chama <code>segunda</code> de novo:</p>
+
+<pre class="file" data-file="bandejas.c">#include &lt;stdio.h&gt;
+
+void segunda(void) {
+    int c = 3;
+    printf("c (em segunda)  mora em %p\n", (void *)&amp;c);
+}
+
+void primeira(void) {
+    int b = 2;
+    printf("b (em primeira) mora em %p\n", (void *)&amp;b);
+    segunda();
+}
+
+int main(void) {
+    int a = 1;
+    printf("a (em main)     mora em %p\n", (void *)&amp;a);
+    primeira();
+    segunda();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra bandejas.c -o bandejas
+$ ./bandejas
+a (em main)     mora em 0x7ffd0dc459a4
+b (em primeira) mora em 0x7ffd0dc45984     « 0x20 (32) bytes abaixo
+c (em segunda)  mora em 0x7ffd0dc45964     « mais 32 bytes abaixo
+c (em segunda)  mora em 0x7ffd0dc45984     « a 2ª chamada caiu onde estava a bandeja de primeira</pre>
+
+<figure>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Momento</th><th>…9a4</th><th>…984</th><th>…964</th></tr>
+<tr><td>Dentro de <code>primeira</code>, chamando <code>segunda</code></td><td><code>main</code>: a = 1</td><td><code>primeira</code>: b = 2</td><td><code>segunda</code>: c = 3 ← topo</td></tr>
+<tr><td><code>segunda</code> e <code>primeira</code> terminaram</td><td><code>main</code>: a = 1 ← topo</td><td>(livre)</td><td>(livre)</td></tr>
+<tr><td><code>main</code> chama <code>segunda</code> de novo</td><td><code>main</code>: a = 1</td><td><code>segunda</code>: c = 3 ← topo</td><td>(livre)</td></tr>
+</table>
+</div>
+<figcaption>A pilha em três momentos. No computador, a pilha cresce para os endereços <strong>menores</strong>: cada bandeja nova fica abaixo da anterior. Quando uma função termina, a bandeja dela fica livre e a próxima chamada reaproveita o espaço.</figcaption>
+</figure>
+
+<p>É isso que torna a pilha tão boa: criar e apagar variáveis locais custa praticamente nada (o programa só move um marcador do "topo"), e ninguém precisa lembrar de devolver. Também é por isso que uma variável local sem valor inicial tem <strong>lixo</strong>: a bandeja reaproveitada ainda tem o que a função anterior deixou lá (aula <a href="variaveis.html">Variáveis</a>).</p>
+
+<h3>A variável local morre com a função</h3>
+<p>Como a bandeja é devolvida no fim da função, o endereço de uma variável local <strong>deixa de valer</strong> quando a função termina. A Ana tentou escrever uma função que cria um contador e devolve o endereço dele:</p>
+
+<pre class="file" data-file="local.c">#include &lt;stdio.h&gt;
+
+int *criar_contador(void) {
+    int contador = 0;
+    return &amp;contador;
+}
+
+int main(void) {
+    int *c = criar_contador();
+    printf("Contador criado em %p\n", (void *)c);
+    *c = 5;
+    printf("Contador = %d\n", *c);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra local.c -o local
+local.c: In function ‘criar_contador’:
+local.c:5:12: warning: function returns address of local variable [-Wreturn-local-addr]
+    5 |     return &amp;contador;
+      |            ^~~~~~~~~
+$ ./local
+Contador criado em (nil)
+Falha de segmentação     (imagem do núcleo gravada) ./local</pre>
+
+<dl class="anatomy">
+  <dt>warning: function returns address of local variable</dt><dd>"A função devolve o endereço de uma variável local". O <code>-Wall</code> pegou: quando <code>criar_contador</code> terminar, <code>contador</code> não existe mais, e o endereço aponta para uma bandeja devolvida.</dd>
+  <dt>Contador criado em (nil)</dt><dd>Surpresa: o gcc, sabendo que esse endereço seria inútil, devolveu de propósito um ponteiro <strong>nulo</strong> (<code>(nil)</code> é como a glibc mostra o <code>NULL</code>). Assim o erro aparece logo, em vez de corromper a memória em silêncio.</dd>
+  <dt>Falha de segmentação</dt><dd><code>*c = 5</code> tentou escrever no endereço zero, e o sistema matou o programa.</dd>
+</dl>
+
+<p>No <strong>editor do guia</strong>, o Clang também avisa, com outras palavras (<code>address of stack memory associated with local variable 'contador' returned [-Wreturn-stack-address]</code>, "endereço da memória da pilha da variável local <code>contador</code> devolvido"), mas o programa roda e mostra <code>Contador = 5</code>, como se estivesse tudo bem. Não está: o 5 foi escrito numa bandeja devolvida, que a próxima função chamada vai sobrescrever. É <a href="comportamento-indefinido.html">comportamento indefinido</a>, e "funcionar" num compilador e quebrar no outro é exatamente o que se espera dele.</p>
+
+<div class="tryc" data-goal="out:Contador = 5,semaviso,src:malloc\s*\(">
+<p class="try-task"><strong>Missão:</strong> rode e leia o aviso. O conserto é guardar o contador no <strong>heap</strong>, que não some quando a função termina. Troque <code>int contador = 0;</code> por um ponteiro que recebe <code>malloc(sizeof *contador)</code> (confira se veio <code>NULL</code>), zere o valor com <code>*contador = 0;</code>, devolva o ponteiro e, no <code>main</code>, chame <code>free(c);</code> no fim. A saída deve terminar com <code>Contador = 5</code>, <strong>sem avisos</strong>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int *criar_contador(void) {
+    int contador = 0;
+    return &amp;contador;
+}
+
+int main(void) {
+    int *c = criar_contador();
+    if (c == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+    *c = 5;
+    printf("Contador = %d\n", *c);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int *criar_contador(void) {
+    int *contador = malloc(sizeof *contador);
+    if (contador == NULL) {
+        return NULL;
+    }
+    *contador = 0;
+    return contador;
+}
+
+int main(void) {
+    int *c = criar_contador();
+    if (c == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+    *c = 5;
+    printf("Contador = %d\n", *c);
+    free(c);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A pilha tem limite: o estouro de pilha</h2>
+<p>A pilha é pequena. No Linux, o tamanho máximo vem de uma configuração do sistema, que o comando <code>ulimit -s</code> mostra em kilobytes:</p>
+
+<pre class="term" data-cwd="~/c">$ ulimit -s
+8192                     « 8192 KB = 8 MB para a pilha inteira</pre>
+
+<p>8 MB parece muito para variáveis como <code>int vidas</code>, mas um array local grande come isso rápido. A Ana quis guardar 3 milhões de notas num array local (3 000 000 × 4 bytes = 12 MB):</p>
+
+<pre class="file" data-file="grande.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[3000000];
+    printf("Criei um array de %zu bytes na pilha.\n", sizeof notas);
+    for (int i = 0; i &lt; 3000000; i++) {
+        notas[i] = i % 10;
+    }
+    printf("Última nota: %d\n", notas[3000000 - 1]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra grande.c -o grande          « nenhum aviso
+$ ./grande
+Falha de segmentação     (imagem do núcleo gravada) ./grande
+$ echo $?
+139</pre>
+
+<p>Compilou sem aviso e morreu <strong>antes de mostrar a primeira linha</strong>. A bandeja do <code>main</code> precisava de 12 MB, a pilha só tem 8, e na primeira vez que o programa encostou na memória além do limite, o sistema o matou. Isso é um <strong>estouro de pilha</strong> (<em>stack overflow</em>, o mesmo nome do site famoso de perguntas de programação). O código 139 é 128 + 11, o número do sinal <code>SIGSEGV</code>, o mesmo de uma falha de segmentação comum: a mensagem não diz que foi a pilha.</p>
+
+<p>Com 2 milhões de notas (8 000 000 bytes, um pouco menos que os 8 MB = 8 388 608 bytes), o mesmo programa roda:</p>
+
+<pre class="term" data-cwd="~/c">$ ./grande2
+Criei um array de 8000000 bytes na pilha.
+Última nota: 9</pre>
+
+<p>Mas isso é andar na beirada: outras funções também precisam de bandejas, e em outro computador o limite pode ser outro (no Windows, a pilha padrão é de só 1 MB). No <strong>editor do guia</strong> a pilha também tem 8 MB: o array de 12 MB dá <code>Falha de segmentação (imagem do núcleo gravada)</code> e código 139, e o de 8 000 000 bytes roda.</p>
+
+<div class="warning">
+<strong>A outra forma de estourar: recursão sem fim</strong>
+<p>Cada chamada de função pega uma bandeja. Uma função que chama a si mesma sem parar empilha bandejas até passar dos 8 MB, e o programa morre do mesmo jeito. Veja em <a href="recursao.html">Recursão</a>.</p>
+</div>
+
+<hr>
+
+<h2>4. O heap: para que ele existe</h2>
+<p>Se a pilha é tão rápida e automática, por que existe o heap? Porque a pilha tem três limitações, e o heap resolve as três:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Problema da pilha</th><th>Como o heap resolve</th><th>Exemplo</th></tr>
+<tr><td>É pequena (8 MB)</td><td>O heap pode usar quase toda a memória livre do computador</td><td>Os 3 milhões de notas</td></tr>
+<tr><td>A variável morre quando a função termina</td><td>A memória do heap vive até o <code>free</code>, independentemente de qual função a criou</td><td>A função <code>criar_contador</code></td></tr>
+<tr><td>O tamanho de cada bandeja é decidido na compilação</td><td>O tamanho do <code>malloc</code> pode ser decidido durante a execução</td><td>"Quantos alunos tem a turma?" e só então reservar</td></tr>
+</table>
+</div>
+
+<p>Os 3 milhões de notas no heap funcionam sem problema:</p>
+
+<pre class="file" data-file="heapgrande.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    size_t n = 3000000;
+    int *notas = malloc(n * sizeof *notas);
+    if (notas == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+    printf("Reservei %zu bytes no heap.\n", n * sizeof *notas);
+    for (size_t i = 0; i &lt; n; i++) {
+        notas[i] = i % 10;
+    }
+    printf("Última nota: %d\n", notas[n - 1]);
+    free(notas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra heapgrande.c -o heapgrande
+$ ./heapgrande
+Reservei 12000000 bytes no heap.
+Última nota: 9</pre>
+
+<p>Repare na diferença de uso: <code>notas</code> agora é um <strong>ponteiro</strong> (8 bytes, na pilha) que aponta para os 12 MB no heap. Os colchetes funcionam igual (<code>notas[i]</code>), graças à relação entre ponteiros e arrays (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>).</p>
+
+<p>O preço do heap:</p>
+<ul>
+  <li><strong>Você</strong> tem de devolver a memória com <code>free</code>. Esquecer causa <a href="vazamentos.html">vazamentos de memória</a>; devolver duas vezes ou usar depois de devolver causa erros graves (aula <a href="malloc-free.html">malloc e free</a>).</li>
+  <li>O <code>malloc</code> pode <strong>falhar</strong> (devolve <code>NULL</code>), então todo pedido precisa ser conferido.</li>
+  <li>Pedir e devolver memória do heap é mais lento que usar a pilha, porque o <code>malloc</code> precisa procurar um espaço livre do tamanho certo.</li>
+</ul>
+
+<hr>
+
+<h2>5. Globais, <code>static</code> e literais</h2>
+<p>As variáveis globais e as <code>static</code> moram na região de <strong>dados</strong>. Elas nascem antes do <code>main</code> e só morrem quando o programa acaba, e começam com zero se você não der outro valor. Uma variável local <code>static</code> continua existindo entre uma chamada e outra da função (aula <a href="escopo.html">Escopo e Variáveis static</a>). Por isso, outra forma de escapar do limite da pilha é <code>static int notas[3000000];</code>: o array vai para a região de dados, que não tem o limite de 8 MB. O defeito é que ele ocupa memória o programa inteiro e o tamanho continua fixo.</p>
+
+<p>Os <strong>literais</strong> de texto (<code>"Olá"</code>, <code>"ana"</code>) moram numa região <strong>só de leitura</strong>. Um <code>char *</code> que aponta para um literal não pode ser usado para mudá-lo:</p>
+
+<pre class="file" data-file="literal.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char *nome = "ana";
+    printf("Antes: %s\n", nome);
+    nome[0] = 'A';
+    printf("Depois: %s\n", nome);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra literal.c -o literal       « nenhum aviso
+$ ./literal
+Antes: ana
+Falha de segmentação     (imagem do núcleo gravada) ./literal</pre>
+
+<p>Nenhum aviso, e o programa morreu ao tentar escrever na região só de leitura. No editor do guia, ele mostra <code>Depois: Ana</code> e termina bem, porque o WebAssembly não tem memória só de leitura: mais um caso de comportamento indefinido que "funciona" num lugar e quebra no outro. O conserto é ter uma cópia própria, num array: <code>char nome[] = "ana";</code> (o array é local, na pilha, e recebe uma cópia das letras), ou declarar <code>const char *nome</code> para o compilador barrar a escrita (aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>).</p>
+
+<hr>
+
+<h2>Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Onde guardar</th></tr>
+<tr><td>Variáveis pequenas usadas só dentro da função (contadores, somas, arrays pequenos)</td><td><strong>Pilha</strong> (variável local comum). É o padrão: rápido e automático.</td></tr>
+<tr><td>Dados grandes (centenas de KB ou mais)</td><td><strong>Heap</strong> (<code>malloc</code>)</td></tr>
+<tr><td>Tamanho só conhecido durante a execução (o usuário diz quantos)</td><td><strong>Heap</strong></td></tr>
+<tr><td>Dados criados numa função e usados depois que ela termina</td><td><strong>Heap</strong> (e quem recebe o ponteiro cuida do <code>free</code>)</td></tr>
+<tr><td>Um valor que precisa existir o programa inteiro, com tamanho fixo</td><td>Variável global ou <code>static</code> (com moderação: globais deixam o código difícil de entender)</td></tr>
+<tr><td>Um texto fixo que não muda</td><td>Literal com <code>const char *</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>E os VLAs?</strong>
+<p>Desde o C99 dá para criar um array local com tamanho decidido na execução: <code>int notas[n];</code> (<em>variable length array</em>, VLA). Ele mora na <strong>pilha</strong>, então um <code>n</code> grande estoura a pilha do mesmo jeito, e sem nenhum jeito de conferir antes. No C11 eles viraram opcionais, e muitos projetos os proíbem. Para tamanhos vindos do usuário, prefira <code>malloc</code>, que devolve <code>NULL</code> quando não dá.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: function returns address of local variable [-Wreturn-local-addr]</code></strong>
+<p><strong>O que significa:</strong> a função devolve o endereço de uma variável local, que deixa de existir quando ela termina. No gcc o ponteiro volta como <code>NULL</code> (e o programa cai ao usá-lo); no Clang ele volta apontando para uma bandeja devolvida, e o programa pode até parecer funcionar.</p>
+<p><strong>Como consertar:</strong> reserve a memória com <code>malloc</code> e devolva esse ponteiro (quem chama faz o <code>free</code>), ou deixe quem chama criar a variável e passar o endereço dela para a função (aula <a href="passagem-ponteiro.html">Passar por Ponteiro</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> antes de qualquer saída, com um array local grande</strong>
+<p><strong>O que significa:</strong> estouro de pilha. A soma das variáveis locais passou dos 8 MB (no Linux; 1 MB no Windows). Nenhum aviso de compilação ajuda aqui.</p>
+<p><strong>Como consertar:</strong> mova o array para o heap (<code>int *v = malloc(n * sizeof *v);</code>, conferindo <code>NULL</code> e com <code>free</code> no fim) ou, se o tamanho é fixo, use <code>static</code>. Em último caso, <code>ulimit -s</code> aumenta o limite só no seu terminal, mas o programa continua quebrando no computador dos outros.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> ao mudar uma letra de um texto</strong>
+<p><strong>O que significa:</strong> o <code>char *</code> aponta para um literal, que mora numa região só de leitura.</p>
+<p><strong>Como consertar:</strong> copie para um array (<code>char nome[] = "ana";</code>) antes de mudar. E declare ponteiros para literais como <code>const char *</code>: aí o próprio compilador recusa a escrita.</p>
+</div>
+
+<div class="cenario">
+<strong>A variável local "esqueceu" o valor entre duas chamadas</strong>
+<p><strong>O que significa:</strong> é o funcionamento normal da pilha: cada chamada ganha uma bandeja nova, e a variável nasce de novo.</p>
+<p><strong>Como consertar:</strong> se o valor precisa sobreviver entre chamadas, use <code>static</code> na variável local, ou guarde-o em quem chama e passe por ponteiro.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Declaração</th><th>Região</th><th>Vive até</th><th>Valor inicial se você não der um</th></tr>
+<tr><td><code>int x;</code> dentro de uma função</td><td>Pilha</td><td>O fim da função</td><td>Lixo</td></tr>
+<tr><td>Parâmetros de função</td><td>Pilha</td><td>O fim da função</td><td>O valor passado</td></tr>
+<tr><td><code>int x;</code> fora de qualquer função</td><td>Dados</td><td>O fim do programa</td><td>0</td></tr>
+<tr><td><code>static int x;</code> dentro de uma função</td><td>Dados</td><td>O fim do programa</td><td>0</td></tr>
+<tr><td><code>"texto"</code></td><td>Literais (só leitura)</td><td>O fim do programa</td><td>As letras escritas</td></tr>
+<tr><td><code>malloc(n)</code></td><td>Heap</td><td>O <code>free</code></td><td>Lixo (use <code>calloc</code> para zeros)</td></tr>
+<tr><td><code>ulimit -s</code></td><td colspan="3">Mostra o limite da pilha em KB (8192 no Ubuntu)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Onde mora?</h3>
+<p>Uma variável <code>int total = 0;</code> declarada dentro do <code>main</code> mora na…</p>
+<div class="ex-code"><input data-answer="pilha|stack|na pilha" aria-label="região"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O limite</h3>
+<p>Qual comando mostra o tamanho máximo da pilha no terminal do Linux?</p>
+<div class="ex-code"><input data-answer="ulimit -s" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Devolver a memória</h3>
+<p>Complete: a memória do heap vive até alguém chamar…</p>
+<div class="ex-code"><input data-answer="free|free()" aria-label="função"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Por que <code>int *f(void) { int x = 7; return &amp;x; }</code> é um erro?</p>
+<label><input type="radio" name="q4"> Porque não se pode devolver ponteiros em C</label>
+<label><input type="radio" name="q4"> Porque <code>x</code> deveria ser <code>double</code></label>
+<label><input type="radio" name="q4"> Porque <code>x</code> mora na bandeja de <code>f</code>, que é devolvida quando <code>f</code> termina</label>
+<label><input type="radio" name="q4"> Porque falta o <code>free(x)</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Um programa com <code>double medidas[2000000];</code> (16 MB) dentro do <code>main</code> morre com falha de segmentação antes de mostrar qualquer coisa. Qual é a causa mais provável?</p>
+<label><input type="radio" name="q5"> O <code>printf</code> está errado</label>
+<label><input type="radio" name="q5"> Estouro de pilha: 16 MB não cabem nos 8 MB da pilha</label>
+<label><input type="radio" name="q5"> O computador não tem 16 MB livres</label>
+<label><input type="radio" name="q5"> Faltou inicializar o array</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Em <code>int *notas = malloc(100 * sizeof *notas);</code> dentro do <code>main</code>, onde moram o ponteiro <code>notas</code> e os 100 inteiros?</p>
+<label><input type="radio" name="q6"> O ponteiro na pilha; os inteiros no heap</label>
+<label><input type="radio" name="q6"> Os dois no heap</label>
+<label><input type="radio" name="q6"> Os dois na pilha</label>
+<label><input type="radio" name="q6"> O ponteiro no heap; os inteiros na pilha</label>
+</div>
+
+<h3>Missão final: tirar o array da pilha</h3>
+
+<div class="tryc" data-goal="out:Última nota: 9,exit:0,src:malloc\s*\(,src:free\s*\(">
+<p class="try-task"><strong>Missão:</strong> rode: o array de 12 MB estoura a pilha e o programa morre sem mostrar nada (código 139). Mude <code>notas</code> para um ponteiro que recebe <code>malloc(N * sizeof *notas)</code>, confira o <code>NULL</code>, troque o <code>sizeof notas</code> do primeiro <code>printf</code> por <code>N * sizeof *notas</code> e chame <code>free(notas)</code> antes do <code>return 0;</code>. A saída deve ser:</p>
+<pre class="out">Reservei 12000000 bytes.
+Última nota: 9</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+#define N 3000000
+
+int main(void) {
+    int notas[N];
+    printf("Reservei %zu bytes.\n", sizeof notas);
+    for (int i = 0; i &lt; N; i++) {
+        notas[i] = i % 10;
+    }
+    printf("Última nota: %d\n", notas[N - 1]);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+#define N 3000000
+
+int main(void) {
+    int *notas = malloc(N * sizeof *notas);
+    if (notas == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+    printf("Reservei %zu bytes.\n", N * sizeof *notas);
+    for (int i = 0; i &lt; N; i++) {
+        notas[i] = i % 10;
+    }
+    printf("Última nota: %d\n", notas[N - 1]);
+    free(notas);
+    return 0;
+}
+</pre>
+</div>
+
+<p>O <code>#define N 3000000</code> dá um nome ao número para não repeti-lo (aula <a href="constantes.html">Constantes</a>). Experimente também a outra saída, <code>static int notas[N];</code>: funciona, mas o array passa a ocupar 12 MB do começo ao fim do programa.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>A memória de um programa tem regiões: <strong>código</strong> e <strong>literais</strong> (só leitura), <strong>dados</strong> (globais e <code>static</code>), <strong>heap</strong> e <strong>pilha</strong>.</li>
+  <li>A <strong>pilha</strong> guarda as variáveis locais e os parâmetros, uma bandeja por função; tudo nasce e morre sozinho. Nunca devolva o endereço de uma variável local (<code>-Wreturn-local-addr</code>).</li>
+  <li>A pilha é pequena: <strong>8 MB</strong> no Linux (<code>ulimit -s</code> = 8192) e também no editor do guia. Um array local maior que isso causa estouro de pilha: falha de segmentação, código 139, sem aviso.</li>
+  <li>O <strong>heap</strong> existe para dados grandes, de tamanho decidido na execução, ou que precisam viver depois da função que os criou. Você pede com <code>malloc</code> e devolve com <code>free</code>.</li>
+  <li>Globais e <code>static</code> vivem o programa inteiro e começam com zero; literais de texto não podem ser mudados.</li>
+  <li>Comportamentos indefinidos como devolver endereço local e escrever num literal quebram no gcc e podem "funcionar" no editor: não confie no "funcionou".</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
