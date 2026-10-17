@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C else if — várias alternativas | Guia C</title>
+<meta name="description" content="else if em C para quem nunca programou: escolher entre várias faixas (conceitos de notas, multas, descontos), por que a ordem importa, else if × vários if, fronteiras com &gt; ou &gt;=, casos inválidos primeiro, o else pendurado e o aviso -Wdangling-else, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">else if</span></h1>
+
+<p class="intro">O <code>if</code> com <code>else</code> escolhe entre <strong>dois</strong> caminhos. Mas muitas decisões têm mais opções: a nota vira conceito A, B, C ou D; a velocidade está dentro do limite, dá multa leve ou multa grave; o desconto é de 5, 10 ou 15%. Para isso, você encadeia perguntas com <code>else if</code> ("senão, se"). Nesta aula você vai montar essas cadeias, descobrir por que a <strong>ordem</strong> das perguntas muda o resultado e conhecer o famoso <strong>else pendurado</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como escolher entre vários caminhos com <code>if</code> … <code>else if</code> … <code>else</code>.</li>
+  <li>Por que só <strong>um</strong> bloco roda, e por que a ordem das perguntas importa.</li>
+  <li>A diferença entre uma cadeia de <code>else if</code> e vários <code>if</code> separados.</li>
+  <li>Como acertar as fronteiras das faixas (<code>&gt;</code> ou <code>&gt;=</code>?) e tratar os valores inválidos primeiro.</li>
+  <li>O que é o <strong>else pendurado</strong> e o aviso <code>-Wdangling-else</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: a triagem do pronto-socorro</h2>
+<p>No pronto-socorro, a enfermeira faz perguntas <strong>em ordem</strong>: "Está inconsciente?" Se sim, sala vermelha, e acabou. Senão: "Está sangrando muito?" Se sim, sala laranja, e acabou. Senão: "Tem febre alta?" Se sim, sala amarela. Senão: sala verde.</p>
+<p>Duas coisas importam nessa fila de perguntas:</p>
+<ul>
+  <li>Assim que uma resposta é "sim", <strong>as outras perguntas nem são feitas</strong>. Cada paciente vai para uma sala só.</li>
+  <li>A ordem importa: as perguntas mais graves vêm primeiro.</li>
+</ul>
+<p>A cadeia de <code>else if</code> funciona exatamente assim.</p>
+
+<hr>
+
+<h2>1. O boletim: conceitos A, B, C e D</h2>
+<p>A escola da Ana transforma a nota em conceito: 9 ou mais é A; 7 ou mais, B; 5 ou mais, C; abaixo disso, D.</p>
+
+<pre class="file" data-file="conceito.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double nota = 0;
+    printf("Nota: ");
+    if (scanf("%lf", &amp;nota) != 1) {
+        return 1;
+    }
+    if (nota &gt;= 9) {
+        printf("Conceito A\n");
+    } else if (nota &gt;= 7) {
+        printf("Conceito B\n");
+    } else if (nota &gt;= 5) {
+        printf("Conceito C\n");
+    } else {
+        printf("Conceito D\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra conceito.c -o conceito
+$ ./conceito
+Nota: 9.5
+Conceito A       « a primeira pergunta já deu sim
+$ ./conceito
+Nota: 7
+Conceito B       « 7 &gt;= 9? não. 7 &gt;= 7? sim
+$ ./conceito
+Nota: 6.9
+Conceito C
+$ ./conceito
+Nota: 3
+Conceito D       « nenhuma pergunta deu sim: rodou o else</pre>
+
+<dl class="anatomy">
+  <dt>if (nota &gt;= 9)</dt><dd>A primeira pergunta. Se der sim, mostra "A" e pula <strong>todo o resto</strong> da cadeia.</dd>
+  <dt>} else if (nota &gt;= 7) {</dt><dd>"Senão, se…": só é perguntado se a anterior deu não. Repare que não precisa escrever <code>nota &lt; 9 &amp;&amp; nota &gt;= 7</code>: se o programa chegou aqui, já sabe que a nota é menor que 9.</dd>
+  <dt>} else if (nota &gt;= 5) {</dt><dd>Você pode encadear quantos <code>else if</code> quiser.</dd>
+  <dt>} else {</dt><dd>O "senão" final, sem condição: pega tudo o que sobrou. É opcional, mas quase sempre útil.</dd>
+</dl>
+
+<p>Siga a nota 6.9 pela cadeia: <code>6.9 &gt;= 9</code>? Não. <code>6.9 &gt;= 7</code>? Não. <code>6.9 &gt;= 5</code>? Sim: mostra "C" e sai. O <code>else</code> do fim nem é olhado.</p>
+
+<div class="note">
+<strong><code>else if</code> não é uma palavra nova</strong>
+<p>O C não tem uma palavra <code>elseif</code>. O <code>else if</code> é só um <code>else</code> cujo bloco é outro <code>if</code>. As duas formas abaixo são iguais; a da direita, com chaves e recuo "de verdade", vai ficando cada vez mais torta para a direita, e por isso todo mundo escreve a da esquerda:</p>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Como se escreve</th><th>O que o C entende</th></tr>
+<tr><td><pre class="file">if (nota &gt;= 9) {
+    printf("A\n");
+} else if (nota &gt;= 7) {
+    printf("B\n");
+} else {
+    printf("C\n");
+}</pre></td><td><pre class="file">if (nota &gt;= 9) {
+    printf("A\n");
+} else {
+    if (nota &gt;= 7) {
+        printf("B\n");
+    } else {
+        printf("C\n");
+    }
+}</pre></td></tr>
+</table>
+</div>
+
+<div class="tryc" data-stdin="65">
+<p class="try-task"><strong>Experimente:</strong> o radar da avenida (limite de 60 km/h) lê a velocidade do carro. Mude a entrada para −5, 60, 61, 72 e 73 e veja qual mensagem aparece. Depois acrescente uma faixa nova, "Multa gravíssima", para mais de 90 km/h. (Pense: onde ela entra na cadeia?)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int velocidade = 0;
+    if (scanf("%d", &amp;velocidade) != 1) {
+        return 1;
+    }
+    if (velocidade &lt; 0) {
+        printf("Velocidade inválida\n");
+    } else if (velocidade &lt;= 60) {
+        printf("Dentro do limite\n");
+    } else if (velocidade &lt;= 72) {
+        printf("Multa leve\n");
+    } else {
+        printf("Multa grave\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. A ordem importa</h2>
+<p>A Ana escreveu as mesmas perguntas em outra ordem, começando pela mais fácil:</p>
+
+<pre class="file" data-file="ordem.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double nota = 9.5;
+    if (nota &gt;= 5) {
+        printf("Conceito C\n");
+    } else if (nota &gt;= 7) {
+        printf("Conceito B\n");
+    } else if (nota &gt;= 9) {
+        printf("Conceito A\n");
+    } else {
+        printf("Conceito D\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ordem.c -o ordem
+$ ./ordem
+Conceito C       « 9.5 merecia A!</pre>
+
+<p>Nenhum aviso, e o resultado está errado. <code>9.5 &gt;= 5</code> é verdade, então a primeira pergunta já "captura" a nota e as outras nem são feitas. Pior: os blocos de "B" e "A" <strong>nunca</strong> vão rodar, para nota nenhuma, porque toda nota maior ou igual a 7 também é maior ou igual a 5.</p>
+
+<div class="tip">
+<strong>Regra da ordem</strong>
+<p>Com <code>&gt;=</code>, comece pela faixa <strong>mais alta</strong> e desça. Com <code>&lt;</code> ou <code>&lt;=</code>, comece pela <strong>mais baixa</strong> e suba (como no radar: <code>&lt;= 60</code>, depois <code>&lt;= 72</code>). Em geral: a pergunta mais "exigente" vem primeiro.</p>
+</div>
+
+<div class="tryc" data-goal="outre:^Conceito A\n$,src:nota\s*=\s*9\.5">
+<p class="try-task"><strong>Missão:</strong> reorganize as perguntas da Ana (sem mudar a nota) para que 9.5 receba o conceito certo:</p>
+<pre class="out">Conceito A</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double nota = 9.5;
+    if (nota &gt;= 5) {
+        printf("Conceito C\n");
+    } else if (nota &gt;= 7) {
+        printf("Conceito B\n");
+    } else if (nota &gt;= 9) {
+        printf("Conceito A\n");
+    } else {
+        printf("Conceito D\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double nota = 9.5;
+    if (nota &gt;= 9) {
+        printf("Conceito A\n");
+    } else if (nota &gt;= 7) {
+        printf("Conceito B\n");
+    } else if (nota &gt;= 5) {
+        printf("Conceito C\n");
+    } else {
+        printf("Conceito D\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. <code>else if</code> × vários <code>if</code></h2>
+<p>E se a Ana tirasse os <code>else</code> e deixasse só <code>if</code>s separados?</p>
+
+<pre class="file" data-file="variosif.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double nota = 9.5;
+    if (nota &gt;= 9) {
+        printf("Conceito A\n");
+    }
+    if (nota &gt;= 7) {
+        printf("Conceito B\n");
+    }
+    if (nota &gt;= 5) {
+        printf("Conceito C\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra variosif.c -o variosif
+$ ./variosif
+Conceito A
+Conceito B       « três conceitos para a mesma nota!
+Conceito C</pre>
+
+<p>Cada <code>if</code> separado é uma pergunta <strong>independente</strong>, feita sempre. 9.5 é maior que 9, que 7 e que 5, então os três blocos rodaram.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>if</code> … <code>else if</code> … <code>else</code></th><th>Vários <code>if</code> separados</th></tr>
+<tr><td>Quantos blocos rodam</td><td>No máximo um (exatamente um, se houver <code>else</code>)</td><td>Zero, um ou vários</td></tr>
+<tr><td>Perguntas feitas</td><td>Só até a primeira que der sim</td><td>Todas, sempre</td></tr>
+<tr><td>Use quando</td><td>As opções se <strong>excluem</strong>: um conceito, uma sala, um desconto</td><td>As perguntas são <strong>independentes</strong>: "tem bebida?", "tem sobremesa?", "é para viagem?"</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>4. Fronteiras: <code>&gt;</code> ou <code>&gt;=</code>?</h2>
+<p>A maioria dos erros de faixa está nos <strong>números da fronteira</strong>. A regra do radar diz: "até 60 km/h, tudo bem; de 61 a 72, multa leve; acima de 72, multa grave". O programa da seção 1 usa <code>&lt;= 60</code> e <code>&lt;= 72</code>. Testando exatamente nas fronteiras:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra velocidade.c -o velocidade
+$ for v in -5 60 61 72 73; do echo $v | ./velocidade; done
+Velocidade inválida
+Dentro do limite     « 60: exatamente no limite, sem multa
+Multa leve           « 61
+Multa leve           « 72: ainda leve
+Multa grave          « 73</pre>
+
+<p>O comando <code>for v in …; do echo $v | ./velocidade; done</code> é do terminal (bash, não C): ele roda o programa uma vez para cada número, entregando o número como se você o tivesse digitado. É um jeito rápido de testar vários casos.</p>
+
+<p>Se a Ana tivesse escrito <code>&lt; 60</code>, o motorista a exatamente 60 km/h levaria multa. Os dois programas compilam sem aviso; só o teste mostra a diferença. Para acertar:</p>
+<ol class="passo">
+  <li>Leia a regra com atenção: "até 60" inclui o 60 (<code>&lt;= 60</code>); "acima de 72" não inclui o 72 (<code>&gt; 72</code>); "9 ou mais" inclui o 9 (<code>&gt;= 9</code>).</li>
+  <li>Teste <strong>cada fronteira</strong> e o número logo depois dela: 60 e 61, 72 e 73.</li>
+</ol>
+
+<hr>
+
+<h2>5. Primeiro os inválidos; e o <code>else</code> final</h2>
+<p>No radar, a primeira pergunta é <code>velocidade &lt; 0</code>. Sem ela, um sensor com defeito que mandasse −5 diria "Dentro do limite", porque −5 é menor que 60. É uma boa prática: <strong>trate os valores impossíveis no começo da cadeia</strong>. Para as notas, que vão de 0 a 10:</p>
+
+<pre class="file">if (nota &lt; 0 || nota &gt; 10) {
+    printf("Nota inválida\n");
+} else if (nota &gt;= 9) {
+    printf("Conceito A\n");
+} else if (nota &gt;= 7) {
+    ...</pre>
+
+<p>E o <code>else</code> final? Sem ele, se nenhuma pergunta der sim, nada acontece. Às vezes é isso que você quer, mas, na dúvida, coloque um <code>else</code> que pegue "todo o resto". Assim nenhum valor passa sem resposta.</p>
+
+<hr>
+
+<h2>6. O <code>else</code> pendurado</h2>
+<p>Quando há um <code>if</code> dentro de outro e as chaves foram esquecidas, de qual <code>if</code> é o <code>else</code>? A Ana quis dizer: "menores de 18 só entram acompanhados; os outros entram sozinhos":</p>
+
+<pre class="file" data-file="pendurado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 15;
+    int com_pais = 0;
+    if (idade &lt; 18)
+        if (com_pais)
+            printf("Pode entrar acompanhado.\n");
+    else
+        printf("Pode entrar sozinho.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pendurado.c -o pendurado
+pendurado.c: In function ‘main’:
+pendurado.c:6:8: warning: suggest explicit braces to avoid ambiguous ‘else’ [-Wdangling-else]
+    6 |     if (idade &lt; 18)
+      |        ^
+$ ./pendurado
+Pode entrar sozinho.     « um menor de 15 anos, sem os pais?!</pre>
+
+<p>O recuo diz que o <code>else</code> pertence ao <code>if (idade &lt; 18)</code>. Mas a regra do C é outra: <strong>o <code>else</code> pertence ao <code>if</code> mais próximo que ainda não tem <code>else</code></strong>, não importa o recuo. Então o C entendeu assim:</p>
+
+<pre class="file">if (idade &lt; 18) {
+    if (com_pais) {
+        printf("Pode entrar acompanhado.\n");
+    } else {
+        printf("Pode entrar sozinho.\n");     // menor E sem os pais!
+    }
+}</pre>
+
+<p>Esse problema tem nome: <strong>else pendurado</strong> (<em>dangling else</em>). O aviso diz "sugiro chaves explícitas para evitar um <code>else</code> ambíguo"; no Clang, <code>add explicit braces to avoid dangling else</code>. Os dois vêm com o <code>-Wall</code>. A solução é a mesma regra de sempre: <strong>chaves em todo <code>if</code> e <code>else</code></strong>. Com chaves, não existe ambiguidade:</p>
+
+<pre class="file">if (idade &lt; 18) {
+    if (com_pais) {
+        printf("Pode entrar acompanhado.\n");
+    }
+} else {
+    printf("Pode entrar sozinho.\n");
+}</pre>
+
+<hr>
+
+<h2>Formas diferentes + qual usar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Forma</th><th>Por quê</th></tr>
+<tr><td>Faixas de um número (notas, idade, preço)</td><td><code>if</code> … <code>else if</code> … <code>else</code></td><td>Cada pergunta aproveita as anteriores; só um bloco roda.</td></tr>
+<tr><td>Um valor inteiro ou caractere comparado com várias constantes (menu: 1, 2, 3…; letras 's'/'n')</td><td><code>switch</code> (aula <a href="switch.html">switch</a>) ou <code>else if</code></td><td>O <code>switch</code> fica mais limpo para "é igual a 1? a 2? a 3?". Para faixas (<code>&gt;=</code>), só o <code>else if</code> serve.</td></tr>
+<tr><td>Perguntas independentes</td><td>vários <code>if</code></td><td>Mais de um bloco pode rodar, de propósito.</td></tr>
+<tr><td>Escolher entre dois valores</td><td>ternário <code>? :</code> (aula <a href="ternario.html">Operador Ternário</a>)</td><td>Cabe numa linha.</td></tr>
+<tr><td>Condições dentro de condições</td><td><code>if</code> dentro de <code>if</code>, <strong>com chaves</strong></td><td>Ou junte as perguntas com <code>&amp;&amp;</code>, que costuma ficar mais simples.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Uma faixa nunca é alcançada (sem aviso nenhum)</strong>
+<p><strong>O que significa:</strong> uma pergunta anterior, mais "larga", já captura todos os valores dessa faixa. Exemplo: <code>nota &gt;= 5</code> antes de <code>nota &gt;= 9</code>.</p>
+<p><strong>Como consertar:</strong> com <code>&gt;=</code>, ordene da faixa mais alta para a mais baixa; com <code>&lt;=</code>, da mais baixa para a mais alta. Teste um valor de cada faixa.</p>
+</div>
+
+<div class="cenario">
+<strong>Aparecem várias respostas para um valor só</strong>
+<p><strong>O que significa:</strong> você usou <code>if</code>s separados em vez de <code>else if</code>.</p>
+<p><strong>Como consertar:</strong> troque os <code>if</code> do meio por <code>else if</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O valor da fronteira cai na faixa errada</strong>
+<p><strong>O que significa:</strong> <code>&lt;</code> no lugar de <code>&lt;=</code> (ou o contrário).</p>
+<p><strong>Como consertar:</strong> releia a regra ("até", "a partir de", "mais de") e teste exatamente o número da fronteira e o seguinte.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: suggest explicit braces to avoid ambiguous ‘else’ [-Wdangling-else]</code></strong>
+<p><strong>O que significa:</strong> um <code>if</code> sem chaves dentro de outro <code>if</code> sem chaves, seguido de um <code>else</code>. O <code>else</code> vai para o <code>if</code> mais próximo, que pode não ser o que você queria.</p>
+<p><strong>Como consertar:</strong> coloque chaves em todos os <code>if</code> e <code>else</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: ‘else’ without a previous ‘if’</code></strong>
+<p><strong>O que significa:</strong> há algo entre o fim do bloco de um <code>if</code> e o <code>else if</code> seguinte: um <code>;</code> depois do <code>)</code>, uma linha solta ou uma chave fechando no lugar errado.</p>
+<p><strong>Como consertar:</strong> cada <code>else</code> deve vir logo depois de <code>}</code>: <code>} else if (…) {</code>. Veja também <a href="if-else.html">if e else</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Estrutura</th><th>Comportamento</th></tr>
+<tr><td><code>if (a) { … } else if (b) { … } else { … }</code></td><td>Testa <code>a</code>; se não, testa <code>b</code>; se nenhum, roda o <code>else</code>. Só um bloco roda.</td></tr>
+<tr><td>Vários <code>else if</code></td><td>Sem limite. São testados de cima para baixo, até o primeiro verdadeiro.</td></tr>
+<tr><td><code>else</code> final</td><td>Opcional; pega o que sobrou.</td></tr>
+<tr><td>Faixas com <code>&gt;=</code></td><td>Da maior para a menor.</td></tr>
+<tr><td>Faixas com <code>&lt;=</code></td><td>Da menor para a maior.</td></tr>
+<tr><td><code>else</code> sem chaves com <code>if</code> aninhado</td><td>Pertence ao <code>if</code> mais próximo (<code>-Wdangling-else</code>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete a cadeia</h3>
+<p>Complete com as duas palavras que fazem a segunda pergunta só quando a primeira der "não":</p>
+<div class="ex-code">if (x &gt; 0) { printf("positivo\n"); } <input data-answer="else if" aria-label="palavras"> (x &lt; 0) { printf("negativo\n"); } else { printf("zero\n"); }</div>
+</div>
+
+<div class="exercise">
+<h3>2. A fronteira</h3>
+<p>A regra é "a partir de 18 anos". Complete o operador:</p>
+<div class="ex-code">if (idade <input data-answer="&gt;=" aria-label="operador"> 18) {</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Com <code>int n = 15;</code>, o que este trecho mostra? <code>if (n &gt; 10) { printf("A"); } else if (n &gt; 5) { printf("B"); } else { printf("C"); }</code></p>
+<label><input type="radio" name="q3"> <code>AB</code></label>
+<label><input type="radio" name="q3"> <code>A</code></label>
+<label><input type="radio" name="q3"> <code>B</code></label>
+<label><input type="radio" name="q3"> <code>ABC</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. E se fossem três <code>if</code> separados? <code>if (n &gt; 10) { printf("A"); } if (n &gt; 5) { printf("B"); } if (n &gt; 0) { printf("C"); }</code> (com <code>n = 15</code>)</p>
+<label><input type="radio" name="q4"> <code>A</code></label>
+<label><input type="radio" name="q4"> <code>C</code></label>
+<label><input type="radio" name="q4"> <code>ABC</code></label>
+<label><input type="radio" name="q4"> Nada</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Num <code>else</code> sem chaves, depois de dois <code>if</code> aninhados sem chaves, a qual <code>if</code> ele pertence?</p>
+<label><input type="radio" name="q5"> Ao primeiro <code>if</code>, o de fora</label>
+<label><input type="radio" name="q5"> Ao que estiver com o mesmo recuo</label>
+<label><input type="radio" name="q5"> A nenhum: é erro de compilação</label>
+<label><input type="radio" name="q5"> Ao <code>if</code> mais próximo que ainda não tem <code>else</code></label>
+</div>
+
+<h3>Missão final: o desconto da lojinha</h3>
+
+<div class="tryc" data-stdin="250" data-goal="out:Desconto: 10%,out:Total: R$ 225.00,src:else\s+if,semaviso">
+<p class="try-task"><strong>Missão:</strong> a lojinha da Ana dá desconto por faixa de compra: <strong>500 reais ou mais, 15%</strong>; <strong>200 ou mais, 10%</strong>; <strong>100 ou mais, 5%</strong>; abaixo de 100, nada. O programa lê o valor (a entrada preparada é <code>250</code>). Escreva a cadeia de <code>if</code> / <code>else if</code> / <code>else</code> que dá o valor certo à variável <code>desconto</code>. Sem avisos. Com 250, a saída deve ser:</p>
+<pre class="out">Desconto: 10%
+Total: R$ 225.00</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double compra = 0;
+    if (scanf("%lf", &amp;compra) != 1) {
+        return 1;
+    }
+    int desconto = 0;    // em porcentagem
+
+    // escreva a cadeia aqui
+
+    double total = compra - compra * desconto / 100;
+    printf("Desconto: %d%%\n", desconto);
+    printf("Total: R$ %.2f\n", total);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double compra = 0;
+    if (scanf("%lf", &amp;compra) != 1) {
+        return 1;
+    }
+    int desconto = 0;    // em porcentagem
+
+    if (compra &gt;= 500) {
+        desconto = 15;
+    } else if (compra &gt;= 200) {
+        desconto = 10;
+    } else if (compra &gt;= 100) {
+        desconto = 5;
+    } else {
+        desconto = 0;
+    }
+
+    double total = compra - compra * desconto / 100;
+    printf("Desconto: %d%%\n", desconto);
+    printf("Total: R$ %.2f\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<p>O <code>%%</code> no <code>printf</code> mostra um <code>%</code> de verdade (aula <a href="formatos-printf.html">Formatos do printf</a>). Teste as fronteiras: 500, 499.99, 200, 100 e 99.99.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>if</code> … <code>else if</code> … <code>else</code> escolhe <strong>um</strong> entre vários caminhos. As perguntas são feitas de cima para baixo e param na primeira que der sim.</li>
+  <li><code>else if</code> é só um <code>else</code> seguido de outro <code>if</code>; pode haver quantos você quiser. O <code>else</code> final pega o resto.</li>
+  <li>A ordem importa: com <code>&gt;=</code>, da faixa mais alta para a mais baixa. Uma faixa na ordem errada nunca é alcançada, e não há aviso.</li>
+  <li>Vários <code>if</code> separados são perguntas independentes: vários blocos podem rodar.</li>
+  <li>Teste as fronteiras (<code>&gt;</code> × <code>&gt;=</code>) e trate os valores inválidos no começo.</li>
+  <li>Else pendurado: sem chaves, o <code>else</code> vai para o <code>if</code> mais próximo (<code>-Wdangling-else</code>). Chaves sempre.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
