@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C ctype.h — classificar caracteres (isdigit, isalpha, toupper) | Guia C</title>
+<meta name="description" content="As funções do ctype.h em C para quem nunca programou: isdigit, isalpha, isalnum, isspace, isupper, islower, ispunct e as outras perguntas sobre um caractere, toupper e tolower, contar letras e algarismos, validar um CEP e uma senha, por que o resultado não é 1, por que o (unsigned char) é obrigatório e por que acentos não são letras para o ctype, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Classificar Caracteres</span> (ctype.h)</h1>
+
+<p class="intro">"O CEP só tem algarismos?" "A senha tem pelo menos uma maiúscula?" "Esta resposta começa com S ou s?" Programas fazem perguntas assim o tempo todo, um caractere de cada vez. Dá para responder com contas na tabela ASCII, como em <a href="char.html">Caracteres</a> (<code>c &gt;= '0' &amp;&amp; c &lt;= '9'</code>), mas o C já traz as perguntas prontas, com nomes que se leem como frases: <code>isdigit(c)</code>, "é algarismo?"; <code>isupper(c)</code>, "é maiúscula?". Elas moram no cabeçalho <code>&lt;ctype.h&gt;</code> (de <em>character type</em>, "tipo de caractere"), junto com <code>toupper</code> e <code>tolower</code>, que trocam maiúscula e minúscula do jeito certo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como perguntar "este caractere é um algarismo?" com <code>isdigit</code>, e o que a função devolve.</li>
+  <li>A família completa: <code>isalpha</code>, <code>isalnum</code>, <code>isspace</code>, <code>isupper</code>, <code>islower</code>, <code>ispunct</code>, <code>isxdigit</code>…</li>
+  <li>Como contar letras, algarismos e espaços de um texto, e validar um CEP.</li>
+  <li>Como trocar maiúscula e minúscula com <code>toupper</code> e <code>tolower</code>.</li>
+  <li>Por que você nunca deve comparar o resultado com <code>== 1</code>.</li>
+  <li>Por que se escreve <code>(unsigned char)</code> antes do caractere, e por que <code>ç</code> e <code>ã</code> não são letras para o <code>ctype.h</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Antes desta aula, veja <a href="char.html">Caracteres</a> e <a href="strings.html">Strings</a>: aqui vamos percorrer strings letra por letra.</p>
+
+<hr>
+
+<h2>A ideia: a triagem dos Correios</h2>
+<p>Na agência dos Correios, cada pacote passa por uma esteira, e um funcionário faz perguntas simples: "é carta ou caixa?", "é para o Sul?", "é registrado?". Cada pergunta tem resposta sim ou não, e ele não precisa abrir o pacote para responder.</p>
+<p>As funções <code>is…</code> do <code>ctype.h</code> são esse funcionário. Você entrega <strong>um</strong> caractere e faz <strong>uma</strong> pergunta. O nome de cada função é a pergunta em inglês: <code>is</code> ("é") + a categoria. <code>isdigit</code> = "is digit?", "é algarismo?". A resposta é um número: <strong>0 quer dizer não</strong>; <strong>qualquer outro valor quer dizer sim</strong> (como no <code>if</code>, aula <a href="if-else.html">if e else</a>).</p>
+
+<hr>
+
+<h2>1. A primeira pergunta: <code>isdigit</code></h2>
+
+<pre class="file" data-file="digito.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char c = '7';
+    if (isdigit(c)) {
+        printf("'%c' é um algarismo\n", c);
+    } else {
+        printf("'%c' não é um algarismo\n", c);
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;ctype.h&gt;</dt><dd>Traz as funções de caractere. Sem ele, o compilador não conhece <code>isdigit</code> (veja "Quando dá errado").</dd>
+  <dt>isdigit(c)</dt><dd>"O caractere <code>c</code> é um dos algarismos <code>'0'</code> a <code>'9'</code>?" Devolve um número diferente de zero para sim e 0 para não.</dd>
+  <dt>if (isdigit(c))</dt><dd>O <code>if</code> testa direto o resultado: diferente de zero é verdadeiro. É assim que se usa, sem comparar com nada.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra digito.c -o digito
+$ ./digito
+'7' é um algarismo</pre>
+
+<h3>O "sim" não é 1</h3>
+<p>Que número é esse "diferente de zero"? Vamos olhar:</p>
+
+<pre class="file" data-file="valor.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("isdigit('7') = %d\n", isdigit('7'));
+    printf("isdigit('x') = %d\n", isdigit('x'));
+    printf("isalpha('x') = %d\n", isalpha('x'));
+    printf("isupper('A') = %d\n", isupper('A'));
+    printf("isspace(' ') = %d\n", isspace(' '));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra valor.c -o valor
+$ ./valor
+isdigit('7') = 2048
+isdigit('x') = 0
+isalpha('x') = 1024
+isupper('A') = 256
+isspace(' ') = 8192</pre>
+
+<p>2048, 1024, 256… A norma do C só promete "zero ou diferente de zero". A biblioteca do Linux (a glibc) guarda as categorias de cada caractere como bits de um número (aula <a href="mascaras-bits.html">Máscaras de Bits</a>) e devolve o bit da pergunta. No editor do guia, a biblioteca é outra e o mesmo programa mostra <code>1</code> em todas as respostas "sim". Os dois estão certos. A lição:</p>
+
+<div class="warning">
+<strong>Nunca escreva <code>if (isdigit(c) == 1)</code></strong>
+<p>No notebook da Ana, <code>isdigit('7') == 1</code> é <code>2048 == 1</code>, falso: o programa diria que <code>'7'</code> não é algarismo. No editor, daria certo, e o erro ficaria escondido até alguém compilar com o gcc. Escreva <code>if (isdigit(c))</code> para "sim" e <code>if (!isdigit(c))</code> para "não". Se precisar guardar a resposta como 0 ou 1, use <code>isdigit(c) != 0</code>.</p>
+</div>
+
+<div class="tryc" data-goal="out:'k' é uma letra,src:isalpha">
+<p class="try-task"><strong>Missão:</strong> o programa pergunta se <code>'k'</code> é um algarismo. Troque a pergunta: use <code>isalpha</code> ("is alphabetic?", "é uma letra?") e ajuste as duas mensagens, para a saída ser <code>'k' é uma letra</code>. Depois, teste com <code>'K'</code>, <code>'5'</code> e <code>'?'</code>.</p>
+<pre class="script">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char c = 'k';
+    if (isdigit((unsigned char) c)) {
+        printf("'%c' é um algarismo\n", c);
+    } else {
+        printf("'%c' não é um algarismo\n", c);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char c = 'k';
+    if (isalpha((unsigned char) c)) {
+        printf("'%c' é uma letra\n", c);
+    } else {
+        printf("'%c' não é uma letra\n", c);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<p>O <code>(unsigned char)</code> antes do <code>c</code> é um cuidado que todo programa com <code>ctype.h</code> deve ter. Por enquanto, aceite; a seção 5 explica o porquê.</p>
+
+<hr>
+
+<h2>2. A família completa</h2>
+<p>Todas as funções <code>is…</code> recebem um caractere e devolvem zero (não) ou diferente de zero (sim). Para os caracteres da tabela ASCII, as respostas são estas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Pergunta (em inglês → português)</th><th>"Sim" para</th></tr>
+<tr><td><code>isdigit(c)</code></td><td>is digit? → é algarismo?</td><td><code>0</code> a <code>9</code></td></tr>
+<tr><td><code>isalpha(c)</code></td><td>is alphabetic? → é letra?</td><td><code>a</code> a <code>z</code> e <code>A</code> a <code>Z</code></td></tr>
+<tr><td><code>isalnum(c)</code></td><td>is alphanumeric? → é letra ou algarismo?</td><td>o que é <code>isalpha</code> ou <code>isdigit</code></td></tr>
+<tr><td><code>isupper(c)</code></td><td>is upper case? → é maiúscula?</td><td><code>A</code> a <code>Z</code></td></tr>
+<tr><td><code>islower(c)</code></td><td>is lower case? → é minúscula?</td><td><code>a</code> a <code>z</code></td></tr>
+<tr><td><code>isspace(c)</code></td><td>is space? → é espaço em branco?</td><td>espaço, <code>\t</code> (tab), <code>\n</code> (Enter), <code>\r</code>, <code>\v</code>, <code>\f</code></td></tr>
+<tr><td><code>isblank(c)</code> <span class="versao">C99</span></td><td>is blank? → é espaço na linha?</td><td>só o espaço e o <code>\t</code></td></tr>
+<tr><td><code>ispunct(c)</code></td><td>is punctuation? → é pontuação?</td><td><code>! " # , . ; ? @ _ -</code> e os outros símbolos visíveis</td></tr>
+<tr><td><code>isxdigit(c)</code></td><td>is hex digit? → é algarismo hexadecimal?</td><td><code>0</code>–<code>9</code>, <code>a</code>–<code>f</code>, <code>A</code>–<code>F</code></td></tr>
+<tr><td><code>isprint(c)</code></td><td>is printable? → aparece na tela?</td><td>tudo que é visível, mais o espaço</td></tr>
+<tr><td><code>isgraph(c)</code></td><td>is graphic? → tem desenho?</td><td>o mesmo que <code>isprint</code>, menos o espaço</td></tr>
+<tr><td><code>iscntrl(c)</code></td><td>is control? → é caractere de controle?</td><td>os invisíveis: <code>\n</code>, <code>\t</code>, <code>'\0'</code>… (códigos 0 a 31 e 127)</td></tr>
+</table>
+</div>
+
+<p>Para ver várias perguntas de uma vez, este programa passa por cada caractere de um texto e responde sete delas:</p>
+
+<pre class="file" data-file="tabela.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char texto[] = "Ana, 29 anos!";
+    printf("char alpha digit alnum space upper lower punct\n");
+    for (int i = 0; texto[i] != '\0'; i++) {
+        unsigned char c = texto[i];
+        printf(" '%c'  %3s   %3s   %3s   %3s   %3s   %3s   %3s\n", c,
+               isalpha(c) ? "sim" : "-",
+               isdigit(c) ? "sim" : "-",
+               isalnum(c) ? "sim" : "-",
+               isspace(c) ? "sim" : "-",
+               isupper(c) ? "sim" : "-",
+               islower(c) ? "sim" : "-",
+               ispunct(c) ? "sim" : "-");
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>for (int i = 0; texto[i] != '\0'; i++)</dt><dd>Anda pela string até a marca de fim, como em <a href="strings.html">Strings</a>.</dd>
+  <dt>unsigned char c = texto[i];</dt><dd>Copia o caractere para um <code>unsigned char</code> (o mesmo cuidado do <code>(unsigned char)</code>, escrito de outro jeito: seção 5).</dd>
+  <dt>isalpha(c) ? "sim" : "-"</dt><dd>O operador ternário (aula <a href="ternario.html">Ternário</a>): se a resposta é diferente de zero, mostra <code>"sim"</code>; se é zero, <code>"-"</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tabela.c -o tabela
+$ ./tabela
+char alpha digit alnum space upper lower punct
+ 'A'  sim     -   sim     -   sim     -     -
+ 'n'  sim     -   sim     -     -   sim     -
+ 'a'  sim     -   sim     -     -   sim     -
+ ','    -     -     -     -     -     -   sim
+ ' '    -     -     -   sim     -     -     -
+ '2'    -   sim   sim     -     -     -     -
+ '9'    -   sim   sim     -     -     -     -
+ ' '    -     -     -   sim     -     -     -
+ 'a'  sim     -   sim     -     -   sim     -
+ 'n'  sim     -   sim     -     -   sim     -
+ 'o'  sim     -   sim     -     -   sim     -
+ 's'  sim     -   sim     -     -   sim     -
+ '!'    -     -     -     -     -     -   sim</pre>
+
+<p>Repare: cada caractere do ASCII visível cai em exatamente uma destas três: letra, algarismo ou pontuação. O espaço não é nenhuma das três. E <code>isalnum</code> é só "letra <strong>ou</strong> algarismo", muito usado para validar nomes de usuário.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> troque o texto por <code>"#1A2b3G"</code> (uma cor em hexadecimal, com um erro no fim) e acrescente uma coluna com <code>isxdigit(c)</code>. Qual caractere não é hexadecimal? Teste também um texto com <code>\t</code> no meio: o <code>isspace</code> responde "sim", e o <code>%c</code> mostra um tab.</p>
+<pre class="script">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char texto[] = "Ana, 29 anos!";
+    printf("char alpha digit space punct\n");
+    for (int i = 0; texto[i] != '\0'; i++) {
+        unsigned char c = texto[i];
+        printf(" '%c'  %3s   %3s   %3s   %3s\n", c,
+               isalpha(c) ? "sim" : "-",
+               isdigit(c) ? "sim" : "-",
+               isspace(c) ? "sim" : "-",
+               ispunct(c) ? "sim" : "-");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Contar e validar</h2>
+<p>Com uma pergunta por caractere e um laço, dá para contar e para conferir textos inteiros.</p>
+
+<h3>Contar letras, algarismos e espaços</h3>
+
+<pre class="file" data-file="contar.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char frase[] = "Pedido 42: 3 cafes e 2 bolos, por favor!";
+    int letras = 0, algarismos = 0, espacos = 0, outros = 0;
+    for (int i = 0; frase[i] != '\0'; i++) {
+        unsigned char c = frase[i];
+        if (isalpha(c)) {
+            letras++;
+        } else if (isdigit(c)) {
+            algarismos++;
+        } else if (isspace(c)) {
+            espacos++;
+        } else {
+            outros++;
+        }
+    }
+    printf("%s\n", frase);
+    printf("letras: %d, algarismos: %d, espaços: %d, outros: %d\n",
+           letras, algarismos, espacos, outros);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar
+Pedido 42: 3 cafes e 2 bolos, por favor!
+letras: 25, algarismos: 4, espaços: 8, outros: 3     « os outros: ':' ',' '!'</pre>
+
+<p>O <code>else if</code> (aula <a href="else-if.html">else if</a>) garante que cada caractere entra numa conta só. "cafes" está sem acento de propósito: a seção 6 mostra o que o <code>ctype.h</code> faz com o <code>é</code>.</p>
+
+<h3>Validar um CEP</h3>
+<p>Na lojinha, o CEP de entrega tem de ter o formato <code>01310-100</code>: 9 caracteres, um traço na posição 5 e algarismos no resto.</p>
+
+<pre class="file" data-file="cep.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char cep[] = "01310-100";
+    int ok = strlen(cep) == 9 &amp;&amp; cep[5] == '-';
+    for (int i = 0; ok &amp;&amp; i &lt; 9; i++) {
+        if (i != 5 &amp;&amp; !isdigit((unsigned char) cep[i])) {
+            ok = 0;
+        }
+    }
+    printf("%s: %s\n", cep, ok ? "CEP válido" : "CEP inválido");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int ok = strlen(cep) == 9 &amp;&amp; cep[5] == '-';</dt><dd>Começa conferindo o tamanho (<code>strlen</code>, aula <a href="funcoes-string.html">Funções de String</a>) e o traço. O resultado da comparação é 1 ou 0. Se o tamanho estiver errado, o <code>&amp;&amp;</code> nem olha o <code>cep[5]</code> (aula <a href="operadores-logicos.html">Operadores Lógicos</a>).</dd>
+  <dt>ok &amp;&amp; i &lt; 9</dt><dd>O laço para assim que algo der errado: não adianta continuar olhando.</dd>
+  <dt>i != 5 &amp;&amp; !isdigit(…)</dt><dd>"Não é a posição do traço <strong>e</strong> não é algarismo": então o CEP é inválido. O <code>!</code> inverte a resposta do <code>isdigit</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra cep.c -o cep
+$ ./cep
+01310-100: CEP válido</pre>
+
+<p>Troque o CEP por <code>"0131O-100"</code> (com a letra O no lugar do zero) e o programa diz <code>CEP inválido</code>. Para transformar o CEP já validado em número, use <code>strtol</code> (aula <a href="string-numero.html">Texto ↔ Número</a>).</p>
+
+<hr>
+
+<h2>4. Trocar maiúscula e minúscula: <code>toupper</code> e <code>tolower</code></h2>
+<p><code>toupper</code> ("to upper case", "para maiúscula") recebe um caractere e devolve a versão maiúscula. <code>tolower</code> faz o contrário. O detalhe que importa: se o caractere <strong>não é letra</strong>, elas devolvem o mesmo caractere, sem mexer.</p>
+
+<pre class="file" data-file="maiusculas.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[] = "ana maria, 29!";
+    for (int i = 0; nome[i] != '\0'; i++) {
+        nome[i] = (char) toupper((unsigned char) nome[i]);
+    }
+    printf("%s\n", nome);
+    printf("tolower('Q') = %c\n", tolower('Q'));
+    printf("toupper('!') = %c\n", toupper('!'));
+    printf("'!' - 32     = %c\n", '!' - 32);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>toupper((unsigned char) nome[i])</dt><dd>Calcula a maiúscula da letra da posição <code>i</code>. A função <strong>não muda</strong> a string: ela só devolve um valor novo.</dd>
+  <dt>nome[i] = (char) …</dt><dd>Por isso o resultado tem de ser guardado de volta na posição. O <code>toupper</code> devolve um <code>int</code>; o <code>(char)</code> deixa claro que você sabe que ele vai virar <code>char</code>.</dd>
+  <dt>toupper('!')</dt><dd>Não é letra: volta o próprio <code>'!'</code>. Os espaços, a vírgula e o 29 do nome também passaram intactos.</dd>
+  <dt>'!' - 32</dt><dd>O truque da aula <a href="char.html">Caracteres</a>, subtrair 32, aplicado a algo que não é letra: 33 − 32 = 1, um caractere de controle invisível.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra maiusculas.c -o maiusculas
+$ ./maiusculas
+ANA MARIA, 29!
+tolower('Q') = q
+toupper('!') = !
+'!' - 32     =       « o código 1: invisível no terminal</pre>
+
+<p>Esse é o motivo de preferir <code>toupper</code> à conta com 32: a conta só funciona se você tiver certeza de que o caractere é uma letra minúscula. O <code>toupper</code> confere sozinho.</p>
+
+<div class="tryc" data-goal="out:Ana Maria Souza,src:toupper">
+<p class="try-task"><strong>Missão:</strong> o cadastro da lojinha recebeu o nome todo em minúsculas. Deixe <strong>maiúscula só a primeira letra de cada palavra</strong>, para mostrar <code>Ana Maria Souza</code>. Dica: um caractere é começo de palavra quando é o primeiro (<code>i == 0</code>) ou quando o anterior (<code>nome[i - 1]</code>) é um espaço.</p>
+<pre class="script">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[] = "ana maria souza";
+    for (int i = 0; nome[i] != '\0'; i++) {
+        // se nome[i] começa uma palavra, troque por maiúscula
+
+    }
+    printf("%s\n", nome);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[] = "ana maria souza";
+    for (int i = 0; nome[i] != '\0'; i++) {
+        if (i == 0 || nome[i - 1] == ' ') {
+            nome[i] = (char) toupper((unsigned char) nome[i]);
+        }
+    }
+    printf("%s\n", nome);
+    return 0;
+}
+</pre>
+</div>
+
+<p>O <code>i == 0 ||</code> vem primeiro de propósito: quando <code>i</code> é 0, o <code>||</code> já tem a resposta e não calcula <code>nome[i - 1]</code>, que seria <code>nome[-1]</code>, fora do array (aula <a href="arrays.html">Arrays</a>).</p>
+
+<h3>Comparar sem ligar para maiúsculas</h3>
+<p>Um uso muito comum: aceitar <code>S</code> ou <code>s</code> como "sim". Em vez de <code>if (r == 's' || r == 'S')</code>, converta antes: <code>if (tolower((unsigned char) r) == 's')</code>. A aula <a href="validar-entrada.html">Validar a Entrada</a> usa esse truque para ler respostas do teclado.</p>
+
+<hr>
+
+<h2>5. Por que <code>(unsigned char)</code></h2>
+<p>Até aqui, todo caractere passou por um <code>(unsigned char)</code> antes de entrar numa função do <code>ctype.h</code>. O motivo está na regra da norma do C: essas funções só aceitam um valor que caiba num <code>unsigned char</code> (de 0 a 255) ou o valor especial <code>EOF</code> (o "fim de arquivo" do <code>getchar</code>, que vale −1). <strong>Qualquer outro número negativo é comportamento indefinido.</strong></p>
+
+<p>E um <code>char</code> comum pode ser negativo. No Linux de PC (e no editor), ele vai de −128 a 127 (aula <a href="inteiros.html">Inteiros</a>). As letras do ASCII são todas positivas, mas os bytes de uma letra acentuada passam de 127 e, num <code>char</code>, viram negativos:</p>
+
+<pre class="file" data-file="negativo.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char palavra[] = "é";
+    char c = palavra[0];
+    printf("como char: %d\n", c);
+    printf("como unsigned char: %d\n", (unsigned char) c);
+    printf("isalpha(c) = %d\n", isalpha(c));
+    printf("toupper(c) = %d\n", toupper(c));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra negativo.c -o negativo     « nenhum aviso
+$ ./negativo
+como char: -61
+como unsigned char: 195
+isalpha(c) = 0
+toupper(c) = 195</pre>
+
+<p>O primeiro byte do <code>é</code> é o 195; num <code>char</code>, ele aparece como −61. O <code>toupper(-61)</code> devolveu 195 no gcc. No editor do guia, o <strong>mesmo programa</strong> mostrou <code>toupper(c) = -61</code>. Duas bibliotecas, dois resultados, porque a norma não diz o que acontece com −61: é comportamento indefinido (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>). Na biblioteca do Windows, em modo de depuração, um valor negativo chega a interromper o programa com um alerta.</p>
+
+<p>O conserto é sempre o mesmo: converter para <code>unsigned char</code> antes. Com <code>(unsigned char) c</code>, a função recebe 195, um valor permitido, e todas as bibliotecas dão a mesma resposta. Há dois jeitos de escrever:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Jeito</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Converter na chamada</td><td><code>isdigit((unsigned char) s[i])</code></td><td>Uma pergunta só, no meio de um <code>if</code></td></tr>
+<tr><td>Guardar numa variável</td><td><code>unsigned char c = s[i];</code> e depois <code>isdigit(c)</code></td><td>Várias perguntas sobre o mesmo caractere (como no <code>contar.c</code>)</td></tr>
+<tr><td>Sem converter</td><td><code>isdigit('7')</code></td><td>Só com um caractere fixo escrito entre aspas simples, que você sabe que é ASCII</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>E o <code>getchar</code>?</strong>
+<p>O <code>getchar</code> (aula <a href="char.html">Caracteres</a>) já devolve um <code>int</code> no formato certo: de 0 a 255, ou <code>EOF</code>. Se você guardar o resultado num <code>int c</code>, pode passar direto: <code>isdigit(c)</code>. O <code>(unsigned char)</code> é para caracteres que vêm de um <strong>array de <code>char</code></strong>, como uma string.</p>
+</div>
+
+<hr>
+
+<h2>6. Acentos não são letras para o <code>ctype.h</code></h2>
+<p>A Ana tentou contar as letras de "maçã":</p>
+
+<pre class="file" data-file="acento.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char palavra[] = "maçã";
+    int letras = 0;
+    for (int i = 0; palavra[i] != '\0'; i++) {
+        unsigned char c = palavra[i];
+        printf("byte %d: %3d  isalpha: %s\n", i, c, isalpha(c) ? "sim" : "não");
+        if (isalpha(c)) {
+            letras++;
+        }
+    }
+    printf("isalpha contou %d letras em \"%s\" (%zu bytes)\n", letras, palavra, strlen(palavra));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra acento.c -o acento
+$ ./acento
+byte 0: 109  isalpha: sim
+byte 1:  97  isalpha: sim
+byte 2: 195  isalpha: não     « primeira metade do ç
+byte 3: 167  isalpha: não     « segunda metade do ç
+byte 4: 195  isalpha: não     « primeira metade do ã
+byte 5: 163  isalpha: não     « segunda metade do ã
+isalpha contou 2 letras em "maçã" (6 bytes)</pre>
+
+<p>"maçã" tem 4 letras, mas 6 bytes: o <code>ç</code> e o <code>ã</code> ocupam 2 bytes cada na codificação <strong>UTF-8</strong>, a usada pelos arquivos e terminais de hoje. As funções do <code>ctype.h</code> olham <strong>um byte por vez</strong>, e nenhuma metade de letra é uma letra. O editor dá exatamente a mesma resposta. Na prática:</p>
+<ul>
+  <li>o <code>ctype.h</code> é perfeito para o que é ASCII: algarismos, CEP, CPF, códigos de produto, senhas, comandos, respostas "s/n";</li>
+  <li>para contar ou converter letras acentuadas de português, ele não serve sozinho. O <code>toupper</code> não transforma <code>ç</code> em <code>Ç</code>, nem <code>ã</code> em <code>Ã</code>.</li>
+</ul>
+<p>Como o C lida com acentos de verdade (bytes, <code>strlen</code> que conta "a mais", caracteres largos e <code>setlocale</code>) é o assunto da próxima aula, <a href="acentos-utf8.html">Acentos e UTF-8</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes: contas com a tabela ou <code>ctype.h</code>?</h2>
+<p>As duas formas abaixo respondem igual para caracteres ASCII:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Com contas</th><th>Com <code>ctype.h</code></th></tr>
+<tr><td>É algarismo?</td><td><code>c &gt;= '0' &amp;&amp; c &lt;= '9'</code></td><td><code>isdigit(c)</code></td></tr>
+<tr><td>É minúscula?</td><td><code>c &gt;= 'a' &amp;&amp; c &lt;= 'z'</code></td><td><code>islower(c)</code></td></tr>
+<tr><td>É letra?</td><td><code>(c &gt;= 'a' &amp;&amp; c &lt;= 'z') || (c &gt;= 'A' &amp;&amp; c &lt;= 'Z')</code></td><td><code>isalpha(c)</code></td></tr>
+<tr><td>É espaço em branco?</td><td><code>c == ' ' || c == '\t' || c == '\n' || …</code></td><td><code>isspace(c)</code></td></tr>
+<tr><td>Para maiúscula</td><td><code>if (c &gt;= 'a' &amp;&amp; c &lt;= 'z') c = c - 32;</code></td><td><code>c = toupper(c);</code></td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar:</strong> o <code>ctype.h</code>. O código fica mais curto, se lê como uma frase, e não há como esquecer um caso (quem lembra do <code>\v</code> no "é espaço?"). A conta manual faz sentido em dois lugares: <code>c - '0'</code> para transformar o algarismo em número (depois de conferir com <code>isdigit</code>), e quando você quer <strong>exatamente</strong> um intervalo que não é uma categoria pronta, como "é uma letra de <code>a</code> a <code>f</code>?".</p>
+
+<div class="tip">
+<strong>As funções dependem do <em>locale</em></strong>
+<p>O <strong>locale</strong> (as "configurações regionais": idioma, formato de número, de data) pode mudar as respostas para os bytes acima de 127. Um programa começa sempre no locale <code>"C"</code>, em que só o ASCII tem categoria, e só muda se chamar <code>setlocale</code>. Mesmo com o locale português em UTF-8 ligado, um byte sozinho de uma letra acentuada continua não sendo letra (seção 6). A aula <a href="acentos-utf8.html">Acentos e UTF-8</a> mostra o <code>setlocale</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘isdigit’ [-Wimplicit-function-declaration]</code></strong>
+<p><strong>O que significa:</strong> faltou o <code>#include &lt;ctype.h&gt;</code>. O compilador não conhece a função. O gcc 15 até diz o que fazer, na linha seguinte: <code>note: include ‘&lt;ctype.h&gt;’ or provide a declaration of ‘isdigit’</code> ("inclua o <code>&lt;ctype.h&gt;</code> ou declare <code>isdigit</code>"), e mostra onde a linha entraria (<code>+#include &lt;ctype.h&gt;</code>). No editor, o Clang diz <code>call to undeclared library function 'isdigit' with type 'int (int)'</code> e dá a mesma dica.</p>
+<p><strong>Como consertar:</strong> <code>#include &lt;ctype.h&gt;</code> no topo do arquivo.</p>
+</div>
+
+<div class="cenario">
+<strong>A string não mudou depois do <code>toupper</code>; e o aviso <code>warning: statement with no effect [-Wunused-value]</code></strong>
+<p><strong>O que significa:</strong> você escreveu <code>toupper((unsigned char) nome[i]);</code> sozinho na linha. A função calculou a maiúscula e o resultado foi jogado fora: o programa mostrou <code>ana</code>, em minúsculas. O gcc avisa "comando sem efeito"; o Clang do editor diz <code>ignoring return value of function declared with pure attribute</code> ("ignorando o valor devolvido por uma função que só calcula").</p>
+<p><strong>Como consertar:</strong> guarde o resultado: <code>nome[i] = (char) toupper((unsigned char) nome[i]);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>if (isdigit(c) == 1)</code> diz "não" para um algarismo</strong>
+<p><strong>O que significa:</strong> no gcc (glibc), <code>isdigit('7')</code> devolve 2048, e não 1. O "sim" é <strong>qualquer valor diferente de zero</strong>. No editor, o mesmo código funciona por acaso, porque lá o "sim" é 1.</p>
+<p><strong>Como consertar:</strong> <code>if (isdigit(c))</code> ou <code>if (isdigit(c) != 0)</code>. Nunca <code>== 1</code> nem <code>== true</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> com <code>isdigit("7")</code></strong>
+<p><strong>O que significa:</strong> aspas <strong>duplas</strong> criam uma string (um endereço na memória), não um caractere. No gcc do laboratório, <code>if (isdigit("7"))</code> compilou <strong>sem nenhum aviso</strong> (na glibc, <code>isdigit</code> é uma macro que esconde o problema) e, ao rodar, caiu com <code>Falha de segmentação</code>, código 139. O Clang do editor recusa na compilação: <code>error: incompatible pointer to integer conversion passing 'char[2]' to parameter of type 'int'</code> ("conversão de ponteiro para inteiro incompatível").</p>
+<p><strong>Como consertar:</strong> aspas <strong>simples</strong> para um caractere: <code>isdigit('7')</code>. Para conferir um texto inteiro, use um laço, como no <code>cep.c</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Letras acentuadas não são contadas como letras, ou não viram maiúsculas</strong>
+<p><strong>O que significa:</strong> em UTF-8, cada acentuada ocupa 2 bytes, e o <code>ctype.h</code> olha um byte por vez (seção 6).</p>
+<p><strong>Como consertar:</strong> para dados ASCII (códigos, números, senhas), está certo como está. Para texto em português, veja <a href="acentos-utf8.html">Acentos e UTF-8</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Devolve "sim" (diferente de zero) para</th></tr>
+<tr><td><code>isdigit(c)</code></td><td><code>'0'</code> a <code>'9'</code></td></tr>
+<tr><td><code>isxdigit(c)</code></td><td><code>'0'</code>–<code>'9'</code>, <code>'a'</code>–<code>'f'</code>, <code>'A'</code>–<code>'F'</code></td></tr>
+<tr><td><code>isalpha(c)</code></td><td>letras (no locale <code>"C"</code>: só <code>a</code>–<code>z</code>, <code>A</code>–<code>Z</code>)</td></tr>
+<tr><td><code>isalnum(c)</code></td><td>letras e algarismos</td></tr>
+<tr><td><code>isupper(c)</code> / <code>islower(c)</code></td><td>maiúsculas / minúsculas</td></tr>
+<tr><td><code>isspace(c)</code></td><td><code>' '</code>, <code>'\t'</code>, <code>'\n'</code>, <code>'\r'</code>, <code>'\v'</code>, <code>'\f'</code></td></tr>
+<tr><td><code>isblank(c)</code></td><td><code>' '</code> e <code>'\t'</code> (C99)</td></tr>
+<tr><td><code>ispunct(c)</code></td><td>símbolos visíveis que não são letra nem algarismo</td></tr>
+<tr><td><code>isprint(c)</code> / <code>isgraph(c)</code></td><td>visíveis, com / sem o espaço</td></tr>
+<tr><td><code>iscntrl(c)</code></td><td>caracteres de controle (códigos 0–31 e 127)</td></tr>
+<tr><td><code>toupper(c)</code> / <code>tolower(c)</code></td><td>Devolvem a maiúscula / minúscula; o que não é letra volta igual</td></tr>
+<tr><td><code>(unsigned char) s[i]</code></td><td>Sempre antes de passar um <code>char</code> de uma string</td></tr>
+<tr><td><code>if (isdigit(c))</code></td><td>O jeito certo de testar (nunca <code>== 1</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O cabeçalho</h3>
+<p>Complete para poder usar <code>isdigit</code> e <code>toupper</code>:</p>
+<div class="ex-code">#include &lt;<input data-answer="ctype.h" aria-label="cabeçalho">&gt;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A pergunta certa</h3>
+<p>Qual função responde "é espaço, tab ou Enter?"</p>
+<div class="ex-code"><input data-answer="isspace" aria-label="função">(c)</div>
+</div>
+
+<div class="exercise">
+<h3>3. Para minúscula</h3>
+<p>Complete para guardar em <code>r</code> a versão minúscula de <code>resposta</code>:</p>
+<div class="ex-code">char r = (char) <input data-answer="tolower" aria-label="função">((unsigned char) resposta);</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que <code>toupper('7')</code> devolve?</p>
+<label><input type="radio" name="q4"> 0, porque <code>'7'</code> não é letra</label>
+<label><input type="radio" name="q4"> <code>'7'</code>, sem mudança</label>
+<label><input type="radio" name="q4"> O caractere 32 posições antes do <code>'7'</code></label>
+<label><input type="radio" name="q4"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. No gcc do Linux, <code>isdigit('5')</code> pode devolver 2048. O que isso quer dizer?</p>
+<label><input type="radio" name="q5"> Que houve um erro: devia ser 1</label>
+<label><input type="radio" name="q5"> Que <code>'5'</code> é o algarismo número 2048</label>
+<label><input type="radio" name="q5"> "Sim": qualquer valor diferente de zero é sim</label>
+<label><input type="radio" name="q5"> "Não", porque não é 1</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que se escreve <code>isalpha((unsigned char) s[i])</code> e não só <code>isalpha(s[i])</code>?</p>
+<label><input type="radio" name="q6"> Porque um <code>char</code> pode ser negativo (bytes de acentos), e um valor negativo nessas funções é comportamento indefinido</label>
+<label><input type="radio" name="q6"> Porque <code>isalpha</code> só aceita maiúsculas</label>
+<label><input type="radio" name="q6"> Para o programa ficar mais rápido</label>
+<label><input type="radio" name="q6"> Para o <code>isalpha</code> reconhecer o <code>ç</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. Para o <code>ctype.h</code>, quantas letras tem a string <code>"pão"</code>, em UTF-8?</p>
+<label><input type="radio" name="q7"> 3</label>
+<label><input type="radio" name="q7"> 4</label>
+<label><input type="radio" name="q7"> 0</label>
+<label><input type="radio" name="q7"> 2: o <code>p</code> e o <code>o</code>; os dois bytes do <code>ã</code> não contam</label>
+</div>
+
+<h3>Missão final: a senha forte</h3>
+
+<div class="tryc" data-goal="out:Maiúsculas: 1,out:Minúsculas: 6,out:Algarismos: 4,out:Senha forte,src:isupper,src:islower,src:isdigit,semaviso">
+<p class="try-task"><strong>Missão:</strong> o sistema da lojinha só aceita senhas com pelo menos 8 caracteres, uma maiúscula, uma minúscula e um algarismo. Complete o laço para contar as maiúsculas (<code>isupper</code>), as minúsculas (<code>islower</code>) e os algarismos (<code>isdigit</code>) de <code>senha</code>. O resto do programa já decide se a senha é forte. Sem avisos. Depois, teste com <code>"lojinha"</code> e com <code>"LOJINHA2026"</code>.</p>
+<pre class="out">Maiúsculas: 1
+Minúsculas: 6
+Algarismos: 4
+Senha forte</pre>
+<pre class="script">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char senha[] = "Lojinha2026";
+    int maiusculas = 0, minusculas = 0, algarismos = 0, tamanho = 0;
+    for (int i = 0; senha[i] != '\0'; i++) {
+        unsigned char c = senha[i];
+        // conte aqui o tipo do caractere c
+
+        tamanho++;
+    }
+    printf("Maiúsculas: %d\n", maiusculas);
+    printf("Minúsculas: %d\n", minusculas);
+    printf("Algarismos: %d\n", algarismos);
+    if (tamanho &gt;= 8 &amp;&amp; maiusculas &gt; 0 &amp;&amp; minusculas &gt; 0 &amp;&amp; algarismos &gt; 0) {
+        printf("Senha forte\n");
+    } else {
+        printf("Senha fraca\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char senha[] = "Lojinha2026";
+    int maiusculas = 0, minusculas = 0, algarismos = 0, tamanho = 0;
+    for (int i = 0; senha[i] != '\0'; i++) {
+        unsigned char c = senha[i];
+        if (isupper(c)) {
+            maiusculas++;
+        } else if (islower(c)) {
+            minusculas++;
+        } else if (isdigit(c)) {
+            algarismos++;
+        }
+        tamanho++;
+    }
+    printf("Maiúsculas: %d\n", maiusculas);
+    printf("Minúsculas: %d\n", minusculas);
+    printf("Algarismos: %d\n", algarismos);
+    if (tamanho &gt;= 8 &amp;&amp; maiusculas &gt; 0 &amp;&amp; minusculas &gt; 0 &amp;&amp; algarismos &gt; 0) {
+        printf("Senha forte\n");
+    } else {
+        printf("Senha fraca\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<p>A solução testa com <code>if</code> direto (nunca <code>== 1</code>) e usa <code>else if</code>, porque um caractere não pode ser maiúscula e algarismo ao mesmo tempo. Um sistema de verdade também exigiria um símbolo: seria mais um contador com <code>ispunct</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <code>&lt;ctype.h&gt;</code> traz perguntas prontas sobre <strong>um</strong> caractere: <code>isdigit</code>, <code>isalpha</code>, <code>isalnum</code>, <code>isspace</code>, <code>isupper</code>, <code>islower</code>, <code>ispunct</code>, <code>isxdigit</code>, <code>isprint</code>, <code>iscntrl</code>…</li>
+  <li>A resposta é 0 para "não" e <strong>qualquer outro valor</strong> para "sim" (2048 no gcc, 1 no editor). Teste com <code>if (isdigit(c))</code>, nunca com <code>== 1</code>.</li>
+  <li><code>toupper</code> e <code>tolower</code> devolvem a letra convertida e deixam o resto igual. Elas não mudam a string: guarde o resultado (<code>s[i] = (char) toupper(…)</code>).</li>
+  <li>Sempre <code>(unsigned char)</code> antes de passar um <code>char</code> de uma string: valores negativos são comportamento indefinido, e o resultado muda de uma biblioteca para outra.</li>
+  <li>Com um laço, as perguntas contam e validam textos: CEP, senha, códigos.</li>
+  <li>O <code>ctype.h</code> olha um byte por vez: os acentos do UTF-8 (2 bytes) não são letras para ele. Para isso, veja <a href="acentos-utf8.html">Acentos e UTF-8</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
