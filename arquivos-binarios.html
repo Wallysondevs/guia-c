@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Arquivos Binários — gravar e ler com fwrite e fread | Guia C</title>
+<meta name="description" content="Arquivos binários em C para iniciantes: fwrite e fread, gravar um array de structs e ler de volta, texto × binário vistos byte a byte com xxd e od, portabilidade (tamanho dos tipos, ordem dos bytes, ponteiros) e como conferir o retorno, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Arquivos Binários</span> (fread e fwrite)</h1>
+
+<p class="intro">Até aqui, os arquivos do guia eram de <strong>texto</strong>: o número 1234567 virava os sete caracteres <code>1</code>, <code>2</code>, <code>3</code>… e você podia abrir o arquivo no editor de textos. Existe outro jeito: copiar para o arquivo <strong>os bytes da memória</strong>, do jeitinho que o programa guarda a variável. Esse é o <strong>arquivo binário</strong>. Nesta aula você vai gravar o estoque da lojinha da Ana inteiro com uma linha de código, ler de volta, espiar os bytes com <code>xxd</code> e entender quando esse atalho é uma ótima ideia e quando é uma armadilha.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre arquivo de texto e arquivo binário, vista byte a byte.</li>
+  <li>Como gravar com <code>fwrite</code> e ler com <code>fread</code>, e o que cada um dos quatro argumentos significa.</li>
+  <li>Como gravar um <strong>array de structs</strong> de uma vez e ler de volta, inteiro ou um registro por vez.</li>
+  <li>Como olhar os bytes de um arquivo com <code>xxd</code> e <code>od</code>.</li>
+  <li>Por que um arquivo binário pode não funcionar em outro computador (tamanho dos tipos, ordem dos bytes, ponteiros).</li>
+  <li>Por que você precisa <strong>conferir o retorno</strong> de <code>fread</code> e <code>fwrite</code>.</li>
+</ul>
+</div>
+
+<p>Esta aula usa <code>fopen</code>, <code>fclose</code> e structs. Se precisar, reveja <a href="arquivos.html">Arquivos (fopen e fclose)</a> e <a href="structs.html">Structs</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: anotar × fotocopiar</h2>
+<p>Imagine que a Ana quer guardar a ficha de um produto. Ela tem dois jeitos:</p>
+<ul>
+  <li><strong>Anotar à mão</strong> num caderno: "Caderno, 12 unidades, R$ 15,90". Qualquer pessoa lê, mas dá trabalho escrever e, depois, alguém precisa <em>ler e interpretar</em> a anotação para pôr os números de volta na ficha.</li>
+  <li><strong>Tirar uma fotocópia</strong> da ficha. É instantâneo e a cópia é idêntica, mas só serve para quem tem uma ficha do mesmo modelo para comparar.</li>
+</ul>
+<p>O arquivo de <strong>texto</strong> é a anotação: o <code>fprintf</code> transforma cada número em caracteres, e o <code>fscanf</code> (ou <code>strtol</code>) transforma de volta. O arquivo <strong>binário</strong> é a fotocópia: o <code>fwrite</code> copia os bytes da memória para o disco, sem conversão, e o <code>fread</code> copia do disco de volta para a memória.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Arquivo de texto</th><th>Arquivo binário</th></tr>
+<tr><td>Grava com</td><td><code>fprintf</code>, <code>fputs</code></td><td><code>fwrite</code></td></tr>
+<tr><td>Lê com</td><td><code>fgets</code>, <code>fscanf</code></td><td><code>fread</code></td></tr>
+<tr><td>O número 1234567 ocupa</td><td>7 bytes (um por algarismo)</td><td>4 bytes (o tamanho de um <code>int</code>)</td></tr>
+<tr><td>Abre no editor de textos?</td><td>Sim</td><td>Não: aparecem símbolos estranhos</td></tr>
+<tr><td>Funciona em outro computador?</td><td>Quase sempre</td><td>Só se os tipos tiverem o mesmo tamanho e formato</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O mesmo número, dois arquivos</h2>
+<p>Para ver a diferença de verdade, o programa abaixo grava o número 1234567 duas vezes: em <code>numero.txt</code> com <code>fprintf</code> e em <code>numero.bin</code> com <code>fwrite</code>.</p>
+
+<pre class="file" data-file="numero.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int numero = 1234567;
+
+    FILE *txt = fopen("numero.txt", "w");
+    if (txt == NULL) {
+        printf("Não consegui criar numero.txt\n");
+        return 1;
+    }
+    fprintf(txt, "%d", numero);
+    fclose(txt);
+
+    FILE *bin = fopen("numero.bin", "wb");
+    if (bin == NULL) {
+        printf("Não consegui criar numero.bin\n");
+        return 1;
+    }
+    fwrite(&amp;numero, sizeof numero, 1, bin);
+    fclose(bin);
+
+    printf("Pronto: numero.txt e numero.bin\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>fopen("numero.bin", "wb")</dt><dd>Abre para escrita (<code>w</code>, de <em>write</em>) em modo <strong>binário</strong> (<code>b</code>, de <em>binary</em>). No Linux e no macOS o <code>b</code> não muda nada; no Windows ele é essencial (veja <a href="#windows">o quadro sobre o Windows</a>). Use sempre: deixa claro que o arquivo é binário.</dd>
+  <dt>fwrite(</dt><dd>"file write", escrever no arquivo. Copia bytes da memória para o arquivo, sem transformar nada em texto.</dd>
+  <dt>&amp;numero</dt><dd>1º argumento: <strong>onde estão</strong> os bytes. É o endereço da variável (o <code>&amp;</code>, como no <code>scanf</code>; veja <a href="memoria.html">Memória e Endereços</a>).</dd>
+  <dt>sizeof numero</dt><dd>2º argumento: o <strong>tamanho de cada item</strong>, em bytes. Um <code>int</code> tem 4 bytes. Nunca escreva o 4 à mão: o <code>sizeof</code> acerta em qualquer computador.</dd>
+  <dt>1</dt><dd>3º argumento: <strong>quantos itens</strong> gravar. Aqui, um <code>int</code>.</dd>
+  <dt>bin</dt><dd>4º argumento: <strong>em qual arquivo</strong>. Repare que o arquivo vem no fim, ao contrário do <code>fprintf</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra numero.c -o numero
+$ ./numero
+Pronto: numero.txt e numero.bin
+$ ls -l numero.txt numero.bin
+-rw-rw-r-- 1 ana ana 4 out 17 10:32 numero.bin       « 4 bytes: um int
+-rw-rw-r-- 1 ana ana 7 out 17 10:32 numero.txt       « 7 bytes: sete algarismos
+$ cat numero.txt; echo
+1234567</pre>
+
+<p>O <code>numero.txt</code> é legível. Já o <code>numero.bin</code>, se você mandar o <code>cat</code> mostrar, aparece como lixo na tela, porque seus bytes não são letras. Para ver o que tem dentro, use um <strong>visualizador de bytes</strong>.</p>
+
+<h3>Espiando os bytes com xxd e od</h3>
+<p>O <code>xxd</code> faz um <em>hex dump</em> ("despejo em hexadecimal"): mostra cada byte como dois algarismos hexadecimais (de <code>00</code> a <code>ff</code>). O <code>od</code> (<em>octal dump</em>) faz o mesmo e ainda sabe interpretar os bytes como números.</p>
+
+<pre class="term" data-cwd="~/c">$ xxd numero.txt
+00000000: 3132 3334 3536 37                        1234567
+$ xxd numero.bin
+00000000: 87d6 1200                                ....
+$ od -A d -t d4 numero.bin
+0000000     1234567
+0000004</pre>
+
+<dl class="anatomy">
+  <dt>00000000:</dt><dd>A posição (em hexadecimal) do primeiro byte da linha. O primeiro byte do arquivo é a posição 0.</dd>
+  <dt>3132 3334 3536 37</dt><dd>Os bytes do arquivo de texto: <code>31</code> é o código do caractere <code>'1'</code>, <code>32</code> é o <code>'2'</code>, e assim por diante (a tabela ASCII, da aula <a href="char.html">Caracteres</a>). À direita, o <code>xxd</code> mostra esses bytes como letras.</dd>
+  <dt>87d6 1200</dt><dd>Os 4 bytes do <code>int</code>: <code>87 d6 12 00</code>. Nenhum deles é uma letra imprimível, por isso a coluna da direita mostra pontos.</dd>
+  <dt>od -A d -t d4</dt><dd>Mostra as posições em decimal (<code>-A d</code>) e lê o arquivo de 4 em 4 bytes como inteiros com sinal (<code>-t d4</code>). Ele reconstruiu o 1234567: os bytes estão lá, só não estão "escritos".</dd>
+</dl>
+
+<p>Por que <code>87 d6 12 00</code>? Em hexadecimal, 1234567 é <code>0x0012D687</code>. Os bytes estão <strong>de trás para frente</strong>: o byte menos importante (<code>87</code>) vem primeiro. Esse jeito de guardar se chama <strong>little-endian</strong> ("a ponta pequena primeiro") e é o dos processadores Intel, AMD e da maioria dos ARM. Voltaremos a isso na seção de portabilidade.</p>
+
+<div class="tip">
+<strong>Dica:</strong> <code>od -A d -t x1 arquivo</code> mostra os mesmos bytes em hexadecimal, um por um (<code>87 d6 12 00</code>), e <code>od -c arquivo</code> mostra cada byte como caractere quando dá. Use o que achar mais fácil de ler; o <code>xxd</code> vem junto com o editor <code>vim</code>, e o <code>od</code> existe em qualquer Linux.
+</div>
+
+<hr>
+
+<h2>2. Gravar um array de structs com fwrite</h2>
+<p>A grande vantagem do <code>fwrite</code> aparece com structs. Com texto, você teria de escrever cada campo com o seu formato (<code>%s</code>, <code>%d</code>, <code>%.2f</code>) e, na hora de ler, separar tudo de novo. Com binário, o estoque inteiro vai para o disco numa linha:</p>
+
+<pre class="file" data-file="gravar.c">#include &lt;stdio.h&gt;
+
+typedef struct {
+    char nome[20];
+    int quantidade;
+    double preco;
+} Produto;
+
+int main(void) {
+    Produto estoque[3] = {
+        {"Caderno", 12, 15.90},
+        {"Caneta", 40, 2.50},
+        {"Borracha", 25, 1.75},
+    };
+
+    FILE *f = fopen("estoque.bin", "wb");
+    if (f == NULL) {
+        printf("Não consegui criar estoque.bin\n");
+        return 1;
+    }
+
+    size_t gravados = fwrite(estoque, sizeof(Produto), 3, f);
+    fclose(f);
+
+    if (gravados != 3) {
+        printf("Erro: só gravei %zu de 3 produtos\n", gravados);
+        return 1;
+    }
+    printf("Gravei %zu produtos de %zu bytes cada.\n", gravados, sizeof(Produto));
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>typedef struct { … } Produto;</code></td><td>A ficha de um produto: nome (até 19 letras e o <code>'\0'</code>), quantidade e preço (veja <a href="typedef.html">typedef</a>).</td></tr>
+<tr><td><code>fwrite(estoque, …)</code></td><td>O nome do array já é o endereço do primeiro elemento, então não leva <code>&amp;</code> (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>).</td></tr>
+<tr><td><code>sizeof(Produto)</code></td><td>Cada item tem o tamanho de um <code>Produto</code>: 32 bytes neste computador.</td></tr>
+<tr><td><code>3</code></td><td>Três itens, um depois do outro: 3 × 32 = 96 bytes.</td></tr>
+<tr><td><code>size_t gravados = …</code></td><td>O <code>fwrite</code> <strong>devolve quantos itens gravou</strong> por inteiro. Se for menos que 3, algo deu errado (disco cheio, por exemplo).</td></tr>
+<tr><td><code>%zu</code></td><td>O formato do <code>printf</code> para <code>size_t</code> (aula <a href="formatos-printf.html">Formatos do printf</a>).</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra gravar.c -o gravar
+$ ./gravar
+Gravei 3 produtos de 32 bytes cada.
+$ ls -l estoque.bin
+-rw-rw-r-- 1 ana ana 96 out 17 10:32 estoque.bin</pre>
+
+<p>96 bytes, como a conta previa. Agora veja como esses bytes estão organizados:</p>
+
+<pre class="term" data-cwd="~/c">$ xxd estoque.bin
+00000000: 4361 6465 726e 6f00 0000 0000 0000 0000  Caderno.........
+00000010: 0000 0000 0c00 0000 cdcc cccc cccc 2f40  ............../@
+00000020: 4361 6e65 7461 0000 0000 0000 0000 0000  Caneta..........
+00000030: 0000 0000 2800 0000 0000 0000 0000 0440  ....(..........@
+00000040: 426f 7272 6163 6861 0000 0000 0000 0000  Borracha........
+00000050: 0000 0000 1900 0000 0000 0000 0000 fc3f  ...............?</pre>
+
+<p>Cada produto ocupa exatamente duas linhas do <code>xxd</code> (32 bytes). Olhando o primeiro:</p>
+<ol class="passo">
+  <li><strong>Bytes 0 a 19 (<code>nome</code>):</strong> <code>43 61 64 65 72 6e 6f</code> são as letras de "Caderno", seguidas do <code>00</code> que termina a string e de zeros até completar os 20 bytes do array. O nome curto ainda ocupa 20 bytes: no arquivo binário, cada campo tem tamanho fixo.</li>
+  <li><strong>Bytes 20 a 23 (<code>quantidade</code>):</strong> <code>0c 00 00 00</code>. <code>0x0c</code> é 12, de novo com o byte pequeno primeiro.</li>
+  <li><strong>Bytes 24 a 31 (<code>preco</code>):</strong> <code>cd cc cc cc cc cc 2f 40</code>. É o <code>double</code> 15.90 no formato interno dos números com vírgula (o padrão IEEE 754, da aula <a href="ponto-flutuante.html">float e double</a>). Não dá para ler de olho, e não precisa: o <code>fread</code> põe esses bytes de volta num <code>double</code>.</li>
+</ol>
+
+<hr>
+
+<h2>3. Ler de volta com fread</h2>
+<p>O <code>fread</code> ("file read", ler do arquivo) é o espelho do <code>fwrite</code>: os mesmos quatro argumentos, mas os bytes vão do arquivo <strong>para</strong> a memória.</p>
+
+<pre class="file" data-file="ler.c">#include &lt;stdio.h&gt;
+
+typedef struct {
+    char nome[20];
+    int quantidade;
+    double preco;
+} Produto;
+
+int main(void) {
+    Produto estoque[10];
+
+    FILE *f = fopen("estoque.bin", "rb");
+    if (f == NULL) {
+        printf("Não consegui abrir estoque.bin\n");
+        return 1;
+    }
+
+    size_t lidos = fread(estoque, sizeof(Produto), 10, f);
+    fclose(f);
+
+    printf("Li %zu produtos:\n", lidos);
+    for (size_t i = 0; i &lt; lidos; i++) {
+        printf("%-10s %3d  R$ %6.2f\n", estoque[i].nome,
+               estoque[i].quantidade, estoque[i].preco);
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>Produto estoque[10];</dt><dd>Espaço para até 10 produtos. O programa não sabe quantos existem no arquivo.</dd>
+  <dt>"rb"</dt><dd>Leitura (<code>r</code>, de <em>read</em>) em modo binário.</dd>
+  <dt>fread(estoque, sizeof(Produto), 10, f)</dt><dd>"Leia <strong>até</strong> 10 itens de <code>sizeof(Produto)</code> bytes e ponha a partir de <code>estoque</code>." O arquivo só tem 3, e não tem problema: o <code>fread</code> lê o que houver.</dd>
+  <dt>size_t lidos</dt><dd>Quantos itens <strong>completos</strong> foram lidos: 3. É esse número, e não o 10, que o laço usa.</dd>
+  <dt>%-10s</dt><dd>O nome alinhado à esquerda numa coluna de 10 caracteres (veja <a href="formatos-printf.html">Formatos do printf</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ler.c -o ler
+$ ./ler
+Li 3 produtos:
+Caderno     12  R$  15.90
+Caneta      40  R$   2.50
+Borracha    25  R$   1.75</pre>
+
+<p>Outro programa, compilado separadamente, leu o arquivo e recuperou os três produtos sem converter nada. Ele funciona porque declara a <strong>mesma</strong> struct <code>Produto</code> que o <code>gravar.c</code>. Os dois programas precisam concordar, byte a byte, sobre o formato da ficha.</p>
+
+<h3>Um registro por vez</h3>
+<p>Quando o arquivo pode ser grande, ou você não sabe quantos registros tem, leia um por vez num laço, até o <code>fread</code> devolver 0:</p>
+
+<pre class="file" data-file="ler1.c">#include &lt;stdio.h&gt;
+
+typedef struct {
+    char nome[20];
+    int quantidade;
+    double preco;
+} Produto;
+
+int main(void) {
+    FILE *f = fopen("estoque.bin", "rb");
+    if (f == NULL) {
+        printf("Não consegui abrir estoque.bin\n");
+        return 1;
+    }
+
+    Produto p;
+    double total = 0.0;
+    while (fread(&amp;p, sizeof p, 1, f) == 1) {
+        printf("%-10s %3d x R$ %5.2f\n", p.nome, p.quantidade, p.preco);
+        total += p.quantidade * p.preco;
+    }
+
+    if (ferror(f)) {
+        printf("Erro de leitura!\n");
+    } else {
+        printf("Valor do estoque: R$ %.2f\n", total);
+    }
+    fclose(f);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>while (fread(&amp;p, sizeof p, 1, f) == 1)</dt><dd>Lê <strong>um</strong> produto para dentro de <code>p</code>. Enquanto conseguir (devolver 1), o laço continua. No fim do arquivo, o <code>fread</code> devolve 0 e o laço para.</dd>
+  <dt>&amp;p</dt><dd>Aqui é uma variável comum, então precisa do <code>&amp;</code>. Com array (<code>estoque</code>), não.</dd>
+  <dt>ferror(f)</dt><dd>Depois do laço: o <code>fread</code> parou porque o arquivo acabou ou porque houve um erro (disco com defeito, pendrive arrancado)? O <code>ferror</code> responde "verdadeiro" só no segundo caso. O irmão dele, <code>feof(f)</code>, responde se chegou ao fim.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ler1.c -o ler1
+$ ./ler1
+Caderno     12 x R$ 15.90
+Caneta      40 x R$  2.50
+Borracha    25 x R$  1.75
+Valor do estoque: R$ 334.55</pre>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> este programa grava 4 notas em <code>notas.bin</code> e lê de volta num array novo. Clique em <strong>Rodar</strong>. Depois troque o <code>4</code> do <code>fread</code> por <code>10</code> (e o tamanho de <code>copia</code> para 10): quantas notas ele diz que leu? E se o <code>fwrite</code> gravar só <code>2</code>?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[4] = {7, 9, 6, 10};
+
+    // 1) grava as 4 notas de uma vez
+    FILE *f = fopen("notas.bin", "wb");
+    if (f == NULL) {
+        printf("Não consegui criar notas.bin\n");
+        return 1;
+    }
+    size_t gravadas = fwrite(notas, sizeof(int), 4, f);
+    fclose(f);
+    printf("Gravei %zu notas.\n", gravadas);
+
+    // 2) lê de volta num array novo
+    int copia[4] = {0};
+    f = fopen("notas.bin", "rb");
+    if (f == NULL) {
+        printf("Não consegui abrir notas.bin\n");
+        return 1;
+    }
+    size_t lidas = fread(copia, sizeof(int), 4, f);
+    fclose(f);
+
+    printf("Li %zu notas:", lidas);
+    for (size_t i = 0; i &lt; lidas; i++) {
+        printf(" %d", copia[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Confira sempre o retorno</h2>
+<p><code>fread</code> e <code>fwrite</code> nunca avisam por conta própria que algo deu errado: eles só <strong>devolvem um número</strong>, e é você quem precisa olhar. Para ver por que isso importa, a Ana cortou o <code>estoque.bin</code> no byte 80 (como se a gravação tivesse sido interrompida no meio do terceiro produto). O comando <code>truncate -s 80</code> faz esse corte:</p>
+
+<pre class="term" data-cwd="~/c">$ cp estoque.bin backup.bin               « guarda uma cópia antes
+$ truncate -s 80 estoque.bin
+$ ls -l estoque.bin
+-rw-rw-r-- 1 ana ana 80 out 17 10:33 estoque.bin
+$ ./ler
+Li 2 produtos:
+Caderno     12  R$  15.90
+Caneta      40  R$   2.50
+$ ./ler1
+Caderno     12 x R$ 15.90
+Caneta      40 x R$  2.50
+Valor do estoque: R$ 290.80
+$ cp backup.bin estoque.bin               « devolve o arquivo inteiro</pre>
+
+<p>80 bytes são dois produtos completos (64 bytes) e metade do terceiro. O <code>fread</code> devolveu 2: ele só conta itens <strong>inteiros</strong>, e o pedaço que sobrou foi descartado. Os dois programas se comportaram bem porque usam o número devolvido. Um programa que ignorasse o retorno e mostrasse sempre 3 produtos imprimiria lixo no terceiro.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que voltou</th><th>O que significa</th><th>O que fazer</th></tr>
+<tr><td>Igual à quantidade pedida</td><td>Deu tudo certo</td><td>Seguir em frente</td></tr>
+<tr><td>Menor (no <code>fread</code>)</td><td>O arquivo acabou (<code>feof</code>) ou houve erro (<code>ferror</code>)</td><td>Usar só os itens lidos; se for erro, avisar</td></tr>
+<tr><td>Menor (no <code>fwrite</code>)</td><td>Erro de escrita: disco cheio, sem permissão, pendrive removido</td><td>Avisar e não fingir que salvou (o motivo está em <a href="errno.html">errno</a>)</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>O <code>fclose</code> também pode falhar.</strong> O <code>fwrite</code> costuma guardar os bytes num <em>buffer</em> (uma área de espera na memória) e só manda para o disco depois. Se o disco estiver cheio, o erro pode aparecer só no <code>fclose</code>, que devolve <code>EOF</code> em vez de 0. Em programas que salvam dados importantes, confira também: <code>if (fclose(f) != 0) { … }</code>.
+</div>
+
+<hr>
+
+<h2>5. Portabilidade: a fotocópia só serve para a mesma ficha</h2>
+<p>O arquivo binário guarda os bytes <strong>como este computador e este compilador</strong> os organizam. Outro computador pode organizar diferente. Há três motivos.</p>
+
+<h3>O tamanho dos tipos muda</h3>
+<p>O C só garante tamanhos <strong>mínimos</strong> (aula <a href="inteiros.html">Inteiros</a>). Um <code>long</code> tem 8 bytes no Linux de 64 bits e 4 bytes no Windows e no editor do guia. Veja a mesma struct nos dois:</p>
+
+<pre class="file" data-file="portavel.c">#include &lt;stdio.h&gt;
+
+typedef struct {
+    long codigo;
+    int quantidade;
+} Item;
+
+int main(void) {
+    printf("sizeof(long) = %zu\n", sizeof(long));
+    printf("sizeof(Item) = %zu\n", sizeof(Item));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra portavel.c -o portavel
+$ ./portavel
+sizeof(long) = 8
+sizeof(Item) = 16</pre>
+
+<p>No editor do guia (Clang em WebAssembly de 32 bits), o mesmo programa mostra <code>sizeof(long) = 4</code> e <code>sizeof(Item) = 8</code>. Um arquivo de <code>Item</code> gravado num lado seria lido pela metade no outro. Repare também que 8 + 4 deu 16, e não 12: o compilador pode deixar <strong>bytes de enchimento</strong> (<em>padding</em>) entre os campos ou no fim da struct, para alinhar os números na memória (veja <a href="structs.html">Structs</a>). Esse enchimento também vai para o arquivo.</p>
+
+<p><strong>Solução:</strong> nos campos gravados em binário, use os tipos de tamanho fixo de <code>&lt;stdint.h&gt;</code>: <code>int32_t</code> tem 32 bits (4 bytes) em qualquer lugar, <code>int64_t</code> tem 64 bits (aula <a href="stdint.html">Inteiros de Tamanho Fixo</a>).</p>
+
+<h3>A ordem dos bytes muda</h3>
+<p>Você viu que 1234567 ficou <code>87 d6 12 00</code>, com o byte pequeno primeiro (<strong>little-endian</strong>). Alguns processadores antigos ou de rede (e vários formatos de arquivo e protocolos da internet) usam a ordem contrária, <strong>big-endian</strong>: <code>00 12 d6 87</code>. Um arquivo gravado num e lido no outro daria um número completamente diferente. Hoje quase todo computador e celular é little-endian, por isso o problema aparece pouco, mas aparece quando você lê um formato definido por outra pessoa (imagens, áudio, arquivos de rede).</p>
+
+<h3>Ponteiros não fazem sentido no disco</h3>
+<p>Um ponteiro é um <strong>endereço</strong> da memória deste programa, nesta execução. Se a struct tem um <code>char *nome</code>, o <code>fwrite</code> grava o endereço, e não o texto. O exemplo está em <a href="#pg-ponteiro">Quando dá errado</a>.</p>
+
+<h3>Texto ou binário: qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Prefira</th><th>Por quê</th></tr>
+<tr><td>Uma pessoa vai ler ou editar o arquivo</td><td>Texto (CSV, uma informação por linha)</td><td>Abre em qualquer editor e em planilhas</td></tr>
+<tr><td>Outro programa, outra linguagem ou outro computador vai ler</td><td>Texto</td><td>Não depende de tamanho de tipo nem de ordem dos bytes</td></tr>
+<tr><td>O mesmo programa grava e lê, na mesma máquina (um "save" de jogo, um cache)</td><td>Binário</td><td>Uma linha para gravar, uma para ler, sem conversão</td></tr>
+<tr><td>Muitos números e velocidade importa</td><td>Binário com <code>int32_t</code>/<code>int64_t</code></td><td>Menor e mais rápido, com tamanhos garantidos</td></tr>
+<tr><td>Precisa pular direto para o registro número 500</td><td>Binário com registros de tamanho fixo</td><td>A posição é uma conta simples (aula <a href="fseek.html">fseek e ftell</a>)</td></tr>
+</table>
+</div>
+
+<div class="note" id="windows">
+<strong>Por que o <code>b</code> importa no Windows.</strong> No Windows, um arquivo aberto em modo texto (<code>"r"</code>, <code>"w"</code>) troca cada <code>'\n'</code> por dois bytes (<code>\r\n</code>) ao gravar e faz o caminho contrário ao ler. Num arquivo binário, qualquer byte <code>0a</code> (o valor de <code>'\n'</code>) no meio de um número seria "corrigido" e estragaria o dado. Com <code>"wb"</code> e <code>"rb"</code>, nenhum byte é trocado. No Linux e no macOS não existe essa troca, mas escrever o <code>b</code> deixa o programa correto em todos os sistemas.
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>Falha de segmentação (imagem do núcleo gravada)</code> logo no <code>fread</code></strong>
+<pre class="file" data-file="semteste.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[3];
+    FILE *f = fopen("notas.bin", "rb");
+    fread(notas, sizeof(int), 3, f);
+    printf("Primeira nota: %d\n", notas[0]);
+    fclose(f);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semteste.c -o semteste
+$ ./semteste
+Falha de segmentação     (imagem do núcleo gravada) ./semteste</pre>
+<p><strong>O que significa:</strong> o arquivo <code>notas.bin</code> não existe nesta pasta, o <code>fopen</code> devolveu <code>NULL</code>, e o <code>fread</code> tentou ler de um ponteiro nulo. O compilador não avisa nada: o erro só aparece ao rodar. No editor do guia, a mesma falha termina com o código de saída 139.</p>
+<p><strong>Como consertar:</strong> confira o <code>fopen</code> sempre, antes de usar o arquivo: <code>if (f == NULL) { … return 1; }</code>. Para dizer <em>por que</em> não abriu, use <code>perror</code> (aula <a href="errno.html">errno e perror</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘sizeof’ on array function parameter ‘lista’ will return size of ‘Produto *’</code></strong>
+<pre class="file" data-file="param.c">void salvar(FILE *f, Produto lista[], int n) {
+    fwrite(lista, sizeof(lista), n, f);
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra param.c -o param
+param.c: In function ‘salvar’:
+param.c:10:25: warning: ‘sizeof’ on array function parameter ‘lista’ will return size of ‘Produto *’ [-Wsizeof-array-argument]
+   10 |     fwrite(lista, sizeof(lista), n, f);
+      |                         ^
+param.c:9:30: note: declared here
+    9 | void salvar(FILE *f, Produto lista[], int n) {
+      |                      ~~~~~~~~^~~~~~~
+$ ./param
+$ ls -l copia.bin
+-rw-rw-r-- 1 ana ana 24 out 17 10:33 copia.bin      « deveria ter 96 bytes</pre>
+<p><strong>O que significa:</strong> dentro da função, <code>lista</code> não é um array, é um <strong>ponteiro</strong> (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>). <code>sizeof(lista)</code> deu 8 (o tamanho de um ponteiro), e o programa gravou 3 × 8 = 24 bytes de pedaços de produtos. O Clang do editor diz o mesmo: <code>sizeof on array function parameter will return size of 'Produto *' instead of 'Produto[]'</code>.</p>
+<p><strong>Como consertar:</strong> o tamanho de cada item é o tamanho do <strong>tipo</strong>: <code>sizeof(Produto)</code> ou <code>sizeof lista[0]</code>.</p>
+</div>
+
+<div class="cenario" id="pg-ponteiro">
+<strong>O texto não está no arquivo: struct com ponteiro</strong>
+<pre class="file" data-file="ponteiro.c">typedef struct {
+    char *nome;          // ponteiro, e não array!
+    int quantidade;
+} Item;
+/* … */
+    Item it = {"Caderno", 12};
+    fwrite(&amp;it, sizeof it, 1, f);
+</pre>
+<pre class="term" data-cwd="~/c">$ ./ponteiro
+sizeof(Item) = 16
+$ xxd item.bin
+00000000: 0400 3344 6e62 0000 0c00 0000 0000 0000  ..3Dnb..........</pre>
+<p><strong>O que significa:</strong> não há "Caderno" no arquivo. Os primeiros 8 bytes são o <strong>endereço</strong> onde o texto estava na memória (e ele muda a cada execução); depois vem o 12 (<code>0c</code>) e o enchimento. Outro programa que lesse esse arquivo teria um ponteiro para um lugar que não existe, e o mais provável é uma falha de segmentação ao usar <code>nome</code>.</p>
+<p><strong>Como consertar:</strong> nas structs que vão para arquivo binário, use <strong>arrays de tamanho fixo</strong> (<code>char nome[20];</code>). Se o texto pode ser grande, grave antes o tamanho (um <code>int32_t</code>) e depois os caracteres, e leia na mesma ordem.</p>
+</div>
+
+<div class="cenario">
+<strong>Lixo na leitura: os dois programas não concordam sobre a struct</strong>
+<p>A Ana mudou a ordem dos campos no programa de leitura (<code>int quantidade;</code> antes de <code>char nome[20];</code>) e leu o mesmo <code>estoque.bin</code>:</p>
+<pre class="term" data-cwd="~/c">$ ./ler_errado
+rno        1701077315 x R$ 15.90
+ta         1701732675 x R$  2.50
+acha       1920102210 x R$  1.75</pre>
+<p><strong>O que significa:</strong> o <code>fread</code> não sabe o que é nome nem quantidade; ele só copia 32 bytes. Os 4 primeiros bytes ("Cade") foram parar em <code>quantidade</code> (1701077315 é "Cade" lido como número), e o nome começou no 5º byte ("rno"). O preço por acaso caiu no lugar certo. Nenhum erro, nenhum aviso: só dados errados.</p>
+<p><strong>Como consertar:</strong> escreva a struct num só lugar, num arquivo <code>.h</code> que os dois programas incluem (aula <a href="headers.html">Arquivos .h e .c</a>). Se o formato mudar, arquivos antigos deixam de servir: muitos programas gravam no começo do arquivo um número de versão para detectar isso.</p>
+</div>
+
+<div class="cenario">
+<strong>O arquivo de texto ficou cheio de símbolos estranhos</strong>
+<p><strong>O que significa:</strong> você usou <code>fwrite</code> com um número e esperava ver o número escrito. O <code>fwrite</code> grava os bytes da memória, que não são letras.</p>
+<p><strong>Como consertar:</strong> se o arquivo é para gente ler, use <code>fprintf</code> (aula <a href="escrever-arquivos.html">Escrever Arquivos</a>). Se é binário mesmo, olhe com <code>xxd</code> ou <code>od</code>, e não com <code>cat</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>fopen(nome, "wb")</code></td><td>Cria (ou apaga e recria) um arquivo binário para escrita</td></tr>
+<tr><td><code>fopen(nome, "rb")</code></td><td>Abre um arquivo binário para leitura</td></tr>
+<tr><td><code>fopen(nome, "ab")</code></td><td>Abre para acrescentar no fim (cria se não existir)</td></tr>
+<tr><td><code>fopen(nome, "r+b")</code></td><td>Abre para ler e escrever, sem apagar (aula <a href="fseek.html">fseek</a>)</td></tr>
+<tr><td><code>fwrite(ptr, tam, n, f)</code></td><td>Grava <code>n</code> itens de <code>tam</code> bytes a partir de <code>ptr</code>; devolve quantos gravou</td></tr>
+<tr><td><code>fread(ptr, tam, n, f)</code></td><td>Lê até <code>n</code> itens de <code>tam</code> bytes para <code>ptr</code>; devolve quantos leu inteiros</td></tr>
+<tr><td><code>fwrite(&amp;x, sizeof x, 1, f)</code></td><td>Grava uma variável</td></tr>
+<tr><td><code>fwrite(v, sizeof v[0], n, f)</code></td><td>Grava <code>n</code> elementos de um array</td></tr>
+<tr><td><code>while (fread(&amp;x, sizeof x, 1, f) == 1)</code></td><td>Lê um registro por vez até o fim</td></tr>
+<tr><td><code>feof(f)</code> / <code>ferror(f)</code></td><td>Depois de uma leitura curta: acabou o arquivo? / houve erro?</td></tr>
+<tr><td><code>xxd arq</code>, <code>od -A d -t x1 arq</code></td><td>No terminal: mostra os bytes do arquivo em hexadecimal</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Gravar uma variável</h3>
+<p>Complete para gravar a variável <code>double saldo</code> no arquivo <code>f</code>:</p>
+<div class="ex-code">fwrite(<input data-answer="&amp;saldo" aria-label="endereço">, sizeof saldo, 1, f);</div>
+</div>
+
+<div class="exercise">
+<h3>2. O modo certo</h3>
+<p>Complete o modo do <code>fopen</code> para <strong>ler</strong> um arquivo binário:</p>
+<div class="ex-code">FILE *f = fopen("jogo.sav", "<input data-answer="rb" aria-label="modo">");</div>
+</div>
+
+<div class="exercise">
+<h3>3. Tamanho do arquivo</h3>
+<p>Uma struct tem <code>sizeof</code> igual a 32. Quantos bytes tem um arquivo com 25 dessas structs gravadas com <code>fwrite</code>?</p>
+<div class="ex-code"><input data-answer="800" aria-label="bytes"> bytes</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O arquivo tem 2 registros completos e o programa chama <code>fread(v, sizeof v[0], 5, f)</code>. O que o <code>fread</code> devolve?</p>
+<label><input type="radio" name="q4"> 5</label>
+<label><input type="radio" name="q4"> 0, porque pediu mais do que existia</label>
+<label><input type="radio" name="q4"> 2</label>
+<label><input type="radio" name="q4"> -1</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. O <code>xxd</code> mostrou <code>0c00 0000</code> no lugar de um <code>int</code>. Que número é esse num computador little-endian?</p>
+<label><input type="radio" name="q5"> 201326592</label>
+<label><input type="radio" name="q5"> 12</label>
+<label><input type="radio" name="q5"> 0</label>
+<label><input type="radio" name="q5"> 3072</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual struct é segura para gravar com <code>fwrite</code> e ler em outra execução do programa?</p>
+<label><input type="radio" name="q6"> <code>struct { char *nome; int idade; }</code></label>
+<label><input type="radio" name="q6"> <code>struct { int *notas; int n; }</code></label>
+<label><input type="radio" name="q6"> <code>struct { FILE *log; int nivel; }</code></label>
+<label><input type="radio" name="q6"> <code>struct { char nome[30]; int32_t idade; }</code></label>
+</div>
+
+<h3>Missão final: o boletim da turma</h3>
+
+<div class="tryc" data-goal="out:Ana: 9.5,out:Davi: 6.5,out:Média: 7.50,src:fread\s*\(">
+<p class="try-task"><strong>Missão:</strong> a parte que grava a turma em <code>turma.bin</code> já está pronta. Escreva a leitura: abra o arquivo com <code>"rb"</code> (conferindo o <code>NULL</code>), leia <strong>um aluno por vez</strong> com <code>fread</code> num laço, mostre cada um e calcule a média. A saída deve ser:</p>
+<pre class="out">Ana: 9.5
+Bruno: 6.0
+Carla: 8.0
+Davi: 6.5
+Média: 7.50</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+typedef struct {
+    char nome[16];
+    double nota;
+} Aluno;
+
+int main(void) {
+    Aluno turma[4] = {
+        {"Ana", 9.5}, {"Bruno", 6.0}, {"Carla", 8.0}, {"Davi", 6.5},
+    };
+
+    FILE *f = fopen("turma.bin", "wb");
+    if (f == NULL) {
+        printf("Não consegui criar turma.bin\n");
+        return 1;
+    }
+    fwrite(turma, sizeof(Aluno), 4, f);
+    fclose(f);
+
+    // agora leia turma.bin de volta, um aluno por vez
+    double soma = 0.0;
+    int lidos = 0;
+
+    if (lidos &gt; 0) {
+        printf("Média: %.2f\n", soma / lidos);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+typedef struct {
+    char nome[16];
+    double nota;
+} Aluno;
+
+int main(void) {
+    Aluno turma[4] = {
+        {"Ana", 9.5}, {"Bruno", 6.0}, {"Carla", 8.0}, {"Davi", 6.5},
+    };
+
+    FILE *f = fopen("turma.bin", "wb");
+    if (f == NULL) {
+        printf("Não consegui criar turma.bin\n");
+        return 1;
+    }
+    fwrite(turma, sizeof(Aluno), 4, f);
+    fclose(f);
+
+    // agora leia turma.bin de volta, um aluno por vez
+    double soma = 0.0;
+    int lidos = 0;
+
+    f = fopen("turma.bin", "rb");
+    if (f == NULL) {
+        printf("Não consegui abrir turma.bin\n");
+        return 1;
+    }
+    Aluno a;
+    while (fread(&amp;a, sizeof a, 1, f) == 1) {
+        printf("%s: %.1f\n", a.nome, a.nota);
+        soma += a.nota;
+        lidos++;
+    }
+    fclose(f);
+
+    if (lidos &gt; 0) {
+        printf("Média: %.2f\n", soma / lidos);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<p>Se quiser ir além: troque o <code>fwrite</code> para gravar só 3 alunos e veja a média mudar sozinha, porque o laço de leitura se adapta ao que existe no arquivo.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Arquivo de texto guarda os números <strong>escritos</strong> (<code>fprintf</code>); arquivo binário guarda os <strong>bytes da memória</strong> (<code>fwrite</code>). Use os modos <code>"wb"</code>, <code>"rb"</code>, <code>"ab"</code>.</li>
+  <li><code>fwrite(ptr, tamanho, quantidade, arquivo)</code> e <code>fread(ptr, tamanho, quantidade, arquivo)</code>; o tamanho vem de <code>sizeof</code>.</li>
+  <li>Um array de structs vai e volta com uma linha. Para ler sem saber quantos há, use <code>while (fread(&amp;x, sizeof x, 1, f) == 1)</code>.</li>
+  <li>Os dois devolvem quantos itens <strong>inteiros</strong> transferiram: confira sempre. Depois de uma leitura curta, <code>feof</code> e <code>ferror</code> dizem o motivo.</li>
+  <li><code>xxd</code> e <code>od</code> mostram os bytes. Os processadores comuns são little-endian: 12 vira <code>0c 00 00 00</code>.</li>
+  <li>Binário não é portátil: o tamanho dos tipos, o enchimento e a ordem dos bytes mudam. Use <code>int32_t</code>/<code>int64_t</code>, arrays de tamanho fixo e nunca ponteiros. Para trocar dados com outros programas, prefira texto.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
