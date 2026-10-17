@@ -193,12 +193,27 @@ $ ./tabela
 <h3>Os caracteres invisíveis</h3>
 <p>Os códigos de 0 a 31 (e o 127) não desenham nada: são comandos, como "pule uma linha". Você já conhece alguns, escritos com a barra invertida (aula <a href="escapes.html">Novas Linhas e Escapes</a>):</p>
 
-<pre class="term" data-cwd="~/c">$ ./invisiveis
+<pre class="file" data-file="invisiveis.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("'\\n' = %d\n", '\n');
+    printf("'\\t' = %d\n", '\t');
+    printf("'\\0' = %d\n", '\0');
+    printf("' '  = %d\n", ' ');
+    printf("'\\'' = %d\n", '\'');
+    return 0;
+}
+</pre>
+
+<p>Dentro do texto do <code>printf</code>, <code>\\</code> mostra uma barra invertida; por isso <code>"'\\n'"</code> aparece como <code>'\n'</code> na tela.</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra invisiveis.c -o invisiveis
+$ ./invisiveis
 '\n' = 10                « nova linha
 '\t' = 9                 « tabulação
 '\0' = 0                 « o caractere nulo, que marca o fim dos textos
-' '  = 32                « o espaço é visível? ele ocupa lugar, mas não tem desenho
-'\'' = '                 « aspas simples dentro de aspas simples: com barra</pre>
+' '  = 32                « o espaço ocupa lugar, mas não tem desenho
+'\'' = 39                « aspas simples dentro de aspas simples: com barra</pre>
 
 <hr>
 
@@ -371,6 +386,37 @@ int main(void) {
     return 0;
 }
 </pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes: qual usar</h2>
+<p>O mesmo <code>A</code> pode ser escrito de três jeitos, e a mesma maiúscula pode ser obtida de três jeitos:</p>
+
+<pre class="term" data-cwd="~/c">$ cat formas.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char a = 'A';
+    char b = 65;
+    char c = '\x41';
+    printf("%c %c %c\n", a, b, c);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra formas.c -o formas
+$ ./formas
+A A A</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Aspas simples</td><td><code>'A'</code></td><td><strong>Sempre que possível.</strong> Quem lê entende na hora.</td></tr>
+<tr><td>Número da tabela</td><td><code>65</code></td><td>Quase nunca: quem lê tem de consultar a tabela.</td></tr>
+<tr><td>Escape em hexadecimal</td><td><code>'\x41'</code></td><td>Para caracteres sem desenho (códigos de controle); raramente para letras.</td></tr>
+<tr><td>Somar ou subtrair 32</td><td><code>c - 32</code></td><td>Evite: o 32 solto não explica nada.</td></tr>
+<tr><td>Distância entre as letras</td><td><code>c - 'a' + 'A'</code></td><td>Para entender a tabela (e em exercícios).</td></tr>
+<tr><td>Função pronta</td><td><code>toupper(c)</code></td><td><strong>No dia a dia.</strong> Confere se é letra (aula <a href="ctype.html">ctype.h</a>).</td></tr>
+</table>
 </div>
 
 <hr>
