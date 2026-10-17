@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Compilação Condicional — #ifdef, #if, -D e include guard | Guia C</title>
+<meta name="description" content="Compilação condicional em C para iniciantes: ligar e desligar código com #ifdef DEBUG e gcc -DDEBUG, #if, #elif e #else, valores padrão com #ifndef, include guard e #pragma once, detectar o sistema com __linux__ e _WIN32 e o #elifdef do C23, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Compilação Condicional</span></h1>
+
+<p class="intro">Às vezes você quer que um pedaço do código <strong>exista ou não exista</strong> no programa, dependendo de como ele foi compilado: mensagens de depuração só enquanto você testa, um trecho para Linux e outro para Windows, uma versão "de teste" e uma "de verdade". Em vez de apagar e reescrever linhas, você pede ao pré-processador para <strong>recortar</strong> o que não serve. Isso se chama <strong>compilação condicional</strong>, e é feita com <code>#ifdef</code>, <code>#if</code> e companhia.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como ligar e desligar código com <code>#ifdef DEBUG</code> … <code>#endif</code>.</li>
+  <li>Como definir um nome na hora de compilar, com <code>gcc -DDEBUG</code> e <code>gcc -DNIVEL=2</code>, sem mexer no código.</li>
+  <li>Como escolher entre vários caminhos com <code>#if</code>, <code>#elif</code> e <code>#else</code>, e para que serve <code>defined</code>.</li>
+  <li>Como dar um valor padrão com <code>#ifndef</code>.</li>
+  <li>O que é um <strong>include guard</strong>, por que todo <code>.h</code> tem um, e o atalho <code>#pragma once</code>.</li>
+  <li>Como descobrir em que sistema o programa está sendo compilado (<code>__linux__</code>, <code>_WIN32</code>).</li>
+  <li>O <code>#elifdef</code> do C23 e uma armadilha dele nos padrões antigos.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/condicional</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Antes desta, leia <a href="preprocessador.html">Pré-processador</a>: aqui usamos <code>#define</code> e <code>#error</code> o tempo todo.</p>
+
+<hr>
+
+<h2>A ideia: a receita com trechos marcados</h2>
+<p>Lembra do assistente da cozinheira, que prepara a receita antes de ela ler? Agora a receita tem trechos marcados a lápis:</p>
+<ul>
+  <li>"<em>só se for para festa: decore com confeitos</em>";</li>
+  <li>"<em>se o forno for a gás, 180 graus; se for elétrico, 200 graus</em>".</li>
+</ul>
+<p>Antes de entregar a receita, o assistente pergunta "é para festa?" e <strong>recorta</strong> o trecho dos confeitos se não for. A cozinheira nem fica sabendo que aquele trecho existia. O pré-processador faz o mesmo com o seu código: o trecho recortado <strong>não é compilado</strong>, não entra no programa e não ocupa nenhum byte. É bem diferente de um <code>if</code> comum, que entra no programa e é decidido quando ele roda.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>if</code> (C)</th><th><code>#if</code> (pré-processador)</th></tr>
+<tr><td>Decidido quando</td><td>quando o programa <strong>roda</strong></td><td>antes de <strong>compilar</strong></td></tr>
+<tr><td>Pode testar</td><td>variáveis, o que o usuário digitou…</td><td>só macros e números fixos</td></tr>
+<tr><td>O trecho falso</td><td>está no programa, só não roda</td><td>nem existe no programa</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. <code>#ifdef</code>: código que só existe se um nome estiver definido</h2>
+<p>A Ana está somando os preços de uma compra e quer ver a conta passo a passo enquanto testa. Depois de pronto, essas mensagens devem sumir. Em vez de apagá-las, ela as cerca com <code>#ifdef DEBUG</code>:</p>
+
+<pre class="file" data-file="debug.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 0;
+    int precos[] = {12, 2, 5};
+
+    for (int i = 0; i &lt; 3; i++) {
+        total += precos[i];
+#ifdef DEBUG
+        printf("[debug] i = %d, total parcial = %d\n", i, total);
+#endif
+    }
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#ifdef DEBUG</dt><dd>"Se <code>DEBUG</code> estiver definido" (<em>if defined</em>). Só pergunta se o nome existe como macro, não importa o valor.</dd>
+  <dt>printf("[debug] …")</dt><dd>O trecho condicional. Pode ter quantas linhas quiser.</dd>
+  <dt>#endif</dt><dd>"Fim do if": fecha o trecho. Todo <code>#ifdef</code> precisa do seu <code>#endif</code>.</dd>
+  <dt>DEBUG</dt><dd>O nome é escolha sua. <code>DEBUG</code> (de <em>debugging</em>, "tirar bugs", depurar) é o costume.</dd>
+</dl>
+
+<p>As diretivas podem ficar no começo da linha, mesmo dentro de um bloco recuado: o recuo é só para os humanos. Compile do jeito normal:</p>
+
+<pre class="term" data-cwd="~/c/condicional">$ gcc -std=c23 -Wall -Wextra debug.c -o debug &amp;&amp; ./debug
+Total: 19</pre>
+
+<p>Ninguém definiu <code>DEBUG</code>, então o <code>printf</code> de depuração foi recortado. Para ligá-lo, a Ana poderia escrever <code>#define DEBUG</code> no topo do arquivo. Mas há um jeito melhor, que não mexe no código.</p>
+
+<h3><code>-D</code>: definir um nome na linha de comando</h3>
+<p>A opção <code>-D</code> do gcc faz o mesmo que um <code>#define</code> no começo do arquivo:</p>
+
+<pre class="term" data-cwd="~/c/condicional">$ gcc -std=c23 -Wall -Wextra -DDEBUG debug.c -o debug &amp;&amp; ./debug
+[debug] i = 0, total parcial = 12
+[debug] i = 1, total parcial = 14
+[debug] i = 2, total parcial = 19
+Total: 19</pre>
+
+<dl class="anatomy">
+  <dt>-D</dt><dd>"Define": cria uma macro antes de o arquivo ser lido.</dd>
+  <dt>DEBUG</dt><dd>O nome, colado no <code>-D</code>. Sem valor, o gcc dá o valor <code>1</code> (é como <code>#define DEBUG 1</code>).</dd>
+  <dt>-DNIVEL=2</dt><dd>Com valor: como <code>#define NIVEL 2</code>. Você vai usar isso logo abaixo.</dd>
+</dl>
+
+<p>O mesmo arquivo vira dois programas diferentes, conforme o comando. É assim que projetos grandes têm uma versão de "depuração" e uma de "lançamento" (<em>release</em>): no <a href="make.html">Makefile</a> ou no <a href="cmake.html">CMake</a>, uma linha decide se vai <code>-DDEBUG</code> ou não.</p>
+
+<h3>No editor do guia: <code>data-flags</code></h3>
+<p>No editor do guia não há linha de comando para digitar, mas cada caixa pode vir com as opções de compilação já escolhidas. A caixa abaixo foi preparada para compilar com <code>-DDEBUG</code>: repare na linha <code>$ clang … -DDEBUG …</code> que aparece no terminal dela quando você roda. (Para quem escreve o guia, isso é o atributo <code>data-flags</code> da caixa.)</p>
+
+<div class="tryc" data-flags="-std=c23 -Wall -Wextra -DDEBUG">
+<p class="try-task"><strong>Experimente:</strong> esta caixa compila com <code>-DDEBUG</code>. Rode e veja as linhas <code>[debug]</code>. Depois troque <code>#ifdef DEBUG</code> por <code>#ifdef DEPURAR</code> e rode de novo: como ninguém definiu <code>DEPURAR</code>, as linhas somem.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 0;
+    int precos[] = {12, 2, 5};
+
+    for (int i = 0; i &lt; 3; i++) {
+        total += precos[i];
+#ifdef DEBUG
+        printf("[debug] i = %d, total parcial = %d\n", i, total);
+#endif
+    }
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<h3><code>#if 0</code>: desligar um bloco inteiro</h3>
+<p>Um truque muito comum: <code>#if 0</code> é sempre falso, então tudo até o <code>#endif</code> some. Serve para "desligar" um bloco de código por um tempo, mesmo que ele tenha comentários <code>/* */</code> dentro (que não podem ser aninhados) ou nem compile mais:</p>
+
+<pre class="file" data-file="zero.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Versão nova do cálculo\n");
+#if 0
+    printf("Versão antiga: %d\n", conta_antiga());   /* nem existe mais */
+#endif
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/condicional">$ gcc -std=c23 -Wall -Wextra zero.c -o zero &amp;&amp; ./zero
+Versão nova do cálculo</pre>
+
+<p>A função <code>conta_antiga</code> não existe, e nem assim deu erro: o compilador nunca viu aquela linha.</p>
+
+<hr>
+
+<h2>2. <code>#if</code>, <code>#elif</code> e <code>#else</code>: escolher um caminho</h2>
+<p>O <code>#ifdef</code> só pergunta "existe?". O <code>#if</code> faz contas e comparações com números, como um <code>if</code> comum, e tem os parceiros <code>#elif</code> ("else if", senão se) e <code>#else</code> ("senão"). A Ana quer três níveis de mensagens no programa da lojinha:</p>
+
+<pre class="file" data-file="nivel.c">#include &lt;stdio.h&gt;
+
+#ifndef NIVEL
+#define NIVEL 1
+#endif
+
+int main(void) {
+#if NIVEL == 0
+    printf("Modo silencioso\n");
+#elif NIVEL == 1
+    printf("Modo normal\n");
+#elif NIVEL == 2
+    printf("Modo detalhado\n");
+#else
+#error "NIVEL deve ser 0, 1 ou 2"
+#endif
+    printf("NIVEL = %d\n", NIVEL);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#ifndef NIVEL</dt><dd>"Se <code>NIVEL</code> <strong>não</strong> estiver definido" (<em>if not defined</em>). O contrário do <code>#ifdef</code>.</dd>
+  <dt>#define NIVEL 1</dt><dd>Então defina com 1. Isto é um <strong>valor padrão</strong>: vale 1, a não ser que alguém já tenha definido outro valor antes (com <code>-D</code>, por exemplo).</dd>
+  <dt>#if NIVEL == 0</dt><dd>Compara números. Vale <code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>!</code> e contas, como no C (só com inteiros).</dd>
+  <dt>#elif NIVEL == 1</dt><dd>"Senão, se NIVEL for 1". Pode haver quantos <code>#elif</code> quiser.</dd>
+  <dt>#else</dt><dd>"Senão": o caminho de quando nenhum dos anteriores valeu. Aqui ele para tudo com um <code>#error</code>.</dd>
+  <dt>#endif</dt><dd>Um só <code>#endif</code> fecha a escada inteira.</dd>
+</dl>
+
+<p>Agora o mesmo arquivo, compilado de quatro jeitos:</p>
+
+<pre class="term" data-cwd="~/c/condicional">$ gcc -std=c23 -Wall -Wextra nivel.c -o nivel &amp;&amp; ./nivel
+Modo normal                 « sem -D: vale o padrão, 1
+NIVEL = 1
+$ gcc -std=c23 -Wall -Wextra -DNIVEL=2 nivel.c -o nivel &amp;&amp; ./nivel
+Modo detalhado
+NIVEL = 2
+$ gcc -std=c23 -Wall -Wextra -DNIVEL=0 nivel.c -o nivel &amp;&amp; ./nivel
+Modo silencioso
+NIVEL = 0
+$ gcc -std=c23 -Wall -Wextra -DNIVEL=7 nivel.c -o nivel
+nivel.c: In function ‘main’:
+nivel.c:15:2: error: #error "NIVEL deve ser 0, 1 ou 2"
+   15 | #error "NIVEL deve ser 0, 1 ou 2"
+      |  ^~~~~</pre>
+
+<p>Com <code>-DNIVEL=7</code>, nenhum <code>#if</code>/<code>#elif</code> valeu, o <code>#else</code> foi escolhido e o <code>#error</code> impediu a compilação, com uma mensagem que explica o que fazer. Esse é o uso típico do <code>#else</code> com <code>#error</code>: recusar uma configuração que não existe.</p>
+
+<h3><code>defined</code>: <code>#ifdef</code> dentro de um <code>#if</code></h3>
+<p><code>#ifdef X</code> é o mesmo que <code>#if defined(X)</code>, e <code>#ifndef X</code> é o mesmo que <code>#if !defined(X)</code>. A forma com <code>defined</code> é mais longa, mas permite juntar condições:</p>
+<pre class="file" data-file="trecho">#if defined(DEBUG) &amp;&amp; NIVEL &gt;= 2
+    printf("[debug] detalhes extras\n");
+#endif</pre>
+
+<h3>Nome não definido no <code>#if</code> vale zero</h3>
+<p>Cuidado: no <code>#if</code>, um nome que não é macro vale <strong>0</strong>, em silêncio. Se a Ana esquecer de definir <code>DESCONTO</code>, ou errar uma letra, o <code>#if DESCONTO &gt; 0</code> simplesmente dá falso. A opção <code>-Wundef</code> (não incluída no <code>-Wall</code>) avisa:</p>
+
+<pre class="term" data-cwd="~/c/condicional">$ gcc -std=c23 -Wall -Wextra undef.c -o undef &amp;&amp; ./undef
+Preço normal
+$ gcc -std=c23 -Wall -Wextra -Wundef undef.c -o undef
+undef.c: In function ‘main’:
+undef.c:4:5: warning: ‘DESCONTO’ is not defined, evaluates to ‘0’ [-Wundef]
+    4 | #if DESCONTO &gt; 0
+      |     ^~~~~~~~</pre>
+
+<p>"<code>DESCONTO</code> não está definido, vale 0."</p>
+
+<div class="tryc" data-goal="out:[debug] i = 2,out:Total: 19">
+<p class="try-task"><strong>Missão:</strong> esta caixa compila <strong>sem</strong> <code>-DDEBUG</code>. Ligue a depuração escrevendo uma linha no topo do arquivo, antes do <code>#ifdef</code>, sem mexer no resto. Devem aparecer as três linhas <code>[debug]</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 0;
+    int precos[] = {12, 2, 5};
+
+    for (int i = 0; i &lt; 3; i++) {
+        total += precos[i];
+#ifdef DEBUG
+        printf("[debug] i = %d, total parcial = %d\n", i, total);
+#endif
+    }
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+<pre class="solucao">#define DEBUG
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 0;
+    int precos[] = {12, 2, 5};
+
+    for (int i = 0; i &lt; 3; i++) {
+        total += precos[i];
+#ifdef DEBUG
+        printf("[debug] i = %d, total parcial = %d\n", i, total);
+#endif
+    }
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Include guard: incluir só uma vez</h2>
+<p>O uso mais comum de todos do <code>#ifndef</code> está em <strong>todo</strong> arquivo <code>.h</code> que você vai ver. Para entender, veja o problema primeiro. A Ana tem um <code>produto.h</code> com o tipo <code>struct produto</code> (aula <a href="structs.html">Structs</a>) e uma pequena função de desconto:</p>
+
+<pre class="file" data-file="produto.h">struct produto {
+    char nome[30];
+    int preco;
+};
+
+static inline int com_desconto(int preco) {
+    return preco - preco / 10;
+}
+</pre>
+
+<p>Ela tem também um <code>estoque.h</code>, que <strong>precisa</strong> do <code>struct produto</code> e por isso inclui o <code>produto.h</code>:</p>
+
+<pre class="file" data-file="estoque.h">#include "produto.h"
+
+int total_estoque(struct produto lista[], int n);
+</pre>
+
+<p>E o <code>main.c</code> inclui os dois:</p>
+
+<pre class="file" data-file="main.c">#include &lt;stdio.h&gt;
+#include "produto.h"
+#include "estoque.h"
+
+int main(void) {
+    struct produto p = {"caderno", 12};
+    printf("%s: R$ %d\n", p.nome, p.preco);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/condicional/guarda">$ gcc -std=c23 -Wall -Wextra main.c -o main
+In file included from estoque.h:1,
+                 from main.c:3:
+produto.h:6:19: error: redefinition of ‘com_desconto’
+    6 | static inline int com_desconto(int preco) {
+      |                   ^~~~~~~~~~~~
+In file included from main.c:2:
+produto.h:6:19: note: previous definition of ‘com_desconto’ with type ‘int(int)’
+    6 | static inline int com_desconto(int preco) {
+      |                   ^~~~~~~~~~~~</pre>
+
+<p>Leia de cima para baixo: "no arquivo incluído por <code>estoque.h</code> linha 1, que foi incluído por <code>main.c</code> linha 3: <strong>redefinição</strong> de <code>com_desconto</code>". E a nota: "definição anterior, no arquivo incluído por <code>main.c</code> linha 2". O <code>produto.h</code> foi colado <strong>duas vezes</strong> no <code>main.c</code>: uma pelo <code>#include</code> direto, outra por dentro do <code>estoque.h</code>. E a mesma função não pode ser definida duas vezes.</p>
+
+<div class="note">
+<strong>E a <code>struct</code>, que também apareceu duas vezes?</strong> Até o C17, ela também dava erro: <code>error: redefinition of ‘struct produto’</code> (compile com <code>-std=c17</code> para ver). O <strong>C23</strong> passou a aceitar a mesma <code>struct</code> repetida, desde que seja idêntica. Funções, variáveis e outras coisas continuam não podendo se repetir, e por isso o include guard continua obrigatório.
+</div>
+
+<h3>O conserto: <code>#ifndef</code> + <code>#define</code> + <code>#endif</code></h3>
+<p>Cerque o conteúdo inteiro do <code>.h</code> assim:</p>
+
+<pre class="file" data-file="produto.h">#ifndef PRODUTO_H
+#define PRODUTO_H
+
+struct produto {
+    char nome[30];
+    int preco;
+};
+
+static inline int com_desconto(int preco) {
+    return preco - preco / 10;
+}
+
+#endif
+</pre>
+
+<ol class="passo">
+  <li><strong>Primeira vez</strong> que o <code>produto.h</code> é colado: <code>PRODUTO_H</code> ainda não existe, então o <code>#ifndef</code> é verdadeiro. A primeira coisa lá dentro é <code>#define PRODUTO_H</code>, e o resto do arquivo entra normalmente.</li>
+  <li><strong>Segunda vez</strong> (por dentro do <code>estoque.h</code>): agora <code>PRODUTO_H</code> já existe. O <code>#ifndef</code> é falso e <strong>tudo</strong> até o <code>#endif</code> é recortado. É como se o arquivo estivesse vazio.</li>
+</ol>
+
+<p>O nome da macro é livre, mas o costume é o nome do arquivo em maiúsculas, com <code>_</code> no lugar do ponto: <code>produto.h</code> → <code>PRODUTO_H</code>. Cada <code>.h</code> precisa de um nome diferente; se dois arquivos usarem o mesmo, o segundo some sem aviso.</p>
+
+<h3><code>#pragma once</code>: o atalho</h3>
+<p>Quase todos os compiladores (gcc, Clang, o da Microsoft) aceitam uma linha só no lugar das três:</p>
+<pre class="file" data-file="produto.h">#pragma once
+
+struct produto {
+    char nome[30];
+    int preco;
+};
+</pre>
+<p><code>#pragma</code> é a diretiva para "ordens especiais do compilador", e <code>once</code> quer dizer "uma vez": "inclua este arquivo uma vez só". É mais curto e não tem o risco de dois arquivos usarem o mesmo nome. A desvantagem: <strong>não faz parte da norma do C</strong>, nem no C23. Os dois funcionam no gcc e no Clang; projetos que querem a portabilidade máxima usam o <code>#ifndef</code>. Escolha um e use em todos os seus <code>.h</code>. Mais na aula <a href="headers.html">Arquivos .h e .c</a>.</p>
+
+<div class="tryc" data-goal="out:caderno: R$ 12,out:Com desconto: R$ 11,src:#ifndef\s+\w+|#pragma\s+once">
+<p class="try-task"><strong>Missão:</strong> o programa não compila, porque o <code>produto.h</code> é incluído duas vezes. Ponha um include guard no <strong><code>produto.h</code></strong> (aba do meio) e rode. Não mexa nas outras abas.</p>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "produto.h"
+#include "estoque.h"
+
+int main(void) {
+    struct produto p = {"caderno", 12};
+    printf("%s: R$ %d\n", p.nome, p.preco);
+    printf("Com desconto: R$ %d\n", com_desconto(p.preco));
+    return 0;
+}
+</pre>
+<pre class="script" data-file="produto.h">struct produto {
+    char nome[30];
+    int preco;
+};
+
+static inline int com_desconto(int preco) {
+    return preco - preco / 10;
+}
+</pre>
+<pre class="script" data-file="estoque.h">#include "produto.h"
+
+int total_estoque(struct produto lista[], int n);
+</pre>
+<pre class="solucao" data-file="produto.h">#ifndef PRODUTO_H
+#define PRODUTO_H
+
+struct produto {
+    char nome[30];
+    int preco;
+};
+
+static inline int com_desconto(int preco) {
+    return preco - preco / 10;
+}
+
+#endif
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Em que sistema estou?</h2>
+<p>Cada compilador já define, sozinho, alguns nomes que dizem para qual sistema o programa está sendo feito. Com eles, o mesmo arquivo pode ter um trecho para cada sistema:</p>
+
+<pre class="file" data-file="sistema.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+#if defined(_WIN32)
+    printf("Rodando no Windows\n");
+#elif defined(__APPLE__)
+    printf("Rodando no macOS\n");
+#elif defined(__linux__)
+    printf("Rodando no Linux\n");
+#else
+    printf("Sistema desconhecido\n");
+#endif
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/condicional">$ gcc -std=c23 -Wall -Wextra sistema.c -o sistema &amp;&amp; ./sistema
+Rodando no Linux</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nome</th><th>Definido quando o programa é feito para…</th></tr>
+<tr><td><code>__linux__</code></td><td>Linux</td></tr>
+<tr><td><code>_WIN32</code></td><td>Windows (de 32 <strong>ou</strong> 64 bits; <code>_WIN64</code> só no de 64)</td></tr>
+<tr><td><code>__APPLE__</code></td><td>macOS e iOS</td></tr>
+<tr><td><code>__unix__</code></td><td>sistemas parecidos com o Unix (Linux, BSD…)</td></tr>
+<tr><td><code>__GNUC__</code></td><td>compilado com o gcc (o Clang também define, para ser compatível)</td></tr>
+<tr><td><code>__clang__</code></td><td>compilado com o Clang</td></tr>
+</table>
+</div>
+
+<p>Quer ver <strong>todas</strong> as macros que o gcc define sozinho? A opção <code>-dM</code>, junto com <code>-E</code>, lista os <code>#define</code> em vez do código (o <code>- &lt; /dev/null</code> pré-processa um arquivo vazio):</p>
+
+<pre class="term" data-cwd="~/c/condicional">$ gcc -dM -E - &lt; /dev/null | wc -l
+414
+$ gcc -dM -E - &lt; /dev/null | grep -i linux
+#define __linux 1
+#define __gnu_linux__ 1
+#define linux 1
+#define __linux__ 1
+$ gcc -dM -E - &lt; /dev/null | grep STDC_VERSION
+#define __STDC_VERSION__ 202311L</pre>
+
+<p>414 macros prontas. Os nomes <code>linux</code> e <code>__linux</code>, sem os sublinhados do fim, são antigos; use <code>__linux__</code>.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode o mesmo programa no editor do guia. Ele responde "Sistema desconhecido"! O editor não é Linux: o Clang dele gera um programa para <strong>WebAssembly</strong>, que roda dentro do navegador. Acrescente um <code>#elif defined(__wasm__)</code> antes do <code>#else</code>, com um <code>printf("Rodando no navegador (WebAssembly)\n");</code>, e rode de novo.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+#if defined(_WIN32)
+    printf("Rodando no Windows\n");
+#elif defined(__APPLE__)
+    printf("Rodando no macOS\n");
+#elif defined(__linux__)
+    printf("Rodando no Linux\n");
+#else
+    printf("Sistema desconhecido\n");
+#endif
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. <code>#elifdef</code> e <code>#elifndef</code> <span class="versao">C23</span></h2>
+<p>Assim como <code>#ifdef X</code> abrevia <code>#if defined(X)</code>, o C23 trouxe <code>#elifdef X</code> para abreviar <code>#elif defined(X)</code> (e <code>#elifndef X</code> para <code>#elif !defined(X)</code>):</p>
+
+<pre class="file" data-file="elifdef.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+#ifdef VERSAO_PRO
+    printf("Lojinha Pro\n");
+#elifdef VERSAO_TESTE
+    printf("Lojinha (versão de teste)\n");
+#else
+    printf("Lojinha básica\n");
+#endif
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/condicional">$ gcc -std=c23 -Wall -Wextra elifdef.c -o elifdef &amp;&amp; ./elifdef
+Lojinha básica
+$ gcc -std=c23 -Wall -Wextra -DVERSAO_TESTE elifdef.c -o elifdef &amp;&amp; ./elifdef
+Lojinha (versão de teste)</pre>
+
+<p>Agora a armadilha. Compile o mesmo arquivo com o padrão C17 estrito:</p>
+
+<pre class="term" data-cwd="~/c/condicional">$ gcc -std=c17 -Wall -Wextra -DVERSAO_TESTE elifdef.c -o elifdef &amp;&amp; ./elifdef
+Lojinha básica              « VERSAO_TESTE foi definido, mas o #elifdef foi ignorado!
+$ gcc -std=gnu17 -Wall -Wextra -DVERSAO_TESTE elifdef.c -o elifdef &amp;&amp; ./elifdef
+Lojinha (versão de teste)</pre>
+
+<p>Com <code>-std=c17</code>, o gcc 15 não reconhece o <code>#elifdef</code>. Como ele está num trecho que já estava sendo recortado (o <code>#ifdef VERSAO_PRO</code> era falso), a linha desconhecida é pulada <strong>sem erro e sem aviso</strong>, e o programa cai no <code>#else</code>. Nem <code>-pedantic</code> avisa. Com <code>-std=gnu17</code> (C17 com as extensões do GNU), funciona. O Clang, com <code>-std=c17</code>, aceita e avisa: <code>use of a '#elifdef' directive is a C23 extension</code>.</p>
+
+<p><strong>Qual usar?</strong> Em código C23, <code>#elifdef</code> é mais curto. Em código que pode ser compilado com um padrão antigo, use <code>#elif defined(X)</code>, que funciona em qualquer versão do C desde 1989.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: unterminated #ifdef</code></strong>
+<pre class="term" data-cwd="~/c/condicional">$ gcc -std=c23 -Wall -Wextra aberto.c -o aberto
+aberto.c: In function ‘main’:
+aberto.c:4: error: unterminated #ifdef
+    4 | #ifdef DEBUG
+aberto.c:3:1: error: expected declaration or statement at end of input
+    3 | int main(void) {
+      | ^~~</pre>
+<p><strong>O que significa:</strong> "<code>#ifdef</code> não terminado": faltou o <code>#endif</code>. Sem ele, o recorte vai até o fim do arquivo e leva junto o <code>}</code> do <code>main</code>, daí o segundo erro ("esperava uma declaração ou comando no fim da entrada").</p>
+<p><strong>Como consertar:</strong> feche cada <code>#if</code>/<code>#ifdef</code>/<code>#ifndef</code> com o seu <code>#endif</code>. Em arquivos longos, ajuda escrever o nome num comentário: <code>#endif /* DEBUG */</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: ‘#endif’ without ‘#if’</code></strong>
+<pre class="term" data-cwd="~/c/condicional">$ gcc -std=c23 -Wall -Wextra sobra.c -o sobra
+sobra.c: In function ‘main’:
+sobra.c:5:2: error: ‘#endif’ without ‘#if’
+    5 | #endif
+      |  ^~~~~</pre>
+<p><strong>O que significa:</strong> sobrou um <code>#endif</code>, sem um <code>#if</code> aberto. Acontece quando você apaga um <code>#ifdef</code> e esquece o par dele (o mesmo vale para <code>#else</code> e <code>#elif</code> sozinhos).</p>
+<p><strong>Como consertar:</strong> apague o <code>#endif</code> que sobrou, ou recoloque o <code>#if</code> que faltou.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: redefinition of ‘…’</code> com <code>In file included from</code></strong>
+<p><strong>O que significa:</strong> um <code>.h</code> foi colado duas vezes no mesmo <code>.c</code>, quase sempre porque um <code>.h</code> inclui outro. As linhas <code>In file included from</code> mostram o caminho de cada inclusão.</p>
+<p><strong>Como consertar:</strong> ponha um include guard (<code>#ifndef X_H</code> / <code>#define X_H</code> / <code>#endif</code>) ou <code>#pragma once</code> em <strong>todo</strong> <code>.h</code>, desde o primeiro dia.</p>
+</div>
+
+<div class="cenario">
+<strong>O trecho nunca aparece (ou sempre aparece), sem mensagem nenhuma</strong>
+<p><strong>O que significa:</strong> o nome testado está escrito diferente do definido (<code>-DDEBUG</code> × <code>#ifdef DEBGU</code>), ou o <code>#if</code> usa um nome que não existe e vale 0, ou um <code>#elifdef</code> foi compilado com <code>-std=c17</code>.</p>
+<p><strong>Como consertar:</strong> compile com <code>-Wundef</code> para pegar nomes desconhecidos em <code>#if</code>. Para ver o que sobrou depois do recorte, use <code>gcc -E -P</code> com as mesmas opções <code>-D</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>#ifdef X</code> … <code>#endif</code></td><td>O trecho só existe se a macro <code>X</code> estiver definida</td></tr>
+<tr><td><code>#ifndef X</code> … <code>#endif</code></td><td>O trecho só existe se <code>X</code> <strong>não</strong> estiver definida</td></tr>
+<tr><td><code>#if expressão</code></td><td>Compara números e macros (nome desconhecido vale 0)</td></tr>
+<tr><td><code>#elif expressão</code></td><td>"Senão, se…"</td></tr>
+<tr><td><code>#else</code></td><td>"Senão"</td></tr>
+<tr><td><code>#elifdef X</code> / <code>#elifndef X</code></td><td>"Senão, se X (não) estiver definida" <span class="versao">C23</span></td></tr>
+<tr><td><code>defined(X)</code></td><td>Dentro de <code>#if</code>: 1 se <code>X</code> existe, 0 se não</td></tr>
+<tr><td><code>#if 0</code> … <code>#endif</code></td><td>Desliga um bloco inteiro</td></tr>
+<tr><td><code>gcc -DX</code></td><td>Define <code>X</code> (valendo 1) antes de ler o arquivo</td></tr>
+<tr><td><code>gcc -DX=2</code></td><td>Define <code>X</code> valendo 2</td></tr>
+<tr><td><code>gcc -Wundef</code></td><td>Avisa quando um <code>#if</code> usa um nome não definido</td></tr>
+<tr><td><code>gcc -dM -E - &lt; /dev/null</code></td><td>Lista as macros prontas do compilador</td></tr>
+<tr><td><code>#ifndef ARQ_H</code> / <code>#define ARQ_H</code> / <code>#endif</code></td><td>Include guard</td></tr>
+<tr><td><code>#pragma once</code></td><td>Include guard numa linha (fora da norma, mas aceito por todos)</td></tr>
+<tr><td><code>__linux__</code>, <code>_WIN32</code>, <code>__APPLE__</code></td><td>Sistema para o qual se compila</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Ligar sem mexer no código</h3>
+<p>Complete o comando para compilar <code>loja.c</code> com a macro <code>DEBUG</code> definida:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra <input data-answer="-DDEBUG|-D DEBUG" aria-label="opção"> loja.c -o loja</div>
+</div>
+
+<div class="exercise">
+<h3>2. Include guard</h3>
+<p>Complete o include guard do arquivo <code>cliente.h</code>:</p>
+<div class="ex-code"><input data-answer="#ifndef" aria-label="diretiva 1"> CLIENTE_H<br>#define CLIENTE_H<br>/* … conteúdo … */<br><input data-answer="#endif" aria-label="diretiva 2"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. O arquivo tem <code>#ifndef TAXA</code> / <code>#define TAXA 5</code> / <code>#endif</code> e foi compilado com <code>gcc -DTAXA=8 …</code>. Quanto vale <code>TAXA</code>?</p>
+<label><input type="radio" name="q3"> 5</label>
+<label><input type="radio" name="q3"> 13</label>
+<label><input type="radio" name="q3"> 8, porque o <code>-D</code> vem antes e o <code>#ifndef</code> fica falso</label>
+<label><input type="radio" name="q3"> Dá erro de redefinição</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual a diferença entre um trecho dentro de <code>#if 0</code> e um trecho dentro de <code>if (0)</code>?</p>
+<label><input type="radio" name="q4"> Nenhuma</label>
+<label><input type="radio" name="q4"> O de <code>#if 0</code> nem é compilado (pode até ter erros); o de <code>if (0)</code> é compilado, só não roda</label>
+<label><input type="radio" name="q4"> O de <code>if (0)</code> nem é compilado</label>
+<label><input type="radio" name="q4"> <code>#if 0</code> só funciona fora de funções</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Sem nenhum <code>#define</code> e sem <code>-D</code>, o que acontece em <code>#if PROMOCAO</code>?</p>
+<label><input type="radio" name="q5"> Erro: <code>PROMOCAO</code> não foi declarado</label>
+<label><input type="radio" name="q5"> O trecho é compilado</label>
+<label><input type="radio" name="q5"> O compilador pergunta o valor</label>
+<label><input type="radio" name="q5"> <code>PROMOCAO</code> vale 0 e o trecho é recortado, sem aviso (a não ser com <code>-Wundef</code>)</label>
+</div>
+
+<h3>Missão final: a lojinha em dois idiomas</h3>
+
+<div class="tryc" data-flags="-std=c23 -Wall -Wextra -DIDIOMA=2" data-goal="out:Welcome to Ana's shop!,src:#elif\s+IDIOMA\s*==\s*2,src:#else,src:#error">
+<p class="try-task"><strong>Missão:</strong> esta caixa compila com <code>-DIDIOMA=2</code>. Hoje o programa só sabe o idioma 1 e, com 2, não mostra a saudação. Complete a escada: um <code>#elif IDIOMA == 2</code> que mostra <code>Welcome to Ana's shop!</code> e um <code>#else</code> com um <code>#error</code> para qualquer outro idioma.</p>
+<pre class="out">Welcome to Ana's shop!
+Caderno: R$ 12</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+#if IDIOMA == 1
+    printf("Bem-vindo à lojinha da Ana!\n");
+#endif
+    printf("Caderno: R$ 12\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+#if IDIOMA == 1
+    printf("Bem-vindo à lojinha da Ana!\n");
+#elif IDIOMA == 2
+    printf("Welcome to Ana's shop!\n");
+#else
+#error "IDIOMA deve ser 1 (português) ou 2 (inglês)"
+#endif
+    printf("Caderno: R$ 12\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Compilação condicional recorta trechos <strong>antes</strong> de compilar. O trecho recortado nem existe no programa; um <code>if</code> comum é decidido quando o programa roda.</li>
+  <li><code>#ifdef X</code> / <code>#ifndef X</code> perguntam se a macro existe. <code>#if</code> compara números, com <code>#elif</code>, <code>#else</code> e <code>defined(X)</code>. Tudo termina com <code>#endif</code>.</li>
+  <li><code>gcc -DDEBUG</code> e <code>gcc -DNIVEL=2</code> definem macros na linha de comando: o mesmo arquivo vira programas diferentes. No editor do guia, a caixa traz as opções prontas.</li>
+  <li><code>#ifndef X</code> + <code>#define X valor</code> dá um valor padrão que o <code>-D</code> pode trocar. Nome desconhecido no <code>#if</code> vale 0 (<code>-Wundef</code> avisa).</li>
+  <li>Todo <code>.h</code> tem um <strong>include guard</strong> (<code>#ifndef ARQ_H</code> / <code>#define ARQ_H</code> / <code>#endif</code>) ou <code>#pragma once</code>, para poder ser incluído várias vezes sem erro.</li>
+  <li><code>__linux__</code>, <code>_WIN32</code> e <code>__APPLE__</code> dizem o sistema; <code>gcc -dM -E - &lt; /dev/null</code> lista todas as macros prontas.</li>
+  <li><code>#elifdef</code> (C23) é curto, mas o gcc com <code>-std=c17</code> o ignora em silêncio: em código antigo, use <code>#elif defined(X)</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
