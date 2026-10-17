@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Funções inline — static inline, o erro de ligação e macro × inline | Guia C</title>
+<meta name="description" content="Funções inline em C para quem está começando: o que é expandir uma função no lugar da chamada, por que inline é uma dica e não uma ordem, static inline em arquivos .h, o erro de ligação do inline sozinho com -O0 (diferente do C++), extern inline e a comparação entre macro e função inline. Saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Funções inline</span></h1>
+
+<p class="intro">Chamar uma função tem um pequeno custo: o programa para o que está fazendo, pula para outro lugar, faz a conta e volta. Para uma função grande, esse custo some no meio do trabalho. Para uma função de uma linha, como "o dobro de um número", o pulo pode demorar mais que a conta. A palavra <code>inline</code> ("em linha") pede ao compilador: "em vez de pular até a função, <strong>copie o corpo dela</strong> no lugar da chamada". Nesta aula você vai ver o que isso faz de verdade, por que é só um pedido, e uma armadilha que existe no C e não existe no C++: o <code>inline</code> sozinho pode fazer o programa nem ligar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é <strong>expandir uma função em linha</strong>, olhando o código de máquina com <code>gcc -S</code>.</li>
+  <li>Por que <code>inline</code> é uma <strong>dica</strong>, não uma ordem (e o que o <code>-O2</code> tem a ver com isso).</li>
+  <li>O erro de ligação do <code>inline</code> sozinho em C, com <code>-O0</code>, e por que no C++ ele não acontece.</li>
+  <li>O jeito certo de pôr uma função pequena num arquivo <code>.h</code>: <code>static inline</code>.</li>
+  <li>A alternativa do C99, com <code>extern inline</code>.</li>
+  <li>Macro × função <code>inline</code>: quando cada uma serve.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/inline</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> (veja <a href="compilar.html">Compilar com gcc</a>). Às vezes acrescentamos <code>-O2</code>, que liga as <strong>otimizações</strong>; sem ele vale <code>-O0</code>, sem otimizar. Esta diferença é o coração da aula. Antes, convém conhecer <a href="funcoes.html">Funções</a> e <a href="headers.html">Arquivos .h e .c</a>.</p>
+
+<hr>
+
+<h2>A ideia: "veja a página 42" ou copiar a receita</h2>
+<p>A Ana escreve um livro de receitas. Várias receitas usam a mesma calda de chocolate. Ela pode escrever a calda uma vez, na página 42, e nas outras receitas pôr "faça a calda (veja a página 42)". Quem cozinha precisa <strong>virar até a página 42</strong>, ler, e voltar para onde estava. Ou ela pode <strong>copiar</strong> a receita da calda dentro de cada receita que a usa.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No livro</th><th>No programa</th><th>Vantagem</th><th>Desvantagem</th></tr>
+<tr><td>"Veja a página 42"</td><td>Chamada normal de função: o programa pula até ela e volta</td><td>A receita existe uma vez só: livro fino</td><td>Vira a página a cada uso</td></tr>
+<tr><td>Copiar a receita no lugar</td><td>Função <strong>expandida em linha</strong> (<em>inlined</em>): o corpo é copiado onde ela é chamada</td><td>Ninguém vira página: mais rápido</td><td>Se a receita é grande e aparece muito, o livro engorda</td></tr>
+</table>
+</div>
+
+<p>Para uma receita de duas linhas, copiar vale a pena. Para uma de três páginas, não. Quem decide, no fim, é a "editora": o compilador.</p>
+
+<hr>
+
+<h2>1. O que o compilador faz numa chamada</h2>
+<p>Comece por uma função pequena, marcada com <code>static inline</code> (as duas palavras são explicadas nas seções 3 e 4):</p>
+
+<pre class="file" data-file="dobro2.c">#include &lt;stdio.h&gt;
+
+static inline int dobro(int x) {
+    return x * 2;
+}
+
+int main(void) {
+    printf("O dobro de 21 é %d\n", dobro(21));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -Wall -Wextra dobro2.c -o dobro2
+$ ./dobro2
+O dobro de 21 é 42</pre>
+
+<p>Nada de especial na saída. A diferença está <strong>dentro</strong> do programa. A opção <code>-S</code> faz o gcc parar antes de montar o executável e mostrar o <strong>código de montagem</strong> (<em>assembly</em>): as instruções do processador, uma por linha (veja <a href="como-funciona.html">Como o C Vira Programa</a>). Com <code>-o -</code>, ele escreve na tela, e o <code>grep</code> filtra só as linhas que interessam:</p>
+
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -S -o - dobro2.c | grep -E 'call|dobro'
+	.file	"dobro2.c"
+	.type	dobro, @function
+dobro:                         « a função existe no programa
+	.size	dobro, .-dobro
+	.string	"O dobro de 21 \303\251 %d\n"
+	call	dobro                  « o main PULA até ela
+	call	printf@PLT</pre>
+
+<p>Sem otimização, o <code>inline</code> foi ignorado: a função <code>dobro</code> existe, e o <code>main</code> a chama com <code>call dobro</code> ("chame <code>dobro</code>"). Agora com <code>-O2</code>:</p>
+
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -O2 -S -o - dobro2.c | grep -E 'call|dobro|42'
+	.file	"dobro2.c"
+	.string	"O dobro de 21 \303\251 %d\n"
+	movl	$42, %edx              « o 42 já calculado!
+	call	__printf_chk@PLT</pre>
+
+<p>A função <code>dobro</code> <strong>sumiu</strong>, junto com o <code>call dobro</code>. O compilador copiou o corpo (<code>x * 2</code>) no lugar da chamada, viu que <code>21 * 2</code> é sempre 42 e escreveu o 42 direto (<code>movl $42</code> = "ponha 42 no lugar do segundo argumento do <code>printf</code>"). É isso que "expandir em linha" permite: depois da cópia, o compilador enxerga mais e simplifica mais. (O <code>__printf_chk</code> é uma versão do <code>printf</code> com conferências extras que o Ubuntu usa quando há otimização.)</p>
+
+<hr>
+
+<h2>2. Uma dica, não uma ordem</h2>
+<p>O padrão do C diz que <code>inline</code> é uma <strong>sugestão</strong>: "chamadas a esta função devem ser tão rápidas quanto possível". O compilador pode ignorar. E ele também pode expandir em linha funções que <strong>não</strong> têm <code>inline</code>. Veja esta, sem a palavra:</p>
+
+<pre class="file" data-file="dica.c">#include &lt;stdio.h&gt;
+
+static int dobro(int x) {
+    return x * 2;
+}
+
+int main(void) {
+    printf("O dobro de 21 é %d\n", dobro(21));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -O2 -S -o - dica.c | grep -E 'call|dobro|42'
+	.string	"O dobro de 21 \303\251 %d\n"
+	movl	$42, %edx              « expandida em linha, mesmo sem "inline"
+	call	__printf_chk@PLT</pre>
+
+<p>O mesmo resultado. Os compiladores modernos decidem sozinhos, com base no tamanho da função e em quantas vezes ela é chamada, e decidem melhor do que a maioria das pessoas. Resumindo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Com <code>-O0</code> (padrão)</th><th>Com <code>-O2</code></th></tr>
+<tr><td>Função com <code>inline</code></td><td>Chamada normal (<code>call</code>)</td><td>Quase sempre expandida, se for pequena</td></tr>
+<tr><td>Função sem <code>inline</code></td><td>Chamada normal (<code>call</code>)</td><td>Expandida também, se for pequena</td></tr>
+</table>
+</div>
+
+<p>Então para que serve o <code>inline</code> hoje? Menos para velocidade e mais para <strong>organização</strong>: ele permite pôr a definição de uma função num arquivo <code>.h</code>, incluído por vários <code>.c</code> (seção 4). Se você precisa mesmo forçar a expansão, o gcc e o Clang têm o atributo <code>[[gnu::always_inline]]</code> (uma extensão, não faz parte do padrão; veja <a href="atributos.html">Atributos</a>): com ele, o <code>call dobro</code> some até com <code>-O0</code>. Quase nunca é necessário.</p>
+
+<div class="tip">
+<strong>Velocidade de verdade se mede</strong>
+<p>Não espalhe <code>inline</code> pelo programa esperando que ele fique mais rápido. Compile com <code>-O2</code> e deixe o compilador escolher. Se um trecho parecer lento, meça antes de mudar qualquer coisa.</p>
+</div>
+
+<hr>
+
+<h2>3. A armadilha: <code>inline</code> sozinho em C</h2>
+<p>Até aqui, as funções tinham <code>static inline</code>. E se você escrever só <code>inline</code>, como faria em C++?</p>
+
+<pre class="file" data-file="dobro.c">#include &lt;stdio.h&gt;
+
+inline int dobro(int x) {
+    return x * 2;
+}
+
+int main(void) {
+    printf("O dobro de 21 é %d\n", dobro(21));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -Wall -Wextra dobro.c -o dobro
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccTKYlLl.o: na função "main":
+dobro.c:(.text+0xe): referência não definida para "dobro"
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra -O2 dobro.c -o dobro
+$ ./dobro
+O dobro de 21 é 42</pre>
+
+<p>Com o comando padrão, o programa <strong>não liga</strong>. A mensagem não vem do compilador, e sim do <strong>ligador</strong> (<code>ld</code>, o programa que junta os pedaços no executável; no laboratório ele fala português): <em>referência não definida para "dobro"</em> (em inglês, <code>undefined reference to `dobro'</code>, como você vai ver em fóruns). O <code>main</code> chama uma <code>dobro</code> que não existe em lugar nenhum. Com <code>-O2</code>, compila e roda. Que história é essa?</p>
+
+<h3>O que o <code>inline</code> sozinho quer dizer em C</h3>
+<p>Desde o C99, uma função marcada só com <code>inline</code> num arquivo é uma <strong>definição para expandir</strong>, e nada mais. O compilador entende assim: "pode copiar este corpo nas chamadas; e, se não copiar, a versão de verdade da função (a <strong>definição externa</strong>) está em <strong>outro</strong> arquivo". O compilador não cria a versão de verdade.</p>
+<ul>
+  <li>Com <code>-O2</code>, o gcc expandiu a chamada em linha. Ninguém precisou da versão de verdade: ligou.</li>
+  <li>Com <code>-O0</code>, o gcc não expande nada e deixou um <code>call dobro</code>. O ligador procurou a versão de verdade em todos os arquivos, não achou, e parou.</li>
+</ul>
+
+<p>Ou seja, o programa depende da otimização para ligar. É exatamente o que você não quer.</p>
+
+<div class="note">
+<strong>No C++ isso não acontece</strong>
+<p>Em C++, uma função <code>inline</code> num cabeçalho gera uma cópia em cada arquivo que a usa, e o ligador fica com uma só. Por isso quem vem do C++ (ou leu código C++) escreve <code>inline</code> sozinho e se assusta com o erro. O C seguiu outro caminho. Para piorar, o gcc antigo, no modo <code>-std=gnu89</code>, usava uma terceira regra, em que o <code>inline</code> sozinho <strong>criava</strong> a versão de verdade (com <code>-std=gnu89</code>, o <code>dobro.c</code> liga até com <code>-O0</code>). É por isso que você encontra código antigo que funcionava e hoje não liga.</p>
+</div>
+
+<p>No editor do guia acontece o mesmo, com as palavras do ligador do WebAssembly: <code>wasm-ld: error: … undefined symbol: dobro</code> ("símbolo não definido: <code>dobro</code>"). E, como no gcc, com <code>-O2</code> ele liga. Conserte na caixa abaixo:</p>
+
+<div class="tryc" data-goal="compila,out:O dobro de 21 é 42,src:static\s+inline\s+int\s+dobro">
+<p class="try-task"><strong>Missão:</strong> rode e veja o erro do ligador. Conserte acrescentando <strong>uma palavra</strong> antes do <code>inline</code>, para a função ficar <code>static inline</code> e o programa mostrar <code>O dobro de 21 é 42</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+inline int dobro(int x) {
+    return x * 2;
+}
+
+int main(void) {
+    printf("O dobro de 21 é %d\n", dobro(21));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+static inline int dobro(int x) {
+    return x * 2;
+}
+
+int main(void) {
+    printf("O dobro de 21 é %d\n", dobro(21));
+    return 0;
+}
+</pre>
+</div>
+
+<p>Por que o <code>static</code> resolve? Uma função <code>static</code> é <strong>particular</strong> do arquivo em que está (veja <a href="static-extern.html">static e extern</a>). Então não existe "versão de verdade em outro arquivo" para procurar: o compilador cria a função ali mesmo, se precisar dela. Com <code>-O0</code>, ele cria e chama (o <code>call dobro</code> da seção 1); com <code>-O2</code>, expande em linha e a apaga.</p>
+
+<hr>
+
+<h2>4. <code>static inline</code> num arquivo <code>.h</code></h2>
+<p>O uso mais comum de <code>inline</code> em C é este: uma função <strong>pequena</strong>, usada por vários arquivos <code>.c</code>, escrita inteira num <code>.h</code>. A lojinha da Ana calcula preços com desconto no programa principal e no relatório:</p>
+
+<pre class="file" data-file="preco.h">#ifndef PRECO_H
+#define PRECO_H
+
+static inline double com_desconto(double preco, double porcento) {
+    return preco - preco * porcento / 100.0;
+}
+
+#endif
+</pre>
+<pre class="file" data-file="main.c">#include &lt;stdio.h&gt;
+#include "preco.h"
+
+void relatorio(void);
+
+int main(void) {
+    printf("Café com 10%% de desconto: R$ %.2f\n", com_desconto(8.00, 10));
+    relatorio();
+    return 0;
+}
+</pre>
+<pre class="file" data-file="relatorio.c">#include &lt;stdio.h&gt;
+#include "preco.h"
+
+void relatorio(void) {
+    printf("Bolo com 25%% de desconto: R$ %.2f\n", com_desconto(20.00, 25));
+}
+</pre>
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -Wall -Wextra main.c relatorio.c -o loja
+$ ./loja
+Café com 10% de desconto: R$ 7.20
+Bolo com 25% de desconto: R$ 15.00</pre>
+
+<dl class="anatomy">
+  <dt>#ifndef PRECO_H … #endif</dt><dd>A <strong>guarda de inclusão</strong>: impede que o conteúdo entre duas vezes no mesmo <code>.c</code> (veja <a href="headers.html">Arquivos .h e .c</a>).</dd>
+  <dt>static</dt><dd>Cada <code>.c</code> que inclui o <code>preco.h</code> ganha a sua <strong>própria</strong> cópia particular da função. O <code>main.c</code> e o <code>relatorio.c</code> não brigam pelo nome.</dd>
+  <dt>inline</dt><dd>A dica de expandir. Ela também evita um aviso: com <code>static</code> sozinho, um <code>.c</code> que incluísse o <code>.h</code> sem usar a função levaria do gcc um <code>warning: ‘com_desconto’ defined but not used [-Wunused-function]</code> ("definida mas não usada"). Com <code>static inline</code>, o gcc não reclama.</dd>
+  <dt>%%</dt><dd>Dentro do <code>printf</code>, <code>%%</code> escreve um <code>%</code> (veja <a href="formatos-printf.html">Formatos do printf</a>).</dd>
+</dl>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> os três arquivos estão nas abas. Rode. Depois apague a palavra <code>static</code> no <code>preco.h</code> e rode de novo: o ligador vai reclamar de <code>com_desconto</code> nos dois arquivos. Depois apague também o <code>inline</code> (fica só <code>double com_desconto</code>) e veja um terceiro erro.</p>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "preco.h"
+
+void relatorio(void);
+
+int main(void) {
+    printf("Café com 10%% de desconto: R$ %.2f\n", com_desconto(8.00, 10));
+    relatorio();
+    return 0;
+}
+</pre>
+<pre class="script" data-file="relatorio.c">#include &lt;stdio.h&gt;
+#include "preco.h"
+
+void relatorio(void) {
+    printf("Bolo com 25%% de desconto: R$ %.2f\n", com_desconto(20.00, 25));
+}
+</pre>
+<pre class="script" data-file="preco.h">#ifndef PRECO_H
+#define PRECO_H
+
+static inline double com_desconto(double preco, double porcento) {
+    return preco - preco * porcento / 100.0;
+}
+
+#endif
+</pre>
+</div>
+
+<p>Os três jeitos de escrever a função no <code>.h</code>, com dois arquivos <code>.c</code> e o comando padrão:</p>
+
+<h3>Sem nada: <code>double com_desconto(…)</code></h3>
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -Wall -Wextra main.c relatorio.c -o loja
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cctIVCDK.o: na função "com_desconto":
+relatorio.c:(.text+0x0): múltiplas definições de "com_desconto"; /tmp/ccarBf93.o:main.c:(.text+0x0): definido primeiro aqui
+collect2: error: ld returned 1 exit status</pre>
+<p>Cada <code>.c</code> criou a sua versão de verdade, pública, com o mesmo nome. O ligador achou duas: <em>múltiplas definições de "com_desconto"</em> (<code>multiple definition of</code>), <em>definido primeiro aqui</em> (<code>first defined here</code>).</p>
+
+<h3>Só <code>inline</code>: <code>inline double com_desconto(…)</code></h3>
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -Wall -Wextra main.c relatorio.c -o loja
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccRsxu4F.o: na função "main":
+main.c:(.text+0x21): referência não definida para "com_desconto"
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccYMnTJv.o: na função "relatorio":
+relatorio.c:(.text+0x21): referência não definida para "com_desconto"
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra -O2 main.c relatorio.c -o loja
+$ ./loja
+Café com 10% de desconto: R$ 7.20
+Bolo com 25% de desconto: R$ 15.00</pre>
+<p>O oposto: <strong>nenhum</strong> arquivo criou a versão de verdade (a armadilha da seção 3, agora em dois arquivos). Com <code>-O2</code>, liga, por sorte da otimização.</p>
+
+<h3><code>static inline double com_desconto(…)</code></h3>
+<p>Funciona sempre, com qualquer otimização (a saída do começo da seção).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No <code>.h</code></th><th>Quantas versões de verdade</th><th>Resultado com <code>-O0</code></th></tr>
+<tr><td><code>double f(…) { … }</code></td><td>Uma por <code>.c</code>, todas públicas</td><td><code>múltiplas definições de "f"</code></td></tr>
+<tr><td><code>inline double f(…) { … }</code></td><td>Nenhuma</td><td><code>referência não definida para "f"</code></td></tr>
+<tr><td><code>static inline double f(…) { … }</code></td><td>Uma particular por <code>.c</code>, só se precisar</td><td>Funciona</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. A alternativa do C99: <code>inline</code> no <code>.h</code> e <code>extern inline</code> num <code>.c</code></h2>
+<p>O padrão prevê outro jeito, que evita as cópias particulares: deixe o <code>inline</code> sozinho no <code>.h</code> e crie, num único <code>.c</code>, a versão de verdade, com uma declaração <code>extern inline</code>:</p>
+
+<pre class="file" data-file="preco.h">#ifndef PRECO_H
+#define PRECO_H
+
+inline double com_desconto(double preco, double porcento) {
+    return preco - preco * porcento / 100.0;
+}
+
+#endif
+</pre>
+<pre class="file" data-file="preco.c">#include "preco.h"
+
+// a única definição "de verdade", para o ligador achar
+extern inline double com_desconto(double preco, double porcento);
+</pre>
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -Wall -Wextra main.c relatorio.c preco.c -o loja
+$ ./loja
+Café com 10% de desconto: R$ 7.20
+Bolo com 25% de desconto: R$ 15.00</pre>
+
+<dl class="anatomy">
+  <dt>extern inline double com_desconto(…);</dt><dd>Só uma declaração, sem corpo. Mas, como o corpo <code>inline</code> veio do <code>.h</code> logo acima, a palavra <code>extern</code> manda o compilador criar <strong>aqui</strong> a versão de verdade, pública. Vale escrever só <code>double com_desconto(double, double);</code> também: qualquer declaração sem <code>inline</code> tem o mesmo efeito.</dd>
+  <dt>preco.c</dt><dd>Tem de entrar na linha do <code>gcc</code> (ou no <code>Makefile</code>; veja <a href="make.html">Makefile</a>). Se ficar de fora, volta o erro <code>referência não definida</code>.</dd>
+</dl>
+
+<p>Funciona com <code>-O0</code> e com <code>-O2</code>, e o programa tem uma única cópia da função para quem não for expandido. É o jeito "oficial" do C99, comum em bibliotecas grandes. Mas exige um arquivo a mais e é fácil de esquecer.</p>
+
+<hr>
+
+<h2>6. Macro × função <code>inline</code></h2>
+<p>Antes do C99, o único jeito de ter "uma função copiada no lugar" era uma <strong>macro com parâmetros</strong> (veja <a href="macros.html">Macros com Parâmetros</a>). O pré-processador troca o texto antes de compilar, sem pulo nenhum. Parece igual, mas não é:</p>
+
+<pre class="file" data-file="macro.c">#include &lt;stdio.h&gt;
+
+#define QUADRADO(x) x * x
+
+static inline int quadrado(int x) {
+    return x * x;
+}
+
+int main(void) {
+    printf("macro:  %d\n", QUADRADO(2 + 3));
+    printf("inline: %d\n", quadrado(2 + 3));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -Wall -Wextra macro.c -o macro
+$ ./macro
+macro:  11
+inline: 25</pre>
+
+<p>A macro trocou o <strong>texto</strong>: <code>QUADRADO(2 + 3)</code> virou <code>2 + 3 * 2 + 3</code>, que dá 2 + 6 + 3 = 11 (a multiplicação vem primeiro; veja <a href="precedencia.html">Precedência</a>). A função recebeu o <strong>valor</strong> 5 e devolveu 25. Os parênteses consertam esse caso, <code>#define QUADRADO(x) ((x) * (x))</code>, mas não este:</p>
+
+<pre class="file" data-file="macro2.c">#include &lt;stdio.h&gt;
+
+#define QUADRADO(x) ((x) * (x))
+
+static inline int quadrado(int x) {
+    return x * x;
+}
+
+int main(void) {
+    int a = 3;
+    int r1 = QUADRADO(a++);
+    printf("macro:  %d (a agora vale %d)\n", r1, a);
+
+    int b = 3;
+    int r2 = quadrado(b++);
+    printf("inline: %d (b agora vale %d)\n", r2, b);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/inline">$ gcc -std=c23 -Wall -Wextra macro2.c -o macro2
+macro2.c: In function ‘main’:
+macro2.c:11:24: warning: operation on ‘a’ may be undefined [-Wsequence-point]
+   11 |     int r1 = QUADRADO(a++);
+      |                        ^
+macro2.c:3:29: note: in definition of macro ‘QUADRADO’
+    3 | #define QUADRADO(x) ((x) * (x))
+      |                             ^
+$ ./macro2
+macro:  12 (a agora vale 5)
+inline: 9 (b agora vale 4)</pre>
+
+<p>A macro virou <code>((a++) * (a++))</code>: o <code>a++</code> aconteceu <strong>duas vezes</strong>, o resultado foi 12 (nem 9, nem 16) e o gcc avisou que isso é comportamento indefinido (veja <a href="comportamento-indefinido.html">Comportamento Indefinido</a>). A função calculou <code>b++</code> uma vez só, como qualquer função: recebeu 3, devolveu 9, e <code>b</code> foi para 4.</p>
+
+<p>A macro tem uma vantagem: não tem tipo. <code>QUADRADO(1.5)</code> dá <code>2.25</code>, enquanto <code>quadrado(1.5)</code> converte o 1.5 para o <code>int</code> 1 (e o <code>-Wconversion</code> avisa: <code>conversion from ‘double’ to ‘int’ changes value from ‘1.5e+0’ to ‘1’</code>). Para uma função que aceite vários tipos sem os perigos da macro, o C11 tem o <a href="generic.html">_Generic</a>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Macro <code>#define F(x)</code></th><th>Função <code>static inline</code></th></tr>
+<tr><td>Quem trata</td><td>O pré-processador, trocando texto</td><td>O compilador, como uma função normal</td></tr>
+<tr><td>Argumento calculado</td><td>Uma vez para cada vez que aparece (<code>a++</code> duas vezes!)</td><td>Uma vez só</td></tr>
+<tr><td>Precedência</td><td>Precisa de parênteses em tudo</td><td>Sem surpresa</td></tr>
+<tr><td>Tipos</td><td>Não confere nada; aceita qualquer tipo</td><td>Confere e converte, com avisos</td></tr>
+<tr><td>Erros do compilador</td><td>Apontam para o texto já trocado (difíceis de ler)</td><td>Apontam para a função</td></tr>
+<tr><td>Depurador (<a href="depuracao-gdb.html">gdb</a>)</td><td>A macro não existe para ele</td><td>Dá para parar dentro (com <code>-O0</code>)</td></tr>
+<tr><td>Velocidade com <code>-O2</code></td><td>A mesma</td><td>A mesma</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Formas diferentes: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Função usada só num <code>.c</code></td><td><code>static</code> (com ou sem <code>inline</code>): com <code>-O2</code>, o compilador expande sozinho se valer a pena</td></tr>
+<tr><td>Função pequena (poucas linhas), usada por vários <code>.c</code></td><td><code>static inline</code> no <code>.h</code></td></tr>
+<tr><td>Função grande, usada por vários <code>.c</code></td><td>Uma função normal: protótipo no <code>.h</code>, corpo num <code>.c</code> (veja <a href="multiplos-arquivos.html">Vários Arquivos</a>)</td></tr>
+<tr><td>Uma única cópia de verdade da função pequena</td><td><code>inline</code> no <code>.h</code> + <code>extern inline</code> num <code>.c</code></td></tr>
+<tr><td>Algo que funções não fazem (trocar texto, <code>__FILE__</code>, <code>__LINE__</code>)</td><td>Macro</td></tr>
+<tr><td>Nunca</td><td><code>inline</code> sozinho num <code>.c</code> (não liga com <code>-O0</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>referência não definida para "f"</code> (<code>undefined reference to `f'</code>), com uma função <code>inline</code></strong>
+<p><strong>O que significa:</strong> a função está marcada só com <code>inline</code>. Em C, isso não cria a versão de verdade; com <code>-O0</code>, o compilador chama a função em vez de expandir, e o ligador não a encontra. No editor do guia: <code>wasm-ld: error: … undefined symbol: f</code>.</p>
+<p><strong>Como consertar:</strong> troque por <code>static inline</code>. Ou, se quiser uma única cópia, ponha <code>extern inline</code> + o protótipo num <code>.c</code> e inclua esse <code>.c</code> na compilação.</p>
+</div>
+
+<div class="cenario">
+<strong>"Compila com <code>-O2</code>, mas não com <code>-O0</code>"</strong>
+<p><strong>O que significa:</strong> quase sempre é o mesmo problema do <code>inline</code> sozinho: com <code>-O2</code>, todas as chamadas foram expandidas e ninguém precisou da versão de verdade.</p>
+<p><strong>Como consertar:</strong> como acima. Um programa tem de ligar com qualquer otimização.</p>
+</div>
+
+<div class="cenario">
+<strong><code>múltiplas definições de "f"</code> (<code>multiple definition of `f'</code>)</strong>
+<p><strong>O que significa:</strong> uma função com corpo, sem <code>static</code> nem <code>inline</code>, está num <code>.h</code> incluído por dois ou mais <code>.c</code>. Cada um criou a sua versão pública, e o ligador achou duas.</p>
+<p><strong>Como consertar:</strong> se a função é pequena, <code>static inline</code>. Se é grande, deixe no <code>.h</code> só o protótipo (<code>double f(double);</code>) e mova o corpo para um <code>.c</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma macro dá um resultado esquisito (<code>11</code> em vez de <code>25</code>)</strong>
+<p><strong>O que significa:</strong> a macro trocou o texto sem parênteses, e a precedência mudou a conta. Ou o argumento tem <code>++</code> e foi calculado duas vezes (o gcc avisa <code>operation on ‘a’ may be undefined</code>, e o Clang, <code>multiple unsequenced modifications to 'a'</code>).</p>
+<p><strong>Como consertar:</strong> troque a macro por uma função <code>static inline</code>. Se precisar manter a macro, ponha parênteses em cada uso do parâmetro e em volta de tudo, e nunca passe <code>a++</code> para ela.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que significa em C</th></tr>
+<tr><td><code>static inline int f(int x) { … }</code></td><td>Função particular do arquivo, com dica de expandir. O jeito seguro, inclusive em <code>.h</code></td></tr>
+<tr><td><code>inline int f(int x) { … }</code></td><td>Definição só para expandir; a versão de verdade tem de existir em outro lugar</td></tr>
+<tr><td><code>extern inline int f(int x);</code></td><td>Num <code>.c</code> que já viu o corpo <code>inline</code>: cria aqui a versão de verdade</td></tr>
+<tr><td><code>static int f(int x) { … }</code></td><td>Função particular; com <code>-O2</code>, o compilador também pode expandir</td></tr>
+<tr><td><code>[[gnu::always_inline]]</code></td><td>Extensão do gcc e do Clang: expande sempre, até com <code>-O0</code></td></tr>
+<tr><td><code>gcc -S -o - arquivo.c</code></td><td>Mostra o código de montagem; <code>call f</code> = chamada, sem <code>call</code> = expandida</td></tr>
+<tr><td><code>#define F(x) ((x) * (x))</code></td><td>Macro: troca de texto, sem tipo, argumento repetido</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O jeito seguro</h3>
+<p>Complete para a função poder ficar num <code>.h</code> incluído por vários <code>.c</code>, ligando com qualquer otimização:</p>
+<div class="ex-code"><input data-answer="static" aria-label="palavra"> inline int metade(int x) { return x / 2; }</div>
+</div>
+
+<div class="exercise">
+<h3>2. Ver o código de máquina</h3>
+<p>Complete a opção do gcc que mostra o código de montagem em vez de criar o executável:</p>
+<div class="ex-code">gcc -std=c23 <input data-answer="-S" aria-label="opção"> -o - dobro.c</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Um arquivo tem <code>inline int dobro(int x) { return x * 2; }</code> e o <code>main</code> chama <code>dobro(21)</code>. Com <code>gcc -std=c23 -Wall -Wextra</code> (sem <code>-O2</code>), o que acontece?</p>
+<label><input type="radio" name="q3"> Compila e mostra 42</label>
+<label><input type="radio" name="q3"> Erro do ligador: <code>referência não definida para "dobro"</code></label>
+<label><input type="radio" name="q3"> Erro do compilador: <code>inline</code> não existe em C</label>
+<label><input type="radio" name="q3"> Aviso <code>-Wunused-function</code> e mostra 42</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. O que é verdade sobre a palavra <code>inline</code>?</p>
+<label><input type="radio" name="q4"> Obriga o compilador a copiar a função em cada chamada</label>
+<label><input type="radio" name="q4"> Deixa qualquer programa mais rápido</label>
+<label><input type="radio" name="q4"> Sem ela, o compilador nunca expande uma função em linha</label>
+<label><input type="radio" name="q4"> É uma dica: o compilador pode ignorá-la, e com <code>-O2</code> expande funções pequenas mesmo sem ela</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Com <code>#define DOBRO(x) x + x</code>, quanto vale <code>DOBRO(3) * 10</code>?</p>
+<label><input type="radio" name="q5"> 60</label>
+<label><input type="radio" name="q5"> 6</label>
+<label><input type="radio" name="q5"> 33, porque vira <code>3 + 3 * 10</code></label>
+<label><input type="radio" name="q5"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Uma função normal (sem <code>static</code> nem <code>inline</code>), com corpo, está num <code>.h</code> incluído por <code>main.c</code> e <code>loja.c</code>. O que o ligador diz?</p>
+<label><input type="radio" name="q6"> <code>múltiplas definições</code></label>
+<label><input type="radio" name="q6"> <code>referência não definida</code></label>
+<label><input type="radio" name="q6"> Nada: funciona</label>
+<label><input type="radio" name="q6"> <code>implicit declaration of function</code></label>
+</div>
+
+<h3>Missão final: da macro para a função</h3>
+<div class="tryc" data-goal="out:Área: 12,src:static\s+inline\s+int\s+area\s*\(">
+<p class="try-task"><strong>Missão:</strong> a Ana quer saber a área de uma prateleira com <code>lado + 1</code> de largura e 4 de altura, mas a macro <code>AREA</code> calcula errado. Troque a macro por uma função <code>static inline int area(int largura, int altura)</code> e use-a no <code>printf</code>, para a saída ser <code>Área: 12</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define AREA(l, a) l * a
+
+int main(void) {
+    int lado = 2;
+    printf("Área: %d\n", AREA(lado + 1, 4));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+static inline int area(int largura, int altura) {
+    return largura * altura;
+}
+
+int main(void) {
+    int lado = 2;
+    printf("Área: %d\n", area(lado + 1, 4));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Expandir em linha (<em>inline</em>) = copiar o corpo da função no lugar da chamada, sem o pulo. Dá para ver com <code>gcc -S</code>: some o <code>call</code>.</li>
+  <li><code>inline</code> é uma <strong>dica</strong>. Com <code>-O0</code>, nada é expandido; com <code>-O2</code>, o compilador expande funções pequenas, com ou sem <code>inline</code>.</li>
+  <li>Em C, <code>inline</code> <strong>sozinho</strong> não cria a versão de verdade da função: com <code>-O0</code>, dá <code>referência não definida</code> no ligador. No C++ não é assim.</li>
+  <li>O jeito seguro é <code>static inline</code>, inclusive em arquivos <code>.h</code>. A alternativa do C99 é <code>inline</code> no <code>.h</code> + <code>extern inline</code> num único <code>.c</code>.</li>
+  <li>Prefira <code>static inline</code> a macros com parâmetros: o argumento é calculado uma vez, não há surpresa de precedência e os tipos são conferidos.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
