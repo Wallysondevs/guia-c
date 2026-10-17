@@ -63,7 +63,7 @@ for (const f of ["llvm.core.wasm", "llvm.core2.wasm", "llvm.core3.wasm", "llvm.c
 let C = M.criarCompilador({ Y, modulos, sysroot: sys });
 const fonte = (n) => fs.readFileSync(path.join(AQUI, "c-src", n), "utf8");
 function objeto(nome) {
-  const r = C.executarDriver(["clang", "-std=c23", "-O2", "-Wall", "-Wextra", "-c", nome, "-o", nome.replace(/\.c$/, ".o")], [{ nome, codigo: fonte(nome) }]);
+  const r = C.executarDriver(["clang", "-std=c23", "-O2", "-Wall", "-Wextra", "-D_WASI_EMULATED_SIGNAL", "-c", nome, "-o", nome.replace(/\.c$/, ".o")], [{ nome, codigo: fonte(nome) }]);
   if (r.exit) throw new Error(nome + ":\n" + r.saida);
   return r.ler(nome.replace(/\.c$/, ".o"));
 }

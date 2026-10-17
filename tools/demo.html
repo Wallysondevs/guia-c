@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demonstração do Experimente | Guia C</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>body { max-width: 860px; margin: 0 auto; padding: 16px; background: var(--bg); color: var(--text); font: 17px/1.6 system-ui, sans-serif; }</style>
+</head>
+<body>
+<h1>Demonstração do <span class="hl">Experimente</span> (C de verdade)</h1>
+<p>Página de teste das caixas <code>.tryc</code> (não faz parte do menu). Sirva a raiz do site e abra <code>/tools/demo.html</code>.</p>
+
+<h2>Missão simples</h2>
+<div class="tryc" data-goal="out:Olá, Ana!" id="c-missao">
+<p class="try-task"><strong>Missão:</strong> troque "mundo" por "Ana" e clique em Rodar.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, Ana!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<h2>Erro de compilação (missão "provoque o erro")</h2>
+<div class="tryc" data-goal="erro:/undeclared identifier|undeclared \(first use/" id="c-erro">
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("%d\n", idadee);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("%d\n", idadee);
+    return 0;
+}
+</pre>
+</div>
+
+<h2>Entrada digitada (sem data-stdin) e argumentos</h2>
+<div class="tryc" data-args="um 'dois três'" id="c-interativo">
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(int argc, char *argv[]) {
+    for (int i = 0; i &lt; argc; i++) printf("argv[%d] = %s\n", i, argv[i]);
+    char nome[50];
+    int idade;
+    printf("Seu nome: ");
+    if (!fgets(nome, sizeof nome, stdin)) return 1;
+    nome[strcspn(nome, "\n")] = '\0';
+    printf("Sua idade: ");
+    if (scanf("%d", &amp;idade) != 1) return 2;
+    printf("Olá, %s! Daqui a 10 anos você terá %d.\n", nome, idade + 10);
+    return 0;
+}
+</pre>
+</div>
+
+<h2>Entrada fixa (data-stdin) e stderr intercalado</h2>
+<div class="tryc" data-stdin="7\n5" data-goal="out:Soma: 12,exit:0" id="c-stdin">
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a, b;
+    printf("Primeiro: ");
+    scanf("%d", &amp;a);
+    fprintf(stderr, "(lido %d)\n", a);
+    printf("Segundo: ");
+    scanf("%d", &amp;b);
+    printf("Soma: %d\n", a - b);
+    return 1;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a, b;
+    printf("Primeiro: ");
+    scanf("%d", &amp;a);
+    fprintf(stderr, "(lido %d)\n", a);
+    printf("Segundo: ");
+    scanf("%d", &amp;b);
+    printf("Soma: %d\n", a + b);
+    return 0;
+}
+</pre>
+</div>
+
+<h2>Várias abas (.h, .c, .txt)</h2>
+<div class="tryc" data-file="main.c" id="c-abas">
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "conta.h"
+
+int main(void) {
+    FILE *f = fopen("notas.txt", "r");
+    if (!f) { perror("notas.txt"); return 1; }
+    int n, soma = 0, qtd = 0;
+    while (fscanf(f, "%d", &amp;n) == 1) { soma += n; qtd++; }
+    fclose(f);
+    printf("Média: %.1f\n", media(soma, qtd));
+    return 0;
+}
+</pre>
+<pre class="script" data-file="conta.h">#ifndef CONTA_H
+#define CONTA_H
+double media(int soma, int qtd);
+#endif
+</pre>
+<pre class="script" data-file="conta.c">#include "conta.h"
+
+double media(int soma, int qtd) {
+    return qtd ? (double)soma / qtd : 0.0;
+}
+</pre>
+<pre class="script" data-file="notas.txt">7
+9
+8
+</pre>
+</div>
+
+<h2>Falha de segmentação e cores</h2>
+<div class="tryc" id="c-seg">
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("\033[32mverde\033[0m e normal\n");
+    int *p = NULL;
+    printf("vai acessar o ponteiro nulo...\n");
+    printf("%d\n", *p);
+    return 0;
+}
+</pre>
+</div>
+
+<h2>Laço infinito (Parar / Ctrl+C)</h2>
+<div class="tryc" id="c-laco">
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (long i = 0; ; i++) {
+        if (i % 100000000 == 0) printf("%ld\n", i);
+    }
+}
+</pre>
+</div>
+
+<h2>C17 pelo data-flags</h2>
+<div class="tryc" data-flags="-std=c17 -Wall -Wextra" id="c-c17">
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdbool.h&gt;
+
+int main(void) {
+    bool ok = true;
+    printf("%ld %d\n", __STDC_VERSION__, ok);
+    return 0;
+}
+</pre>
+</div>
+
+<script src="../assets/csim.js"></script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 {
- "versao": "3d5c026fa8",
+ "versao": "56cb1e5698",
  "pacote": "22.0.0-git20542-10",
  "wasm": {
   "arquivo": "llvm.core.wasm",
@@ -9,9 +9,9 @@
  },
  "sysroot": {
   "arquivo": "sysroot.tar",
-  "bytes": 2134016,
-  "bytesGz": 578076,
-  "sha1": "2190c01adb61"
+  "bytes": 2134528,
+  "bytesGz": 578236,
+  "sha1": "b24c96bfa227"
  },
  "pchs": []
 }

@@ -12,7 +12,7 @@
    ===================================================================== */
 (function () {
   "use strict";
-  var C_BYTES = 23382825;  // download na 1ª vez (atualizado por tools/construir-c.mjs)
+  var C_BYTES = 23382985;  // download na 1ª vez (atualizado por tools/construir-c.mjs)
   var TEMPO_MAX = 15000;     // ms rodando sem parar (sem contar a espera por entrada)
   var MAX_LINHAS = 3000;     // linhas mostradas no terminal (o resto é resumido)
   var FLAGS_PADRAO = "-std=c23 -Wall -Wextra";
@@ -151,9 +151,11 @@
   CSim.linhaCompilar = linhaCompilar;
 
   // Sinais (como o bash mostra no Ubuntu em português)
-  var SINAIS = { 4: "Instrução ilegal", 6: "Abortado", 8: "Exceção de ponto flutuante", 11: "Falha de segmentação", 9: "Morto", 15: "Terminado" };
+  // (só os sinais que gravam "core" ganham o "(imagem do núcleo gravada)"; o SIGINT não mostra nada)
+  var SINAIS = { 1: "Desligar", 3: "Sair", 4: "Instrução ilegal", 5: "Trap de ponto de parada/rastreamento", 6: "Abortado", 7: "Erro de barramento", 8: "Exceção de ponto flutuante", 9: "Morto", 10: "Sinal 1 definido pelo usuário", 11: "Falha de segmentação", 12: "Sinal 2 definido pelo usuário", 14: "Despertador", 15: "Terminado", 24: "Tempo de CPU excedido", 26: "Temporizador virtual expirado", 31: "Chamada de sistema inválida" };
+  var COM_CORE = { 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 11: 1, 24: 1, 31: 1 };
   CSim.SINAIS = SINAIS;
-  function mensagemSinal(sinal) { return SINAIS[sinal] ? SINAIS[sinal] + " (imagem do núcleo gravada)" : ""; }
+  function mensagemSinal(sinal) { return SINAIS[sinal] ? SINAIS[sinal] + (COM_CORE[sinal] ? " (imagem do núcleo gravada)" : "") : ""; }
   CSim.mensagemSinal = mensagemSinal;
 
 
@@ -465,7 +467,7 @@
         s.term.terminar();
       }
       var exit = m ? m.exit : null;
-      if (m && m.sinal) info(mensagemSinal(m.sinal), "sim-err");
+      if (m && m.sinal && mensagemSinal(m.sinal)) info(mensagemSinal(m.sinal), "sim-err");
       if (motivo && motivo !== "^C") info(motivo, "sim-info");
       var codigo = exit === null || exit === undefined ? (motivo === "^C" ? 130 : null) : exit;
       if (s.compilou === false) codigo = s.exitCompilacao;
@@ -551,7 +553,7 @@
           else if (m.ev === "falha") { s.motivo = "(o compilador do navegador falhou: " + String(m.msg).split("\n")[0] + ")"; console.error("csim:", m.msg); encerrarWorker(); }
           else if (m.ev === "morto") finalizar(s, null, s.motivo || "(o compilador foi reiniciado)");
         };
-        s.id = enviar({ op: "executar", arquivos: arqs, nome: nome, flags: flags.split(/\s+/).filter(Boolean), args: args, stdin: stdin, interativo: stdin === null }, s.ouvinte);
+        s.id = enviar({ op: "executar", arquivos: arqs, nome: nome, flags: flags.split(/\s+/).filter(Boolean), args: args, stdin: stdin, interativo: stdin === null, semJspi: !!window.CSIM_SEM_JSPI }, s.ouvinte);
       }, function () {
         if (sessao !== s) return;
         if (compilando.parentNode) compilando.parentNode.removeChild(compilando);

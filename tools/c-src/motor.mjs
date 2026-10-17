@@ -50,7 +50,7 @@ const LIB = "/usr/lib/wasm32-wasip1";
 const FLAGS_LINK = [
   LIB + "/guia-rt.o", "-lguia", "-lsetjmp",
   "-lwasi-emulated-signal", "-lwasi-emulated-process-clocks", "-lwasi-emulated-getpid",
-  "--wrap=abort", "--wrap=__stdio_read",
+  "--wrap=abort", "--wrap=__stdio_read", "--wrap=raise",
   "--stack-first", "-z", "stack-size=8388608",      // pilha de 8 MB, como no Linux; estouro = falha de segmentação
   "--max-memory=268435456",                          // 256 MB: depois disso, malloc devolve NULL
 ];
@@ -786,7 +786,7 @@ export async function rodarPrograma(modulo, opts) {
     if (e instanceof PrecisaEntrada || e instanceof LimiteSaida) throw e;
     const msg = String((e && e.message) || e);
     let sinal = 11;
-    if (sinalPedido === 6) sinal = 6;
+    if (sinalPedido) sinal = sinalPedido; // abort(), raise() sem tratador (guia-rt.c)
     else if (e instanceof WebAssembly.RuntimeError || e instanceof RangeError) {
       if (/unreachable/i.test(msg)) sinal = 11; // checagem de ponteiro nulo (ou __builtin_trap)
       else if (/divi(de|sion) by zero|remainder by zero|integer overflow|divide result unrepresentable/i.test(msg)) sinal = 8;

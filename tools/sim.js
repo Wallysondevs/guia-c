@@ -60,7 +60,7 @@ async function main() {
     if (r.estourou) console.log("(o programa escreveu mais de 2 MB; o editor o interromperia)");
     if (r.tempoEsgotado) console.log("(o programa rodou mais de " + C.TEMPO_MAX / 1000 + " s; o editor o pararia)");
     if (r.leuSemEntrada) console.log("(o programa leu a entrada sem --stdin: recebeu fim de arquivo; no navegador ele esperaria o leitor digitar)");
-    if (r.sinal) console.log(Sim.mensagemSinal(r.sinal));
+    if (r.sinal && Sim.mensagemSinal(r.sinal)) console.log(Sim.mensagemSinal(r.sinal));
     console.log("[código de saída: " + r.exit + "]");
   }
   if (nativo) {
