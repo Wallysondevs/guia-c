@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Operadores Aritméticos — +, -, *, / e % | Guia C</title>
+<meta name="description" content="Operadores aritméticos em C para quem nunca programou: soma, subtração, multiplicação, a divisão inteira (7 / 2 = 3), o resto com % (par ou ímpar, último dígito, relógio, cifra de César), números negativos, contas com double, fmod, divisão por zero (Exceção de ponto flutuante, inf e nan) e o ^ que não é potência, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Operadores Aritméticos</span></h1>
+
+<p class="intro">Computador vem de "computar", calcular. Somar o carrinho de compras, dividir a conta da pizza, calcular a média das provas: tudo isso são contas, e em C elas são feitas com os <strong>operadores aritméticos</strong>: <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code> e <code>%</code>. Quatro deles você conhece da escola. O quinto, o <code>%</code>, é novidade e vai aparecer o tempo todo. E a divisão tem uma surpresa: em C, <code>7 / 2</code> dá <code>3</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Os cinco operadores: <code>+</code> (soma), <code>-</code> (subtração), <code>*</code> (multiplicação), <code>/</code> (divisão) e <code>%</code> (resto).</li>
+  <li>A <strong>divisão inteira</strong>: por que <code>7 / 2</code> dá <code>3</code>, e como pedir o <code>3.5</code>.</li>
+  <li>O resto da divisão, <code>%</code>, e os truques que ele resolve: par ou ímpar, último dígito, horas no relógio, minutos e segundos, cifra de César.</li>
+  <li>O que acontece com números negativos e com números com vírgula (<code>double</code>), e o <code>fmod</code>.</li>
+  <li>A divisão por zero: <code>Exceção de ponto flutuante</code> com inteiros, <code>inf</code> e <code>nan</code> com <code>double</code>.</li>
+  <li>Por que <code>2 ^ 3</code> dá <code>1</code>: o C não tem operador de potência.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. As saídas foram iguais no editor do guia.</p>
+
+<hr>
+
+<h2>A ideia: dois jeitos de dividir</h2>
+<p>A Ana tem 7 balas para dividir entre 2 sobrinhos. Na calculadora, 7 ÷ 2 = 3,5. Mas ninguém corta uma bala ao meio: cada sobrinho ganha <strong>3</strong> balas e <strong>sobra 1</strong>. Essa é a "conta armada" da escola, com <strong>quociente</strong> (3) e <strong>resto</strong> (1).</p>
+<p>O C sabe dividir dos dois jeitos. Com números inteiros (<code>int</code>), ele faz a conta das balas: o <code>/</code> dá o quociente e o <code>%</code> dá o resto. Com números com vírgula (<code>double</code>), ele faz a conta da calculadora. Quem escolhe qual conta é feita é o <strong>tipo</strong> dos números.</p>
+
+<hr>
+
+<h2>1. As cinco contas</h2>
+
+<pre class="file" data-file="contas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 17;
+    int b = 5;
+    printf("%d + %d = %d\n", a, b, a + b);
+    printf("%d - %d = %d\n", a, b, a - b);
+    printf("%d * %d = %d\n", a, b, a * b);
+    printf("%d / %d = %d\n", a, b, a / b);
+    printf("%d %% %d = %d\n", a, b, a % b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra contas.c -o contas
+$ ./contas
+17 + 5 = 22
+17 - 5 = 12
+17 * 5 = 85
+17 / 5 = 3       « 17 dividido por 5 dá 3 (e sobram 2)
+17 % 5 = 2       « o que sobrou</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Nome</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>+</code></td><td>soma</td><td><code>17 + 5</code></td><td><code>22</code></td></tr>
+<tr><td><code>-</code></td><td>subtração</td><td><code>17 - 5</code></td><td><code>12</code></td></tr>
+<tr><td><code>*</code></td><td>multiplicação (o "vezes" do teclado; o <code>x</code> e o <code>×</code> não servem)</td><td><code>17 * 5</code></td><td><code>85</code></td></tr>
+<tr><td><code>/</code></td><td>divisão (com dois <code>int</code>, só o quociente)</td><td><code>17 / 5</code></td><td><code>3</code></td></tr>
+<tr><td><code>%</code></td><td>resto da divisão (lê-se "módulo" ou "resto")</td><td><code>17 % 5</code></td><td><code>2</code></td></tr>
+</table>
+</div>
+
+<dl class="anatomy">
+  <dt>a + b</dt><dd>Uma <strong>expressão</strong>: os <strong>operandos</strong> (<code>a</code> e <code>b</code>) e o <strong>operador</strong> no meio. O C calcula o valor e o entrega a quem pediu, aqui o <code>printf</code>. As variáveis <code>a</code> e <code>b</code> <strong>não mudam</strong>: fazer a conta não é guardar o resultado (para guardar, aula <a href="operadores-atribuicao.html">Operadores de Atribuição</a>).</dd>
+  <dt>os espaços</dt><dd><code>a+b</code> e <code>a + b</code> são a mesma coisa para o compilador. O guia usa espaços em volta dos operadores para ficar mais fácil de ler.</dd>
+  <dt>%% no printf</dt><dd>Dentro do texto do <code>printf</code>, o <code>%</code> começa uma lacuna (<code>%d</code>). Para <strong>mostrar</strong> o sinal <code>%</code>, escreve-se <code>%%</code> (aula <a href="formatos-printf.html">Formatos do printf</a>). Fora das aspas, em <code>a % b</code>, o <code>%</code> é o operador de resto.</dd>
+</dl>
+
+<p>Quando há várias contas na mesma expressão, vale a regra da escola: <code>*</code>, <code>/</code> e <code>%</code> antes de <code>+</code> e <code>-</code>, e os parênteses mandam em tudo. <code>2 + 3 * 4</code> dá <code>14</code>; <code>(2 + 3) * 4</code> dá <code>20</code>. Os detalhes estão em <a href="precedencia.html">Precedência</a>.</p>
+
+<hr>
+
+<h2>2. A divisão inteira</h2>
+<p>Quando os <strong>dois</strong> lados do <code>/</code> são inteiros, o resultado também é inteiro: o C calcula o quociente e <strong>joga fora</strong> a parte depois da vírgula. Não arredonda: <strong>corta</strong>. 17 / 5 = 3,4 vira 3; 19 / 5 = 3,8 também vira 3.</p>
+
+<pre class="file" data-file="balas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int balas = 7;
+    int criancas = 2;
+    int cada = balas / criancas;
+    int sobram = balas % criancas;
+    printf("Cada criança ganha %d balas e sobram %d.\n", cada, sobram);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra balas.c -o balas
+$ ./balas
+Cada criança ganha 3 balas e sobram 1.</pre>
+
+<p>Para as balas, é exatamente o que a Ana queria. Para uma média de notas, não:</p>
+
+<pre class="file" data-file="media.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int prova1 = 7;
+    int prova2 = 8;
+    printf("Média: %d\n", (prova1 + prova2) / 2);
+    printf("Média: %.1f\n", (prova1 + prova2) / 2.0);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra media.c -o media
+$ ./media
+Média: 7         « 15 / 2: int com int, divisão inteira
+Média: 7.5       « 15 / 2.0: um dos lados é double, divisão de calculadora</pre>
+
+<dl class="anatomy">
+  <dt>(prova1 + prova2) / 2</dt><dd>Os parênteses fazem a soma primeiro (15). Depois, <code>15 / 2</code>: dois <code>int</code>, então o resultado é <code>7</code>.</dd>
+  <dt>/ 2.0</dt><dd>O <code>2.0</code>, com ponto, é um <code>double</code>. Basta <strong>um</strong> dos lados ser <code>double</code> para o C fazer a divisão com vírgula: <code>15 / 2.0</code> = <code>7.5</code>.</dd>
+  <dt>%.1f</dt><dd>O resultado agora é <code>double</code>, então o <code>printf</code> usa <code>%f</code>, aqui com uma casa depois do ponto (aula <a href="formatos-printf.html">Formatos do printf</a>).</dd>
+</dl>
+
+<p>Quando os dois números estão em variáveis <code>int</code> e não dá para escrever <code>2.0</code>, a saída é o <strong>cast</strong>: <code>(double)soma / quantidade</code>. A aula <a href="conversao-tipos.html">Conversão de Tipos</a> mostra as cinco formas de escrever essa conta e as duas que dão errado.</p>
+
+<div class="tryc" data-goal="out:Média: 8.5,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana tirou 8 e 9. O programa mostra <code>Média: 8</code>, mas a média é 8,5. Mude a conta e o formato para a saída ser:</p>
+<pre class="out">Média: 8.5</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int prova1 = 8;
+    int prova2 = 9;
+    printf("Média: %d\n", (prova1 + prova2) / 2);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int prova1 = 8;
+    int prova2 = 9;
+    printf("Média: %.1f\n", (prova1 + prova2) / 2.0);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Se você trocar só o <code>%d</code> por <code>%.1f</code> e deixar o <code>/ 2</code>, o compilador avisa: o <code>%f</code> espera um <code>double</code> e a conta ainda é <code>int</code>. Se trocar só o <code>2</code> por <code>2.0</code>, avisa ao contrário (o <code>%d</code> espera um <code>int</code> e a conta virou <code>double</code>). Nos dois casos o programa mostra lixo: no laboratório da Ana saíram <code>Média: 0.0</code> e <code>Média: 3</code>. A conta e o formato andam juntos.</p>
+
+<hr>
+
+<h2>3. O resto, <code>%</code>: o canivete suíço</h2>
+<p>O <code>%</code> responde "quanto sobra?". Parece pouco, mas resolve muitos problemas:</p>
+
+<pre class="file" data-file="resto.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 1234;
+    printf("%d %% 2 = %d\n", n, n % 2);
+    printf("%d %% 10 = %d\n", n, n % 10);
+    printf("%d / 10 = %d\n", n, n / 10);
+    int agora = 22;
+    printf("Daqui a 5 horas: %d h\n", (agora + 5) % 24);
+    int segundos = 200;
+    printf("%d s = %d min %d s\n", segundos, segundos / 60, segundos % 60);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra resto.c -o resto
+$ ./resto
+1234 % 2 = 0              « resto 0 na divisão por 2: é par
+1234 % 10 = 4             « o último algarismo
+1234 / 10 = 123           « o número sem o último algarismo
+Daqui a 5 horas: 3 h      « 22 + 5 = 27, que no relógio é 3
+200 s = 3 min 20 s        « 200 / 60 = 3 minutos; 200 % 60 = 20 segundos</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Conta</th><th>Para que serve</th></tr>
+<tr><td><code>n % 2</code></td><td>Par ou ímpar: 0 é par, 1 é ímpar (para positivos). Você vai usar com o <a href="if-else.html">if</a>: <code>if (n % 2 == 0)</code>.</td></tr>
+<tr><td><code>n % 7 == 0</code></td><td>"<code>n</code> é divisível por 7?" (o resto é zero).</td></tr>
+<tr><td><code>n % 10</code> e <code>n / 10</code></td><td>Separar os algarismos de um número: o último, e o resto do número.</td></tr>
+<tr><td><code>(agora + 5) % 24</code></td><td>Contas que "dão a volta", como o relógio: depois de 23 vem 0.</td></tr>
+<tr><td><code>total / 60</code> e <code>total % 60</code></td><td>Trocar de unidade: segundos em minutos, centavos em reais, dias em semanas.</td></tr>
+</table>
+</div>
+
+<h3>A cifra de César</h3>
+<p>O general romano Júlio César escrevia mensagens secretas trocando cada letra pela que vem 3 posições depois: A vira D, B vira E… E o X? Depois do Z, a contagem volta para o começo: X vira A. "Dar a volta" é trabalho para o <code>%</code>. Como as letras são números para o C (aula <a href="char.html">Caracteres</a>), dá para fazer conta com elas:</p>
+
+<pre class="file" data-file="cesar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'X';
+    int chave = 3;
+    char cifrada = (letra - 'A' + chave) % 26 + 'A';
+    printf("%c vira %c\n", letra, cifrada);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra cesar.c -o cesar
+$ ./cesar
+X vira A</pre>
+
+<ol class="passo">
+  <li><code>letra - 'A'</code>: a posição da letra no alfabeto, contando do zero. <code>'X' - 'A'</code> = 23 (A é 0, B é 1… X é 23).</li>
+  <li><code>+ chave</code>: anda 3 posições. 23 + 3 = 26, que já passou do Z (25).</li>
+  <li><code>% 26</code>: o alfabeto tem 26 letras, então o resto "dá a volta". 26 % 26 = 0.</li>
+  <li><code>+ 'A'</code>: transforma a posição de volta em letra. 0 + <code>'A'</code> = <code>'A'</code>.</li>
+</ol>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> troque a letra (sempre maiúscula) e a chave. Qual chave transforma <code>'A'</code> em <code>'N'</code>? E o que acontece com a chave 26? Depois tente <strong>decifrar</strong>: com a chave 23, o D volta a ser A. Por quê?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'X';
+    int chave = 3;
+    char cifrada = (letra - 'A' + chave) % 26 + 'A';
+    printf("%c vira %c\n", letra, cifrada);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Números negativos</h2>
+<p>O <code>-</code> também serve com <strong>um</strong> operando só: <code>-temperatura</code> é o oposto de <code>temperatura</code>. É o <strong>menos unário</strong> ("de um operando"):</p>
+
+<pre class="file" data-file="sinal.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int temperatura = 12;
+    int oposto = -temperatura;
+    printf("%d %d %d\n", temperatura, oposto, -oposto);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sinal.c -o sinal
+$ ./sinal
+12 -12 12        « o oposto do oposto é o número de volta</pre>
+
+<p>E na divisão inteira com negativos? O C corta <strong>em direção ao zero</strong>: -3,5 vira -3 (e não -4). O resto fica com o sinal do número dividido:</p>
+
+<pre class="file" data-file="negativos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("-7 / 2 = %d\n", -7 / 2);
+    printf("-7 %% 2 = %d\n", -7 % 2);
+    printf("7 / -2 = %d\n", 7 / -2);
+    printf("7 %% -2 = %d\n", 7 % -2);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra negativos.c -o negativos
+$ ./negativos
+-7 / 2 = -3       « -3,5 cortado em direção ao zero
+-7 % 2 = -1       « o resto tem o sinal do -7
+7 / -2 = -3
+7 % -2 = 1        « o resto tem o sinal do 7</pre>
+
+<p>A regra que amarra os dois: <code>(a / b) * b + a % b</code> é sempre igual a <code>a</code>. Confira: <code>(-3) * 2 + (-1)</code> = <code>-7</code>. Essa regra vale desde o <span class="versao">C99</span>; antes dele, cada compilador podia arredondar a divisão negativa para um lado.</p>
+
+<div class="warning">
+<strong>Ímpar negativo: <code>% 2</code> dá -1</strong>
+<p>Como <code>-7 % 2</code> é <code>-1</code>, a pergunta <code>n % 2 == 1</code> erra com números negativos ímpares. Para saber se um número é ímpar, pergunte <code>n % 2 != 0</code>, que funciona para os dois sinais.</p>
+</div>
+
+<hr>
+
+<h2>5. Contas com <code>double</code></h2>
+<p>Com números com vírgula (aula <a href="ponto-flutuante.html">float e double</a>), <code>+</code>, <code>-</code>, <code>*</code> e <code>/</code> funcionam como na calculadora. Se um lado é <code>int</code> e o outro é <code>double</code>, o C converte o <code>int</code> para <code>double</code> antes da conta:</p>
+
+<pre class="file" data-file="reais.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 12.5;
+    int quantidade = 3;
+    printf("Total: %.2f\n", preco * quantidade);
+    printf("7 / 2 = %d\n", 7 / 2);
+    printf("7.0 / 2 = %.2f\n", 7.0 / 2);
+    printf("7 / 2.0 = %.2f\n", 7 / 2.0);
+    printf("7.5 - 0.5 = %.2f\n", 7.5 - 0.5);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra reais.c -o reais
+$ ./reais
+Total: 37.50        « double * int: o 3 virou 3.0
+7 / 2 = 3
+7.0 / 2 = 3.50
+7 / 2.0 = 3.50
+7.5 - 0.5 = 7.00    « o resultado é double, mesmo sem nada depois da vírgula</pre>
+
+<h3>O <code>%</code> é só para inteiros</h3>
+<p>A Ana tem uma fita de 7,5 metros e quer cortar pedaços de 2 metros. Quanto sobra?</p>
+
+<pre class="term" data-cwd="~/c">$ cat restodouble.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    double comprimento = 7.5;
+    printf("%.2f\n", comprimento % 2);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra restodouble.c -o restodouble
+restodouble.c: In function ‘main’:
+restodouble.c:5:34: error: invalid operands to binary % (have ‘double’ and ‘int’)
+    5 |     printf("%.2f\n", comprimento % 2);
+      |                                  ^</pre>
+
+<p>"Operandos inválidos para o <code>%</code> binário (de dois lados): são <code>double</code> e <code>int</code>." O <code>%</code> só aceita inteiros dos dois lados. No editor, o Clang diz <code>invalid operands to binary expression ('double' and 'int')</code>. Para o resto com vírgula existe a função <code>fmod</code> (<em>floating-point modulo</em>, resto com vírgula), da <code>&lt;math.h&gt;</code>:</p>
+
+<pre class="file" data-file="fmod.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double comprimento = 7.5;
+    double pedaco = 2.0;
+    printf("Sobram %.2f metros\n", fmod(comprimento, pedaco));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fmod.c -o fmod
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccGZtyvT.o: na função "main":
+fmod.c:(.text+0x39): referência não definida para "fmod"
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra fmod.c -o fmod -lm      « -lm: junte a biblioteca de matemática
+$ ./fmod
+Sobram 1.50 metros       « 7,5 = 3 pedaços de 2 + 1,5</pre>
+
+<p>No gcc, as funções da <code>math.h</code> moram numa biblioteca separada, e o <code>-lm</code> no fim do comando pede para juntá-la. Sem ele, o ligador diz que não achou o <code>fmod</code> (<code>undefined reference to</code>, em português "referência não definida para"). No editor do guia, o <code>-lm</code> não é preciso. Mais funções (raiz, potência, arredondar) na aula <a href="matematica.html">Matemática</a>.</p>
+
+<hr>
+
+<h2>6. Divisão por zero</h2>
+<p>Na matemática, dividir por zero não tem resposta. No C, o que acontece depende do tipo.</p>
+
+<h3>Com inteiros: o programa cai</h3>
+<p>Se o zero está escrito no código, o gcc percebe e avisa:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra zero.c -o zero
+zero.c: In function ‘main’:
+zero.c:5:45: warning: division by zero [-Wdiv-by-zero]
+    5 |     printf("Fatias por pessoa: %d\n", pizza / 0);
+      |                                             ^
+$ ./zero
+Exceção de ponto flutuante (imagem do núcleo gravada) ./zero</pre>
+
+<p>O caso perigoso é quando o zero vem de fora, e o compilador não tem como saber. A pizza da Ana tem 8 fatias:</p>
+
+<pre class="file" data-file="pizza.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int fatias = 8;
+    int pessoas = 0;
+    printf("Quantas pessoas? ");
+    if (scanf("%d", &amp;pessoas) != 1) {
+        return 1;
+    }
+    printf("Cada uma come %d fatias.\n", fatias / pessoas);
+    printf("Sobram %d fatias.\n", fatias % pessoas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pizza.c -o pizza          « nenhum aviso
+$ ./pizza
+Quantas pessoas? 3
+Cada uma come 2 fatias.
+Sobram 2 fatias.
+$ ./pizza
+Quantas pessoas? 0
+Exceção de ponto flutuante (imagem do núcleo gravada) ./pizza
+$ echo $?
+136</pre>
+
+<ol class="passo">
+  <li>O <code>scanf</code> leu o 0 (aula <a href="scanf.html">Entrada com scanf</a>). Era um número válido, então o <code>if</code> deixou passar.</li>
+  <li><code>fatias / pessoas</code> virou <code>8 / 0</code>. O processador se recusa a fazer essa conta e o sistema derruba o programa.</li>
+  <li>A mensagem fala em "ponto flutuante", mas a conta era de inteiros: é só o nome histórico do sinal que o Linux manda (<code>SIGFPE</code>, <em>floating-point exception</em>). O código de saída é 136.</li>
+  <li>O <code>%</code> por zero dá o mesmo erro.</li>
+</ol>
+
+<p>O conserto é conferir o divisor antes da conta: <code>if (pessoas == 0) { … }</code>, com o que você vai ver em <a href="if-else.html">if e else</a>. Para o C, dividir um inteiro por zero é <strong>comportamento indefinido</strong> (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>): no Linux, ele cai; em outros sistemas, pode dar qualquer resultado. O editor do guia cai igual, com a mesma mensagem e o mesmo 136.</p>
+
+<h3>Com <code>double</code>: infinito e "não é número"</h3>
+
+<pre class="file" data-file="zerod.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double zero = 0.0;
+    printf("10.0 / 0 = %f\n", 10.0 / zero);
+    printf("-10.0 / 0 = %f\n", -10.0 / zero);
+    printf("0.0 / 0 = %f\n", zero / zero);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra zerod.c -o zerod
+$ ./zerod
+10.0 / 0 = inf       « infinito
+-10.0 / 0 = -inf     « menos infinito
+0.0 / 0 = -nan       « nan: "not a number", não é um número</pre>
+
+<p>Com <code>double</code>, o programa não cai: o resultado vira um valor especial. <code>inf</code> (de <em>infinity</em>) é o infinito, e <code>nan</code> (<em>not a number</em>) quer dizer que a conta não tem resultado. O sinal de menos do <code>-nan</code> é um detalhe do processador e não quer dizer nada. Esses valores "contaminam" as contas seguintes (<code>inf + 1</code> continua <code>inf</code>), então o melhor é não chegar neles: confira o divisor também aqui.</p>
+
+<hr>
+
+<h2>7. O <code>^</code> não é potência</h2>
+<p>Em muitas calculadoras e planilhas, <code>2^3</code> é "2 elevado a 3". Em C, não existe operador de potência, e o <code>^</code> é outra coisa (o "ou exclusivo" dos bits, aula <a href="operadores-bits.html">Operadores de Bits</a>):</p>
+
+<pre class="file" data-file="potencia.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int lado = 5;
+    printf("2 elevado a 3: %d\n", 2 ^ 3);
+    printf("Área do quadrado: %d\n", lado ^ 2);
+    printf("Área do quadrado: %d\n", lado * lado);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra potencia.c -o potencia
+potencia.c: In function ‘main’:
+potencia.c:5:37: warning: result of ‘2^3’ is 1; did you mean ‘1 &lt;&lt; 3’ (8)? [-Wxor-used-as-pow]
+    5 |     printf("2 elevado a 3: %d\n", 2 ^ 3);
+      |                                     ^
+      |                                   -
+      |                                   1 &lt;&lt;
+potencia.c:5:35: note: you can silence this warning by using a hexadecimal constant (0x2 rather than 2)
+    5 |     printf("2 elevado a 3: %d\n", 2 ^ 3);
+      |                                   ^
+      |                                   0x2
+$ ./potencia
+2 elevado a 3: 1          « não é 8!
+Área do quadrado: 7       « não é 25, e o gcc nem avisou
+Área do quadrado: 25      « o jeito certo: lado * lado</pre>
+
+<p>Com dois números escritos no código, o gcc desconfia: "o resultado de <code>2^3</code> é 1; você quis dizer <code>1 &lt;&lt; 3</code> (8)?" (o aviso <code>-Wxor-used-as-pow</code>, "xor usado como potência", vem ligado mesmo sem <code>-Wall</code>). Com uma variável, como em <code>lado ^ 2</code>, ele não avisa nada, e a conta sai errada em silêncio. Para potências pequenas, multiplique: <code>lado * lado</code>, <code>x * x * x</code>. Para as outras, use a função <code>pow</code> da <code>&lt;math.h&gt;</code> (aula <a href="matematica.html">Matemática</a>).</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma conta</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer</th><th>Forma</th><th>Observação</th></tr>
+<tr><td>Média com vírgula de dois <code>int</code></td><td><code>(a + b) / 2.0</code></td><td>A mais simples quando o divisor está escrito no código.</td></tr>
+<tr><td></td><td><code>(double)(a + b) / n</code></td><td>Quando o divisor é uma variável <code>int</code> (aula <a href="conversao-tipos.html">Conversão de Tipos</a>).</td></tr>
+<tr><td>Quociente e resto</td><td><code>a / b</code> e <code>a % b</code></td><td>Os dois com <code>int</code>. Confira antes se <code>b</code> não é 0.</td></tr>
+<tr><td>Resto com vírgula</td><td><code>fmod(x, y)</code></td><td>Precisa de <code>&lt;math.h&gt;</code> e de <code>-lm</code> no gcc.</td></tr>
+<tr><td>Quadrado, cubo</td><td><code>x * x</code>, <code>x * x * x</code></td><td>Mais rápido e exato que <code>pow</code> para inteiros. Nunca <code>x ^ 2</code>.</td></tr>
+<tr><td>Ímpar?</td><td><code>n % 2 != 0</code></td><td>Funciona também para negativos (<code>n % 2 == 1</code> falha com -7).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A média saiu sem a parte quebrada (7 em vez de 7.5)</strong>
+<p><strong>O que significa:</strong> os dois lados do <code>/</code> eram <code>int</code>, e a divisão inteira cortou a parte depois da vírgula. Guardar o resultado numa variável <code>double</code> não ajuda: o corte acontece <strong>antes</strong>.</p>
+<p><strong>Como consertar:</strong> faça um dos lados ser <code>double</code>: <code>/ 2.0</code> ou <code>(double)soma / n</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Exceção de ponto flutuante (imagem do núcleo gravada)</code></strong>
+<p><strong>O que significa:</strong> uma divisão (<code>/</code>) ou um resto (<code>%</code>) de inteiros por zero. O código de saída é 136. Quando o zero está escrito no código, o gcc avisa antes: <code>warning: division by zero [-Wdiv-by-zero]</code> (no Clang, <code>division by zero is undefined [-Wdivision-by-zero]</code>).</p>
+<p><strong>Como consertar:</strong> confira o divisor antes da conta, principalmente quando ele vem do <code>scanf</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: invalid operands to binary % (have ‘double’ and ‘int’)</code></strong>
+<p><strong>O que significa:</strong> você usou <code>%</code> com um <code>double</code>. Ele só aceita inteiros dos dois lados.</p>
+<p><strong>Como consertar:</strong> use <code>fmod(x, y)</code>, da <code>&lt;math.h&gt;</code>, ou guarde os valores em <code>int</code> se eles forem mesmo inteiros.</p>
+</div>
+
+<div class="cenario">
+<strong><code>referência não definida para "fmod"</code> (<code>undefined reference to</code>)</strong>
+<p><strong>O que significa:</strong> o código compilou, mas o ligador não achou a função. As funções da <code>math.h</code> estão numa biblioteca à parte.</p>
+<p><strong>Como consertar:</strong> acrescente <code>-lm</code> no fim do comando do gcc.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: result of ‘2^3’ is 1; did you mean ‘1 &lt;&lt; 3’ (8)? [-Wxor-used-as-pow]</code></strong>
+<p><strong>O que significa:</strong> você usou <code>^</code> como potência. Em C, ele é o "ou exclusivo" dos bits.</p>
+<p><strong>Como consertar:</strong> <code>x * x</code> ou <code>pow(x, 2)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A conta deu um número negativo enorme</strong>
+<p><strong>O que significa:</strong> o resultado passou do maior valor que o <code>int</code> guarda (2147483647) e "deu a volta": <code>2147483647 + 1</code> vira <code>-2147483648</code>. É o <strong>estouro</strong>, explicado em <a href="inteiros.html">Inteiros</a>.</p>
+<p><strong>Como consertar:</strong> use um tipo maior, como <code>long long</code>, para contas que podem crescer muito.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Expressão</th><th>Com <code>int</code></th><th>Com <code>double</code></th></tr>
+<tr><td><code>a + b</code>, <code>a - b</code>, <code>a * b</code></td><td>soma, subtração, multiplicação</td><td>iguais</td></tr>
+<tr><td><code>a / b</code></td><td>quociente, cortado em direção ao zero (<code>7 / 2</code> = 3, <code>-7 / 2</code> = -3)</td><td>divisão com vírgula (<code>7.0 / 2</code> = 3.5)</td></tr>
+<tr><td><code>a % b</code></td><td>resto, com o sinal de <code>a</code> (<code>-7 % 2</code> = -1)</td><td><strong>erro</strong>: use <code>fmod(a, b)</code></td></tr>
+<tr><td><code>-a</code></td><td>o oposto</td><td>o oposto</td></tr>
+<tr><td><code>a / 0</code>, <code>a % 0</code></td><td>o programa cai (136)</td><td><code>inf</code>, <code>-inf</code> ou <code>nan</code></td></tr>
+<tr><td>int com double</td><td colspan="2">o <code>int</code> vira <code>double</code> e a conta é com vírgula</td></tr>
+<tr><td>prioridade</td><td colspan="2"><code>*</code> <code>/</code> <code>%</code> antes de <code>+</code> <code>-</code>; parênteses primeiro (<a href="precedencia.html">Precedência</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A divisão inteira</h3>
+<p>Quanto vale <code>23 / 4</code> em C, com dois <code>int</code>?</p>
+<div class="ex-code">23 / 4 = <input data-answer="5" aria-label="resultado"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O resto</h3>
+<p>Quanto vale <code>23 % 4</code>?</p>
+<div class="ex-code">23 % 4 = <input data-answer="3" aria-label="resultado"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Centavos em reais</h3>
+<p>O preço está em centavos: <code>int preco = 1250;</code>. Complete com o operador que dá os centavos que sobram depois dos reais inteiros (a resposta é 50):</p>
+<div class="ex-code">printf("R$ %d,%02d\n", preco / 100, preco <input data-answer="%" aria-label="operador"> 100);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Qual expressão dá <code>2.5</code>?</p>
+<label><input type="radio" name="q4"> <code>5 / 2</code></label>
+<label><input type="radio" name="q4"> <code>(double)(5 / 2)</code></label>
+<label><input type="radio" name="q4"> <code>5 / 2.0</code></label>
+<label><input type="radio" name="q4"> <code>5 % 2</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Quanto vale <code>-9 % 4</code> em C?</p>
+<label><input type="radio" name="q5"> <code>3</code></label>
+<label><input type="radio" name="q5"> <code>-1</code></label>
+<label><input type="radio" name="q5"> <code>1</code></label>
+<label><input type="radio" name="q5"> Dá erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Com <code>int x = 4;</code>, o que <code>printf("%d\n", x ^ 2);</code> mostra?</p>
+<label><input type="radio" name="q6"> <code>16</code></label>
+<label><input type="radio" name="q6"> <code>8</code></label>
+<label><input type="radio" name="q6"> Um erro de compilação</label>
+<label><input type="radio" name="q6"> <code>6</code>: o <code>^</code> não é potência</label>
+</div>
+
+<h3>Missão final: o cronômetro</h3>
+
+<div class="tryc" data-stdin="7384" data-goal="out:7384 segundos = 2 h 3 min 4 s,src:%\s*60,semaviso">
+<p class="try-task"><strong>Missão:</strong> o cronômetro da corrida da Ana marcou um tempo em segundos (a entrada preparada é <code>7384</code>). Calcule as horas, os minutos e os segundos com <code>/</code> e <code>%</code>. Dicas: uma hora tem 3600 segundos; os minutos são o que sobra das horas, divididos por 60; os segundos são o que sobra dos minutos. Sem avisos. A saída deve terminar com:</p>
+<pre class="out">7384 segundos = 2 h 3 min 4 s</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 0;
+    printf("Segundos: ");
+    if (scanf("%d", &amp;total) != 1) {
+        return 1;
+    }
+    int horas = 0;     // troque o 0 pela conta
+    int minutos = 0;   // troque o 0 pela conta
+    int segundos = 0;  // troque o 0 pela conta
+    printf("%d segundos = %d h %d min %d s\n", total, horas, minutos, segundos);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 0;
+    printf("Segundos: ");
+    if (scanf("%d", &amp;total) != 1) {
+        return 1;
+    }
+    int horas = total / 3600;
+    int minutos = total % 3600 / 60;
+    int segundos = total % 60;
+    printf("%d segundos = %d h %d min %d s\n", total, horas, minutos, segundos);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Troque a entrada da caixa para <code>59</code>, <code>60</code> e <code>3600</code> e confira se o resultado faz sentido. Em <code>total % 3600 / 60</code>, o <code>%</code> e o <code>/</code> têm a mesma prioridade e são feitos da esquerda para a direita: primeiro o resto (184), depois a divisão (3).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>+</code>, <code>-</code>, <code>*</code>, <code>/</code> e <code>%</code> fazem contas; a conta não muda as variáveis, só calcula um valor.</li>
+  <li>Com dois <code>int</code>, o <code>/</code> dá só o quociente e corta em direção ao zero: <code>7 / 2</code> = 3. Basta um lado <code>double</code> para a divisão ter vírgula: <code>7 / 2.0</code> = 3.5.</li>
+  <li><code>%</code> é o resto: par ou ímpar, algarismos, relógio, minutos e segundos, cifra de César. Só com inteiros; com vírgula, <code>fmod</code> (e <code>-lm</code> no gcc).</li>
+  <li>Com negativos, o resto tem o sinal do número dividido: <code>-7 % 2</code> = -1. Para ímpar, use <code>n % 2 != 0</code>.</li>
+  <li>Inteiro dividido por zero derruba o programa (<code>Exceção de ponto flutuante</code>, 136); com <code>double</code>, sai <code>inf</code> ou <code>nan</code>. Confira o divisor.</li>
+  <li>O C não tem potência: <code>^</code> é outra coisa. Use <code>x * x</code> ou <code>pow</code>.</li>
+  <li>Próximo passo: <a href="operadores-atribuicao.html">Operadores de Atribuição</a>, para guardar o resultado das contas e os atalhos <code>+=</code>, <code>-=</code>…</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
