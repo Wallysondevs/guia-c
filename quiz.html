@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Quiz — 40 perguntas do básico ao avançado | Guia C</title>
+<meta name="description" content="Quiz do Guia C: 40 perguntas de múltipla escolha nos três níveis, muitas do tipo &quot;o que este programa imprime?&quot;, sobre printf, char, operadores, decisões, laços, strings, funções, ponteiros, malloc, structs, macros, bits, comportamento indefinido e ferramentas, com correção na hora, explicação e link para revisar. As respostas foram conferidas no gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Quiz</span></h1>
+
+<p class="intro">40 perguntas sobre o que você estudou no guia, divididas nos três níveis. Muitas mostram um trecho de código e perguntam <strong>o que ele imprime</strong>: tente responder de cabeça, sem rodar. Todas as respostas foram conferidas de verdade, com <code>gcc -std=c23 -Wall -Wextra</code> (gcc 15) na máquina da Ana. A correção é na hora; abra "Explicação" para entender o porquê, e o link "Revise" leva à aula do assunto.</p>
+
+<p>Acertos: <strong id="placar">0 de 40</strong></p>
+
+<div class="note">
+<strong>Como os trechos funcionam</strong>
+<p>Para economizar espaço, os trechos que só têm instruções estão, na verdade, dentro de um <code>int main(void) { … return 0; }</code>, com <code>#include &lt;stdio.h&gt;</code>, <code>&lt;string.h&gt;</code> e <code>&lt;stdlib.h&gt;</code> no começo. Quando o trecho tem outras funções, o <code>main</code> aparece. Para conferir uma resposta, cole o trecho dentro do <code>main</code> de qualquer caixa "Experimente" do guia, como a de <a href="primeiro-programa.html">Olá, Mundo</a>.</p>
+</div>
+
+<p>Ir para: <a href="#nivel1">Nível 1</a> · <a href="#nivel2">Nível 2</a> · <a href="#nivel3">Nível 3</a></p>
+
+<h2 id="nivel1">Nível 1 · Iniciante</h2>
+<p>Saída, tipos, operadores, decisões, laços, arrays, strings e funções.</p>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">1. O que este código imprime?</p>
+<pre class="file">printf("%d\n", 7 / 2);</pre>
+<label><input type="radio" name="q1"> <code>3</code></label>
+<label><input type="radio" name="q1"> <code>3.500000</code></label>
+<label><input type="radio" name="q1"> <code>4</code></label>
+<label><input type="radio" name="q1"> <code>3.5</code></label>
+<details><summary>Explicação</summary><p>Os dois números são <code>int</code>, então a divisão é <strong>inteira</strong>: o resultado é 3 e a parte decimal é jogada fora (não arredonda).</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="ponto-flutuante.html">float e double</a></p>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. O que este código imprime?</p>
+<pre class="file">printf("%.2f\n", 7 / 2.0);</pre>
+<label><input type="radio" name="q2"> <code>3</code></label>
+<label><input type="radio" name="q2"> <code>3.5</code></label>
+<label><input type="radio" name="q2"> <code>3.50</code></label>
+<label><input type="radio" name="q2"> <code>3.500000</code></label>
+<details><summary>Explicação</summary><p>Com um dos lados <code>double</code> (<code>2.0</code>), a divisão é real: 3.5. O <code>%.2f</code> mostra exatamente duas casas decimais: <code>3.50</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="formatos-printf.html">Formatos do printf</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual é o problema de <code>int total;</code> seguido de <code>printf("%d\n", total);</code>?</p>
+<label><input type="radio" name="q3"> Nenhum: toda variável começa com 0</label>
+<label><input type="radio" name="q3"> A variável local não tem valor inicial: o <code>printf</code> mostra um valor imprevisível (lixo), e o <code>-Wall</code> avisa</label>
+<label><input type="radio" name="q3"> O programa sempre cai com falha de segmentação</label>
+<label><input type="radio" name="q3"> Não compila: falta o <code>=</code></label>
+<details><summary>Explicação</summary><p>Uma variável local sem valor inicial guarda o que estava naquela memória antes. Usá-la é comportamento indefinido. O hábito do guia: inicialize sempre, <code>int total = 0;</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="variaveis.html">Variáveis</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que este código imprime?</p>
+<pre class="file">char c = 'A' + 2;
+printf("%c\n", c);</pre>
+<label><input type="radio" name="q4"> <code>A2</code></label>
+<label><input type="radio" name="q4"> <code>C</code></label>
+<label><input type="radio" name="q4"> <code>67</code></label>
+<label><input type="radio" name="q4"> Não compila: não dá para somar letra com número</label>
+<details><summary>Explicação</summary><p>Um <code>char</code> é um número: <code>'A'</code> vale 65, e 65 + 2 = 67, que na tabela ASCII é o <code>C</code>. Como o formato é <code>%c</code>, aparece a letra; com <code>%d</code>, apareceria 67.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="char.html">Caracteres (char)</a></p>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O que este código imprime?</p>
+<pre class="file">char d = '7';
+printf("%d\n", d - '0');</pre>
+<label><input type="radio" name="q5"> <code>0</code></label>
+<label><input type="radio" name="q5"> <code>55</code></label>
+<label><input type="radio" name="q5"> <code>7</code></label>
+<label><input type="radio" name="q5"> <code>'7'</code></label>
+<details><summary>Explicação</summary><p>O caractere <code>'7'</code> vale 55 na tabela e o <code>'0'</code> vale 48. Como os algarismos estão em ordem, 55 − 48 = 7: é o truque para transformar um algarismo no número.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="char.html">Caracteres (char)</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. A Ana escreveu <code>char letra = "A";</code>. O que o gcc 15 faz?</p>
+<label><input type="radio" name="q6"> Dá erro: <code>"A"</code> é um texto (o endereço de um array de <code>char</code>), e não cabe num <code>char</code></label>
+<label><input type="radio" name="q6"> Compila e guarda o <code>A</code></label>
+<label><input type="radio" name="q6"> Compila normalmente: aspas simples e duplas são iguais</label>
+<label><input type="radio" name="q6"> Só dá um aviso, e a variável fica com o <code>'\0'</code></label>
+<details><summary>Explicação</summary><p>Aspas duplas fazem um texto, que o C entrega como endereço (<code>char *</code>). O gcc 15 recusa: <code>error: initialization of ‘char’ from ‘char *’ makes integer from pointer without a cast</code>. Para um caractere, aspas simples: <code>'A'</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="char.html">Caracteres (char)</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. O que este código imprime?</p>
+<pre class="file">int i = 5;
+int j = i++;
+printf("%d %d\n", i, j);</pre>
+<label><input type="radio" name="q7"> <code>6 5</code></label>
+<label><input type="radio" name="q7"> <code>5 6</code></label>
+<label><input type="radio" name="q7"> <code>6 6</code></label>
+<label><input type="radio" name="q7"> <code>5 5</code></label>
+<details><summary>Explicação</summary><p>O <code>i++</code> (pós-incremento) entrega o valor <strong>antigo</strong> (5) para o <code>j</code> e só depois soma 1 ao <code>i</code>. Com <code>++i</code>, os dois seriam 6.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="incremento.html">++ e --</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">8. O que este código imprime?</p>
+<pre class="file">int x = 5;
+if (x = 0) {
+    printf("zero\n");
+} else {
+    printf("não zero\n");
+}</pre>
+<label><input type="radio" name="q8"> <code>não zero</code></label>
+<label><input type="radio" name="q8"> <code>zero</code> e <code>não zero</code></label>
+<label><input type="radio" name="q8"> <code>zero</code></label>
+<label><input type="radio" name="q8"> Não compila</label>
+<details><summary>Explicação</summary><p><code>x = 0</code> é uma <strong>atribuição</strong>, não uma comparação: guarda 0 no <code>x</code> e vale 0, que é "falso". Então cai no <code>else</code>. O <code>-Wall</code> avisa: <code>suggest parentheses around assignment used as truth value</code>. Para comparar, <code>==</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="if-else.html">if e else</a></p>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">9. O que este código imprime?</p>
+<pre class="file">printf("%d\n", 2 + 3 * 4);</pre>
+<label><input type="radio" name="q9"> <code>9</code></label>
+<label><input type="radio" name="q9"> <code>24</code></label>
+<label><input type="radio" name="q9"> <code>20</code></label>
+<label><input type="radio" name="q9"> <code>14</code></label>
+<details><summary>Explicação</summary><p>Como na escola, a multiplicação vem antes da soma: <code>2 + (3 * 4)</code> = 14. Para somar primeiro, use parênteses: <code>(2 + 3) * 4</code> = 20.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="precedencia.html">Precedência</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">10. O que este código imprime?</p>
+<pre class="file">int nota = 15;
+if (0 &lt;= nota &lt;= 10) {
+    printf("válida\n");
+} else {
+    printf("inválida\n");
+}</pre>
+<label><input type="radio" name="q10"> <code>válida</code></label>
+<label><input type="radio" name="q10"> Não compila</label>
+<label><input type="radio" name="q10"> Nada</label>
+<label><input type="radio" name="q10"> <code>inválida</code></label>
+<details><summary>Explicação</summary><p>O C lê <code>(0 &lt;= nota) &lt;= 10</code>. A primeira comparação dá 1 (verdadeiro), e <code>1 &lt;= 10</code> também é verdadeiro. O gcc avisa: <code>comparisons like ‘X&lt;=Y&lt;=Z’ do not have their mathematical meaning</code>. O certo é <code>nota &gt;= 0 &amp;&amp; nota &lt;= 10</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="operadores-comparacao.html">Operadores de Comparação</a> e <a href="operadores-logicos.html">Operadores Lógicos</a></p>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">11. O que este código imprime?</p>
+<pre class="file">for (int i = 0; i &lt; 3; i++) {
+    printf("%d", i);
+}
+printf("\n");</pre>
+<label><input type="radio" name="q11"> <code>0123</code></label>
+<label><input type="radio" name="q11"> <code>123</code></label>
+<label><input type="radio" name="q11"> <code>0 1 2</code></label>
+<label><input type="radio" name="q11"> <code>012</code></label>
+<details><summary>Explicação</summary><p>O <code>i</code> começa em 0 e o laço roda enquanto <code>i &lt; 3</code>: 0, 1 e 2. Quando <code>i</code> vira 3, para. O <code>printf</code> não tem espaço nem <code>\n</code>, então os números saem colados.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="for.html">for</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">12. O que este código imprime?</p>
+<pre class="file">int n = 0;
+while (n &gt; 0) {
+    printf("volta\n");
+    n--;
+}
+printf("fim\n");</pre>
+<label><input type="radio" name="q12"> <code>volta</code> e depois <code>fim</code></label>
+<label><input type="radio" name="q12"> Só <code>fim</code></label>
+<label><input type="radio" name="q12"> Nada</label>
+<label><input type="radio" name="q12"> <code>volta</code> para sempre</label>
+<details><summary>Explicação</summary><p>O <code>while</code> confere a condição <strong>antes</strong> de cada volta. Como <code>0 &gt; 0</code> já é falso, o bloco roda zero vezes. Um <code>do while</code> rodaria uma vez.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="while.html">while</a> e <a href="do-while.html">do while</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">13. O que este código imprime?</p>
+<pre class="file">for (int i = 0; i &lt; 3; i++) {
+    for (int j = 0; j &lt; 3; j++) {
+        if (j == 1) {
+            break;
+        }
+        printf("%d%d ", i, j);
+    }
+}
+printf("\n");</pre>
+<label><input type="radio" name="q13"> <code>00 10 20</code></label>
+<label><input type="radio" name="q13"> <code>00</code></label>
+<label><input type="radio" name="q13"> <code>00 01 02</code></label>
+<label><input type="radio" name="q13"> <code>00 01 10 11 20 21</code></label>
+<details><summary>Explicação</summary><p>O <code>break</code> só sai do laço em que está, o de dentro. Em cada volta do <code>i</code>, o <code>j</code> mostra o 0 e para no 1; o laço de fora continua normalmente.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="break-continue.html">break e continue</a> e <a href="lacos-aninhados.html">Laços Aninhados</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">14. Num <code>int v[5];</code>, quais são os índices válidos?</p>
+<label><input type="radio" name="q14"> De 0 a 4</label>
+<label><input type="radio" name="q14"> De 0 a 5</label>
+<label><input type="radio" name="q14"> Qualquer um: o C confere e avisa</label>
+<label><input type="radio" name="q14"> De 1 a 5</label>
+<details><summary>Explicação</summary><p>O índice conta quantas posições andar a partir do começo, então o primeiro é 0 e o último é o tamanho menos 1. <code>v[5]</code> passa do fim, e o C não confere: é comportamento indefinido.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="arrays.html">Arrays</a></p>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">15. O que este código imprime?</p>
+<pre class="file">char nome[] = "Ana";
+printf("%zu %zu\n", strlen(nome), sizeof nome);</pre>
+<label><input type="radio" name="q15"> <code>4 4</code></label>
+<label><input type="radio" name="q15"> <code>4 3</code></label>
+<label><input type="radio" name="q15"> <code>3 4</code></label>
+<label><input type="radio" name="q15"> <code>3 3</code></label>
+<details><summary>Explicação</summary><p>O <code>strlen</code> conta as letras até o <code>'\0'</code>, sem contá-lo: 3. O <code>sizeof</code> mede o array inteiro, que tem as 3 letras <strong>e</strong> o <code>'\0'</code> do fim: 4 bytes.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="strings.html">Strings</a> e <a href="sizeof.html">sizeof</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">16. Como conferir se duas strings, <code>a</code> e <code>b</code>, têm o mesmo texto?</p>
+<label><input type="radio" name="q16"> <code>if (a == b)</code></label>
+<label><input type="radio" name="q16"> <code>if (strcmp(a, b) == 0)</code></label>
+<label><input type="radio" name="q16"> <code>if (strlen(a) == strlen(b))</code></label>
+<label><input type="radio" name="q16"> <code>if (a = b)</code></label>
+<details><summary>Explicação</summary><p>O <code>==</code> compara os <strong>endereços</strong> dos arrays, não as letras. O <code>strcmp</code> compara letra por letra e devolve 0 quando os textos são iguais. Ter o mesmo tamanho não quer dizer ter o mesmo texto.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="funcoes-string.html">Funções de String</a></p>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">17. O <code>fgets(linha, sizeof linha, stdin)</code> leu a linha <code>Ana</code>, que a pessoa digitou e confirmou com Enter. O que ficou em <code>linha</code>?</p>
+<label><input type="radio" name="q17"> <code>"Ana"</code></label>
+<label><input type="radio" name="q17"> <code>"Ana "</code></label>
+<label><input type="radio" name="q17"> Só o <code>A</code></label>
+<label><input type="radio" name="q17"> <code>"Ana\n"</code></label>
+<details><summary>Explicação</summary><p>O <code>fgets</code> guarda a linha inteira, <strong>incluindo</strong> o <code>\n</code> do Enter (se couber), e põe o <code>'\0'</code> depois. Para tirar o <code>\n</code>: <code>linha[strcspn(linha, "\n")] = '\0';</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="fgets.html">Ler uma Linha (fgets)</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">18. A pessoa digitou <code>abc</code>. O que este código imprime?</p>
+<pre class="file">int n = 7;
+int lidos = scanf("%d", &amp;n);
+printf("%d %d\n", lidos, n);</pre>
+<label><input type="radio" name="q18"> <code>1 0</code></label>
+<label><input type="radio" name="q18"> <code>0 7</code></label>
+<label><input type="radio" name="q18"> <code>1 7</code></label>
+<label><input type="radio" name="q18"> <code>-1 7</code></label>
+<details><summary>Explicação</summary><p>O <code>scanf</code> devolve quantos campos conseguiu preencher. <code>abc</code> não é um número, então ele devolve 0 e não mexe no <code>n</code>, que continua 7 (e o <code>abc</code> fica esperando na entrada). Se a entrada acabasse, devolveria <code>EOF</code> (−1). Por isso: confira sempre o retorno.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="scanf.html">Entrada com scanf</a></p>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">19. O que este programa imprime?</p>
+<pre class="file">void dobra(int x) {
+    x = x * 2;
+}
+
+int main(void) {
+    int n = 5;
+    dobra(n);
+    printf("%d\n", n);
+    return 0;
+}</pre>
+<label><input type="radio" name="q19"> Não compila: a função não devolve nada</label>
+<label><input type="radio" name="q19"> <code>0</code></label>
+<label><input type="radio" name="q19"> <code>10</code></label>
+<label><input type="radio" name="q19"> <code>5</code></label>
+<details><summary>Explicação</summary><p>Em C, a função recebe uma <strong>cópia</strong> do argumento (passagem por valor). Ela dobrou a cópia, e o <code>n</code> do <code>main</code> continuou 5. Para mudar o <code>n</code>, devolva o resultado com <code>return</code> ou passe o endereço (<code>&amp;n</code>).</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="parametros.html">Parâmetros</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">20. O que este programa imprime?</p>
+<pre class="file">int contar(void) {
+    static int n = 0;
+    n++;
+    return n;
+}
+
+int main(void) {
+    contar();
+    contar();
+    printf("%d\n", contar());
+    return 0;
+}</pre>
+<label><input type="radio" name="q20"> <code>0</code></label>
+<label><input type="radio" name="q20"> <code>3</code></label>
+<label><input type="radio" name="q20"> <code>2</code></label>
+<label><input type="radio" name="q20"> <code>1</code></label>
+<details><summary>Explicação</summary><p>Uma variável <code>static</code> dentro da função é criada uma vez só e <strong>lembra</strong> o valor entre as chamadas: 1, 2 e, na terceira, 3. Sem o <code>static</code>, seria 1 toda vez.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="escopo.html">Escopo e Variáveis static</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">21. O <code>main</code> terminou com <code>return 3;</code>. O que o terminal mostra depois de <code>echo $?</code>?</p>
+<label><input type="radio" name="q21"> <code>3</code></label>
+<label><input type="radio" name="q21"> <code>return 3</code></label>
+<label><input type="radio" name="q21"> <code>0</code></label>
+<label><input type="radio" name="q21"> Nada</label>
+<details><summary>Explicação</summary><p>O valor do <code>return</code> do <code>main</code> vira o <strong>código de saída</strong> do programa, que o <code>echo $?</code> mostra. Por convenção, 0 é sucesso e outros números indicam erro.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="primeiro-programa.html">Olá, Mundo</a></p>
+</div>
+
+<h2 id="nivel2">Nível 2 · Intermediário</h2>
+<p>Ponteiros, memória dinâmica, structs, arquivos e a organização do código.</p>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">22. O que este código imprime?</p>
+<pre class="file">int x = 10;
+int *p = &amp;x;
+*p = 20;
+printf("%d\n", x);</pre>
+<label><input type="radio" name="q22"> Não compila</label>
+<label><input type="radio" name="q22"> <code>10</code></label>
+<label><input type="radio" name="q22"> O endereço de <code>x</code></label>
+<label><input type="radio" name="q22"> <code>20</code></label>
+<details><summary>Explicação</summary><p><code>p</code> guarda o endereço de <code>x</code>. <code>*p = 20</code> vai até esse endereço e escreve lá: é o próprio <code>x</code> que muda.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="ponteiros.html">Ponteiros</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">23. O que este programa imprime?</p>
+<pre class="file">void zera(int *p) {
+    *p = 0;
+}
+
+int main(void) {
+    int n = 5;
+    zera(&amp;n);
+    printf("%d\n", n);
+    return 0;
+}</pre>
+<label><input type="radio" name="q23"> <code>0</code></label>
+<label><input type="radio" name="q23"> O endereço de <code>n</code></label>
+<label><input type="radio" name="q23"> <code>5</code></label>
+<label><input type="radio" name="q23"> Falha de segmentação</label>
+<details><summary>Explicação</summary><p>Desta vez a função recebeu o <strong>endereço</strong> de <code>n</code>, e não uma cópia do valor. Pelo ponteiro, ela mudou o <code>n</code> do <code>main</code>. É o mesmo motivo de o <code>scanf</code> pedir o <code>&amp;</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="passagem-ponteiro.html">Passar por Ponteiro</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">24. O que este código imprime?</p>
+<pre class="file">int v[] = {10, 20, 30};
+int *p = v;
+printf("%d\n", *(p + 2));</pre>
+<label><input type="radio" name="q24"> <code>12</code></label>
+<label><input type="radio" name="q24"> <code>30</code></label>
+<label><input type="radio" name="q24"> <code>20</code></label>
+<label><input type="radio" name="q24"> O endereço de <code>v[2]</code></label>
+<details><summary>Explicação</summary><p>O nome do array vira um ponteiro para o primeiro elemento. <code>p + 2</code> anda <strong>dois elementos</strong> (não dois bytes), e <code>*(p + 2)</code> é o mesmo que <code>v[2]</code>: 30.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="ponteiros-arrays.html">Ponteiros e Arrays</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">25. No gcc do laboratório (Linux de 64 bits), o que este programa imprime?</p>
+<pre class="file">void tamanho(int v[10]) {
+    printf("%zu\n", sizeof v);
+}
+
+int main(void) {
+    int notas[10] = {0};
+    printf("%zu\n", sizeof notas);
+    tamanho(notas);
+    return 0;
+}</pre>
+<label><input type="radio" name="q25"> <code>40</code> e <code>8</code></label>
+<label><input type="radio" name="q25"> <code>40</code> e <code>40</code></label>
+<label><input type="radio" name="q25"> <code>10</code> e <code>10</code></label>
+<label><input type="radio" name="q25"> <code>8</code> e <code>8</code></label>
+<details><summary>Explicação</summary><p>No <code>main</code>, <code>notas</code> é o array: 10 × 4 bytes = 40. No parâmetro, o array chega como <strong>ponteiro</strong>, mesmo escrito <code>int v[10]</code>, e um ponteiro tem 8 bytes no gcc de 64 bits. O gcc avisa: <code>‘sizeof’ on array function parameter ‘v’ will return size of ‘int *’</code>. Por isso se passa o tamanho num parâmetro à parte.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="ponteiros-arrays.html">Ponteiros e Arrays</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">26. O que acontece ao rodar <code>int *p = NULL; printf("%d\n", *p);</code> no Linux?</p>
+<label><input type="radio" name="q26"> Imprime <code>0</code></label>
+<label><input type="radio" name="q26"> O programa morre com <code>Falha de segmentação</code> (código de saída 139)</label>
+<label><input type="radio" name="q26"> Imprime <code>(nil)</code></label>
+<label><input type="radio" name="q26"> Não compila</label>
+<details><summary>Explicação</summary><p>Um ponteiro nulo não aponta para lugar nenhum. Ir até ele com <code>*p</code> é mexer numa memória proibida, e o sistema mata o programa (sinal <code>SIGSEGV</code>: 128 + 11 = 139). Confira <code>if (p != NULL)</code> antes de usar.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="ponteiro-nulo.html">Ponteiro Nulo</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">27. Qual destas é a forma certa de usar o <code>malloc</code>?</p>
+<label><input type="radio" name="q27"> Conferir se devolveu <code>NULL</code>, usar a memória e, no fim, chamar <code>free</code></label>
+<label><input type="radio" name="q27"> Chamar <code>free</code> antes de usar a memória</label>
+<label><input type="radio" name="q27"> Não é preciso <code>free</code>: a memória é liberada quando a função termina</label>
+<label><input type="radio" name="q27"> Usar direto: o <code>malloc</code> nunca falha</label>
+<details><summary>Explicação</summary><p>O <code>malloc</code> devolve <code>NULL</code> quando não há memória. A memória do heap fica reservada até o <code>free</code>, mesmo depois que a função termina: esquecer é um vazamento. E a memória vem com lixo: inicialize antes de ler.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="malloc-free.html">malloc e free</a> e <a href="pilha-heap.html">Pilha e Heap</a></p>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">28. O que este programa imprime?</p>
+<pre class="file">struct ponto {
+    int x;
+};
+
+int main(void) {
+    struct ponto a = {1};
+    struct ponto b = a;
+    b.x = 2;
+    printf("%d %d\n", a.x, b.x);
+    return 0;
+}</pre>
+<label><input type="radio" name="q28"> <code>1 1</code></label>
+<label><input type="radio" name="q28"> Não compila: structs não podem ser copiadas com <code>=</code></label>
+<label><input type="radio" name="q28"> <code>1 2</code></label>
+<label><input type="radio" name="q28"> <code>2 2</code></label>
+<details><summary>Explicação</summary><p>O <code>=</code> copia a struct inteira, campo por campo. Depois disso, <code>a</code> e <code>b</code> são independentes: mudar <code>b.x</code> não mexe em <code>a.x</code>. (Comparar com <code>==</code>, esse sim, não compila.)</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="structs.html">Structs</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">29. Se <code>p</code> é um ponteiro para uma <code>struct aluno</code>, <code>p-&gt;nota</code> é o mesmo que…</p>
+<label><input type="radio" name="q29"> <code>*p.nota</code></label>
+<label><input type="radio" name="q29"> <code>(*p).nota</code></label>
+<label><input type="radio" name="q29"> <code>&amp;p.nota</code></label>
+<label><input type="radio" name="q29"> <code>p.nota</code></label>
+<details><summary>Explicação</summary><p>A seta é um atalho: vá até a struct apontada (<code>*p</code>) e pegue o campo. Os parênteses são necessários porque o <code>.</code> vem antes do <code>*</code> na precedência: <code>*p.nota</code> seria <code>*(p.nota)</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="structs-ponteiros.html">Structs e Ponteiros</a></p>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">30. O <code>fopen("nao-existe.txt", "r")</code> falhou e o programa chamou <code>perror("nao-existe.txt")</code>. O que aparece?</p>
+<label><input type="radio" name="q30"> <code>(null)</code></label>
+<label><input type="radio" name="q30"> <code>Falha de segmentação</code></label>
+<label><input type="radio" name="q30"> <code>nao-existe.txt</code></label>
+<label><input type="radio" name="q30"> <code>nao-existe.txt: No such file or directory</code></label>
+<details><summary>Explicação</summary><p>Quando falha, o <code>fopen</code> devolve <code>NULL</code> e deixa o motivo em <code>errno</code> (aqui, <code>ENOENT</code>). O <code>perror</code> mostra o seu texto, dois-pontos e a frase do erro. Confira o <code>NULL</code> primeiro; o <code>errno</code> só vale depois de uma falha.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="errno.html">errno e perror</a></p>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">31. O que este programa imprime?</p>
+<pre class="file">#define DOBRO(x) x * 2
+
+int main(void) {
+    printf("%d\n", DOBRO(1 + 2));
+    return 0;
+}</pre>
+<label><input type="radio" name="q31"> <code>3</code></label>
+<label><input type="radio" name="q31"> <code>6</code></label>
+<label><input type="radio" name="q31"> <code>5</code></label>
+<label><input type="radio" name="q31"> Não compila</label>
+<details><summary>Explicação</summary><p>A macro troca texto por texto, antes da compilação: <code>DOBRO(1 + 2)</code> vira <code>1 + 2 * 2</code>, que é 5. A regra: parênteses em volta de cada parâmetro e do resultado, <code>#define DOBRO(x) ((x) * 2)</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="macros.html">Macros com Parâmetros</a></p>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">32. Para que serve o trio <code>#ifndef DATAS_H</code> / <code>#define DATAS_H</code> / <code>#endif</code> num arquivo <code>datas.h</code>?</p>
+<label><input type="radio" name="q32"> Para o programa rodar mais rápido</label>
+<label><input type="radio" name="q32"> Para ligar o modo de depuração</label>
+<label><input type="radio" name="q32"> Para esconder as funções dos outros arquivos</label>
+<label><input type="radio" name="q32"> Para o conteúdo do <code>.h</code> não ser incluído duas vezes no mesmo arquivo (o <em>include guard</em>)</label>
+<details><summary>Explicação</summary><p>Na primeira inclusão, <code>DATAS_H</code> ainda não existe: o conteúdo entra e o nome é definido. Numa segunda inclusão, o <code>#ifndef</code> é falso e o conteúdo é pulado, evitando definições repetidas.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="compilacao-condicional.html">Compilação Condicional</a> e <a href="headers.html">Arquivos .h e .c</a></p>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">33. O gcc mostrou <code>referência não definida para "soma"</code> (em inglês, <code>undefined reference to</code>). O que isso quer dizer?</p>
+<label><input type="radio" name="q33"> Faltou um <code>;</code> na linha da chamada</label>
+<label><input type="radio" name="q33"> Há um erro de digitação dentro da função <code>soma</code></label>
+<label><input type="radio" name="q33"> A função <code>soma</code> foi declarada e chamada, mas o ligador não achou a definição dela (o corpo): falta o <code>.c</code> no comando, ou a função nunca foi escrita</label>
+<label><input type="radio" name="q33"> A função <code>soma</code> devolve o tipo errado</label>
+<details><summary>Explicação</summary><p>Essa mensagem vem do <strong>ligador</strong>, a última etapa, e não do compilador: cada arquivo compilou, mas na hora de juntar tudo ninguém tinha o corpo de <code>soma</code>. Confira se todos os <code>.c</code> estão no comando do gcc.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="multiplos-arquivos.html">Vários Arquivos</a> e <a href="prototipos.html">Protótipos</a></p>
+</div>
+
+<h2 id="nivel3">Nível 3 · Avançado</h2>
+<p>Bits, comportamento indefinido, a linguagem a fundo e as ferramentas.</p>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">34. O que este código imprime?</p>
+<pre class="file">printf("%d %d %d\n", 5 &amp; 3, 5 | 3, 5 ^ 3);</pre>
+<label><input type="radio" name="q34"> <code>1 7 6</code></label>
+<label><input type="radio" name="q34"> <code>1 1 0</code></label>
+<label><input type="radio" name="q34"> <code>3 5 2</code></label>
+<label><input type="radio" name="q34"> <code>8 2 15</code></label>
+<details><summary>Explicação</summary><p>Em binário, 5 = <code>101</code> e 3 = <code>011</code>. E bit a bit (<code>&amp;</code>): <code>001</code> = 1. OU (<code>|</code>): <code>111</code> = 7. OU exclusivo (<code>^</code>), 1 onde os bits são diferentes: <code>110</code> = 6.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="operadores-bits.html">Operadores de Bits</a></p>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">35. O que este código imprime?</p>
+<pre class="file">unsigned int flags = 0;
+flags |= 1u &lt;&lt; 2;
+flags |= 1u;
+printf("%u\n", flags);</pre>
+<label><input type="radio" name="q35"> <code>1</code></label>
+<label><input type="radio" name="q35"> <code>3</code></label>
+<label><input type="radio" name="q35"> <code>5</code></label>
+<label><input type="radio" name="q35"> <code>4</code></label>
+<details><summary>Explicação</summary><p><code>1u &lt;&lt; 2</code> é a máscara do bit 2 (<code>100</code> = 4), e <code>|=</code> liga esse bit. Depois, o bit 0 (<code>1</code>). Resultado: <code>101</code> = 5.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="mascaras-bits.html">Máscaras e Flags</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">36. Com <code>int x = INT_MAX;</code> (o maior <code>int</code>, do <code>limits.h</code>), o que é <code>x + 1</code>?</p>
+<label><input type="radio" name="q36"> Um erro de compilação</label>
+<label><input type="radio" name="q36"> Comportamento indefinido: estouro de inteiro <strong>com sinal</strong>; costuma dar <code>-2147483648</code>, mas o compilador pode assumir que isso nunca acontece</label>
+<label><input type="radio" name="q36"> Sempre <code>2147483648</code>: o C aumenta o <code>int</code> sozinho</label>
+<label><input type="radio" name="q36"> Sempre <code>0</code></label>
+<details><summary>Explicação</summary><p>Passar do limite de um inteiro com sinal é comportamento indefinido. Na prática, muitas vezes "dá a volta" para o negativo, mas com <code>-O2</code> o otimizador pode fazer coisas inesperadas. Só os <code>unsigned</code> dão a volta de forma garantida. O <code>-fsanitize=undefined</code> acusa o estouro.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="comportamento-indefinido.html">Comportamento Indefinido</a> e <a href="inteiros.html">Inteiros</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">37. A Ana quer empurrar o texto de um array uma posição para a direita, dentro do <strong>mesmo</strong> array: <code>???(a + 1, a, 5);</code>. Que função usar?</p>
+<label><input type="radio" name="q37"> <code>memmove</code>, porque a origem e o destino se sobrepõem</label>
+<label><input type="radio" name="q37"> Qualquer uma: as três fazem a mesma coisa</label>
+<label><input type="radio" name="q37"> <code>memcpy</code>, que é mais rápida</label>
+<label><input type="radio" name="q37"> <code>strcpy</code></label>
+<details><summary>Explicação</summary><p>O <code>memcpy</code> tem <code>restrict</code> nos parâmetros: promete que as áreas não se sobrepõem, e com <code>-O2</code> o resultado pode sair errado. O <code>memmove</code> aceita sobreposição: com <code>"abcdef"</code>, dá <code>aabcde</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="volatile-restrict.html">volatile e restrict</a></p>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">38. Um tratador de sinal muda a variável <code>parar</code>, que o laço principal espera. Como declará-la?</p>
+<label><input type="radio" name="q38"> <code>volatile sig_atomic_t parar = 0;</code></label>
+<label><input type="radio" name="q38"> <code>int parar = 0;</code></label>
+<label><input type="radio" name="q38"> <code>int *restrict parar;</code></label>
+<label><input type="radio" name="q38"> <code>const int parar = 0;</code></label>
+<details><summary>Explicação</summary><p>Para o compilador, o tratador "nunca é chamado" pelo laço; sem <code>volatile</code>, com <code>-O2</code> ele lê <code>parar</code> uma vez e o laço nunca termina. O <code>sig_atomic_t</code> é o tipo que pode ser escrito de uma vez só, sem o sinal chegar no meio.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="volatile-restrict.html">volatile e restrict</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">39. Um programa tem <code>assert(scanf("%d", &amp;idade) == 1);</code>. O que acontece quando ele é compilado com <code>-DNDEBUG</code>?</p>
+<label><input type="radio" name="q39"> O <code>assert</code> fica mais rápido</label>
+<label><input type="radio" name="q39"> O <code>assert</code> some <strong>junto com o <code>scanf</code></strong>: a idade nunca é lida</label>
+<label><input type="radio" name="q39"> Nada muda</label>
+<label><input type="radio" name="q39"> Não compila</label>
+<details><summary>Explicação</summary><p>Com <code>NDEBUG</code> definido, cada <code>assert(…)</code> vira nada, com tudo o que estava dentro dos parênteses. Por isso nada que precise acontecer vai dentro de um <code>assert</code>, e a entrada do usuário se confere com <code>if</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="testes.html">Testes (assert)</a></p>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">40. O programa às vezes cai e você quer descobrir em que linha. Qual é o primeiro passo?</p>
+<label><input type="radio" name="q40"> Colocar <code>volatile</code> em todas as variáveis</label>
+<label><input type="radio" name="q40"> Compilar com <code>-g</code> e rodar no <code>gdb</code> (o <code>backtrace</code> mostra onde caiu) ou com <code>-fsanitize=address</code></label>
+<label><input type="radio" name="q40"> Compilar com <code>-O2</code></label>
+<label><input type="radio" name="q40"> Tirar o <code>-Wall</code></label>
+<details><summary>Explicação</summary><p>O <code>-g</code> guarda no executável a ligação entre as instruções e as linhas do código. Com ele, o <code>gdb</code> e os sanitizers mostram <code>arquivo.c:linha</code>. O Valgrind (<code>valgrind ./programa</code>) também mostra a linha, se o programa tiver sido compilado com <code>-g</code>.</p></details>
+<p class="mc-q" style="font-weight:400;font-size:14px">Revise: <a href="depuracao-gdb.html">Depurar com gdb</a>, <a href="sanitizers.html">Sanitizers</a> e <a href="valgrind.html">Valgrind</a></p>
+</div>
+
+<h2>E agora?</h2>
+<p>Errou alguma? Abra a aula do "Revise", leia a seção do assunto e pratique nas caixas "Experimente". Para consultar rapidamente um termo, use o <a href="glossario.html">Glossário</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
