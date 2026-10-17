@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Protótipos — declarar a função antes de usar | Guia C</title>
+<meta name="description" content="Protótipos de função em C para quem nunca programou: por que o compilador precisa conhecer a função antes da chamada, o erro real do gcc 15 implicit declaration of function (erro desde o gcc 14, e no C23 a declaração implícita nem existe), declaração × definição, nomes de parâmetros opcionais, conflicting types, referência não definida e a primeira ideia de arquivos .h, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Protótipos</span></h1>
+
+<p class="intro">Nas aulas anteriores, toda função era escrita <strong>acima</strong> de quem a chamava. Com três ou quatro funções isso é fácil; com vinte, vira um quebra-cabeça de ordem. O C tem uma saída: o <strong>protótipo</strong>, uma linha no topo do arquivo que avisa ao compilador "existe uma função com este nome, que recebe isto e devolve aquilo; o corpo vem depois". Nesta aula você vai ver o erro que aparece sem protótipo (e por que ele já foi só um aviso), escrever protótipos, entender a diferença entre <strong>declarar</strong> e <strong>definir</strong> e descobrir que o <code>#include &lt;stdio.h&gt;</code> que você usa desde a primeira aula é, no fundo, um arquivo cheio de protótipos.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que o compilador precisa conhecer a função antes da chamada, e o erro <code>implicit declaration of function</code>.</li>
+  <li>O que mudou entre o C89, o C99, o gcc 14 e o <span class="versao">C23</span> nesse assunto.</li>
+  <li>Como escrever um protótipo, e a diferença entre <strong>declaração</strong> e <strong>definição</strong>.</li>
+  <li>Que os nomes dos parâmetros são opcionais no protótipo (e por que vale a pena escrevê-los).</li>
+  <li>Os erros de protótipo que não bate (<code>conflicting types</code>) e de protótipo sem função (<code>referência não definida</code>).</li>
+  <li>Que os arquivos <code>.h</code>, como o <code>stdio.h</code>, são coleções de protótipos.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana, na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: a lista de convidados na portaria</h2>
+<p>Numa festa com portaria, o porteiro só deixa entrar quem está na <strong>lista de convidados</strong>. Não importa se a pessoa chega cedo ou tarde: se o nome dela está na lista desde o começo da noite, ela entra.</p>
+
+<p>O compilador é esse porteiro. Ele lê o seu arquivo <strong>uma vez, de cima para baixo</strong>, e só aceita uma chamada de função se já souber que ela existe. O protótipo é o nome na lista: escrito no topo, ele avisa que a função vai chegar, e a ordem das definições deixa de importar.</p>
+
+<hr>
+
+<h2>1. O problema: chamar antes de definir</h2>
+<p>Aqui o <code>main</code> vem primeiro e a função <code>triplo</code>, depois:</p>
+
+<pre class="file" data-file="depois.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int t = triplo(5);
+    printf("Triplo de 5: %d\n", t);
+    return 0;
+}
+
+int triplo(int n) {
+    return n * 3;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra depois.c -o depois
+depois.c: In function ‘main’:
+depois.c:4:13: error: implicit declaration of function ‘triplo’ [-Wimplicit-function-declaration]
+    4 |     int t = triplo(5);
+      |             ^~~~~~</pre>
+
+<dl class="anatomy">
+  <dt>In function ‘main’</dt><dd>O problema está dentro do <code>main</code>.</dd>
+  <dt>implicit declaration of function ‘triplo’</dt><dd>"Declaração implícita da função <code>triplo</code>". Na linha 4, ninguém tinha <strong>declarado</strong> (apresentado) essa função ao compilador. Usá-la assim seria declará-la "implicitamente", sem dizer nada sobre ela.</dd>
+  <dt>[-Wimplicit-function-declaration]</dt><dd>O nome da regra. Começa com <code>-W</code> porque, durante décadas, foi só um <strong>aviso</strong>. No gcc 14 em diante, é <strong>erro</strong>: o programa não é gerado.</dd>
+</dl>
+
+<p>No editor do guia, o Clang diz <code>use of undeclared identifier 'triplo'</code> ("uso de identificador não declarado"). Com <code>-std=c17</code>, ele escreve <code>call to undeclared function 'triplo'; ISO C99 and later do not support implicit function declarations</code>: "chamada a função não declarada; o C99 e posteriores não aceitam declarações implícitas de função".</p>
+
+<h3>Por que já foi só um aviso: a adivinhação do C antigo</h3>
+<p>No C de 1989 (C89), o compilador não reclamava: quando via uma função desconhecida, ele <strong>adivinhava</strong> que ela devolvia <code>int</code> e aceitava qualquer argumento. O gcc 15 ainda imita esse comportamento se você pedir o padrão antigo:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c89 -Wall -Wextra depois.c -o depois
+depois.c: In function ‘main’:
+depois.c:4:13: warning: implicit declaration of function ‘triplo’ [-Wimplicit-function-declaration]
+    4 |     int t = triplo(5);
+      |             ^~~~~~
+$ ./depois
+Triplo de 5: 15                 « deu certo por sorte: o palpite "devolve int" estava certo</pre>
+
+<p>Agora veja o palpite errar. A função <code>metade</code> devolve <code>double</code>:</p>
+
+<pre class="file" data-file="adivinha.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Metade de 7: %f\n", metade(7.0));
+    return 0;
+}
+
+double metade(double x) {
+    return x / 2;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c89 -Wall -Wextra adivinha.c -o adivinha
+adivinha.c: In function ‘main’:
+adivinha.c:4:33: warning: implicit declaration of function ‘metade’ [-Wimplicit-function-declaration]
+    4 |     printf("Metade de 7: %f\n", metade(7.0));
+      |                                 ^~~~~~
+adivinha.c:4:27: warning: format ‘%f’ expects argument of type ‘double’, but argument 2 has type ‘int’ [-Wformat=]
+    4 |     printf("Metade de 7: %f\n", metade(7.0));
+      |                          ~^     ~~~~~~~~~~~
+      |                           |     |
+      |                           |     int
+      |                           double
+      |                          %d
+adivinha.c: At top level:
+adivinha.c:8:8: error: conflicting types for ‘metade’; have ‘double(double)’
+    8 | double metade(double x) {
+      |        ^~~~~~
+adivinha.c:4:33: note: previous implicit declaration of ‘metade’ with type ‘int()’
+    4 |     printf("Metade de 7: %f\n", metade(7.0));
+      |                                 ^~~~~~</pre>
+
+<p>A última nota conta a história toda: <em>previous implicit declaration of ‘metade’ with type ‘int()’</em>, "a declaração implícita anterior de <code>metade</code> tinha o tipo <code>int()</code>". Na linha 4, o compilador chutou "devolve <code>int</code>" (e até reclamou do <code>%f</code> por causa disso); na linha 8, descobriu que era <code>double</code>. Aqui o erro foi pego porque tudo estava no mesmo arquivo. Com a função em outro arquivo, o compilador não teria como comparar, e o programa podia ser gerado e mostrar números sem sentido. Por isso:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Versão</th><th>Chamar uma função não declarada</th></tr>
+<tr><td>C89/C90</td><td>Permitido: o compilador supõe que ela devolve <code>int</code></td></tr>
+<tr><td><span class="versao">C99</span> a C17</td><td>Proibido pela norma, mas o gcc ainda aceitava com um aviso</td></tr>
+<tr><td>gcc 14 em diante (C99 ou mais novo)</td><td><strong>Erro</strong> (só volta a ser aviso com <code>-fpermissive</code> ou <code>-std=c89</code>)</td></tr>
+<tr><td><span class="versao">C23</span></td><td>A ideia de "declaração implícita" foi removida da linguagem</td></tr>
+</table>
+</div>
+
+<p>Se você encontrar na internet um conselho do tipo "é só um aviso, pode ignorar", ele é de antes de 2024. Hoje, a resposta certa é declarar a função.</p>
+
+<hr>
+
+<h2>2. A solução: o protótipo</h2>
+<p>Um <strong>protótipo</strong> é o cabeçalho da função, terminado em <code>;</code>, sem o corpo. Escrito no topo do arquivo, ele apresenta a função ao compilador:</p>
+
+<pre class="file" data-file="proto.c">#include &lt;stdio.h&gt;
+
+int triplo(int n);
+
+int main(void) {
+    int t = triplo(5);
+    printf("Triplo de 5: %d\n", t);
+    return 0;
+}
+
+int triplo(int n) {
+    return n * 3;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra proto.c -o proto
+$ ./proto
+Triplo de 5: 15</pre>
+
+<dl class="anatomy">
+  <dt>int triplo(int n);</dt><dd>O <strong>protótipo</strong>: o mesmo cabeçalho da função, com <code>;</code> no lugar do corpo. Ele diz ao compilador o nome, o que a função recebe (um <code>int</code>) e o que devolve (um <code>int</code>).</dd>
+  <dt>triplo(5) no main</dt><dd>Quando chega aqui, o compilador já conhece <code>triplo</code>: confere se o número e o tipo dos argumentos batem e sabe que o resultado é <code>int</code>.</dd>
+  <dt>int triplo(int n) { … }</dt><dd>A <strong>definição</strong>, com o corpo, pode vir em qualquer lugar depois. Ela tem de bater com o protótipo.</dd>
+</dl>
+
+<h3>Declaração × definição</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Declaração (protótipo)</th><th>Definição</th></tr>
+<tr><td>Cara</td><td><code>int triplo(int n);</code></td><td><code>int triplo(int n) { return n * 3; }</code></td></tr>
+<tr><td>Termina com</td><td><code>;</code></td><td>o corpo <code>{ … }</code></td></tr>
+<tr><td>Diz</td><td>"esta função existe e tem este formato"</td><td>"é isto que ela faz"</td></tr>
+<tr><td>Quantas pode haver</td><td>Várias, desde que iguais</td><td><strong>Uma só</strong> no programa inteiro</td></tr>
+<tr><td>Comparação</td><td>O nome na lista de convidados</td><td>O convidado em pessoa</td></tr>
+</table>
+</div>
+
+<p>Toda definição também serve de declaração: por isso, nas aulas anteriores, escrever a função acima do <code>main</code> bastava.</p>
+
+<hr>
+
+<h2>3. Os nomes dos parâmetros são opcionais no protótipo</h2>
+<p>O compilador só precisa dos <strong>tipos</strong> no protótipo. Os nomes podem ficar de fora:</p>
+
+<pre class="file" data-file="nomes.c">#include &lt;stdio.h&gt;
+
+double preco_final(double, int);
+
+int main(void) {
+    printf("Total: %.2f\n", preco_final(2.5, 4));
+    return 0;
+}
+
+double preco_final(double preco, int quantidade) {
+    return preco * quantidade;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nomes.c -o nomes
+$ ./nomes
+Total: 10.00</pre>
+
+<p>Compila e funciona. Mas compare as duas linhas, do ponto de vista de quem lê:</p>
+<ul>
+  <li><code>double preco_final(double, int);</code> — o <code>double</code> é o preço ou a quantidade? E o <code>int</code>?</li>
+  <li><code>double preco_final(double preco, int quantidade);</code> — dá para usar a função sem abrir a definição.</li>
+</ul>
+<p>O guia sempre escreve os nomes. Eles não precisam ser iguais aos da definição (o compilador os ignora no protótipo), mas é uma boa ideia que sejam. E, para uma função sem parâmetros, o protótipo é <code>void linha(void);</code>; até o C17, <code>void linha();</code> <strong>não</strong> era um protótipo de verdade (veja <a href="funcoes.html">Funções</a>).</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode o programa (ele tem protótipos no topo e as funções depois do <code>main</code>). Depois apague a linha do protótipo de <code>mostrar_menu</code> e rode de novo para ver o erro do Clang. Por fim, devolva a linha e troque a ordem das duas definições lá embaixo: com os protótipos no topo, a ordem não importa mais.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void mostrar_menu(void);
+double preco_com_desconto(double preco, int porcentagem);
+
+int main(void) {
+    mostrar_menu();
+    printf("Caderno com 10%% de desconto: R$ %.2f\n", preco_com_desconto(12.50, 10));
+    return 0;
+}
+
+void mostrar_menu(void) {
+    printf("=== Lojinha da Ana ===\n");
+}
+
+double preco_com_desconto(double preco, int porcentagem) {
+    return preco - preco * porcentagem / 100;
+}
+</pre>
+</div>
+
+<p>No laboratório, esse programa mostra:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra menu.c -o menu
+$ ./menu
+=== Lojinha da Ana ===
+Caderno com 10% de desconto: R$ 11.25</pre>
+
+<hr>
+
+<h2>4. Protótipo e definição têm de combinar</h2>
+<p>O protótipo é uma promessa. Se a definição for diferente, o compilador acusa:</p>
+
+<pre class="file" data-file="conflito.c">#include &lt;stdio.h&gt;
+
+int triplo(int n);
+
+int main(void) {
+    printf("Triplo de 5: %d\n", triplo(5));
+    return 0;
+}
+
+double triplo(double n) {
+    return n * 3;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra conflito.c -o conflito
+conflito.c:10:8: error: conflicting types for ‘triplo’; have ‘double(double)’
+   10 | double triplo(double n) {
+      |        ^~~~~~
+conflito.c:3:5: note: previous declaration of ‘triplo’ with type ‘int(int)’
+    3 | int triplo(int n);
+      |     ^~~~~~</pre>
+
+<dl class="anatomy">
+  <dt>conflicting types for ‘triplo’</dt><dd>"Tipos em conflito para <code>triplo</code>".</dd>
+  <dt>have ‘double(double)’</dt><dd>O formato da definição: devolve <code>double</code>, recebe um <code>double</code>.</dd>
+  <dt>previous declaration … with type ‘int(int)’</dt><dd>O formato do protótipo, com a linha onde ele está. Para consertar, deixe as duas linhas iguais (mudando a que estiver errada).</dd>
+</dl>
+
+<p>É o mesmo erro da aula <a href="parametros.html">Parâmetros</a>, quando duas funções tinham o mesmo nome: para o C, um nome tem um formato só. No editor: <code>conflicting types for 'triplo'</code> e <code>note: previous declaration is here</code>.</p>
+
+<div class="tryc" data-goal="out:Dobro de 21: 42,src:^\s*int\s+dobro\s*\([^)]*\)\s*;,semaviso">
+<p class="try-task"><strong>Missão:</strong> o <code>main</code> vem antes da função <code>dobro</code>, e o programa não compila. <strong>Sem mudar a ordem</strong> das funções, acrescente o protótipo de <code>dobro</code> no topo do arquivo, logo abaixo do <code>#include</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Dobro de 21: %d\n", dobro(21));
+    return 0;
+}
+
+int dobro(int n) {
+    return n * 2;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int dobro(int n);
+
+int main(void) {
+    printf("Dobro de 21: %d\n", dobro(21));
+    return 0;
+}
+
+int dobro(int n) {
+    return n * 2;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Protótipo sem função: o erro vem do ligador</h2>
+<p>E se você escreve o protótipo e esquece a definição?</p>
+
+<pre class="file" data-file="semdef.c">#include &lt;stdio.h&gt;
+
+int triplo(int n);
+
+int main(void) {
+    printf("Triplo de 5: %d\n", triplo(5));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semdef.c -o semdef
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cccrQsBI.o: na função "main":
+semdef.c:(.text+0xe): referência não definida para "triplo"
+collect2: error: ld returned 1 exit status</pre>
+
+<p>A mensagem tem outra cara, e é em português. É que ela não vem do compilador, e sim do <strong>ligador</strong> (<code>ld</code>, de <em>linker</em>), a última etapa da construção do programa (aula <a href="como-funciona.html">Como o C Vira Programa</a>):</p>
+<ol class="passo">
+  <li>O <strong>compilador</strong> leu o arquivo. Graças ao protótipo, a chamada <code>triplo(5)</code> estava certinha: ele deixou anotado "aqui vai a função <code>triplo</code>, que alguém vai fornecer".</li>
+  <li>O <strong>ligador</strong> juntou as peças para montar o executável e procurou a função <code>triplo</code>. Não achou em lugar nenhum.</li>
+</ol>
+
+<dl class="anatomy">
+  <dt>/tmp/cccrQsBI.o: na função "main"</dt><dd>O arquivo intermediário (temporário, com nome sorteado a cada compilação) e a função onde está a chamada.</dd>
+  <dt>referência não definida para "triplo"</dt><dd>"Existe uma chamada para <code>triplo</code>, mas nenhuma definição". Em inglês, que é o que você vai achar nos fóruns: <code>undefined reference to `triplo'</code>.</dd>
+  <dt>ld returned 1 exit status</dt><dd>"O <code>ld</code> terminou com erro" (o <code>collect2</code> é um ajudante do gcc que chama o ligador).</dd>
+</dl>
+
+<p>No editor, o ligador é o <code>wasm-ld</code>, e a mensagem sai assim: <code>wasm-ld: error: … undefined symbol: triplo</code> ("símbolo não definido"). Conserto: escreva a definição (ou confira se o nome dela é idêntico ao do protótipo: <code>Triplo</code> e <code>triplo</code> são funções diferentes).</p>
+
+<hr>
+
+<h2>6. Quando o protótipo é obrigatório: funções que se chamam</h2>
+<p>Às vezes não existe uma ordem que funcione: a função A chama a B, e a B chama a A. Este exemplo (um jeito engraçado de descobrir se um número é par, usando <a href="recursao.html">Recursão</a>) só compila com protótipo:</p>
+
+<pre class="file" data-file="parimpar.c">#include &lt;stdio.h&gt;
+
+bool eh_impar(int n);
+
+bool eh_par(int n) {
+    if (n == 0) {
+        return true;
+    }
+    return eh_impar(n - 1);
+}
+
+bool eh_impar(int n) {
+    if (n == 0) {
+        return false;
+    }
+    return eh_par(n - 1);
+}
+
+int main(void) {
+    for (int i = 0; i &lt;= 3; i++) {
+        printf("%d é %s\n", i, eh_par(i) ? "par" : "ímpar");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra parimpar.c -o parimpar
+$ ./parimpar
+0 é par
+1 é ímpar
+2 é par
+3 é ímpar</pre>
+
+<p><code>eh_par</code> usa <code>eh_impar</code>, que ainda não foi definida: o protótipo na linha 3 resolve. Sem ele, qualquer ordem dá <code>implicit declaration</code> em uma das duas.</p>
+
+<hr>
+
+<h2>7. Os arquivos <code>.h</code> são listas de protótipos</h2>
+<p>Desde a primeira aula você escreve <code>#include &lt;stdio.h&gt;</code>. Veja o que acontece sem ele:</p>
+
+<pre class="file" data-file="seminclude.c">int main(void) {
+    printf("Olá!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra seminclude.c -o seminclude
+seminclude.c: In function ‘main’:
+seminclude.c:2:5: error: implicit declaration of function ‘printf’ [-Wimplicit-function-declaration]
+    2 |     printf("Olá!\n");
+      |     ^~~~~~
+seminclude.c:1:1: note: include ‘&lt;stdio.h&gt;’ or provide a declaration of ‘printf’
+  +++ |+#include &lt;stdio.h&gt;
+    1 | int main(void) {
+seminclude.c:2:5: warning: incompatible implicit declaration of built-in function ‘printf’ [-Wbuiltin-declaration-mismatch]
+    2 |     printf("Olá!\n");
+      |     ^~~~~~
+seminclude.c:2:5: note: include ‘&lt;stdio.h&gt;’ or provide a declaration of ‘printf’</pre>
+
+<p>O mesmo erro de antes, agora com o <code>printf</code>. E o gcc sugere o conserto: <em>include ‘&lt;stdio.h&gt;’ or provide a declaration of ‘printf’</em>, "inclua o <code>&lt;stdio.h&gt;</code> ou forneça uma declaração de <code>printf</code>". A linha com <code>+++ |+</code> mostra onde a linha nova entraria. Ou seja: o <code>stdio.h</code> fornece a <strong>declaração</strong> do <code>printf</code>. Dá para conferir no laboratório, procurando dentro do arquivo:</p>
+
+<pre class="term" data-cwd="~/c">$ grep -n "printf (const" /usr/include/stdio.h | head -3
+370:extern int printf (const char *__restrict __format, ...);
+385:extern int vprintf (const char *__restrict __format, __gnuc_va_list __arg);</pre>
+
+<p>Lá está, na linha 370: <code>int printf (const char *…, ...);</code>, um protótipo terminado em <code>;</code>. O <code>extern</code> quer dizer "definida em outro lugar" (aula <a href="static-extern.html">static e extern</a>), os <code>...</code> dizem que ela aceita quantos argumentos você quiser (aula <a href="variadicas.html">Funções Variádicas</a>) e os nomes estranhos com <code>__</code> são só nomes de parâmetros. A <strong>definição</strong> do <code>printf</code>, com o código de verdade, já vem compilada na biblioteca do C, que o ligador junta ao seu programa automaticamente.</p>
+
+<p>Quando os seus programas crescerem, você vai fazer o mesmo: colocar os protótipos num arquivo <code>.h</code> seu (<code>loja.h</code>), as definições num <code>.c</code> (<code>loja.c</code>) e escrever <code>#include "loja.h"</code> onde precisar. Esse é o assunto de <a href="headers.html">Arquivos .h e .c</a> e <a href="multiplos-arquivos.html">Vários Arquivos</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de organizar + qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Organização</th><th>Quando usar</th></tr>
+<tr><td>Funções acima do <code>main</code>, na ordem certa, sem protótipos</td><td>Programas curtos, de um arquivo só (como a maioria dos exercícios)</td></tr>
+<tr><td>Protótipos no topo, <code>main</code> logo depois, definições no fim</td><td>Programas de um arquivo com muitas funções: o <code>main</code> fica no começo, como um resumo, e a ordem das definições não importa</td></tr>
+<tr><td>Protótipos num <code>.h</code>, definições num <code>.c</code></td><td>Programas com vários arquivos, ou funções que você quer reaproveitar (<a href="headers.html">Arquivos .h e .c</a>)</td></tr>
+<tr><td>Protótipo obrigatório</td><td>Funções que se chamam mutuamente, e funções definidas em outro arquivo</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘f’ [-Wimplicit-function-declaration]</code></strong>
+<p><strong>O que significa:</strong> a chamada aparece antes de qualquer declaração de <code>f</code>. Causas comuns: a função está definida mais abaixo; o nome está escrito diferente; faltou o <code>#include</code> da biblioteca (<code>stdio.h</code> para <code>printf</code>, <code>string.h</code> para <code>strlen</code>, <code>math.h</code> para <code>sqrt</code>). No editor: <code>use of undeclared identifier 'f'</code> ou <code>call to undeclared library function</code>.</p>
+<p><strong>Como consertar:</strong> leia a <code>note</code> do gcc, que às vezes já diz o <code>#include</code> que falta. Para funções suas, escreva o protótipo no topo ou mova a definição para cima.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: conflicting types for ‘f’</code></strong>
+<p><strong>O que significa:</strong> o protótipo e a definição têm tipos diferentes (retorno ou parâmetros). Também aparece quando a função foi usada antes de declarada e o compilador "chutou" um tipo (<code>previous implicit declaration</code>).</p>
+<p><strong>Como consertar:</strong> copie o cabeçalho da definição, cole no lugar do protótipo e acrescente o <code>;</code>. Assim os dois ficam idênticos.</p>
+</div>
+
+<div class="cenario">
+<strong><code>referência não definida para "f"</code> (<code>undefined reference to `f'</code>)</strong>
+<p><strong>O que significa:</strong> o compilador aceitou a chamada (havia protótipo), mas o ligador não achou a definição. A função não foi escrita, tem outro nome, ou está em outro <code>.c</code> que não entrou no comando do <code>gcc</code>.</p>
+<p><strong>Como consertar:</strong> escreva a definição, confira o nome letra por letra, ou compile os arquivos juntos (<code>gcc main.c loja.c -o loja</code>, aula <a href="multiplos-arquivos.html">Vários Arquivos</a>). Com funções de <code>math.h</code>, o motivo pode ser outro: veja <a href="matematica.html">Matemática</a>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expected identifier or ‘(’ before ‘{’ token</code></strong>
+<p><strong>O que significa:</strong> você copiou o protótipo (com <code>;</code>) para escrever a definição e esqueceu de tirar o <code>;</code>: <code>int triplo(int n); {</code>.</p>
+<p><strong>Como consertar:</strong> na definição, nada de <code>;</code> antes da <code>{</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que é</th></tr>
+<tr><td><code>int triplo(int n);</code></td><td>Protótipo (declaração): avisa que a função existe</td></tr>
+<tr><td><code>int triplo(int);</code></td><td>Protótipo sem o nome do parâmetro (válido, mas menos claro)</td></tr>
+<tr><td><code>void linha(void);</code></td><td>Protótipo de função sem parâmetros</td></tr>
+<tr><td><code>int triplo(int n) { … }</code></td><td>Definição: o corpo da função (uma só no programa)</td></tr>
+<tr><td><code>#include &lt;stdio.h&gt;</code></td><td>Traz os protótipos das funções de entrada e saída (<code>printf</code>, <code>scanf</code>…)</td></tr>
+<tr><td><code>#include "loja.h"</code></td><td>Traz os protótipos que você mesmo escreveu (<a href="headers.html">Arquivos .h e .c</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O protótipo</h3>
+<p>A definição é <code>double media(double a, double b) { return (a + b) / 2; }</code>. Complete o protótipo:</p>
+<div class="ex-code"><input data-answer="double media(double a, double b);|double media(double, double);|double media(double a,double b);" aria-label="protótipo"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O que termina o protótipo</h3>
+<p>Que caractere termina um protótipo, no lugar do corpo?</p>
+<div class="ex-code"><input data-answer=";" aria-label="caractere"></div>
+</div>
+
+<div class="exercise">
+<h3>3. O cabeçalho do printf</h3>
+<p>Complete o <code>#include</code> que traz o protótipo do <code>printf</code>:</p>
+<div class="ex-code">#include &lt;<input data-answer="stdio.h" aria-label="arquivo">&gt;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. No gcc 15, com o padrão C23, o que acontece ao chamar uma função definida só mais abaixo, sem protótipo?</p>
+<label><input type="radio" name="q4"> Um aviso, e o programa funciona</label>
+<label><input type="radio" name="q4"> Erro: <code>implicit declaration of function</code></label>
+<label><input type="radio" name="q4"> Nada: o gcc procura a função no resto do arquivo</label>
+<label><input type="radio" name="q4"> <code>referência não definida</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. O arquivo tem <code>int triplo(int n);</code>, chama <code>triplo(5)</code> e não tem a definição. Quem reclama?</p>
+<label><input type="radio" name="q5"> O compilador, com <code>implicit declaration</code></label>
+<label><input type="radio" name="q5"> Ninguém: o programa mostra 0</label>
+<label><input type="radio" name="q5"> O compilador, com <code>conflicting types</code></label>
+<label><input type="radio" name="q5"> O ligador: <code>referência não definida para "triplo"</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual destes é uma <strong>definição</strong> (e não só uma declaração)?</p>
+<label><input type="radio" name="q6"> <code>int dobro(int n) { return n * 2; }</code></label>
+<label><input type="radio" name="q6"> <code>int dobro(int n);</code></label>
+<label><input type="radio" name="q6"> <code>int dobro(int);</code></label>
+<label><input type="radio" name="q6"> <code>extern int printf(const char *, ...);</code></label>
+</div>
+
+<h3>Missão final: o termômetro com o <code>main</code> no topo</h3>
+
+<div class="tryc" data-goal="outre:^25\.0 °C = 77\.0 °F\n-10\.0 °C = 14\.0 °F\n$,src:^\s*double\s+para_fahrenheit\s*\([^)]*\)\s*;,src:^\s*void\s+mostrar\s*\([^)]*\)\s*;,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana quer o <code>main</code> logo no começo do arquivo, como um resumo do programa. Complete o arquivo:</p>
+<ul class="try-task">
+  <li>no topo, os <strong>protótipos</strong> de <code>double para_fahrenheit(double celsius)</code> e <code>void mostrar(double celsius)</code>;</li>
+  <li>depois do <code>main</code>, as <strong>definições</strong>: <code>para_fahrenheit</code> devolve <code>celsius * 9 / 5 + 32</code>; <code>mostrar</code> escreve a linha <code>25.0 °C = 77.0 °F</code> (com <code>%.1f</code>), usando <code>para_fahrenheit</code>.</li>
+</ul>
+<pre class="out">25.0 °C = 77.0 °F
+-10.0 °C = 14.0 °F</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+// protótipos aqui
+
+int main(void) {
+    mostrar(25.0);
+    mostrar(-10.0);
+    return 0;
+}
+
+// definições aqui
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+double para_fahrenheit(double celsius);
+void mostrar(double celsius);
+
+int main(void) {
+    mostrar(25.0);
+    mostrar(-10.0);
+    return 0;
+}
+
+double para_fahrenheit(double celsius) {
+    return celsius * 9 / 5 + 32;
+}
+
+void mostrar(double celsius) {
+    printf("%.1f °C = %.1f °F\n", celsius, para_fahrenheit(celsius));
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O compilador lê de cima para baixo e precisa conhecer a função antes da chamada.</li>
+  <li>Sem isso: <code>error: implicit declaration of function</code>. Era só aviso até o gcc 13 (o C89 "chutava" que a função devolvia <code>int</code>); é erro desde o gcc 14, e o <span class="versao">C23</span> removeu a ideia da linguagem.</li>
+  <li><strong>Protótipo</strong> = cabeçalho + <code>;</code> (<code>int triplo(int n);</code>). É uma <strong>declaração</strong>; a <strong>definição</strong> tem o corpo e existe uma vez só.</li>
+  <li>Os nomes dos parâmetros são opcionais no protótipo, mas ajudam quem lê. Sem parâmetros: <code>(void)</code>.</li>
+  <li>Protótipo e definição diferentes: <code>conflicting types</code>. Protótipo sem definição: o ligador diz <code>referência não definida</code> (<code>undefined reference</code>).</li>
+  <li>Os <code>.h</code>, como o <code>stdio.h</code>, são coleções de protótipos; as definições vêm prontas na biblioteca.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
