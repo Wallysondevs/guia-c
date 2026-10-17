@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C CMake — CMakeLists.txt, cmake -B build e cmake --build | Guia C</title>
+<meta name="description" content="CMake para projetos em C, para quem nunca usou: o CMakeLists.txt mínimo (project, CMAKE_C_STANDARD 23, add_executable), cmake -B build e cmake --build build, vários arquivos, target_compile_options com -Wall -Wextra, ligar a biblioteca m (math.h) com target_link_libraries, Debug e Release, Ninja e os erros mais comuns, com saídas reais do cmake 4.2.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">CMake</span></h1>
+
+<p class="intro">Com dois ou três arquivos, digitar o <code>gcc</code> à mão funciona. Com dez, você já escreveu um <a href="make.html">Makefile</a>. Mas o Makefile só funciona com o <code>make</code>, e cada sistema tem o seu jeito: o Windows usa o Visual Studio, o macOS usa o Xcode. O <strong>CMake</strong> resolve isso: você descreve o projeto <strong>uma vez</strong>, num arquivo chamado <code>CMakeLists.txt</code> ("lista do CMake"), e ele gera o Makefile (ou o projeto do Visual Studio, ou o do Ninja) para você. É a ferramenta de compilação mais usada em projetos C e C++ hoje.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A escrever o <code>CMakeLists.txt</code> mínimo para C: <code>cmake_minimum_required</code>, <code>project(nome C)</code>, <code>set(CMAKE_C_STANDARD 23)</code> e <code>add_executable</code>.</li>
+  <li>Os dois comandos do dia a dia: <code>cmake -B build</code> (configurar) e <code>cmake --build build</code> (compilar).</li>
+  <li>A montar um projeto com vários arquivos <code>.c</code> e <code>.h</code>.</li>
+  <li>A ligar os avisos com <code>target_compile_options</code> e a biblioteca de matemática com <code>target_link_libraries(… m)</code>.</li>
+  <li>As versões <code>Debug</code> e <code>Release</code>, o Ninja e os erros mais comuns.</li>
+</ul>
+</div>
+
+<p>Todas as saídas desta aula são reais, feitas com o <strong>cmake 4.2</strong> e o <strong>gcc 15</strong> na máquina fictícia da Ana, na pasta <code>~/c/cmake</code>. O CMake não roda no editor do guia (lá, todos os <code>.c</code> de uma caixa já são compilados juntos, sem precisar de nada); no seu Linux, instale com <code>sudo apt install cmake</code> (veja <a href="instalar-linux.html">Instalar no Linux</a>).</p>
+
+<hr>
+
+<h2>A ideia: a receita e a cozinha</h2>
+<p>Pense numa receita de bolo escrita de um jeito geral: "200 g de farinha, asse por 40 minutos". Ela não diz se o forno é a gás ou elétrico; cada cozinha segue a receita do seu jeito. O <code>CMakeLists.txt</code> é a receita: diz <strong>o que</strong> construir (um programa chamado <code>loja</code>, feito destes arquivos, em C23, ligado com a biblioteca de matemática). O CMake olha a "cozinha" (o sistema, o compilador instalado) e escreve as instruções concretas: no Linux, um Makefile com os comandos <code>gcc</code> certos.</p>
+
+<p>Por isso o trabalho tem <strong>duas etapas</strong>:</p>
+<ol class="passo">
+  <li><strong>Configurar</strong> (<code>cmake -B build</code>): o CMake lê a receita, procura o compilador e gera os arquivos de compilação numa pasta separada, a <code>build</code>.</li>
+  <li><strong>Compilar</strong> (<code>cmake --build build</code>): o CMake chama a ferramenta gerada (o <code>make</code>, por padrão), que chama o <code>gcc</code>.</li>
+</ol>
+
+<hr>
+
+<h2>1. O <code>CMakeLists.txt</code> mínimo</h2>
+<p>Comece com o menor projeto possível: uma pasta <code>~/c/cmake/ola</code> com dois arquivos.</p>
+
+<pre class="file" data-file="ola.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, CMake!\n");
+    return 0;
+}
+</pre>
+
+<pre class="file" data-file="CMakeLists.txt">cmake_minimum_required(VERSION 3.20)
+project(ola C)
+
+set(CMAKE_C_STANDARD 23)
+
+add_executable(ola ola.c)
+</pre>
+
+<dl class="anatomy">
+  <dt>CMakeLists.txt</dt><dd>O nome do arquivo é obrigatório, exatamente assim, com <strong>C</strong>, <strong>M</strong> e <strong>L</strong> maiúsculos. Ele fica na pasta principal do projeto.</dd>
+  <dt>cmake_minimum_required(VERSION 3.20)</dt><dd>"Versão mínima exigida do CMake": a primeira linha de todo <code>CMakeLists.txt</code>. Diz que o projeto foi escrito para o CMake 3.20 ou mais novo (de 2021), e o CMake passa a se comportar como aquela versão. Se o seu CMake for mais velho, ele para com um erro claro.</dd>
+  <dt>project(ola C)</dt><dd>Dá um nome ao projeto (<code>ola</code>) e diz a linguagem: <strong><code>C</code></strong>. Sem o <code>C</code>, o CMake procuraria também um compilador de C++, que você não precisa.</dd>
+  <dt>set(CMAKE_C_STANDARD 23)</dt><dd><code>set</code> dá valor a uma variável do CMake. <code>CMAKE_C_STANDARD</code> é a versão do C: <code>23</code> = C23 (veja <a href="versoes.html">Versões do C</a>). Outros valores: <code>99</code>, <code>11</code>, <code>17</code>.</dd>
+  <dt>add_executable(ola ola.c)</dt><dd>"Acrescente um executável": o programa vai se chamar <code>ola</code> e é feito do arquivo <code>ola.c</code>. No CMake, cada coisa que você constrói (um programa, uma biblioteca) se chama <strong>alvo</strong> (em inglês, <em>target</em>).</dd>
+</dl>
+
+<p>Os comandos do CMake têm o formato <code>comando(argumento argumento …)</code>, separados por espaço, sem vírgulas e sem ponto e vírgula. Maiúsculas e minúsculas não importam nos nomes dos comandos (<code>ADD_EXECUTABLE</code> funciona, e você vai ver isso em projetos antigos), mas importam nas variáveis (<code>CMAKE_C_STANDARD</code> tem de ser em maiúsculas). Comentários começam com <code>#</code>.</p>
+
+<hr>
+
+<h2>2. Configurar e compilar</h2>
+<h3>Configurar: <code>cmake -B build</code></h3>
+<pre class="term" data-cwd="~/c/cmake/ola">$ ls
+CMakeLists.txt
+ola.c
+$ cmake -B build
+-- The C compiler identification is GNU 15.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Configuring done (0.6s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/ana/c/cmake/ola/build</pre>
+
+<dl class="anatomy">
+  <dt>cmake -B build</dt><dd>Configura o projeto da pasta atual e põe tudo o que gerar na pasta <code>build</code> (<code>-B</code> de <em>build directory</em>, "pasta de construção"). Se ela não existe, o CMake a cria.</dd>
+  <dt>The C compiler identification is GNU 15.2.0</dt><dd>Achou o compilador de C: o gcc 15.2 (GNU é o projeto do gcc).</dd>
+  <dt>Detecting C compiler ABI info / compile features</dt><dd>Testes rápidos para descobrir o que esse compilador sabe fazer (por exemplo, se ele conhece o C23).</dd>
+  <dt>Check for working C compiler: /usr/bin/cc - skipped</dt><dd>O <code>cc</code> é o nome genérico do "compilador C do sistema"; no Ubuntu, ele é o gcc. O teste foi pulado porque o anterior já mostrou que funciona.</dd>
+  <dt>Configuring done / Generating done</dt><dd>"Configuração feita / geração feita": leu a receita e escreveu os arquivos de compilação.</dd>
+  <dt>Build files have been written to: /home/ana/c/cmake/ola/build</dt><dd>Onde eles foram parar.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/cmake/ola">$ ls build
+CMakeCache.txt
+CMakeFiles
+cmake_install.cmake
+Makefile</pre>
+
+<p>Lá está o <code>Makefile</code> que o CMake escreveu (você nunca precisa abri-lo), o <code>CMakeCache.txt</code> (as respostas que o CMake descobriu, guardadas para a próxima vez) e a pasta <code>CMakeFiles</code> (arquivos internos). Tudo o que é gerado fica dentro de <code>build</code>; a pasta do projeto continua limpa. Para recomeçar do zero, basta apagar a <code>build</code> (<code>rm -r build</code>).</p>
+
+<h3>Compilar: <code>cmake --build build</code></h3>
+<pre class="term" data-cwd="~/c/cmake/ola">$ cmake --build build
+[ 50%] Building C object CMakeFiles/ola.dir/ola.c.o
+[100%] Linking C executable ola
+[100%] Built target ola
+$ ./build/ola
+Olá, CMake!</pre>
+
+<dl class="anatomy">
+  <dt>cmake --build build</dt><dd>"Construa o que está configurado em <code>build</code>". Por baixo, o CMake chamou o <code>make</code>. Você poderia entrar na pasta e digitar <code>make</code>, mas o <code>cmake --build</code> funciona igual com qualquer gerador (seção 6).</dd>
+  <dt>[ 50%] Building C object CMakeFiles/ola.dir/ola.c.o</dt><dd>Compilou o <code>ola.c</code> para um arquivo-objeto <code>.o</code> (veja <a href="como-funciona.html">Como o C Vira Programa</a>). A porcentagem é o progresso.</dd>
+  <dt>[100%] Linking C executable ola</dt><dd>Ligou os objetos e criou o executável.</dd>
+  <dt>Built target ola</dt><dd>"Alvo <code>ola</code> construído."</dd>
+  <dt>./build/ola</dt><dd>O executável fica <strong>dentro da pasta <code>build</code></strong>.</dd>
+</dl>
+
+<p>Rodar de novo, sem mudar nada, não recompila: o CMake, como o <code>make</code>, sabe que o executável está em dia.</p>
+<pre class="term" data-cwd="~/c/cmake/ola">$ cmake --build build
+[100%] Built target ola</pre>
+
+<h3>Ver os comandos de verdade: <code>-v</code></h3>
+<p>Quer saber qual <code>gcc</code> o CMake chamou? A opção <code>-v</code> (<em>verbose</em>, "falante") mostra os comandos. O arquivo foi tocado com <code>touch</code> para forçar a recompilação (e as linhas foram filtradas com <code>grep</code>, porque o <code>-v</code> mostra muita coisa):</p>
+<pre class="term" data-cwd="~/c/cmake/ola">$ touch ola.c
+$ cmake --build build -v 2&gt;&amp;1 | grep -E "cc |Building|Linking"
+[ 50%] Building C object CMakeFiles/ola.dir/ola.c.o
+/usr/bin/cc   -std=gnu2x -MD -MT CMakeFiles/ola.dir/ola.c.o -MF CMakeFiles/ola.dir/ola.c.o.d -o CMakeFiles/ola.dir/ola.c.o -c /home/ana/c/cmake/ola/ola.c
+[100%] Linking C executable ola
+/usr/bin/cc -Wl,--dependency-file=CMakeFiles/ola.dir/link.d CMakeFiles/ola.dir/ola.c.o -o ola</pre>
+
+<p>Duas surpresas: o <code>CMAKE_C_STANDARD 23</code> virou <code>-std=gnu2x</code>, e <strong>não há <code>-Wall -Wextra</code></strong>. O <code>gnu2x</code> é o nome antigo do C23 com as extensões do GNU (<code>c2x</code> era o apelido do C23 antes de ele ficar pronto, e o gcc 15 aceita os dois nomes). E os avisos, o CMake não liga sozinho: isso é com você (seção 3). As opções <code>-MD -MT … -MF …</code> pedem ao gcc uma lista dos <code>.h</code> que cada <code>.c</code> inclui, para o CMake saber o que recompilar quando um <code>.h</code> muda.</p>
+
+<hr>
+
+<h2>3. A lojinha com vários arquivos</h2>
+<p>Agora um projeto de verdade, em <code>~/c/cmake/loja</code>: o <code>main.c</code> usa funções de <code>estoque.c</code>, declaradas em <code>estoque.h</code> (veja <a href="headers.html">Arquivos .h e .c</a> e <a href="multiplos-arquivos.html">Vários Arquivos</a>). Uma delas usa <code>round</code>, da <code>math.h</code> (veja <a href="matematica.html">Matemática</a>):</p>
+
+<pre class="file" data-file="estoque.h">#ifndef ESTOQUE_H
+#define ESTOQUE_H
+
+double total_com_desconto(double preco, int quantidade, double desconto);
+double arredondar(double valor);
+
+#endif
+</pre>
+
+<pre class="file" data-file="estoque.c">#include &lt;math.h&gt;
+#include "estoque.h"
+
+double total_com_desconto(double preco, int quantidade, double desconto) {
+    double total = preco * quantidade;
+    return total - total * desconto / 100.0;
+}
+
+double arredondar(double valor) {
+    return round(valor * 100.0) / 100.0;
+}
+</pre>
+
+<pre class="file" data-file="main.c">#include &lt;stdio.h&gt;
+#include "estoque.h"
+
+int main(void) {
+    double total = total_com_desconto(3.33, 7, 15.0);
+    printf("Total: R$ %.4f\n", total);
+    printf("Arredondado: R$ %.2f\n", arredondar(total));
+    return 0;
+}
+</pre>
+
+<p>No <code>add_executable</code>, liste <strong>todos os <code>.c</code></strong> do programa (os <code>.h</code> não precisam: eles entram pelo <code>#include</code>):</p>
+
+<pre class="file" data-file="CMakeLists.txt">cmake_minimum_required(VERSION 3.20)
+project(loja C)
+
+set(CMAKE_C_STANDARD 23)
+
+add_executable(loja main.c estoque.c)
+</pre>
+
+<pre class="term" data-cwd="~/c/cmake/loja">$ cmake -B build
+«… as mesmas linhas de antes …»
+-- Build files have been written to: /home/ana/c/cmake/loja/build
+$ cmake --build build
+[ 33%] Building C object CMakeFiles/loja.dir/main.c.o
+[ 66%] Building C object CMakeFiles/loja.dir/estoque.c.o
+[100%] Linking C executable loja
+/usr/bin/x86_64-linux-gnu-ld.bfd: CMakeFiles/loja.dir/estoque.c.o: na função "arredondar":
+estoque.c:(.text+0x7e): referência não definida para "round"
+collect2: error: ld returned 1 exit status
+gmake[2]: *** [CMakeFiles/loja.dir/build.make:117: loja] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:87: CMakeFiles/loja.dir/all] Error 2
+gmake: *** [Makefile:91: all] Error 2</pre>
+
+<p>Os dois <code>.c</code> compilaram, mas a ligação falhou: "referência não definida para <code>round</code>" (em inglês, <code>undefined reference to 'round'</code>). No Linux, as funções da <code>math.h</code> moram numa biblioteca separada, a <strong><code>libm</code></strong> (de <em>math</em>), que o gcc não liga sozinho. Na linha de comando, seria o <code>-lm</code>. As três linhas <code>gmake… Error</code> são o <code>make</code> avisando que desistiu (<code>gmake</code> é o nome do GNU make).</p>
+
+<h3>A biblioteca e os avisos: <code>target_link_libraries</code> e <code>target_compile_options</code></h3>
+<p>A versão completa do <code>CMakeLists.txt</code> da lojinha, com a biblioteca, os avisos e o C23 "puro":</p>
+
+<pre class="file" data-file="CMakeLists.txt">cmake_minimum_required(VERSION 3.20)
+project(loja C)
+
+set(CMAKE_C_STANDARD 23)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
+
+add_executable(loja main.c estoque.c)
+target_compile_options(loja PRIVATE -Wall -Wextra)
+target_link_libraries(loja PRIVATE m)
+</pre>
+
+<dl class="anatomy">
+  <dt>set(CMAKE_C_STANDARD_REQUIRED ON)</dt><dd>"O padrão é obrigatório": se o compilador não souber C23, o CMake para com um erro, em vez de usar uma versão mais velha sem avisar.</dd>
+  <dt>set(CMAKE_C_EXTENSIONS OFF)</dt><dd>"Sem extensões": pede o C23 do padrão (<code>-std=c2x</code>) em vez do C23 com extensões do GNU (<code>-std=gnu2x</code>). Assim o código fica mais fácil de compilar em outros compiladores.</dd>
+  <dt>target_compile_options(loja PRIVATE -Wall -Wextra)</dt><dd>"Opções de compilação do alvo <code>loja</code>": acrescenta <code>-Wall -Wextra</code> a cada <code>gcc</code> que compila um <code>.c</code> dele (veja <a href="avisos.html">Avisos</a>).</dd>
+  <dt>target_link_libraries(loja PRIVATE m)</dt><dd>"Bibliotecas para ligar ao alvo <code>loja</code>": a <code>m</code>, que vira <code>-lm</code> na ligação. Escreva o nome sem o <code>lib</code> e sem o <code>-l</code> (veja <a href="bibliotecas.html">Bibliotecas</a>).</dd>
+  <dt>PRIVATE</dt><dd>"Só para este alvo". Faz diferença quando um alvo é uma biblioteca usada por outros (aí existem também <code>PUBLIC</code> e <code>INTERFACE</code>); para um programa, use <code>PRIVATE</code>.</dd>
+</dl>
+
+<p>Repare na ordem: os comandos <code>target_…</code> vêm <strong>depois</strong> do <code>add_executable</code>, porque precisam que o alvo já exista. Agora compila, e o <code>-v</code> mostra as opções novas:</p>
+
+<pre class="term" data-cwd="~/c/cmake/loja">$ cmake --build build
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/ana/c/cmake/loja/build
+[ 33%] Building C object CMakeFiles/loja.dir/estoque.c.o
+[ 66%] Building C object CMakeFiles/loja.dir/main.c.o
+[100%] Linking C executable loja
+[100%] Built target loja
+$ ./build/loja
+Total: R$ 19.8135
+Arredondado: R$ 19.81
+$ touch estoque.c
+$ cmake --build build -v 2&gt;&amp;1 | grep -E "cc |Building|Linking"
+[ 33%] Building C object CMakeFiles/loja.dir/estoque.c.o
+/usr/bin/cc   -std=c2x -Wall -Wextra -MD -MT CMakeFiles/loja.dir/estoque.c.o -MF CMakeFiles/loja.dir/estoque.c.o.d -o CMakeFiles/loja.dir/estoque.c.o -c /home/ana/c/cmake/loja/estoque.c
+[ 66%] Linking C executable loja
+/usr/bin/cc -Wl,--dependency-file=CMakeFiles/loja.dir/link.d CMakeFiles/loja.dir/main.c.o CMakeFiles/loja.dir/estoque.c.o -o loja  -lm</pre>
+
+<dl class="anatomy">
+  <dt>-- Configuring done …</dt><dd>Você mudou o <code>CMakeLists.txt</code> e <strong>não</strong> precisou rodar o <code>cmake -B build</code> de novo: o <code>cmake --build</code> percebeu e reconfigurou sozinho.</dd>
+  <dt>-std=c2x -Wall -Wextra</dt><dd>O C23 sem extensões e os avisos, em cada compilação.</dd>
+  <dt>… -o loja -lm</dt><dd>A biblioteca de matemática, na ligação.</dd>
+  <dt>só o estoque.c</dt><dd>Depois do <code>touch estoque.c</code>, só ele foi recompilado; o <code>main.c.o</code> antigo foi reaproveitado. Em projetos grandes, isso economiza minutos.</dd>
+</dl>
+
+<hr>
+
+<h2>4. Acrescentar um arquivo</h2>
+<p>A Ana quer cobrar frete: R$ 8,90 para compras abaixo de R$ 50,00; acima disso, grátis. Ela cria <code>frete.h</code> e <code>frete.c</code>, e muda o <code>main.c</code>:</p>
+
+<pre class="file" data-file="frete.c">#include "frete.h"
+
+double frete(double total) {
+    if (total &gt;= 50.0) {
+        return 0.0;
+    }
+    return 8.90;
+}
+</pre>
+
+<p>No <code>CMakeLists.txt</code>, só uma linha muda: o arquivo novo entra no <code>add_executable</code>.</p>
+<pre class="file" data-file="CMakeLists.txt">add_executable(loja main.c estoque.c frete.c)</pre>
+
+<pre class="term" data-cwd="~/c/cmake/loja">$ cmake --build build
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/ana/c/cmake/loja/build
+[ 25%] Building C object CMakeFiles/loja.dir/main.c.o
+[ 50%] Building C object CMakeFiles/loja.dir/frete.c.o
+[ 75%] Linking C executable loja
+[100%] Built target loja
+$ ./build/loja
+Total: R$ 19.81
+Frete: R$ 8.90
+Total final: R$ 28.71</pre>
+
+<p>Recompilou o <code>main.c</code> (que mudou) e o <code>frete.c</code> (novo); o <code>estoque.c</code> foi reaproveitado. Se ela esquecesse o <code>frete.c</code> no <code>add_executable</code>, a ligação falharia com <code>referência não definida para "frete"</code> (veja "Quando dá errado").</p>
+
+<div class="tryc" data-goal="out:Frete: R$ 0.00,out:Total final: R$ 59.50,exit:0">
+<p class="try-task"><strong>Missão:</strong> no editor, os três <code>.c</code> das abas são compilados juntos, como se estivessem todos no <code>add_executable</code> (e a <code>math.h</code> não precisa do <code>m</code>). Mude o <code>main.c</code> para a compra ser de <strong>17 unidades a R$ 3,50, sem desconto</strong>: <code>total_com_desconto(3.50, 17, 0.0)</code>. Como 17 × 3,50 = 59,50 passa de R$ 50,00, a função de <code>frete.c</code> deve devolver frete grátis: a saída precisa ter <code>Frete: R$ 0.00</code> e <code>Total final: R$ 59.50</code>.</p>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "estoque.h"
+#include "frete.h"
+
+int main(void) {
+    double total = arredondar(total_com_desconto(3.33, 7, 15.0));
+    double f = frete(total);
+    printf("Total: R$ %.2f\n", total);
+    printf("Frete: R$ %.2f\n", f);
+    printf("Total final: R$ %.2f\n", total + f);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="estoque.c">#include &lt;math.h&gt;
+#include "estoque.h"
+
+double total_com_desconto(double preco, int quantidade, double desconto) {
+    double total = preco * quantidade;
+    return total - total * desconto / 100.0;
+}
+
+double arredondar(double valor) {
+    return round(valor * 100.0) / 100.0;
+}
+</pre>
+<pre class="script" data-file="estoque.h">#ifndef ESTOQUE_H
+#define ESTOQUE_H
+
+double total_com_desconto(double preco, int quantidade, double desconto);
+double arredondar(double valor);
+
+#endif
+</pre>
+<pre class="script" data-file="frete.c">#include "frete.h"
+
+double frete(double total) {
+    if (total &gt;= 50.0) {
+        return 0.0;
+    }
+    return 8.90;
+}
+</pre>
+<pre class="script" data-file="frete.h">#ifndef FRETE_H
+#define FRETE_H
+
+double frete(double total);
+
+#endif
+</pre>
+<pre class="solucao" data-file="main.c">#include &lt;stdio.h&gt;
+#include "estoque.h"
+#include "frete.h"
+
+int main(void) {
+    double total = arredondar(total_com_desconto(3.50, 17, 0.0));
+    double f = frete(total);
+    printf("Total: R$ %.2f\n", total);
+    printf("Frete: R$ %.2f\n", f);
+    printf("Total final: R$ %.2f\n", total + f);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Debug e Release</h2>
+<p>Um mesmo projeto costuma ser compilado de dois jeitos: para <strong>depurar</strong> (com <code>-g</code>, sem otimização, para o <a href="depuracao-gdb.html">gdb</a>) e para <strong>entregar</strong> (otimizado). No CMake, isso é o <strong>tipo de build</strong>, escolhido na configuração com <code>-DCMAKE_BUILD_TYPE=…</code> (<code>-D</code> dá valor a uma variável pela linha de comando). Cada tipo numa pasta própria:</p>
+
+<pre class="term" data-cwd="~/c/cmake/loja">$ cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug &gt; /dev/null
+$ cmake --build build-debug -v 2&gt;&amp;1 | grep -E "^/usr/bin/cc .*main"
+/usr/bin/cc   -g -std=c2x -Wall -Wextra -MD -MT CMakeFiles/loja.dir/main.c.o -MF CMakeFiles/loja.dir/main.c.o.d -o CMakeFiles/loja.dir/main.c.o -c /home/ana/c/cmake/loja/main.c
+/usr/bin/cc -g -Wl,--dependency-file=CMakeFiles/loja.dir/link.d CMakeFiles/loja.dir/main.c.o CMakeFiles/loja.dir/estoque.c.o -o loja  -lm
+$ cmake -B build-rel -DCMAKE_BUILD_TYPE=Release &gt; /dev/null
+$ cmake --build build-rel -v 2&gt;&amp;1 | grep -E "^/usr/bin/cc .*main"
+/usr/bin/cc   -O3 -DNDEBUG -std=c2x -Wall -Wextra -MD -MT CMakeFiles/loja.dir/main.c.o -MF CMakeFiles/loja.dir/main.c.o.d -o CMakeFiles/loja.dir/main.c.o -c /home/ana/c/cmake/loja/main.c
+/usr/bin/cc -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/loja.dir/link.d CMakeFiles/loja.dir/main.c.o CMakeFiles/loja.dir/estoque.c.o -o loja  -lm</pre>
+
+<p>(Esta sessão foi feita antes do <code>frete.c</code> existir; por isso ele não aparece.)</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th><code>CMAKE_BUILD_TYPE</code></th><th>Opções do gcc</th><th>Para quê</th></tr>
+<tr><td>(nenhum)</td><td>nenhuma</td><td>O padrão: nem otimizado, nem com <code>-g</code>.</td></tr>
+<tr><td><code>Debug</code></td><td><code>-g</code></td><td>Depurar com o gdb, rodar com o <a href="valgrind.html">Valgrind</a>.</td></tr>
+<tr><td><code>Release</code></td><td><code>-O3 -DNDEBUG</code></td><td>A versão final: otimizada e com os <code>assert</code> desligados (veja <a href="testes.html">Testes</a>).</td></tr>
+<tr><td><code>RelWithDebInfo</code></td><td><code>-O2 -g -DNDEBUG</code></td><td>Otimizada, mas com informações de depuração.</td></tr>
+<tr><td><code>MinSizeRel</code></td><td><code>-Os -DNDEBUG</code></td><td>Otimizada para ficar pequena.</td></tr>
+</table>
+</div>
+
+<p>Uma terceira pasta, com os <a href="sanitizers.html">sanitizers</a>, usa a variável <code>CMAKE_C_FLAGS</code> (opções extras para todo <code>gcc</code>):</p>
+<pre class="term" data-cwd="~/c/cmake/loja">$ cmake -B build-san -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-fsanitize=address,undefined" &gt; /dev/null
+$ cmake --build build-san -v 2&gt;&amp;1 | grep -E "^/usr/bin/cc"
+/usr/bin/cc   -fsanitize=address,undefined -g -std=c2x -Wall -Wextra -MD -MT CMakeFiles/loja.dir/main.c.o -MF CMakeFiles/loja.dir/main.c.o.d -o CMakeFiles/loja.dir/main.c.o -c /home/ana/c/cmake/loja/main.c
+«… o mesmo para estoque.c …»
+/usr/bin/cc -fsanitize=address,undefined -g -Wl,--dependency-file=CMakeFiles/loja.dir/link.d CMakeFiles/loja.dir/main.c.o CMakeFiles/loja.dir/estoque.c.o -o loja  -lm
+$ ./build-san/loja
+Total: R$ 19.8135
+Arredondado: R$ 19.81</pre>
+<p>Repare que o <code>-fsanitize</code> foi também para a <strong>ligação</strong>, como a aula de sanitizers exige. Cada pasta <code>build-…</code> é independente: dá para ter as três ao mesmo tempo.</p>
+
+<hr>
+
+<h2>6. Ninja e outros geradores</h2>
+<p>O CMake não compila nada sozinho: ele <strong>gera</strong> os arquivos para outra ferramenta. Essa ferramenta é o <strong>gerador</strong>. No Linux, o padrão é o <code>make</code> ("Unix Makefiles"). Outro muito usado é o <strong>Ninja</strong>, feito para ser rápido. Escolha com <code>-G</code>:</p>
+
+<pre class="term" data-cwd="~/c/cmake/loja">$ cmake -G Ninja -B build-ninja
+-- The C compiler identification is GNU 15.2.0
+«… as mesmas linhas …»
+-- Build files have been written to: /home/ana/c/cmake/loja/build-ninja
+$ cmake --build build-ninja
+[1/3] Building C object CMakeFiles/loja.dir/main.c.o
+[2/3] Building C object CMakeFiles/loja.dir/estoque.c.o
+[3/3] Linking C executable loja</pre>
+
+<p>O <code>CMakeLists.txt</code> é o mesmo; só a saída muda (o Ninja conta as etapas, <code>[1/3]</code>, em vez de porcentagem). No Windows, o CMake gera projetos do Visual Studio; no macOS, do Xcode. É isso que a "receita única" quer dizer.</p>
+
+<hr>
+
+<h2>Formas diferentes de compilar e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Bom para</th><th>Limite</th></tr>
+<tr><td><code>gcc</code> na mão</td><td>Um arquivo, um teste rápido, as aulas deste guia.</td><td>Com muitos arquivos, você recompila tudo e esquece opções.</td></tr>
+<tr><td><a href="make.html">Makefile</a></td><td>Projetos pequenos e médios no Linux; entender como a compilação funciona.</td><td>Você escreve cada regra; não funciona no Visual Studio; as dependências dos <code>.h</code> dão trabalho.</td></tr>
+<tr><td>CMake</td><td>Projetos que crescem, que outras pessoas vão compilar, que precisam rodar em Linux, Windows e macOS. As IDEs (VS Code, CLion, Visual Studio, Qt Creator) abrem um <code>CMakeLists.txt</code> direto.</td><td>Mais uma linguagem para aprender; para um arquivo só, é exagero.</td></tr>
+<tr><td>Meson, Bazel, xmake…</td><td>Alternativas mais novas ao CMake.</td><td>Menos comuns em projetos C.</td></tr>
+</table>
+</div>
+<p><strong>Qual usar:</strong> para aprender, o <code>gcc</code> na mão e depois o Makefile, para entender cada etapa. Quando o projeto passar de uns poucos arquivos, ou quando outra pessoa (ou outra máquina) precisar compilá-lo, use o CMake.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>does not appear to contain CMakeLists.txt</code></strong>
+<pre class="term" data-cwd="~/c/cmake">$ cmake -B build
+CMake Error: The source directory "/home/ana/c/cmake" does not appear to contain CMakeLists.txt.
+Specify --help for usage, or press the help button on the CMake GUI.</pre>
+<p><strong>O que aconteceu:</strong> você está na pasta errada ("a pasta não parece conter um CMakeLists.txt"), ou o arquivo tem outro nome (<code>cmakelists.txt</code>, <code>CMakeList.txt</code>).</p>
+<p><strong>Como resolver:</strong> entre na pasta do projeto (<code>cd loja</code>) e confira o nome exato do arquivo com <code>ls</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Unknown CMake command</code></strong>
+<pre class="term" data-cwd="~/c/cmake/e1">$ cmake -B build
+«…»
+CMake Error at CMakeLists.txt:6 (add_executabel):
+  Unknown CMake command "add_executabel".
+
+
+-- Configuring incomplete, errors occurred!</pre>
+<p><strong>O que aconteceu:</strong> erro de digitação no nome de um comando ("comando do CMake desconhecido"), na linha 6.</p>
+<p><strong>Como resolver:</strong> corrija para <code>add_executable</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Cannot find source file</code></strong>
+<pre class="term" data-cwd="~/c/cmake/e2">$ cmake -B build
+«…»
+CMake Error at CMakeLists.txt:6 (add_executable):
+  Cannot find source file:
+
+    estoqe.c
+
+
+CMake Error at CMakeLists.txt:6 (add_executable):
+  No SOURCES given to target: loja
+
+
+CMake Generate step failed.  Build files cannot be regenerated correctly.</pre>
+<p><strong>O que aconteceu:</strong> um arquivo listado no <code>add_executable</code> não existe ("não acho o arquivo-fonte"): aqui, <code>estoqe.c</code> em vez de <code>estoque.c</code>. O segundo erro ("nenhum arquivo dado ao alvo") é consequência do primeiro.</p>
+<p><strong>Como resolver:</strong> corrija o nome. Os caminhos são relativos à pasta do <code>CMakeLists.txt</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu um <code>.c</code> no <code>add_executable</code>: <code>referência não definida</code></strong>
+<pre class="term" data-cwd="~/c/cmake/e3">$ cmake --build build
+«…»
+[100%] Linking C executable loja
+/usr/bin/x86_64-linux-gnu-ld.bfd: CMakeFiles/loja.dir/main.c.o: na função "main":
+main.c:(.text+0x2a): referência não definida para "total_com_desconto"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x5e): referência não definida para "arredondar"
+collect2: error: ld returned 1 exit status
+«… as linhas gmake … Error …»</pre>
+<p><strong>O que aconteceu:</strong> o <code>CMakeLists.txt</code> tinha só <code>add_executable(loja main.c)</code>. O <code>main.c</code> compilou (o <code>estoque.h</code> declara as funções), mas ninguém compilou o <code>estoque.c</code>, onde elas estão.</p>
+<p><strong>Como resolver:</strong> liste todos os <code>.c</code>: <code>add_executable(loja main.c estoque.c)</code>. Se o nome que falta for <code>round</code>, <code>sqrt</code>, <code>pow</code>…, o que falta é o <code>target_link_libraries(loja PRIVATE m)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Compatibility with CMake &lt; 3.5 has been removed from CMake.</code></strong>
+<pre class="term" data-cwd="~/c/cmake/e4">$ cmake -B build
+CMake Error at CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake &lt; 3.5 has been removed from CMake.
+
+  Update the VERSION argument &lt;min&gt; value.  Or, use the &lt;min&gt;...&lt;max&gt; syntax
+  to tell CMake that the project requires at least &lt;min&gt; but has been updated
+  to work with policies introduced by &lt;max&gt; or earlier.
+
+  Or, add -DCMAKE_POLICY_VERSION_MINIMUM=3.5 to try configuring anyway.
+
+
+-- Configuring incomplete, errors occurred!</pre>
+<p><strong>O que aconteceu:</strong> o projeto tem <code>cmake_minimum_required(VERSION 2.8)</code>, comum em tutoriais e projetos antigos. O CMake 4 não sabe mais se comportar como versões anteriores à 3.5.</p>
+<p><strong>Como resolver:</strong> no seu projeto, suba a versão (<code>VERSION 3.20</code>). Num projeto de outra pessoa que você só quer compilar, a própria mensagem dá o atalho: <code>cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>cmake_minimum_required() should be called prior to this top-level project() call</code></strong>
+<p><strong>O que aconteceu:</strong> faltou a linha <code>cmake_minimum_required</code> (ou ela veio depois do <code>project</code>). É só um aviso (<code>CMake Warning (dev)</code>, "aviso para desenvolvedores"): o projeto ainda compila.</p>
+<p><strong>Como resolver:</strong> ponha <code>cmake_minimum_required(VERSION 3.20)</code> como primeira linha.</p>
+</div>
+
+<div class="cenario">
+<strong><code>cmake --build</code> sem ter configurado</strong>
+<pre class="term" data-cwd="~/c/cmake/ola">$ cmake --build b2
+Error: /home/ana/c/cmake/ola/b2 is not a directory</pre>
+<p><strong>O que aconteceu:</strong> a pasta <code>b2</code> não existe: o <code>cmake -B b2</code> nunca foi rodado (ou você errou o nome). Se a configuração falhou no meio, a mensagem é outra, como <code>gmake: Makefile: Arquivo ou diretório inexistente</code>.</p>
+<p><strong>Como resolver:</strong> rode <code>cmake -B build</code> primeiro e conserte os erros que ele mostrar; depois, <code>cmake --build build</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No terminal</th><th>O que faz</th></tr>
+<tr><td><code>cmake -B build</code></td><td>Configura o projeto da pasta atual na pasta <code>build</code>.</td></tr>
+<tr><td><code>cmake -B build -DCMAKE_BUILD_TYPE=Debug</code></td><td>Configura com <code>-g</code> (ou <code>Release</code>: <code>-O3 -DNDEBUG</code>).</td></tr>
+<tr><td><code>cmake -G Ninja -B build</code></td><td>Usa o Ninja em vez do <code>make</code>.</td></tr>
+<tr><td><code>cmake --build build</code></td><td>Compila o que mudou.</td></tr>
+<tr><td><code>cmake --build build -v</code></td><td>Compila mostrando os comandos.</td></tr>
+<tr><td><code>cmake --build build --clean-first</code></td><td>Apaga os <code>.o</code> e recompila tudo.</td></tr>
+<tr><td><code>rm -r build</code></td><td>Recomeça do zero.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No <code>CMakeLists.txt</code></th><th>O que faz</th></tr>
+<tr><td><code>cmake_minimum_required(VERSION 3.20)</code></td><td>Versão mínima do CMake (primeira linha).</td></tr>
+<tr><td><code>project(nome C)</code></td><td>Nome do projeto e linguagem.</td></tr>
+<tr><td><code>set(CMAKE_C_STANDARD 23)</code></td><td>Versão do C (<code>99</code>, <code>11</code>, <code>17</code>, <code>23</code>).</td></tr>
+<tr><td><code>set(CMAKE_C_STANDARD_REQUIRED ON)</code></td><td>Exige essa versão.</td></tr>
+<tr><td><code>set(CMAKE_C_EXTENSIONS OFF)</code></td><td><code>-std=c2x</code> em vez de <code>-std=gnu2x</code>.</td></tr>
+<tr><td><code>add_executable(prog a.c b.c)</code></td><td>Cria o alvo <code>prog</code> com esses arquivos.</td></tr>
+<tr><td><code>target_compile_options(prog PRIVATE -Wall -Wextra)</code></td><td>Opções de compilação do alvo.</td></tr>
+<tr><td><code>target_link_libraries(prog PRIVATE m)</code></td><td>Liga bibliotecas (<code>m</code> = <code>-lm</code>).</td></tr>
+<tr><td><code># texto</code></td><td>Comentário.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Configurar</h3>
+<p>Complete o comando que configura o projeto na pasta <code>build</code>:</p>
+<div class="ex-code">cmake <input data-answer="-B build|-B build ." aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Compilar</h3>
+<p>Complete o comando que compila o projeto já configurado em <code>build</code>:</p>
+<div class="ex-code">cmake <input data-answer="--build build" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>3. A biblioteca de matemática</h3>
+<p>O programa <code>calc</code> usa <code>sqrt</code> e a ligação falhou com <code>referência não definida para "sqrt"</code>. Complete:</p>
+<div class="ex-code">target_link_libraries(calc PRIVATE <input data-answer="m" aria-label="biblioteca">)</div>
+</div>
+
+<div class="exercise">
+<h3>4. Três arquivos</h3>
+<p>O programa <code>jogo</code> é feito de <code>main.c</code>, <code>tabuleiro.c</code> e <code>tabuleiro.h</code>. Complete:</p>
+<div class="ex-code">add_executable(jogo <input data-answer="main.c tabuleiro.c|tabuleiro.c main.c" aria-label="arquivos">)</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Você mudou o <code>CMakeLists.txt</code> (acrescentou um arquivo). O que precisa fazer?</p>
+<label><input type="radio" name="q5"> Apagar a pasta <code>build</code> e configurar de novo, sempre.</label>
+<label><input type="radio" name="q5"> Editar o <code>Makefile</code> que está dentro de <code>build</code>.</label>
+<label><input type="radio" name="q5"> Só rodar <code>cmake --build build</code>: ele percebe a mudança e reconfigura sozinho.</label>
+<label><input type="radio" name="q5"> Nada: o executável já está atualizado.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Qual tipo de build você usa para depurar com o gdb?</p>
+<label><input type="radio" name="q6"> <code>-DCMAKE_BUILD_TYPE=Release</code></label>
+<label><input type="radio" name="q6"> <code>-DCMAKE_BUILD_TYPE=Debug</code></label>
+<label><input type="radio" name="q6"> <code>-DCMAKE_BUILD_TYPE=MinSizeRel</code></label>
+<label><input type="radio" name="q6"> <code>-G Ninja</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <code>CMakeLists.txt</code> descreve o projeto; o CMake gera os arquivos de compilação (Makefile, Ninja, Visual Studio…) para cada sistema.</li>
+  <li>Mínimo para C: <code>cmake_minimum_required(VERSION 3.20)</code>, <code>project(nome C)</code>, <code>set(CMAKE_C_STANDARD 23)</code>, <code>add_executable(prog arquivos.c…)</code>.</li>
+  <li>Dia a dia: <code>cmake -B build</code> uma vez; depois, <code>cmake --build build</code> a cada mudança. O executável fica em <code>build/</code>.</li>
+  <li>Os avisos não vêm ligados: <code>target_compile_options(prog PRIVATE -Wall -Wextra)</code>. A <code>math.h</code> precisa de <code>target_link_libraries(prog PRIVATE m)</code>.</li>
+  <li><code>-DCMAKE_BUILD_TYPE=Debug</code> para depurar, <code>Release</code> para entregar; uma pasta <code>build-…</code> para cada versão.</li>
+  <li><code>-v</code> mostra os comandos <code>gcc</code> de verdade: use para conferir o que o CMake está fazendo.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
