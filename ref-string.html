@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C string.h — tabela de todas as funções de string e memória | Guia C</title>
+<meta name="description" content="Referência do string.h em C: strlen, strcpy, strncpy, strcat, strncat, strdup, strndup, strcmp, strncmp, strcoll, strchr, strrchr, strstr, strpbrk, strspn, strcspn, strtok, memcpy, memmove, memset, memcmp, memchr, memccpy, memset_explicit e strerror, com saídas reais do gcc 15 e do editor, as diferenças entre os dois e os erros mais comuns.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">string.h</span></h1>
+
+<p class="intro">Esta é a página de consulta rápida do <code>&lt;string.h&gt;</code>, a biblioteca de funções para <strong>texto</strong> (as <code>str…</code>) e para <strong>blocos de memória</strong> (as <code>mem…</code>). Aqui estão todas, em tabelas: o que cada uma faz, o que devolve, um exemplo com a saída real e a aula onde ela é explicada. Para aprender com calma, veja as aulas <a href="strings.html">Strings</a>, <a href="funcoes-string.html">Funções de String</a> e <a href="ponteiros-strings.html">Ponteiros e Strings</a>.</p>
+
+<p>Todas as saídas foram produzidas de verdade: no <strong>gcc 15.2</strong> da máquina da Ana (Linux de 64 bits, pasta <code>~/c/ref</code>, comando <code>gcc -std=c23 -Wall -Wextra</code>) e no editor do guia (Clang em WebAssembly). Quando os dois diferem, a tabela diz.</p>
+
+<p>Atalhos: <a href="#lembrar">Antes de tudo</a> · <a href="#copiar">Tamanho, cópia e junção</a> · <a href="#comparar">Comparar</a> · <a href="#procurar">Procurar e dividir</a> · <a href="#memoria">Blocos de memória</a> · <a href="#strerror">strerror</a> · <a href="#seguras">Qual usar</a> · <a href="#diferencas">Editor × gcc</a> · <a href="#erros">Erros comuns</a> · <a href="#experimente">Experimente</a></p>
+
+<hr>
+
+<h2 id="lembrar">Antes de tudo: três regras</h2>
+<dl class="anatomy">
+  <dt>Uma string é um array de <code>char</code> que termina em <code>'\0'</code></dt><dd>Toda função <code>str…</code> anda pelo texto até achar o <code>'\0'</code> (o caractere de código zero). Sem ele, a função continua lendo a memória que vem depois. Aula: <a href="strings.html">Strings</a>.</dd>
+  <dt>Nenhuma função sabe o tamanho do seu array</dt><dd>Elas recebem só um ponteiro para o primeiro caractere (aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>). Quem garante que cabe é <strong>você</strong>. Um <code>strcpy</code> que não cabe escreve além do fim do array, sem erro nenhum na hora.</dd>
+  <dt><code>size_t</code></dt><dd>É o tipo dos tamanhos (um inteiro sem sinal). Mostre com <code>%zu</code>: <code>printf("%zu", strlen(nome))</code>. Aula: <a href="sizeof.html">sizeof</a>.</dd>
+</dl>
+
+<p>Nas tabelas, <code>d</code> é o <strong>destino</strong> (onde a função escreve), <code>o</code> é a <strong>origem</strong> (de onde ela lê), <code>s</code> é uma string e <code>n</code> é um número de bytes.</p>
+
+<h2 id="copiar">Tamanho, cópia e junção</h2>
+<pre class="file" data-file="copiar.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    char nome[20] = "Ana";
+    printf("strlen=%zu sizeof=%zu\n", strlen(nome), sizeof nome);
+    char copia[20];
+    strcpy(copia, nome);
+    printf("strcpy:  [%s]\n", copia);
+    strcat(copia, " Souza");
+    printf("strcat:  [%s]\n", copia);
+    char curto[5];
+    strncpy(curto, "Banana", sizeof curto - 1);
+    curto[sizeof curto - 1] = '\0';
+    printf("strncpy: [%s]\n", curto);
+    char frase[20] = "Oi";
+    strncat(frase, ", Ana Souza", 5);
+    printf("strncat: [%s]\n", frase);
+    char *dup = strdup("Caderno");
+    char *pedaco = strndup("Caderno", 4);
+    printf("strdup:  [%s] strndup: [%s]\n", dup, pedaco);
+    free(dup);
+    free(pedaco);
+    char destino[20] = "";
+    char *fim = memccpy(destino, "maçã;pera", ';', sizeof destino);
+    printf("memccpy: [%.*s] copiou %td bytes\n", (int)(fim - destino), destino, fim - destino);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra copiar.c -o copiar
+$ ./copiar
+strlen=3 sizeof=20
+strcpy:  [Ana]
+strcat:  [Ana Souza]
+strncpy: [Bana]
+strncat: [Oi, Ana]
+strdup:  [Caderno] strndup: [Cade]
+memccpy: [maçã;] copiou 7 bytes</pre>
+<p>No editor, este programa <strong>não compila</strong>: a biblioteca C do editor só mostra o <code>strndup</code> e o <code>memccpy</code> com um <code>#define _DEFAULT_SOURCE</code> antes dos <code>#include</code> (veja <a href="#diferencas">Editor × gcc</a>). Com essa linha, a saída é idêntica.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Devolve</th><th>Exemplo → resultado</th><th>Aula</th></tr>
+<tr><td><code>strlen(s)</code><br>"string length"</td><td>Conta os bytes até o <code>'\0'</code> (sem contar o <code>'\0'</code>).</td><td><code>size_t</code></td><td><code>strlen("Ana")</code> → <code>3</code>; <code>strlen("maçã")</code> → <code>6</code> (o <code>ç</code> e o <code>ã</code> têm 2 bytes cada)</td><td><a href="funcoes-string.html">Funções de String</a></td></tr>
+<tr><td><code>strcpy(d, o)</code><br>"string copy"</td><td>Copia <code>o</code> para <code>d</code>, com o <code>'\0'</code>. <strong>Não confere</strong> se cabe.</td><td><code>d</code></td><td><code>strcpy(copia, "Ana")</code> → <code>[Ana]</code></td><td><a href="funcoes-string.html">Funções de String</a></td></tr>
+<tr><td><code>strncpy(d, o, n)</code></td><td>Copia no máximo <code>n</code> bytes. Se <code>o</code> é mais curta, completa com <code>'\0'</code> até <code>n</code>; se é mais longa, <strong>não põe o <code>'\0'</code></strong>.</td><td><code>d</code></td><td><code>strncpy(curto, "Banana", 4)</code> + <code>curto[4] = '\0'</code> → <code>[Bana]</code></td><td><a href="seguranca.html">Segurança</a></td></tr>
+<tr><td><code>strcat(d, o)</code><br>"concatenate", juntar</td><td>Acrescenta <code>o</code> no fim de <code>d</code>. <code>d</code> já tem de ser uma string (com <code>'\0'</code>) e ter espaço.</td><td><code>d</code></td><td><code>"Ana"</code> + <code>" Souza"</code> → <code>[Ana Souza]</code></td><td><a href="funcoes-string.html">Funções de String</a></td></tr>
+<tr><td><code>strncat(d, o, n)</code></td><td>Acrescenta no máximo <code>n</code> bytes de <code>o</code> e <strong>sempre</strong> põe o <code>'\0'</code> (por isso <code>d</code> precisa de <code>strlen(d) + n + 1</code> bytes).</td><td><code>d</code></td><td><code>strncat(frase, ", Ana Souza", 5)</code> → <code>[Oi, Ana]</code></td><td><a href="funcoes-string.html">Funções de String</a></td></tr>
+<tr><td><code>strdup(s)</code> <span class="versao">C23</span></td><td>Faz uma cópia de <code>s</code> numa memória nova, reservada com <code>malloc</code>. Você dá o <code>free</code>.</td><td>a cópia, ou <code>NULL</code> se faltou memória</td><td><code>strdup("Caderno")</code> → <code>[Caderno]</code></td><td><a href="strings-dinamicas.html">Strings Dinâmicas</a></td></tr>
+<tr><td><code>strndup(s, n)</code> <span class="versao">C23</span></td><td>Como <code>strdup</code>, mas copia no máximo <code>n</code> bytes e sempre põe o <code>'\0'</code>.</td><td>a cópia, ou <code>NULL</code></td><td><code>strndup("Caderno", 4)</code> → <code>[Cade]</code></td><td><a href="strings-dinamicas.html">Strings Dinâmicas</a></td></tr>
+<tr><td><code>memccpy(d, o, c, n)</code> <span class="versao">C23</span></td><td>Copia bytes de <code>o</code> até copiar o caractere <code>c</code> (inclusive) ou até <code>n</code> bytes.</td><td>o ponteiro logo depois do <code>c</code> em <code>d</code>, ou <code>NULL</code> se não achou <code>c</code></td><td><code>memccpy(d, "maçã;pera", ';', 20)</code> → copia <code>maçã;</code> (7 bytes)</td><td><a href="funcoes-string.html">Funções de String</a></td></tr>
+</table>
+</div>
+
+<ul>
+  <li><strong><code>strlen</code> × <code>sizeof</code>:</strong> <code>strlen(nome)</code> é o tamanho do <strong>texto</strong> (3); <code>sizeof nome</code> é o tamanho do <strong>array</strong> (20). Dentro de uma função que recebeu <code>char *s</code>, <code>sizeof s</code> é o tamanho do ponteiro (8 no gcc, 4 no editor), não do array. Aula: <a href="sizeof.html">sizeof</a>.</li>
+  <li><strong><code>strlen</code> conta bytes, não letras.</strong> Em UTF-8, cada letra acentuada ocupa 2 bytes. Aula: <a href="acentos-utf8.html">Acentos e UTF-8</a>.</li>
+  <li><strong><code>strdup</code> e <code>strndup</code></strong> existem há décadas no Linux (POSIX), mas só entraram no C padrão no C23.</li>
+</ul>
+
+<h2 id="comparar">Comparar</h2>
+<pre class="file" data-file="comparar.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    printf("strcmp(\"Ana\", \"Bia\") = %d\n", strcmp("Ana", "Bia"));
+    printf("strcmp(\"Bia\", \"Ana\") = %d\n", strcmp("Bia", "Ana"));
+    printf("strcmp(\"Ana\", \"Ana\") = %d\n", strcmp("Ana", "Ana"));
+    printf("strcmp(\"ana\", \"Ana\") = %d\n", strcmp("ana", "Ana"));
+    printf("strcmp(\"Ana\", \"Ana Souza\") = %d\n", strcmp("Ana", "Ana Souza"));
+    printf("strncmp(\"Banana\", \"Bando\", 3) = %d\n", strncmp("Banana", "Bando", 3));
+    printf("strncmp(\"Banana\", \"Bando\", 4) = %d\n", strncmp("Banana", "Bando", 4));
+    int a[3] = {1, 2, 3}, b[3] = {1, 2, 4};
+    printf("memcmp(a, b, sizeof a) = %d\n", memcmp(a, b, sizeof a));
+    printf("strcoll(\"abacate\", \"Banana\") = %d\n", strcoll("abacate", "Banana"));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra comparar.c -o comparar
+$ ./comparar
+strcmp("Ana", "Bia") = -1
+strcmp("Bia", "Ana") = 1
+strcmp("Ana", "Ana") = 0
+strcmp("ana", "Ana") = 1
+strcmp("Ana", "Ana Souza") = -1
+strncmp("Banana", "Bando", 3) = 0
+strncmp("Banana", "Bando", 4) = -3                « no editor: -1
+memcmp(a, b, sizeof a) = -1
+strcoll("abacate", "Banana") = 31</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Devolve</th><th>Exemplo → resultado</th><th>Aula</th></tr>
+<tr><td><code>strcmp(a, b)</code><br>"string compare"</td><td>Compara as duas strings, letra por letra, pelo <strong>código</strong> de cada byte (tabela ASCII).</td><td><code>0</code> se iguais; <strong>negativo</strong> se <code>a</code> vem antes; <strong>positivo</strong> se vem depois</td><td><code>strcmp("Ana", "Bia")</code> → negativo; <code>strcmp("ana", "Ana")</code> → positivo (<code>'a'</code> = 97 vem depois de <code>'A'</code> = 65)</td><td><a href="funcoes-string.html">Funções de String</a></td></tr>
+<tr><td><code>strncmp(a, b, n)</code></td><td>Como <code>strcmp</code>, mas olha só os <code>n</code> primeiros bytes.</td><td>idem</td><td><code>strncmp("Banana", "Bando", 3)</code> → <code>0</code> (<code>Ban</code> = <code>Ban</code>)</td><td><a href="funcoes-string.html">Funções de String</a></td></tr>
+<tr><td><code>memcmp(a, b, n)</code></td><td>Compara <code>n</code> bytes de dois blocos quaisquer (não para no <code>'\0'</code>).</td><td>idem</td><td>dois arrays <code>{1,2,3}</code> e <code>{1,2,4}</code> → negativo</td><td><a href="arrays.html">Arrays</a></td></tr>
+<tr><td><code>strcoll(a, b)</code><br>"collate", ordenar</td><td>Compara seguindo as regras do idioma escolhido com <code>setlocale</code>. Sem <code>setlocale</code>, é igual ao <code>strcmp</code>.</td><td>idem</td><td><code>strcoll("abacate", "Banana")</code> → positivo (sem <code>setlocale</code>, minúscula vem depois)</td><td><a href="acentos-utf8.html">Acentos e UTF-8</a></td></tr>
+<tr><td><code>strxfrm(d, o, n)</code></td><td>Transforma <code>o</code> numa string que, comparada com <code>strcmp</code>, dá o mesmo resultado do <code>strcoll</code>. Raro.</td><td>o tamanho que a transformação precisa</td><td>(útil para ordenar muitas vezes a mesma lista)</td><td><a href="ordenacao.html">Ordenação</a></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Teste o sinal, nunca o número</strong>
+<p>O C só garante o <strong>sinal</strong> do resultado. O número em si muda de biblioteca para biblioteca: <code>strncmp("Banana", "Bando", 4)</code> deu <code>-3</code> no gcc (<code>'a'</code> − <code>'d'</code>) e <code>-1</code> no editor. Escreva <code>if (strcmp(a, b) &lt; 0)</code>, nunca <code>if (strcmp(a, b) == -1)</code>. E, para saber se são iguais, <code>strcmp(a, b) == 0</code>; o <code>==</code> entre duas strings compara endereços (veja <a href="#erros">Erros comuns</a>).</p>
+</div>
+
+<h2 id="procurar">Procurar e dividir</h2>
+<pre class="file" data-file="procurar.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *email = "ana.souza@exemplo.com";
+    const char *arroba = strchr(email, '@');
+    printf("strchr:  [%s] posição %td\n", arroba, arroba - email);
+    printf("strrchr: [%s]\n", strrchr(email, '.'));
+    printf("strstr:  [%s]\n", strstr(email, "souza"));
+    printf("strchr não achou: %s\n", strchr(email, '#') == NULL ? "NULL" : "achou");
+    printf("strpbrk: [%s]\n", strpbrk("R$ 12,90", "0123456789"));
+    printf("strspn:  %zu\n", strspn("2026-10-17", "0123456789"));
+    printf("strcspn: %zu\n", strcspn("Ana\n", "\n"));
+    char linha[] = "Ana\n";
+    linha[strcspn(linha, "\n")] = '\0';
+    printf("sem Enter: [%s]\n", linha);
+    char *p = memchr("abc\0def", 'e', 7);
+    printf("memchr:  [%s]\n", p);
+    char lista[] = "arroz,feijão,,café";
+    for (char *item = strtok(lista, ","); item != NULL; item = strtok(NULL, ",")) {
+        printf("strtok:  [%s]\n", item);
+    }
+    printf("depois do strtok: [%s]\n", lista);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra procurar.c -o procurar
+$ ./procurar
+strchr:  [@exemplo.com] posição 9
+strrchr: [.com]
+strstr:  [souza@exemplo.com]
+strchr não achou: NULL
+strpbrk: [12,90]
+strspn:  4
+strcspn: 3
+sem Enter: [Ana]
+memchr:  [ef]
+strtok:  [arroz]
+strtok:  [feijão]
+strtok:  [café]
+depois do strtok: [arroz]</pre>
+<p>A saída do editor é idêntica.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Devolve</th><th>Exemplo → resultado</th><th>Aula</th></tr>
+<tr><td><code>strchr(s, c)</code><br>"string character"</td><td>Procura a <strong>primeira</strong> vez que o caractere <code>c</code> aparece.</td><td>ponteiro para ele, ou <code>NULL</code></td><td><code>strchr(email, '@')</code> → <code>@exemplo.com</code>; a posição é <code>p - email</code> = <code>9</code></td><td><a href="ponteiros-strings.html">Ponteiros e Strings</a></td></tr>
+<tr><td><code>strrchr(s, c)</code><br>"reverse"</td><td>Procura a <strong>última</strong> vez.</td><td>ponteiro, ou <code>NULL</code></td><td><code>strrchr(email, '.')</code> → <code>.com</code></td><td><a href="ponteiros-strings.html">Ponteiros e Strings</a></td></tr>
+<tr><td><code>strstr(s, t)</code><br>"string in string"</td><td>Procura o <strong>texto</strong> <code>t</code> dentro de <code>s</code>.</td><td>ponteiro para o começo do achado, ou <code>NULL</code></td><td><code>strstr(email, "souza")</code> → <code>souza@exemplo.com</code></td><td><a href="funcoes-string.html">Funções de String</a></td></tr>
+<tr><td><code>strpbrk(s, lista)</code><br>"pointer break"</td><td>Procura o primeiro caractere de <code>s</code> que esteja na <code>lista</code>.</td><td>ponteiro, ou <code>NULL</code></td><td><code>strpbrk("R$ 12,90", "0123456789")</code> → <code>12,90</code></td><td><a href="funcoes-string.html">Funções de String</a></td></tr>
+<tr><td><code>strspn(s, lista)</code><br>"span", extensão</td><td>Conta quantos caracteres do começo de <code>s</code> <strong>estão</strong> na <code>lista</code>.</td><td><code>size_t</code></td><td><code>strspn("2026-10-17", "0123456789")</code> → <code>4</code></td><td><a href="validar-entrada.html">Validar a Entrada</a></td></tr>
+<tr><td><code>strcspn(s, lista)</code><br>"complement span"</td><td>Conta quantos caracteres do começo de <code>s</code> <strong>não estão</strong> na <code>lista</code>.</td><td><code>size_t</code></td><td><code>strcspn("Ana\n", "\n")</code> → <code>3</code>. O uso clássico: <code>linha[strcspn(linha, "\n")] = '\0';</code> tira o Enter que o <code>fgets</code> deixa</td><td><a href="fgets.html">fgets</a></td></tr>
+<tr><td><code>memchr(m, c, n)</code></td><td>Como <code>strchr</code>, mas olha <code>n</code> bytes e não para no <code>'\0'</code>.</td><td>ponteiro, ou <code>NULL</code></td><td><code>memchr("abc\0def", 'e', 7)</code> → <code>ef</code> (passou pelo <code>'\0'</code>)</td><td><a href="arrays.html">Arrays</a></td></tr>
+<tr><td><code>strtok(s, seps)</code><br>"tokenize", picar em pedaços</td><td>Divide <code>s</code> em pedaços separados por qualquer caractere de <code>seps</code>. Na 1ª chamada, passe a string; nas outras, <code>NULL</code>. <strong>Estraga</strong> a string original (troca cada separador por <code>'\0'</code>) e <strong>pula</strong> pedaços vazios.</td><td>o próximo pedaço, ou <code>NULL</code> no fim</td><td><code>"arroz,feijão,,café"</code> → <code>arroz</code>, <code>feijão</code>, <code>café</code> (o vazio sumiu); depois, <code>lista</code> vale só <code>arroz</code></td><td><a href="projeto-texto.html">Contador de Palavras</a></td></tr>
+</table>
+</div>
+
+<ul>
+  <li><strong>Sempre teste o <code>NULL</code></strong> antes de usar o resultado de <code>strchr</code>, <code>strstr</code> etc.: <code>printf("%s", strchr(email, '#'))</code> com um resultado <code>NULL</code> é comportamento indefinido. Aula: <a href="ponteiro-nulo.html">Ponteiro Nulo</a>.</li>
+  <li><strong><code>strtok</code> não funciona numa string literal</strong> (<code>char *lista = "a,b"</code>), porque escreve nela; use um array (<code>char lista[] = "a,b"</code>). Ela também guarda a posição numa variável escondida: não dá para usar <code>strtok</code> em duas strings ao mesmo tempo. A versão que resolve isso é a <code>strtok_r</code>, do POSIX: funciona direto no gcc e, no editor, com <code>#define _DEFAULT_SOURCE</code> antes dos <code>#include</code>.</li>
+</ul>
+
+<div class="note">
+<strong>Novidade do C23: <code>strchr</code> respeita o <code>const</code></strong>
+<p>No C23, <code>strchr</code>, <code>strrchr</code>, <code>strstr</code>, <code>strpbrk</code> e <code>memchr</code> devolvem <code>const char *</code> quando recebem uma string <code>const</code>. Por isso, no programa acima, o resultado vai para <code>const char *arroba</code>. Com <code>char *arroba = strchr(email, '@');</code>, o gcc 15 avisa:</p>
+<pre class="term" data-cwd="~/c/ref">procurar.c:6:20: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+    6 |     char *arroba = strchr(email, '@');
+      |                    ^~~~~~</pre>
+<p>O Clang do editor ainda não avisa. Aula: <a href="const-ponteiros.html">const e Ponteiros</a>.</p>
+</div>
+
+<h2 id="memoria">Blocos de memória: as funções <code>mem…</code></h2>
+<p>As <code>mem…</code> trabalham com <strong>bytes</strong>, não com texto: recebem um <code>void *</code> (qualquer endereço; aula <a href="void-ponteiro.html">void*</a>) e um número de bytes, e não ligam para o <code>'\0'</code>. Servem para arrays de qualquer tipo e para structs.</p>
+<pre class="file" data-file="memoria.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+
+int main(void) {
+    int notas[5];
+    memset(notas, 0, sizeof notas);
+    printf("memset 0: %d %d %d %d %d\n", notas[0], notas[1], notas[2], notas[3], notas[4]);
+    memset(notas, 1, sizeof notas);
+    printf("memset 1: %d\n", notas[0]);
+    char senha[8] = "segredo";
+    memset(senha, '*', strlen(senha));
+    printf("memset '*': [%s]\n", senha);
+    int origem[3] = {7, 8, 9}, copia[3];
+    memcpy(copia, origem, sizeof origem);
+    printf("memcpy: %d %d %d\n", copia[0], copia[1], copia[2]);
+    char texto[20] = "abcdef";
+    memmove(texto + 2, texto, 4);
+    printf("memmove: [%s]\n", texto);
+    memset_explicit(senha, 0, sizeof senha);
+    printf("memset_explicit: strlen=%zu\n", strlen(senha));
+    printf("strerror(ENOENT): %s\n", strerror(ENOENT));
+    printf("strerror(EACCES): %s\n", strerror(EACCES));
+    printf("strerror(0): %s\n", strerror(0));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra memoria.c -o memoria
+$ ./memoria
+memset 0: 0 0 0 0 0
+memset 1: 16843009
+memset '*': [*******]
+memcpy: 7 8 9
+memmove: [ababcd]
+memset_explicit: strlen=0
+strerror(ENOENT): No such file or directory
+strerror(EACCES): Permission denied
+strerror(0): Success</pre>
+<p>No editor, o <code>memset_explicit</code> não existe (<code>error: use of undeclared identifier 'memset_explicit'</code>). Sem essa linha, o resto sai igual.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Devolve</th><th>Exemplo → resultado</th><th>Aula</th></tr>
+<tr><td><code>memset(m, c, n)</code><br>"memory set"</td><td>Põe o byte <code>c</code> em cada um dos <code>n</code> bytes.</td><td><code>m</code></td><td><code>memset(notas, 0, sizeof notas)</code> → tudo <code>0</code>. Com <code>1</code>, cada <code>int</code> vira <code>16843009</code> (os 4 bytes valem 1: <code>0x01010101</code>), não 1!</td><td><a href="arrays.html">Arrays</a></td></tr>
+<tr><td><code>memcpy(d, o, n)</code><br>"memory copy"</td><td>Copia <code>n</code> bytes. Os dois blocos <strong>não podem se sobrepor</strong>.</td><td><code>d</code></td><td>copia um <code>int[3]</code> inteiro: <code>7 8 9</code></td><td><a href="arrays.html">Arrays</a></td></tr>
+<tr><td><code>memmove(d, o, n)</code><br>"memory move"</td><td>Como <code>memcpy</code>, mas funciona mesmo se os blocos se sobrepõem (copia como se usasse uma área temporária).</td><td><code>d</code></td><td><code>memmove(texto + 2, texto, 4)</code> em <code>"abcdef"</code> → <code>ababcd</code></td><td><a href="array-dinamico.html">Array que Cresce</a></td></tr>
+<tr><td><code>memcmp(a, b, n)</code></td><td>Compara <code>n</code> bytes (veja <a href="#comparar">Comparar</a>).</td><td>negativo, 0 ou positivo</td><td>(acima)</td><td><a href="arrays.html">Arrays</a></td></tr>
+<tr><td><code>memchr(m, c, n)</code></td><td>Procura um byte (veja <a href="#procurar">Procurar</a>).</td><td>ponteiro, ou <code>NULL</code></td><td>(acima)</td><td><a href="arrays.html">Arrays</a></td></tr>
+<tr><td><code>memset_explicit(m, c, n)</code> <span class="versao">C23</span></td><td>Como <code>memset</code>, mas o compilador é proibido de apagá-lo na otimização. Para limpar senhas e chaves da memória.</td><td><code>m</code></td><td><code>memset_explicit(senha, 0, sizeof senha)</code> → <code>strlen</code> = <code>0</code> (só no gcc)</td><td><a href="seguranca.html">Segurança</a></td></tr>
+</table>
+</div>
+
+<p><strong>Por que <code>memset_explicit</code>?</strong> Com otimização (<code>-O2</code>), o compilador pode apagar um <code>memset(senha, 0, …)</code> feito logo antes de a variável deixar de existir, já que "ninguém mais vai ler". A senha fica na memória. O <code>memset_explicit</code> não pode ser apagado.</p>
+
+<h2 id="strerror">strerror: a mensagem de um erro</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Devolve</th><th>Exemplo → resultado</th><th>Aula</th></tr>
+<tr><td><code>strerror(num)</code><br>"string error"</td><td>Traduz o número de um erro do sistema (o <code>errno</code>) num texto em inglês.</td><td>a mensagem (não mexa nela)</td><td><code>strerror(ENOENT)</code> → <code>No such file or directory</code>; <code>strerror(EACCES)</code> → <code>Permission denied</code></td><td><a href="errno.html">errno e perror</a></td></tr>
+</table>
+</div>
+<p>O uso típico: <code>fprintf(stderr, "Não abri %s: %s\n", nome, strerror(errno));</code> logo depois de um <code>fopen</code> que devolveu <code>NULL</code>. É o mesmo texto que o <code>perror</code> mostra.</p>
+
+<hr>
+
+<h2 id="seguras">Qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para…</th><th>Evite</th><th>Use</th><th>Por quê</th></tr>
+<tr><td>copiar para um array</td><td><code>strcpy(d, o)</code></td><td><code>snprintf(d, sizeof d, "%s", o)</code></td><td>nunca passa do tamanho e sempre põe o <code>'\0'</code>; o retorno diz se cortou (aula <a href="string-numero.html">Texto ↔ Número</a>)</td></tr>
+<tr><td>copiar só uma parte</td><td><code>strncpy</code> sem o <code>'\0'</code> manual</td><td><code>strncpy(d, o, sizeof d - 1); d[sizeof d - 1] = '\0';</code></td><td>o <code>strncpy</code> sozinho deixa a string sem fim se a origem for longa</td></tr>
+<tr><td>juntar textos</td><td><code>strcat</code> em sequência</td><td><code>snprintf(d, sizeof d, "%s %s", nome, sobrenome)</code></td><td>uma linha, com o tamanho conferido</td></tr>
+<tr><td>comparar textos</td><td><code>a == b</code></td><td><code>strcmp(a, b) == 0</code></td><td><code>==</code> compara endereços, não letras</td></tr>
+<tr><td>copiar para memória nova</td><td><code>malloc(strlen(s))</code> + <code>strcpy</code></td><td><code>strdup(s)</code></td><td>o <code>malloc</code> à mão costuma esquecer o <code>+ 1</code> do <code>'\0'</code></td></tr>
+<tr><td>blocos que se sobrepõem</td><td><code>memcpy</code></td><td><code>memmove</code></td><td>com sobreposição, <code>memcpy</code> é comportamento indefinido</td></tr>
+<tr><td>dividir com campos vazios</td><td><code>strtok</code></td><td><code>strchr</code> num laço</td><td><code>strtok</code> pula o campo vazio de <code>"a,,c"</code>, e num CSV isso desloca as colunas</td></tr>
+</table>
+</div>
+
+<h2 id="diferencas">Editor × gcc</h2>
+<p>O que muda no <code>&lt;string.h&gt;</code> entre o editor (Clang + wasi-libc) e o gcc 15 (glibc), conferido com os programas desta página:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Assunto</th><th>Editor</th><th>gcc 15 (glibc)</th></tr>
+<tr><td><code>strndup</code> e <code>memccpy</code> (C23), <code>strtok_r</code> (POSIX)</td><td>só com <code>#define _DEFAULT_SOURCE</code> antes dos <code>#include</code>; sem isso, <code>error: use of undeclared identifier 'strndup'; did you mean 'strdup'?</code></td><td>funcionam direto</td></tr>
+<tr><td><code>memset_explicit</code> (C23)</td><td>não existe (<code>use of undeclared identifier</code>)</td><td>funciona</td></tr>
+<tr><td>Valor de <code>strncmp("Banana", "Bando", 4)</code></td><td><code>-1</code></td><td><code>-3</code> (o sinal é o mesmo)</td></tr>
+<tr><td><code>char *p = strchr(texto_const, …)</code></td><td>sem aviso</td><td>aviso <code>discards ‘const’ qualifier</code> (C23)</td></tr>
+<tr><td>Mudar uma string literal (<code>char *s = "ana"; s[0] = 'A';</code>)</td><td>funciona, calado (mostra <code>Ana</code>)</td><td><code>Falha de segmentação</code> (139): as literais ficam numa memória só de leitura</td></tr>
+<tr><td>String sem <code>'\0'</code> no <code>printf("%s")</code></td><td>mostra lixo depois do texto (<code>SPX9</code>)</td><td>também é lixo; nesta execução, saiu só <code>SPX</code></td></tr>
+<tr><td><code>strlen(NULL)</code></td><td>devolve <code>0</code>, calado</td><td><code>Falha de segmentação</code> (139)</td></tr>
+</table>
+</div>
+<p>Iguais nos dois: todos os outros resultados desta página, os sinais de <code>strcmp</code>/<code>strncmp</code>/<code>memcmp</code> e os textos do <code>strerror</code> (também <code>strerror(0)</code> = <code>Success</code>).</p>
+
+<hr>
+
+<h2 id="erros">Erros comuns</h2>
+<p>Este programa junta os enganos mais frequentes com strings. O <code>-Wall</code> pega todos, mas o programa compila e roda:</p>
+<pre class="file" data-file="errostr.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+void limpar(char *s) {
+    memset(s, 0, sizeof s);
+}
+
+int main(void) {
+    char nome[4];
+    strcpy(nome, "Ana Souza");
+    char a[] = "Ana", b[] = "Ana";
+    if (a == b) printf("iguais\n");
+    const char *c = "Ana";
+    if (c == "Ana") printf("igual ao literal\n");
+    char sigla[3];
+    strncpy(sigla, "SPX", sizeof sigla);
+    limpar(nome);
+    printf("%s %s\n", nome, sigla);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra errostr.c -o errostr
+errostr.c: In function ‘limpar’:
+errostr.c:5:25: warning: argument to ‘sizeof’ in ‘memset’ call is the same expression as the destination; did you mean to provide an explicit length? [-Wsizeof-pointer-memaccess]
+    5 |     memset(s, 0, sizeof s);
+      |                         ^
+errostr.c: In function ‘main’:
+errostr.c:12:11: warning: comparison between two arrays [-Warray-compare]
+   12 |     if (a == b) printf("iguais\n");
+      |           ^~
+errostr.c:12:11: note: use ‘&amp;a[0] == &amp;b[0]’ to compare the addresses
+errostr.c:14:11: warning: comparison with string literal results in unspecified behavior [-Waddress]
+   14 |     if (c == "Ana") printf("igual ao literal\n");
+      |           ^~
+errostr.c:16:5: warning: ‘strncpy’ output truncated before terminating nul copying 3 bytes from a string of the same length [-Wstringop-truncation]
+   16 |     strncpy(sigla, "SPX", sizeof sigla);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+errostr.c:10:5: warning: ‘__builtin_memcpy’ writing 10 bytes into a region of size 4 overflows the destination [-Wstringop-overflow=]
+   10 |     strcpy(nome, "Ana Souza");
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~
+errostr.c:9:10: note: destination object ‘nome’ of size 4
+    9 |     char nome[4];
+      |          ^~~~
+$ ./errostr
+igual ao literal
+ SPX</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>gcc 15</th><th>Clang (editor)</th><th>O que acontece e como consertar</th></tr>
+<tr><td><code>strcpy(nome, "Ana Souza");</code> num <code>char nome[4]</code></td><td><code>‘__builtin_memcpy’ writing 10 bytes into a region of size 4 overflows the destination [-Wstringop-overflow=]</code></td><td><code>'strcpy' will always overflow; destination buffer has size 4, but the source string has length 10 (including NUL byte) [-Wfortify-source]</code></td><td>Escreve 6 bytes além do fim do array, por cima de outras variáveis. Aqui passou calado; em outros programas, estraga valores ou derruba o programa. Use um array maior ou <code>snprintf</code>. Aula: <a href="seguranca.html">Segurança</a>.</td></tr>
+<tr><td><code>if (a == b)</code> com dois arrays</td><td><code>comparison between two arrays [-Warray-compare]</code></td><td><code>array comparison always evaluates to false [-Wtautological-compare]</code></td><td>Compara os <strong>endereços</strong> dos dois arrays, que nunca são iguais: o <code>iguais</code> não saiu, mesmo com o mesmo texto. Use <code>strcmp(a, b) == 0</code>.</td></tr>
+<tr><td><code>if (c == "Ana")</code></td><td><code>comparison with string literal results in unspecified behavior [-Waddress]</code></td><td><code>result of comparison against a string literal is unspecified (use an explicit string comparison function instead) [-Wstring-compare]</code></td><td>Aqui deu "igual" porque o compilador guardou as duas <code>"Ana"</code> no mesmo lugar, mas isso não é garantido. Use <code>strcmp(c, "Ana") == 0</code>.</td></tr>
+<tr><td><code>strncpy(sigla, "SPX", sizeof sigla);</code></td><td><code>‘strncpy’ output truncated before terminating nul copying 3 bytes from a string of the same length [-Wstringop-truncation]</code></td><td>(nenhum aviso)</td><td>Os 3 bytes encheram o array e não sobrou lugar para o <code>'\0'</code>: o <code>printf</code> continua lendo a memória seguinte (no editor saiu <code>SPX9</code>). Reserve um byte a mais: <code>char sigla[4]</code>.</td></tr>
+<tr><td><code>memset(s, 0, sizeof s);</code> com <code>char *s</code></td><td><code>argument to ‘sizeof’ in ‘memset’ call is the same expression as the destination; did you mean to provide an explicit length? [-Wsizeof-pointer-memaccess]</code></td><td><code>'memset' call operates on objects of type 'char' while the size is based on a different type 'char *' [-Wsizeof-pointer-memaccess]</code></td><td><code>sizeof s</code> é o tamanho do <strong>ponteiro</strong> (8 no gcc), não do array. Passe o tamanho como parâmetro: <code>void limpar(char *s, size_t tam)</code>. Aula: <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>.</td></tr>
+</table>
+</div>
+
+<div class="cenario">
+<strong>Mudar uma string literal</strong>
+<pre class="file" data-file="literal.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char *nome = "ana";
+    printf("Antes: %s\n", nome);
+    nome[0] = 'A';
+    printf("Depois: %s\n", nome);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra literal.c -o literal
+$ ./literal
+Antes: ana
+Falha de segmentação     (imagem do núcleo gravada) ./literal
+$ echo $?
+139</pre>
+<p><strong>O que significa:</strong> <code>"ana"</code> é uma <strong>string literal</strong>, e o gcc a guarda numa parte da memória que só pode ser lida. O <code>char *nome</code> só aponta para ela; escrever ali derruba o programa. Nenhum aviso, nem com <code>-Wall</code>. No editor, o programa mostra <code>Depois: Ana</code> sem erro, mas continua errado.</p>
+<p><strong>Como consertar:</strong> para um texto que muda, use um array, que é uma cópia sua: <code>char nome[] = "ana";</code>. Para um texto que não muda, deixe claro com <code>const char *nome = "ana";</code>: aí o compilador dá erro se você tentar escrever. Aula: <a href="ponteiros-strings.html">Ponteiros e Strings</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>strcat</code> num array sem valor inicial</strong>
+<p><code>char frase[50]; strcat(frase, "Oi");</code> procura o <code>'\0'</code> do fim de <code>frase</code>, mas o array tem lixo: o texto vai parar num lugar qualquer. <strong>Como consertar:</strong> comece com uma string vazia, <code>char frase[50] = "";</code>. Aula: <a href="strings.html">Strings</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>fgets</code> deixou o Enter</strong>
+<p>Depois de <code>fgets(nome, sizeof nome, stdin)</code>, o <code>nome</code> termina em <code>'\n'</code>: um <code>strcmp(nome, "Ana")</code> dá diferente e um <code>printf("[%s]", nome)</code> pula linha antes do <code>]</code>. <strong>Como consertar:</strong> <code>nome[strcspn(nome, "\n")] = '\0';</code> (é a missão abaixo). Aula: <a href="fgets.html">fgets</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="experimente">Experimente</h2>
+<div class="tryc" data-stdin="Ana Souza" data-goal="out:Olá\, [Ana Souza]!,src:strcspn">
+<p class="try-task"><strong>Missão:</strong> o programa lê o nome da Ana com <code>fgets</code> (a entrada já vem preenchida com <code>Ana Souza</code>), mas o <code>]</code> sai na linha de baixo e o tamanho conta um byte a mais. Use <code>strcspn</code> para tirar o Enter, de modo que a saída seja <code>Olá, [Ana Souza]! Seu nome tem 9 bytes.</code> Depois, teste outras funções da página na mesma caixa.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char nome[40];
+    printf("Seu nome: ");
+    if (fgets(nome, sizeof nome, stdin) == NULL) {
+        return 1;
+    }
+    // tire o '\n' aqui
+
+    printf("Olá, [%s]! Seu nome tem %zu bytes.\n", nome, strlen(nome));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char nome[40];
+    printf("Seu nome: ");
+    if (fgets(nome, sizeof nome, stdin) == NULL) {
+        return 1;
+    }
+    nome[strcspn(nome, "\n")] = '\0';
+
+    printf("Olá, [%s]! Seu nome tem %zu bytes.\n", nome, strlen(nome));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Tamanho: <code>strlen</code> (bytes até o <code>'\0'</code>; não é o <code>sizeof</code> do array).</li>
+  <li>Cópia e junção: <code>strcpy</code>, <code>strcat</code> (não conferem o tamanho), <code>strncpy</code> (pode deixar sem <code>'\0'</code>), <code>strncat</code>, <code>strdup</code>/<code>strndup</code> (memória nova, com <code>free</code>). Prefira <code>snprintf</code>.</li>
+  <li>Comparação: <code>strcmp</code>, <code>strncmp</code>, <code>memcmp</code>, <code>strcoll</code>. Teste <code>== 0</code>, <code>&lt; 0</code> ou <code>&gt; 0</code>, nunca <code>== -1</code>. Nunca <code>==</code> entre strings.</li>
+  <li>Busca: <code>strchr</code>, <code>strrchr</code>, <code>strstr</code>, <code>strpbrk</code>, <code>memchr</code> (devolvem ponteiro ou <code>NULL</code>), <code>strspn</code>, <code>strcspn</code> (devolvem contagens). <code>strtok</code> divide, mas estraga a string e pula campos vazios.</li>
+  <li>Memória: <code>memset</code> (byte a byte), <code>memcpy</code> (sem sobreposição), <code>memmove</code> (com sobreposição), <code>memset_explicit</code> (para senhas, C23).</li>
+  <li><code>strerror(errno)</code> dá o texto do erro do sistema.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
