@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Operadores — tabela completa de precedência e associatividade | Guia C</title>
+<meta name="description" content="Referência dos operadores do C: aritméticos, atribuição, ++ e --, comparação, lógicos, bits, ponteiros e membros, sizeof, alignof, cast, ternário, vírgula e typeof, com a tabela completa de precedência e associatividade, saídas reais do gcc 15 e do editor e as armadilhas que o -Wall pega.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Operadores</span></h1>
+
+<p class="intro">Esta é a página de consulta rápida dos <strong>operadores</strong> do C: os símbolos que fazem contas, comparam, combinam condições, mexem em bits e em ponteiros. Primeiro vem a <a href="#precedencia">tabela completa de precedência</a> (quem é calculado primeiro); depois, uma tabela por grupo, com o exemplo e a saída real; no fim, as armadilhas. Para aprender com calma, comece pela aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a> e siga até <a href="precedencia.html">Precedência</a>.</p>
+
+<p>Todas as saídas foram produzidas de verdade: no <strong>gcc 15.2</strong> da máquina da Ana (pasta <code>~/c/ref</code>, comando <code>gcc -std=c23 -Wall -Wextra</code>) e no editor do guia (Clang em WebAssembly). Os operadores dão o mesmo resultado nos dois; só as mensagens de aviso mudam.</p>
+
+<p>Atalhos: <a href="#precedencia">Precedência</a> · <a href="#aritmeticos">Aritméticos</a> · <a href="#atribuicao">Atribuição</a> · <a href="#incremento">++ e --</a> · <a href="#comparacao">Comparação</a> · <a href="#logicos">Lógicos</a> · <a href="#bits">Bits</a> · <a href="#ponteiros">Ponteiros e membros</a> · <a href="#outros">Outros</a> · <a href="#armadilhas">Armadilhas</a> · <a href="#experimente">Experimente</a></p>
+
+<hr>
+
+<h2 id="precedencia">Tabela de precedência e associatividade</h2>
+<p>A <strong>precedência</strong> diz qual operador "pega" seus valores primeiro, como na matemática: em <code>2 + 3 * 4</code>, o <code>*</code> vem antes, e o resultado é 14. A <strong>associatividade</strong> decide entre operadores da mesma linha: da esquerda para a direita (<code>10 - 3 - 2</code> = <code>(10 - 3) - 2</code> = 5) ou da direita para a esquerda (<code>a = b = 0</code> = <code>a = (b = 0)</code>).</p>
+<p>Na tabela, a linha <strong>1</strong> é a mais forte (calculada primeiro) e a <strong>15</strong>, a mais fraca. Na dúvida, use parênteses: eles sempre ganham, e deixam o código mais claro.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nível</th><th>Operadores</th><th>Nome</th><th>Associatividade</th><th>Exemplo</th></tr>
+<tr><td>1</td><td><code>a++</code> <code>a--</code><br><code>f()</code> <code>v[i]</code><br><code>s.campo</code> <code>p-&gt;campo</code><br><code>(tipo){…}</code></td><td>pós-incremento e pós-decremento, chamada de função, índice, membro, membro por ponteiro, literal composto <span class="versao">C99</span></td><td>esquerda → direita</td><td><code>p-&gt;notas[2]</code> = <code>(p-&gt;notas)[2]</code></td></tr>
+<tr><td>2</td><td><code>++a</code> <code>--a</code><br><code>+a</code> <code>-a</code><br><code>!</code> <code>~</code><br><code>(tipo)</code><br><code>*p</code> <code>&amp;x</code><br><code>sizeof</code> <code>alignof</code></td><td>pré-incremento e pré-decremento, sinal, "não" lógico, "não" de bits, conversão (cast), conteúdo, endereço, tamanho, alinhamento <span class="versao">C23</span></td><td><strong>direita → esquerda</strong></td><td><code>*p++</code> = <code>*(p++)</code>; <code>-x * 2</code> = <code>(-x) * 2</code></td></tr>
+<tr><td>3</td><td><code>*</code> <code>/</code> <code>%</code></td><td>multiplicação, divisão, resto</td><td>esquerda → direita</td><td><code>2 + 3 * 4</code> = 14</td></tr>
+<tr><td>4</td><td><code>+</code> <code>-</code></td><td>soma, subtração</td><td>esquerda → direita</td><td><code>10 - 3 - 2</code> = 5</td></tr>
+<tr><td>5</td><td><code>&lt;&lt;</code> <code>&gt;&gt;</code></td><td>deslocamento de bits</td><td>esquerda → direita</td><td><code>1 &lt;&lt; 2 + 1</code> = <code>1 &lt;&lt; 3</code> = 8 (!)</td></tr>
+<tr><td>6</td><td><code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code></td><td>comparação de ordem</td><td>esquerda → direita</td><td><code>a + 1 &lt; b * 2</code> = <code>(a + 1) &lt; (b * 2)</code></td></tr>
+<tr><td>7</td><td><code>==</code> <code>!=</code></td><td>igual, diferente</td><td>esquerda → direita</td><td><code>a &lt; b == c &lt; d</code> = <code>(a &lt; b) == (c &lt; d)</code></td></tr>
+<tr><td>8</td><td><code>&amp;</code></td><td>"e" de bits</td><td>esquerda → direita</td><td><code>flags &amp; 4 == 4</code> = <code>flags &amp; (4 == 4)</code> (!)</td></tr>
+<tr><td>9</td><td><code>^</code></td><td>"ou exclusivo" de bits</td><td>esquerda → direita</td><td><code>a ^ b &amp; c</code> = <code>a ^ (b &amp; c)</code></td></tr>
+<tr><td>10</td><td><code>|</code></td><td>"ou" de bits</td><td>esquerda → direita</td><td><code>a | b ^ c</code> = <code>a | (b ^ c)</code></td></tr>
+<tr><td>11</td><td><code>&amp;&amp;</code></td><td>"e" lógico</td><td>esquerda → direita</td><td><code>a &gt; 0 &amp;&amp; a &lt; 10</code></td></tr>
+<tr><td>12</td><td><code>||</code></td><td>"ou" lógico</td><td>esquerda → direita</td><td><code>a || b &amp;&amp; c</code> = <code>a || (b &amp;&amp; c)</code></td></tr>
+<tr><td>13</td><td><code>? :</code></td><td>ternário (condicional)</td><td><strong>direita → esquerda</strong></td><td><code>n &lt; 0 ? -1 : n &gt; 0 ? 1 : 0</code> = <code>n &lt; 0 ? -1 : (n &gt; 0 ? 1 : 0)</code></td></tr>
+<tr><td>14</td><td><code>=</code> <code>+=</code> <code>-=</code> <code>*=</code> <code>/=</code> <code>%=</code><br><code>&lt;&lt;=</code> <code>&gt;&gt;=</code> <code>&amp;=</code> <code>^=</code> <code>|=</code></td><td>atribuição</td><td><strong>direita → esquerda</strong></td><td><code>a = b = 0</code> = <code>a = (b = 0)</code></td></tr>
+<tr><td>15</td><td><code>,</code></td><td>vírgula (operador)</td><td>esquerda → direita</td><td><code>k = (a = 1, b = 2, a + b)</code> → <code>k</code> = 3</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Para decorar</strong>
+<p>De cima para baixo: <strong>unários</strong> (um valor só) → <strong>contas</strong> (<code>* / %</code>, depois <code>+ -</code>) → <strong>deslocamento</strong> → <strong>comparações</strong> → <strong>bits</strong> (<code>&amp; ^ |</code>) → <strong>lógicos</strong> (<code>&amp;&amp;</code>, depois <code>||</code>) → <strong>ternário</strong> → <strong>atribuição</strong> → <strong>vírgula</strong>. Os operadores de bits ficam <strong>abaixo</strong> das comparações (é uma herança antiga do C): por isso, com <code>&amp;</code>, <code>|</code> e <code>^</code>, sempre use parênteses.</p>
+</div>
+
+<p><strong>Precedência não é ordem de execução.</strong> Ela diz como a expressão é <em>agrupada</em>, não qual parte roda primeiro. Em <code>f() + g() * h()</code>, a multiplicação é agrupada antes, mas o C não diz qual das três funções é chamada primeiro. Só <code>&amp;&amp;</code>, <code>||</code>, <code>?:</code> e a vírgula garantem a ordem (da esquerda para a direita).</p>
+
+<hr>
+
+<h2 id="aritmeticos">Aritméticos</h2>
+<p>Todas as tabelas daqui até <a href="#outros">Outros</a> foram medidas com um só programa, <code>ops.c</code> (com <code>int a = 17, b = 5;</code>). Ele está <a href="#programa">no fim da seção</a>, com a saída completa.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Faz</th><th>Exemplo → resultado</th><th>Cuidado</th><th>Aula</th></tr>
+<tr><td><code>+</code> <code>-</code> <code>*</code></td><td>soma, subtração, multiplicação</td><td><code>17 + 5</code> → <code>22</code>; <code>17 - 5</code> → <code>12</code>; <code>17 * 5</code> → <code>85</code></td><td>com <code>int</code>, pode estourar (<a href="ref-tipos.html#conversoes">veja</a>)</td><td><a href="operadores-aritmeticos.html">Aritméticos</a></td></tr>
+<tr><td><code>/</code></td><td>divisão</td><td><code>17 / 5</code> → <code>3</code>; <code>17 / 5.0</code> → <code>3.40</code>; <code>(double)a / b</code> → <code>3.40</code></td><td>entre inteiros, <strong>corta</strong> a parte decimal (em direção ao zero: <code>-17 / 5</code> → <code>-3</code>); dividir inteiro por zero derruba o programa</td><td><a href="operadores-aritmeticos.html">Aritméticos</a></td></tr>
+<tr><td><code>%</code></td><td>resto da divisão (só inteiros)</td><td><code>17 % 5</code> → <code>2</code>; <code>-17 % 5</code> → <code>-2</code>; <code>17 % -5</code> → <code>2</code></td><td>o resto tem o sinal do <strong>primeiro</strong> número; para <code>double</code>, é o <code>fmod</code></td><td><a href="operadores-aritmeticos.html">Aritméticos</a></td></tr>
+<tr><td><code>-a</code>, <code>+a</code></td><td>troca o sinal; mantém</td><td><code>-a</code> → <code>-17</code></td><td><code>-INT_MIN</code> estoura</td><td><a href="operadores-aritmeticos.html">Aritméticos</a></td></tr>
+</table>
+</div>
+
+<h2 id="atribuicao">Atribuição</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>É o mesmo que</th><th>Exemplo (começando com <code>x = 10</code>, em sequência) → <code>x</code></th><th>Aula</th></tr>
+<tr><td><code>=</code></td><td>guarda o valor da direita na variável da esquerda</td><td><code>x = 10</code> → <code>10</code></td><td><a href="variaveis.html">Variáveis</a></td></tr>
+<tr><td><code>+=</code> <code>-=</code></td><td><code>x = x + 5</code>, <code>x = x - 3</code></td><td><code>x += 5</code> → <code>15</code>; <code>x -= 3</code> → <code>12</code></td><td><a href="operadores-atribuicao.html">Atribuição</a></td></tr>
+<tr><td><code>*=</code> <code>/=</code> <code>%=</code></td><td><code>x = x * 2</code>…</td><td><code>x *= 2</code> → <code>24</code>; <code>x /= 5</code> → <code>4</code>; <code>x %= 3</code> → <code>1</code></td><td><a href="operadores-atribuicao.html">Atribuição</a></td></tr>
+<tr><td><code>&lt;&lt;=</code> <code>&gt;&gt;=</code></td><td><code>x = x &lt;&lt; 4</code>…</td><td><code>x &lt;&lt;= 4</code> → <code>16</code>; <code>x &gt;&gt;= 1</code> → <code>8</code></td><td><a href="operadores-bits.html">Bits</a></td></tr>
+<tr><td><code>&amp;=</code> <code>|=</code> <code>^=</code></td><td><code>x = x &amp; 6</code>…</td><td><code>x &amp;= 6</code> → <code>0</code>; <code>x |= 1</code> → <code>1</code>; <code>x ^= 3</code> → <code>2</code></td><td><a href="mascaras-bits.html">Máscaras e Flags</a></td></tr>
+</table>
+</div>
+<p>Toda atribuição também <strong>é um valor</strong> (o valor guardado). É por isso que <code>a = b = 0</code> funciona, e é por isso que <code>if (idade = 18)</code> compila (veja <a href="#armadilhas">Armadilhas</a>).</p>
+
+<h2 id="incremento">++ e --</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Faz</th><th>Exemplo (com <code>i = 5</code>) → resultado</th><th>Aula</th></tr>
+<tr><td><code>i++</code> (pós)</td><td>soma 1 em <code>i</code>; a expressão vale o valor <strong>antigo</strong></td><td><code>pos = i++</code> → <code>pos</code> = 5, <code>i</code> = 6</td><td><a href="incremento.html">++ e --</a></td></tr>
+<tr><td><code>++i</code> (pré)</td><td>soma 1 em <code>i</code>; a expressão vale o valor <strong>novo</strong></td><td>depois, <code>pre = ++i</code> → <code>pre</code> = 7, <code>i</code> = 7</td><td><a href="incremento.html">++ e --</a></td></tr>
+<tr><td><code>i--</code>, <code>--i</code></td><td>o mesmo, subtraindo 1</td><td>—</td><td><a href="incremento.html">++ e --</a></td></tr>
+</table>
+</div>
+<p>Sozinhos numa linha (<code>i++;</code> ou <code>++i;</code>), os dois fazem a mesma coisa. Nunca use a mesma variável duas vezes numa expressão que a muda: <code>i = i++ + 1</code> é comportamento indefinido (veja <a href="#armadilhas">Armadilhas</a>).</p>
+
+<h2 id="comparacao">Comparação</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Pergunta</th><th>Exemplo (<code>a = 17</code>, <code>b = 5</code>) → resultado</th><th>Aula</th></tr>
+<tr><td><code>==</code></td><td>igual?</td><td><code>a == b</code> → <code>0</code></td><td><a href="operadores-comparacao.html">Comparação</a></td></tr>
+<tr><td><code>!=</code></td><td>diferente?</td><td><code>a != b</code> → <code>1</code></td><td><a href="operadores-comparacao.html">Comparação</a></td></tr>
+<tr><td><code>&lt;</code> <code>&gt;</code></td><td>menor? maior?</td><td><code>a &lt; b</code> → <code>0</code>; <code>a &gt; b</code> → <code>1</code></td><td><a href="operadores-comparacao.html">Comparação</a></td></tr>
+<tr><td><code>&lt;=</code> <code>&gt;=</code></td><td>menor ou igual? maior ou igual?</td><td><code>a &lt;= 17</code> → <code>1</code>; <code>a &gt;= 18</code> → <code>0</code></td><td><a href="operadores-comparacao.html">Comparação</a></td></tr>
+</table>
+</div>
+<p>O resultado é um <code>int</code>: <code>1</code> (verdadeiro) ou <code>0</code> (falso). Para strings, use <code>strcmp</code> (<a href="ref-string.html#comparar">veja</a>); para <code>double</code>, uma tolerância.</p>
+
+<h2 id="logicos">Lógicos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Verdadeiro quando</th><th>Exemplo → resultado</th><th>Curto-circuito</th><th>Aula</th></tr>
+<tr><td><code>&amp;&amp;</code> ("e")</td><td>os dois lados são verdadeiros (não zero)</td><td><code>1 &amp;&amp; 0</code> → <code>0</code></td><td>se a esquerda é falsa, a direita <strong>nem é calculada</strong>: <code>p != NULL &amp;&amp; *p &gt; 0</code> é seguro</td><td><a href="operadores-logicos.html">Lógicos</a></td></tr>
+<tr><td><code>||</code> ("ou")</td><td>pelo menos um lado é verdadeiro</td><td><code>1 || 0</code> → <code>1</code></td><td>se a esquerda é verdadeira, a direita não é calculada</td><td><a href="operadores-logicos.html">Lógicos</a></td></tr>
+<tr><td><code>!</code> ("não")</td><td>o valor é falso (zero)</td><td><code>!0</code> → <code>1</code>; <code>!5</code> → <code>0</code></td><td>—</td><td><a href="operadores-logicos.html">Lógicos</a></td></tr>
+</table>
+</div>
+
+<h2 id="bits">Bits</h2>
+<p>Com <code>12</code> = <code>0b1100</code> e <code>10</code> = <code>0b1010</code>:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Faz, bit a bit</th><th>Exemplo → resultado</th><th>Aula</th></tr>
+<tr><td><code>&amp;</code> ("e")</td><td>1 onde <strong>os dois</strong> têm 1</td><td><code>12 &amp; 10</code> → <code>8</code> (<code>0b1000</code>)</td><td><a href="operadores-bits.html">Bits</a></td></tr>
+<tr><td><code>|</code> ("ou")</td><td>1 onde <strong>pelo menos um</strong> tem 1</td><td><code>12 | 10</code> → <code>14</code> (<code>0b1110</code>)</td><td><a href="operadores-bits.html">Bits</a></td></tr>
+<tr><td><code>^</code> ("ou exclusivo", XOR)</td><td>1 onde <strong>só um</strong> tem 1</td><td><code>12 ^ 10</code> → <code>6</code> (<code>0b0110</code>)</td><td><a href="operadores-bits.html">Bits</a></td></tr>
+<tr><td><code>~</code> ("não")</td><td>inverte todos os bits</td><td><code>~12</code> → <code>-13</code></td><td><a href="operadores-bits.html">Bits</a></td></tr>
+<tr><td><code>&lt;&lt;</code></td><td>empurra os bits para a esquerda (× 2 a cada casa)</td><td><code>1 &lt;&lt; 4</code> → <code>16</code></td><td><a href="mascaras-bits.html">Máscaras e Flags</a></td></tr>
+<tr><td><code>&gt;&gt;</code></td><td>empurra para a direita (÷ 2 a cada casa)</td><td><code>200 &gt;&gt; 3</code> → <code>25</code>; <code>-16 &gt;&gt; 2</code> → <code>-4</code> (nos dois; com negativo, depende do compilador)</td><td><a href="mascaras-bits.html">Máscaras e Flags</a></td></tr>
+</table>
+</div>
+<p>Use <code>unsigned</code> com operadores de bits. Com <code>int</code>, <code>1 &lt;&lt; 31</code> é comportamento indefinido (deu <code>-2147483648</code> nos dois, sem aviso); com <code>1u &lt;&lt; 31</code>, é <code>2147483648</code>. Deslocar por um número de casas maior ou igual ao tamanho do tipo também é indefinido: <code>1 &lt;&lt; n</code> com <code>n = 32</code> deu <code>1</code> nos dois, e não <code>0</code>.</p>
+
+<h2 id="ponteiros">Ponteiros, arrays e membros</h2>
+<p>Com <code>int v[3] = {10, 20, 30}; int *p = v;</code> e <code>struct ponto { int x, y; } pt = {3, 4}, *pp = &amp;pt;</code>:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Faz</th><th>Exemplo → resultado</th><th>Aula</th></tr>
+<tr><td><code>&amp;x</code></td><td>o endereço de <code>x</code></td><td><code>scanf("%d", &amp;idade)</code></td><td><a href="memoria.html">Memória e Endereços</a></td></tr>
+<tr><td><code>*p</code></td><td>o valor guardado no endereço <code>p</code></td><td><code>*p</code> → <code>10</code></td><td><a href="ponteiros.html">Ponteiros</a></td></tr>
+<tr><td><code>v[i]</code></td><td>o item <code>i</code> (é o mesmo que <code>*(v + i)</code>)</td><td><code>p[2]</code> → <code>30</code>; <code>*(p + 1)</code> → <code>20</code></td><td><a href="ponteiros-arrays.html">Ponteiros e Arrays</a></td></tr>
+<tr><td><code>p + n</code>, <code>p - q</code></td><td>anda <code>n</code> <strong>itens</strong> (não bytes); quantos itens entre dois ponteiros</td><td><code>&amp;v[2] - p</code> → <code>2</code></td><td><a href="ponteiros-arrays.html">Ponteiros e Arrays</a></td></tr>
+<tr><td><code>s.campo</code></td><td>um campo de uma struct</td><td><code>pt.x</code> → <code>3</code></td><td><a href="structs.html">Structs</a></td></tr>
+<tr><td><code>p-&gt;campo</code></td><td>um campo pela struct apontada (é o mesmo que <code>(*p).campo</code>)</td><td><code>pp-&gt;y</code> → <code>4</code></td><td><a href="structs-ponteiros.html">Structs e Ponteiros</a></td></tr>
+<tr><td><code>f(…)</code></td><td>chama a função (também por um ponteiro para função)</td><td><code>qsort(v, 3, sizeof v[0], comparar)</code></td><td><a href="ponteiros-funcao.html">Ponteiros para Funções</a></td></tr>
+</table>
+</div>
+
+<h2 id="outros">Outros operadores</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Faz</th><th>Exemplo → resultado</th><th>Aula</th></tr>
+<tr><td><code>cond ? x : y</code></td><td>vale <code>x</code> se a condição é verdadeira, senão <code>y</code></td><td><code>a &gt; b ? "a é maior" : "b é maior"</code> → <code>a é maior</code></td><td><a href="ternario.html">Ternário</a></td></tr>
+<tr><td><code>sizeof x</code>, <code>sizeof(tipo)</code></td><td>tamanho em bytes (é calculado na compilação; não roda a expressão)</td><td><code>sizeof a</code> → <code>4</code>; <code>sizeof(double)</code> → <code>8</code>; <code>sizeof v</code> → <code>12</code></td><td><a href="sizeof.html">sizeof</a></td></tr>
+<tr><td><code>alignof(tipo)</code> <span class="versao">C23</span></td><td>alinhamento (no C11, <code>_Alignof</code>)</td><td><code>alignof(double)</code> → <code>8</code></td><td><a href="ref-tipos.html#tamanhos">Tipos e Limites</a></td></tr>
+<tr><td><code>(tipo)x</code></td><td>converte (cast)</td><td><code>(double)a / b</code> → <code>3.40</code></td><td><a href="conversao-tipos.html">Conversão de Tipos</a></td></tr>
+<tr><td><code>a, b</code></td><td>calcula <code>a</code>, joga fora, e vale <code>b</code></td><td><code>(a = 1, b = 2, a + b)</code> → <code>3</code>. O uso comum: <code>for (i = 0, j = n - 1; i &lt; j; i++, j--)</code></td><td><a href="for.html">for</a></td></tr>
+<tr><td><code>typeof(x)</code> <span class="versao">C23</span></td><td>o tipo de <code>x</code>, para declarar outra variável igual</td><td><code>typeof(a) c = 9;</code> → um <code>int</code></td><td><a href="novidades.html">Novidades</a></td></tr>
+<tr><td><code>_Generic(x, …)</code> <span class="versao">C11</span></td><td>escolhe uma expressão conforme o tipo de <code>x</code></td><td><a href="ref-tipos.html#literais">veja em Tipos e Limites</a></td><td><a href="generic.html">_Generic</a></td></tr>
+</table>
+</div>
+<p>Vírgula como operador e vírgula que separa argumentos são coisas diferentes: em <code>printf("%d %d", a, b)</code>, as vírgulas só separam.</p>
+
+<h3 id="programa">O programa das tabelas</h3>
+<pre class="file" data-file="ops.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 17, b = 5;
+    printf("aritméticos: %d %d %d %d %d\n", a + b, a - b, a * b, a / b, a % b);
+    printf("negativos: %d %d %d %d\n", -17 / 5, -17 % 5, 17 / -5, 17 % -5);
+    printf("com double: %.2f %.2f\n", 17 / 5.0, (double)a / b);
+    printf("unários: %d %d\n", -a, +a);
+    int x = 10;
+    x += 5;  printf("x += 5  -&gt; %d\n", x);
+    x -= 3;  printf("x -= 3  -&gt; %d\n", x);
+    x *= 2;  printf("x *= 2  -&gt; %d\n", x);
+    x /= 5;  printf("x /= 5  -&gt; %d\n", x);
+    x %= 3;  printf("x %%= 3  -&gt; %d\n", x);
+    x &lt;&lt;= 4; printf("x &lt;&lt;= 4 -&gt; %d\n", x);
+    x &gt;&gt;= 1; printf("x &gt;&gt;= 1 -&gt; %d\n", x);
+    x &amp;= 6;  printf("x &amp;= 6  -&gt; %d\n", x);
+    x |= 1;  printf("x |= 1  -&gt; %d\n", x);
+    x ^= 3;  printf("x ^= 3  -&gt; %d\n", x);
+    int i = 5;
+    int pos = i++;
+    printf("i++: valor %d, i agora %d\n", pos, i);
+    int pre = ++i;
+    printf("++i: valor %d, i agora %d\n", pre, i);
+    printf("comparação: %d %d %d %d %d %d\n", a == b, a != b, a &lt; b, a &gt; b, a &lt;= 17, a &gt;= 18);
+    printf("lógicos: %d %d %d %d\n", 1 &amp;&amp; 0, 1 || 0, !0, !5);
+    printf("bits: %d %d %d %d %d %d\n", 12 &amp; 10, 12 | 10, 12 ^ 10, ~12, 1 &lt;&lt; 4, 200 &gt;&gt; 3);
+    printf("ternário: %s\n", a &gt; b ? "a é maior" : "b é maior");
+    int v[3] = {10, 20, 30};
+    int *p = v;
+    printf("ponteiros: %d %d %d %d\n", *p, p[2], *(p + 1), (int)(&amp;v[2] - p));
+    struct ponto { int x, y; } pt = {3, 4}, *pp = &amp;pt;
+    printf("membros: %d %d\n", pt.x, pp-&gt;y);
+    printf("sizeof: %zu %zu %zu\n", sizeof a, sizeof(double), sizeof v);
+    printf("alignof(double): %zu\n", alignof(double));
+    int k = (a = 1, b = 2, a + b);
+    printf("vírgula: %d\n", k);
+    typeof(a) c = 9;
+    printf("typeof: %d\n", c);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra ops.c -o ops
+$ ./ops
+aritméticos: 22 12 85 3 2
+negativos: -3 -2 -3 2
+com double: 3.40 3.40
+unários: -17 17
+x += 5  -&gt; 15
+x -= 3  -&gt; 12
+x *= 2  -&gt; 24
+x /= 5  -&gt; 4
+x %= 3  -&gt; 1
+x &lt;&lt;= 4 -&gt; 16
+x &gt;&gt;= 1 -&gt; 8
+x &amp;= 6  -&gt; 0
+x |= 1  -&gt; 1
+x ^= 3  -&gt; 2
+i++: valor 5, i agora 6
+++i: valor 7, i agora 7
+comparação: 0 1 0 1 1 0
+lógicos: 0 1 1 0
+bits: 8 14 6 -13 16 25
+ternário: a é maior
+ponteiros: 10 30 20 2
+membros: 3 4
+sizeof: 4 8 12
+alignof(double): 8
+vírgula: 3
+typeof: 9</pre>
+<p>A saída do editor é idêntica, linha por linha.</p>
+
+<hr>
+
+<h2 id="armadilhas">Armadilhas</h2>
+<p>Este programa compila (no gcc) e roda, mas quase nenhuma linha faz o que parece. O <code>-Wall</code> avisa de todas:</p>
+<pre class="file" data-file="armadilhas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int flags = 6;
+    if (flags &amp; 4 == 4) printf("bit 2 ligado\n");
+    int x = 1 &lt;&lt; 2 + 1;
+    printf("1 &lt;&lt; 2 + 1 = %d\n", x);
+    int idade = 15;
+    if (idade = 18) printf("maior de idade (idade = %d)\n", idade);
+    int a = 2, b = 3;
+    if (a &lt; b &lt; 1) printf("a &lt; b &lt; 1 é verdade?!\n");
+    int i = 1;
+    i = i++ + 1;
+    printf("i = %d\n", i);
+    if (!a == 5) printf("nunca\n");
+    printf("%d\n", a &amp;&amp; b || 0 &amp;&amp; 1);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra armadilhas.c -o armadilhas
+armadilhas.c: In function ‘main’:
+armadilhas.c:5:15: warning: suggest parentheses around comparison in operand of ‘&amp;’ [-Wparentheses]
+    5 |     if (flags &amp; 4 == 4) printf("bit 2 ligado\n");
+      |               ^
+armadilhas.c:6:15: warning: suggest parentheses around ‘+’ inside ‘&lt;&lt;’ [-Wparentheses]
+    6 |     int x = 1 &lt;&lt; 2 + 1;
+      |               ^~
+armadilhas.c:9:9: warning: suggest parentheses around assignment used as truth value [-Wparentheses]
+    9 |     if (idade = 18) printf("maior de idade (idade = %d)\n", idade);
+      |         ^~~~~
+armadilhas.c:11:11: warning: comparisons like ‘X&lt;=Y&lt;=Z’ do not have their mathematical meaning [-Wparentheses]
+   11 |     if (a &lt; b &lt; 1) printf("a &lt; b &lt; 1 é verdade?!\n");
+      |         ~~^~~
+armadilhas.c:13:7: warning: operation on ‘i’ may be undefined [-Wsequence-point]
+   13 |     i = i++ + 1;
+      |     ~~^~~~~~~~~
+armadilhas.c:15:12: warning: comparison of constant ‘5’ with boolean expression is always false [-Wbool-compare]
+   15 |     if (!a == 5) printf("nunca\n");
+      |            ^~
+armadilhas.c:15:12: warning: logical not is only applied to the left hand side of comparison [-Wlogical-not-parentheses]
+armadilhas.c:15:9: note: add parentheses around left hand side expression to silence this warning
+   15 |     if (!a == 5) printf("nunca\n");
+      |         ^~
+      |         ( )
+armadilhas.c:16:22: warning: suggest parentheses around ‘&amp;&amp;’ within ‘||’ [-Wparentheses]
+   16 |     printf("%d\n", a &amp;&amp; b || 0 &amp;&amp; 1);
+      |                    ~~^~~~
+$ ./armadilhas
+1 &lt;&lt; 2 + 1 = 8
+maior de idade (idade = 18)
+i = 2
+1</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>gcc 15</th><th>Clang (editor)</th><th>O que acontece e como consertar</th></tr>
+<tr><td><code>flags &amp; 4 == 4</code></td><td><code>suggest parentheses around comparison in operand of ‘&amp;’ [-Wparentheses]</code></td><td><code>&amp; has lower precedence than ==; == will be evaluated first [-Wparentheses]</code></td><td>O <code>==</code> é mais forte: vira <code>flags &amp; (4 == 4)</code> = <code>6 &amp; 1</code> = 0, e o bit ligado não foi visto. Escreva <code>(flags &amp; 4) == 4</code> ou só <code>if (flags &amp; 4)</code>. Aula: <a href="mascaras-bits.html">Máscaras e Flags</a>.</td></tr>
+<tr><td><code>1 &lt;&lt; 2 + 1</code></td><td><code>suggest parentheses around ‘+’ inside ‘&lt;&lt;’ [-Wparentheses]</code></td><td><code>operator '&lt;&lt;' has lower precedence than '+'; '+' will be evaluated first [-Wshift-op-parentheses]</code></td><td>Deu 8 (<code>1 &lt;&lt; 3</code>), não 5. Escreva <code>(1 &lt;&lt; 2) + 1</code>.</td></tr>
+<tr><td><code>if (idade = 18)</code></td><td><code>suggest parentheses around assignment used as truth value [-Wparentheses]</code></td><td><code>using the result of an assignment as a condition without parentheses [-Wparentheses]</code></td><td>Um <code>=</code> só <strong>guarda</strong> 18 em <code>idade</code> e a condição vale 18 (verdadeiro): a Ana, com 15, virou "maior de idade". Comparar é <code>==</code>. Aula: <a href="operadores-comparacao.html">Comparação</a>.</td></tr>
+<tr><td><code>a &lt; b &lt; 1</code></td><td><code>comparisons like ‘X&lt;=Y&lt;=Z’ do not have their mathematical meaning [-Wparentheses]</code> (aviso)</td><td><strong>erro:</strong> <code>chained comparison 'X &lt; Y &lt; Z' does not behave the same as a mathematical expression [-Wparentheses]</code></td><td>Vira <code>(a &lt; b) &lt; 1</code> = <code>1 &lt; 1</code> = falso. No gcc compila; no editor, o Clang 22 recusa. Escreva <code>a &lt; b &amp;&amp; b &lt; 1</code>. Aula: <a href="operadores-logicos.html">Lógicos</a>.</td></tr>
+<tr><td><code>i = i++ + 1</code></td><td><code>operation on ‘i’ may be undefined [-Wsequence-point]</code></td><td><code>multiple unsequenced modifications to 'i' [-Wunsequenced]</code></td><td>Muda <code>i</code> duas vezes sem ordem definida: comportamento indefinido (deu 2 nos dois, mas podia ser outro valor). Escreva <code>i += 2;</code> ou separe em duas linhas. Aula: <a href="comportamento-indefinido.html">Comportamento Indefinido</a>.</td></tr>
+<tr><td><code>!a == 5</code></td><td><code>logical not is only applied to the left hand side of comparison [-Wlogical-not-parentheses]</code> e <code>comparison of constant ‘5’ with boolean expression is always false [-Wbool-compare]</code></td><td><code>logical not is only applied to the left hand side of this comparison [-Wlogical-not-parentheses]</code> e <code>result of comparison of constant 5 with boolean expression is always false</code></td><td>O <code>!</code> é mais forte: vira <code>(!a) == 5</code>, e <code>!a</code> só vale 0 ou 1. Para "<code>a</code> não é 5", escreva <code>a != 5</code> ou <code>!(a == 5)</code>.</td></tr>
+<tr><td><code>a &amp;&amp; b || 0 &amp;&amp; 1</code></td><td><code>suggest parentheses around ‘&amp;&amp;’ within ‘||’ [-Wparentheses]</code></td><td><code>'&amp;&amp;' within '||' [-Wlogical-op-parentheses]</code></td><td>Está certo (<code>&amp;&amp;</code> vem antes de <code>||</code>), mas é fácil de ler errado. Os parênteses deixam claro: <code>(a &amp;&amp; b) || (0 &amp;&amp; 1)</code>.</td></tr>
+</table>
+</div>
+
+<div class="cenario">
+<strong><code>*p++</code> não soma 1 no valor</strong>
+<p>Com <code>int *p = v;</code>, a linha <code>*p++;</code> não aumenta <code>v[0]</code>: o <code>++</code> (nível 1) pega o <code>p</code> antes do <code>*</code> (nível 2), então ela anda o ponteiro para o próximo item (depois dela, <code>v[0]</code> continua 10 e <code>*p</code> vale 20). O compilador desconfia: <code>value computed is not used [-Wunused-value]</code> no gcc, <code>expression result unused [-Wunused-value]</code> no Clang. <strong>Como consertar:</strong> para aumentar o valor apontado, <code>(*p)++</code>. Aula: <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Dividir por zero</strong>
+<p><code>7 / zero</code> com <code>int zero = 0;</code> não dá aviso, e o programa morre nos dois: no gcc, <code>Exceção de ponto flutuante (imagem do núcleo gravada)</code>; no editor, a mesma mensagem e <code>[código de saída: 136]</code>. (O nome é antigo: vale também para divisão de inteiros.) <strong>Como consertar:</strong> teste antes, <code>if (divisor != 0)</code>. Com <code>double</code>, dividir por zero não derruba: <code>7 / 0.0</code> mostra <code>inf</code> (infinito) e <code>0 / 0.0</code> mostra <code>-nan</code> ("não é um número"), nos dois. Aula: <a href="operadores-aritmeticos.html">Aritméticos</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="experimente">Experimente</h2>
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> antes de clicar em Rodar, escreva num papel o que cada linha vai mostrar, usando a <a href="#precedencia">tabela de precedência</a>. Depois, ponha parênteses e veja o que muda.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 6, b = 3, c = 2;
+    printf("%d\n", a + b * c);
+    printf("%d\n", a / b * c);
+    printf("%d\n", a - b - c);
+    printf("%d\n", a % 4 + b);
+    printf("%d\n", -a / 4);
+    printf("%d\n", a &gt; b &amp;&amp; b &gt; c);
+    printf("%d\n", a == 6 || b++ == 99);
+    printf("b depois: %d\n", b);
+    printf("%d\n", a &gt; b ? a : b);
+    return 0;
+}
+</pre>
+</div>
+
+<div class="tryc" data-goal="out:bit 2 ligado,semaviso">
+<p class="try-task"><strong>Missão:</strong> as permissões da Ana estão em <code>flags</code> = 6 (<code>0b110</code>): o bit 2 (que vale 4) está ligado, mas o programa não o vê, e o compilador avisa. Ponha os parênteses no lugar certo para sair <code>bit 2 ligado</code>, sem nenhum aviso.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int flags = 6;
+    if (flags &amp; 4 == 4) {
+        printf("bit 2 ligado\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int flags = 6;
+    if ((flags &amp; 4) == 4) {
+        printf("bit 2 ligado\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Precedência, do mais forte ao mais fraco: pós-fixos (<code>a++ f() v[i] . -&gt;</code>) → unários (<code>! ~ - * &amp; sizeof</code> cast) → <code>* / %</code> → <code>+ -</code> → <code>&lt;&lt; &gt;&gt;</code> → <code>&lt; &lt;= &gt; &gt;=</code> → <code>== !=</code> → <code>&amp;</code> → <code>^</code> → <code>|</code> → <code>&amp;&amp;</code> → <code>||</code> → <code>?:</code> → atribuições → <code>,</code>.</li>
+  <li>Da direita para a esquerda: os unários, o <code>?:</code> e as atribuições. O resto, da esquerda para a direita.</li>
+  <li>Divisão de inteiros corta a parte decimal; <code>%</code> tem o sinal do primeiro número.</li>
+  <li><code>&amp;&amp;</code> e <code>||</code> param assim que sabem a resposta (curto-circuito).</li>
+  <li>Com <code>&amp;</code>, <code>|</code>, <code>^</code> e <code>&lt;&lt;</code>, use parênteses. <code>=</code> guarda, <code>==</code> compara. Não mude a mesma variável duas vezes numa expressão.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
