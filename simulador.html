@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C O Editor do Guia — como usar as caixas Experimente | Guia C</title>
+<meta name="description" content="Como usar o editor Experimente do Guia C: Rodar, o download do compilador na primeira vez, erros de compilação, entrada pelo teclado (scanf, fgets), argumentos, abas, Restaurar, Ver solução e missões. O Clang do editor comparado com o gcc do terminal e o que funciona diferente no navegador e no seu computador.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">O Editor do Guia</span></h1>
+
+<p class="intro">Em toda aula há caixas <strong>Experimente</strong>: um pequeno editor de código com um botão <strong>Rodar</strong>. Elas não são uma imitação: cada clique <strong>compila de verdade</strong> o seu código, com o compilador Clang funcionando dentro do navegador, e roda o programa gerado. Nesta aula você vai conhecer cada parte da caixa, entender o que aparece no terminal dela, aprender a digitar a entrada do programa, usar as abas e as missões, e saber em que o editor é diferente do gcc instalado no seu computador.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As partes da caixa: abas, editor, Argumentos, Rodar, terminal, Restaurar e Ver solução.</li>
+  <li>O que acontece na primeira vez que você clica em Rodar (o download do compilador).</li>
+  <li>Como ler erros e avisos de compilação na caixa.</li>
+  <li>Como o programa recebe o que você digita (<code>scanf</code>, <code>fgets</code>), os argumentos e os arquivos das abas.</li>
+  <li>Como funcionam as missões.</li>
+  <li>A mesma falha no <strong>Clang</strong> do editor e no <strong>gcc</strong> do terminal, lado a lado.</li>
+  <li>O que funciona igual e o que é diferente no editor e no seu computador.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: um laboratório portátil</h2>
+<p>Na escola, o laboratório de ciências tem tudo pronto: você chega, faz o experimento e vai embora. O editor do guia é assim. O compilador fica guardado <strong>dentro da página</strong>, e o programa roda num "computador de mentirinha" que só existe enquanto a aba está aberta, com uma pasta da Ana (<code>/home/ana</code>). Nada do que você fizer ali toca no seu computador. Se algo der muito errado, recarregue a página.</p>
+
+<p>Por baixo, é o <strong>Clang 22</strong>, do projeto LLVM, o mesmo compilador que você instalaria no seu computador, só que transformado em <strong>WebAssembly</strong> (um formato de programa que os navegadores executam quase tão rápido quanto um programa comum). Junto vem a <strong>biblioteca C</strong> (onde moram o <code>printf</code>, o <code>scanf</code>, o <code>malloc</code>…). O compilador faz as quatro etapas que você viu em <a href="como-funciona.html">Como o C Vira Programa</a>: pré-processar, compilar, montar e ligar. O resultado é um programa WebAssembly, que o navegador roda em seguida.</p>
+
+<hr>
+
+<h2>As partes da caixa</h2>
+<p>Rode esta caixa e acompanhe a explicação abaixo dela:</p>
+
+<div class="tryc">
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    printf("2 + 3 = %d\n", 2 + 3);
+    return 0;
+}
+</pre>
+</div>
+
+<dl class="anatomy">
+  <dt>Aba</dt><dd>O nome do arquivo que você está editando, como <code>programa.c</code>. Algumas caixas têm várias abas (veja <a href="#abas">Várias abas</a>).</dd>
+  <dt>Restaurar</dt><dd>Volta ao código original da aula, apagando as suas mudanças. Use sem medo: o original nunca se perde.</dd>
+  <dt>Editor</dt><dd>Clique e digite. Os números à esquerda são os <strong>números das linhas</strong>, os mesmos que as mensagens de erro citam.</dd>
+  <dt>Argumentos</dt><dd>Palavras que o programa recebe ao ser chamado, como no terminal (veja <a href="#args">Argumentos</a>). Quase sempre fica vazio.</dd>
+  <dt>▶ Rodar</dt><dd>Compila e roda. Enquanto o programa roda, o botão vira <strong>■ Parar</strong>.</dd>
+  <dt>Terminal</dt><dd>Aparece depois de rodar, com o título <code>Terminal — ana@notebook: ~</code>: o comando de compilação, as mensagens do compilador, o comando que roda o programa, a saída e o código de saída.</dd>
+</dl>
+
+<p>Depois de rodar, o terminal da caixa mostra:</p>
+
+<pre class="file" data-file="o que o editor mostra">$ clang -std=c23 -Wall -Wextra programa.c -o programa
+$ ./programa
+Olá, mundo!
+2 + 3 = 5
+[código de saída: 0]</pre>
+
+<p>São exatamente os passos que você faria no terminal: compilar com o <code>clang</code> (com as mesmas opções que o guia usa com o gcc: <code>-std=c23 -Wall -Wextra</code>, explicadas em <a href="compilar.html">Compilar com gcc</a>) e rodar com <code>./programa</code>. Enquanto compila, aparece <code>(compilando…)</code>. O <code>[código de saída: 0]</code> é o número que o <code>main</code> devolve com o <code>return 0;</code>: <code>0</code> quer dizer "terminou bem". No terminal de verdade, ele fica escondido, e você o vê com <code>echo $?</code>; o editor mostra sempre.</p>
+
+<h3>A primeira vez: o download do compilador</h3>
+<p>Na <strong>primeira</strong> vez que você clica em Rodar, o navegador baixa o compilador e a biblioteca C: cerca de <strong>23 MB</strong>. Aparece uma barra com a mensagem <code>Baixando o compilador C (≈ 23 MB, só na primeira vez)…</code> e a porcentagem, depois <code>Preparando o compilador…</code>. Leva de alguns segundos a um minuto, conforme a internet. Depois disso:</p>
+<ul>
+  <li>o navegador guarda tudo: nas outras caixas, nas outras aulas e nas próximas visitas não há download;</li>
+  <li>cada compilação leva só uma fração de segundo;</li>
+  <li>se a internet cair no meio do download, aparece <code>Não consegui carregar o compilador: …</code> seguido de "Confira a internet e clique em Rodar de novo".</li>
+</ul>
+
+<p>Se você usa o celular com plano de dados, prefira o Wi-Fi na primeira vez.</p>
+
+<h3>Atalhos do editor</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tecla</th><th>O que faz</th></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd> (Mac: <kbd>Cmd</kbd>+<kbd>Enter</kbd>)</td><td>Roda o código, sem tirar a mão do teclado.</td></tr>
+<tr><td><kbd>Tab</kbd></td><td>Insere o recuo (4 espaços). Com várias linhas selecionadas, recua todas.</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Tira um nível de recuo.</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Pula a linha mantendo o recuo; depois de <code>{</code>, <code>(</code> ou <code>[</code>, recua mais um nível. Um <code>}</code> sozinho na linha volta um nível.</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>Sai do editor (para quem navega pelo teclado: depois, <kbd>Tab</kbd> vai para o próximo botão).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Erros e avisos de compilação</h2>
+<p>Quando o compilador reclama, as mensagens aparecem no terminal da caixa, coloridas como num terminal de verdade, e o programa <strong>não roda</strong> (não existe programa para rodar). A caixa abaixo tem um erro:</p>
+
+<div class="tryc" data-goal="out:Olá\, mundo!">
+<p class="try-task"><strong>Missão:</strong> rode e leia a mensagem: ela diz a linha e a coluna do problema e até mostra o que falta. Conserte e rode de novo.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n")
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+}
+</pre>
+</div>
+
+<pre class="file" data-file="o que o editor mostra">$ clang -std=c23 -Wall -Wextra programa.c -o programa
+programa.c:4:29: error: expected ';' after expression
+    4 |     printf("Olá, mundo!\n")
+      |                            ^
+      |                            ;
+1 error generated.
+[código de saída: 1]</pre>
+
+<p>A mensagem diz: no arquivo <code>programa.c</code>, linha <code>4</code>, coluna <code>29</code>, um <code>error</code> ("erro"): <code>expected ';' after expression</code>, "esperava <code>;</code> depois da expressão". A setinha <code>^</code> aponta o lugar, e a linha de baixo mostra o <code>;</code> que falta. O <code>1 error generated.</code> conta os erros, e o <code>[código de saída: 1]</code> é o do compilador: deu errado, nada foi rodado. A aula <a href="erros-compilacao.html">Lendo Erros do Compilador</a> ensina a ler essas mensagens.</p>
+
+<p>Repare na solução: ela não tem <code>return 0;</code>. Desde o C99, o <code>main</code> (e só ele) pode terminar sem <code>return</code>, e devolve 0. O guia escreve o <code>return 0;</code> mesmo assim, para deixar claro.</p>
+
+<p><strong>Avisos</strong> (<code>warning</code>) são diferentes: o programa compila e roda, mas o compilador desconfia de algo. Os dois aparecem no terminal, um antes do outro:</p>
+
+<pre class="file" data-file="o que o editor mostra">$ clang -std=c23 -Wall -Wextra programa.c -o programa
+programa.c:4:9: warning: unused variable 'idade' [-Wunused-variable]
+    4 |     int idade = 29;
+      |         ^~~~~
+1 warning generated.
+$ ./programa
+Olá!
+[código de saída: 0]</pre>
+
+<p>A variável <code>idade</code> foi criada e nunca usada: não é erro, mas costuma ser esquecimento. A aula <a href="avisos.html">Avisos (-Wall -Wextra)</a> mostra os mais comuns.</p>
+
+<hr>
+
+<h2>A entrada: o programa pergunta, você responde</h2>
+<p>Quando um programa lê o teclado com <code>scanf</code> ou <code>fgets</code> (aulas <a href="scanf.html">Entrada com scanf</a> e <a href="fgets.html">Ler uma Linha</a>), a caixa <strong>pausa</strong> o programa e mostra um campo para você digitar, dentro do próprio terminal, logo depois da pergunta. Digite e tecle <kbd>Enter</kbd>. Rode e experimente:</p>
+
+<div class="tryc">
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[50] = "";
+    printf("Qual é o seu nome? ");
+    scanf("%49s", nome);
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No campo de entrada</th><th>O que faz</th></tr>
+<tr><td><kbd>Enter</kbd></td><td>Envia a linha digitada para o programa.</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Avisa "acabou a entrada" (fim de arquivo, o <code>EOF</code>), como no terminal do Linux.</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> ou <strong>■ Parar</strong></td><td>Para o programa. O terminal mostra <code>^C</code> e o código de saída <code>130</code>, o mesmo que o Linux usa para "interrompido".</td></tr>
+</table>
+</div>
+
+<p>Algumas caixas já trazem a entrada pronta, num campo <strong>Entrada</strong> ao lado do botão Rodar: o que estiver ali é entregue ao programa, uma linha de cada vez, como se alguém digitasse. No terminal da caixa, cada linha aparece no ponto em que o programa a lê. Você pode mudar o texto do campo antes de rodar.</p>
+
+<div class="tryc" data-stdin="Ana\n29" data-goal="out:Ana tem 29 anos.,src:idade">
+<p class="try-task"><strong>Missão:</strong> o programa lê o nome, mas ainda não lê a idade (a segunda linha da Entrada). Acrescente <code>int idade = 0;</code>, leia com <code>scanf("%d", &amp;idade);</code> e troque a última linha para mostrar <code>Ana tem 29 anos.</code> usando as duas variáveis.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[50] = "";
+    printf("Nome: ");
+    scanf("%49s", nome);
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[50] = "";
+    int idade = 0;
+    printf("Nome: ");
+    scanf("%49s", nome);
+    printf("Idade: ");
+    scanf("%d", &amp;idade);
+    printf("%s tem %d anos.\n", nome, idade);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Com a solução, o terminal da caixa mostra cada resposta logo depois da pergunta, como se a Ana tivesse digitado:</p>
+
+<pre class="file" data-file="o que o editor mostra">$ clang -std=c23 -Wall -Wextra programa.c -o programa
+$ ./programa
+Nome: Ana
+Idade: 29
+Ana tem 29 anos.
+[código de saída: 0]</pre>
+
+<p>Repare que o <code>printf("Nome: ")</code> não tem <code>\n</code>, e mesmo assim a pergunta aparece antes de o programa esperar a resposta: quando o programa vai ler o teclado, o que estava esperando para ser mostrado aparece primeiro. É o que acontece no terminal do Linux também.</p>
+
+<p>No terminal da Ana, a mesma ideia: quando o programa espera, o que ela digita aparece na tela (é o terminal que "ecoa" as teclas). Se a entrada vier de outro programa, pelo <code>|</code>, nada é ecoado, e a resposta sai grudada na pergunta:</p>
+
+<pre class="term" data-cwd="~/c/sim">$ echo Ana | ./nome
+Qual é o seu nome? Olá, Ana!                       « o "Ana" veio pelo |, sem eco</pre>
+
+<h3 id="args">Argumentos</h3>
+<p>O campo <strong>Argumentos</strong> faz o papel das palavras que vêm depois do nome do programa no terminal: <code>./programa maçã 'pera uva'</code>. Aspas juntam palavras num argumento só, como no bash. O programa os recebe no <code>argv</code> (aula <a href="argc-argv.html">Argumentos da Linha de Comando</a>):</p>
+
+<div class="tryc" data-args="maçã 'pera uva'">
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(int argc, char *argv[]) {
+    for (int i = 0; i &lt; argc; i++) {
+        printf("%d: %s\n", i, argv[i]);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<pre class="file" data-file="o que o editor mostra">$ clang -std=c23 -Wall -Wextra programa.c -o programa
+$ ./programa 'maçã' 'pera uva'
+0: ./programa
+1: maçã
+2: pera uva
+[código de saída: 0]</pre>
+
+<p>O <code>argv[0]</code> é sempre o próprio nome do programa. Na linha do comando, o editor põe aspas em volta de <code>maçã</code> por precaução (por causa das letras acentuadas); o programa recebe a palavra sem as aspas. Troque o texto do campo e rode de novo.</p>
+
+<hr>
+
+<h2 id="abas">Várias abas: vários arquivos</h2>
+<p>Algumas caixas têm mais de uma aba. Cada aba é um arquivo da mesma pasta:</p>
+<ul>
+  <li>todos os arquivos <code>.c</code> são <strong>compilados juntos</strong> num programa só (aula <a href="multiplos-arquivos.html">Vários Arquivos</a>);</li>
+  <li>os outros (<code>.h</code>, <code>.txt</code>, <code>.csv</code>) ficam na pasta em que o programa roda, <code>/home/ana</code>, e o programa pode abri-los com <code>fopen</code>;</li>
+  <li>arquivos que o programa cria vivem numa pasta na memória, que começa limpa a cada Rodar.</li>
+</ul>
+
+<div class="tryc">
+<pre class="script" data-file="compras.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *arquivo = fopen("lista.txt", "r");
+    if (arquivo == NULL) {
+        perror("lista.txt");
+        return 1;
+    }
+    char item[100];
+    int n = 0;
+    while (fgets(item, sizeof item, arquivo) != NULL) {
+        n = n + 1;
+        printf("%d. %s", n, item);
+    }
+    fclose(arquivo);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="lista.txt">arroz
+feijão
+café
+</pre>
+</div>
+
+<p>O programa abre o <code>lista.txt</code> da outra aba e numera as linhas (a aula <a href="ler-arquivos.html">Ler Arquivos</a> explica cada linha). Clique na aba <code>lista.txt</code>, acrescente <code>leite</code> numa linha nova e rode outra vez. Repare também no comando de compilação: o executável se chama <code>compras</code>, o nome do primeiro <code>.c</code> sem a extensão. E troque <code>"lista.txt"</code> por <code>"listas.txt"</code>: o <code>perror</code> mostra <code>lista.txt: No such file or directory</code> e o programa termina com o código 1.</p>
+
+<hr>
+
+<h2>Missões, Restaurar e Ver solução</h2>
+<p>Muitas caixas têm uma <strong>missão</strong>: um desafio escrito acima do editor. Embaixo da caixa aparece <code>Missão em andamento…</code>; a cada Rodar, o editor confere se o desafio foi cumprido e, quando foi, mostra <strong>✔ Missão cumprida!</strong>. Se faltar alguma coisa, a mensagem dá uma pista entre parênteses, como <code>(o código ainda não compila)</code> ou <code>(a saída ainda não é a esperada)</code>.</p>
+
+<p>O editor confere o <strong>resultado</strong>, não o jeito: se a missão pede que apareça <code>Olá, Ana!</code>, qualquer código que mostre isso vale. Algumas missões pedem também um recurso (por exemplo, "use um <code>for</code>") ou um <strong>erro de propósito</strong>, para você ver a mensagem. Como esta:</p>
+
+<div class="tryc" data-goal="erro:/expected ['‘];['’]/">
+<p class="try-task"><strong>Missão:</strong> provoque o erro do <code>;</code>: apague o ponto e vírgula do fim da linha 4 e rode. A missão se cumpre quando a compilação <strong>falha</strong> com a mensagem <code>expected ';'</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Vou dar erro de propósito\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Vou dar erro de propósito\n")
+    return 0;
+}
+</pre>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Botão</th><th>O que faz</th></tr>
+<tr><td><strong>Restaurar</strong></td><td>Volta ao código original da caixa. Útil quando você mexeu demais e se perdeu.</td></tr>
+<tr><td><strong>Ver solução</strong></td><td>Só nas missões. Pergunta <code>Trocar o seu código pela solução?</code>; com <strong>Sim, mostrar</strong>, o editor troca o código pelo de uma solução possível (com <strong>Cancelar</strong>, nada muda). Depois, Restaurar volta ao início.</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Tente antes de ver a solução</strong>
+<p>Errar faz parte: cada mensagem do compilador que você lê e entende é uma lição. Tente pelo menos duas ou três vezes antes de clicar em Ver solução. E, depois de ver, clique em Restaurar e faça de novo sozinho.</p>
+</div>
+
+<h3>Parar um programa</h3>
+<p>Um programa que não termina nunca (um "laço infinito", que você vai conhecer em <a href="while.html">while</a>) não trava a página: ele roda separado. Clique em <strong>■ Parar</strong>: aparece <code>^C</code> e o código de saída <code>130</code>. Se você não parar, o editor para sozinho depois de 15 segundos, com a mensagem <code>(o editor parou o programa: ele rodou mais de 15 segundos sem terminar — laço infinito?)</code>. O tempo em que o programa espera você digitar não conta. E um programa que escreve demais (mais de 2 MB de texto) também é interrompido.</p>
+
+<hr>
+
+<h2>Clang no editor × gcc no terminal</h2>
+<p>As caixas usam o <strong>Clang</strong>; os terminais das aulas mostram o <strong>gcc</strong>. Os dois seguem o mesmo padrão C23, então um programa <strong>correto</strong> dá o mesmo resultado nos dois. A diferença aparece quando algo dá errado: cada compilador escreve as mensagens com as suas palavras. Debaixo de toda caixa há uma nota lembrando disso. Veja as mesmas falhas nos dois compiladores, todas reais (o Clang da Ana, versão 21, dá as mesmas mensagens que o Clang 22 do editor).</p>
+
+<h3>1. Faltou o <code>;</code></h3>
+<pre class="term" data-cwd="~/c/sim">$ gcc -std=c23 -Wall -Wextra erro.c -o erro
+erro.c: In function ‘main’:
+erro.c:4:28: error: expected ‘;’ before ‘}’ token
+    4 |     printf("Olá, mundo!\n")
+      |                            ^
+      |                            ;
+    5 | }
+      | ~
+$ clang -std=c23 -Wall -Wextra erro.c -o erro
+erro.c:4:29: error: expected ';' after expression
+    4 |     printf("Olá, mundo!\n")
+      |                            ^
+      |                            ;
+1 error generated.</pre>
+
+<p>O gcc diz "esperava <code>;</code> antes do <code>}</code>"; o Clang, "esperava <code>;</code> depois da expressão". Mesmo diagnóstico, mesmo conserto. Repare em três diferenças de estilo:</p>
+<ul>
+  <li>o gcc começa dizendo em que função está (<code>In function ‘main’</code>);</li>
+  <li>o gcc usa aspas curvas (<code>‘;’</code>), o Clang aspas retas (<code>';'</code>);</li>
+  <li>a <strong>coluna</strong>: 28 no gcc e 29 no Clang. O Clang conta <strong>bytes</strong>, e o <code>á</code> de "Olá" ocupa dois bytes em UTF-8 (aula <a href="acentos-utf8.html">Acentos e UTF-8</a>); o gcc conta caracteres. Numa linha sem acentos, os dois dão o mesmo número.</li>
+</ul>
+
+<h3>2. Um nome que não existe</h3>
+<pre class="term" data-cwd="~/c/sim">$ gcc -std=c23 -Wall -Wextra total.c -o total
+total.c: In function ‘main’:
+total.c:5:35: error: ‘quantidade’ undeclared (first use in this function)
+    5 |     printf("Total: %d\n", preco * quantidade);
+      |                                   ^~~~~~~~~~
+total.c:5:35: note: each undeclared identifier is reported only once for each function it appears in
+$ clang -std=c23 -Wall -Wextra total.c -o total
+total.c:5:35: error: use of undeclared identifier 'quantidade'
+    5 |     printf("Total: %d\n", preco * quantidade);
+      |                                   ^~~~~~~~~~
+1 error generated.</pre>
+
+<p>gcc: "<code>quantidade</code> não declarada (primeiro uso nesta função)", e uma nota: "cada identificador não declarado é avisado só uma vez por função". Clang: "uso de identificador não declarado <code>quantidade</code>". As duas querem dizer: você usou um nome que o programa não conhece (esqueceu de criar a variável, ou escreveu o nome diferente). Essa dupla de frases vai aparecer muito no guia.</p>
+
+<h3>3. Uma função que o compilador ainda não conhece</h3>
+<pre class="term" data-cwd="~/c/sim">$ gcc -std=c23 -Wall -Wextra dobro.c -o dobro
+dobro.c: In function ‘main’:
+dobro.c:4:20: error: implicit declaration of function ‘dobro’ [-Wimplicit-function-declaration]
+    4 |     printf("%d\n", dobro(21));
+      |                    ^~~~~
+$ clang -std=c23 -Wall -Wextra dobro.c -o dobro
+dobro.c:4:20: error: use of undeclared identifier 'dobro'
+    4 |     printf("%d\n", dobro(21));
+      |                    ^~~~~
+1 error generated.</pre>
+
+<p>O programa chama <code>dobro</code> antes de dizer o que ela é. O gcc fala em "declaração implícita da função" (um costume do C antigo, proibido desde o C99); o Clang, com <code>-std=c23</code>, trata como um nome qualquer que não existe. O conserto é declarar a função antes de usar (aula <a href="prototipos.html">Protótipos</a>).</p>
+
+<h3>4. Erro do ligador</h3>
+<pre class="term" data-cwd="~/c/sim">$ gcc -std=c23 -Wall -Wextra soma.c -o soma
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cccJZCgy.o: na função "main":
+soma.c:(.text+0x13): referência não definida para "soma"
+collect2: error: ld returned 1 exit status</pre>
+
+<pre class="file" data-file="o que o editor mostra">$ clang -std=c23 -Wall -Wextra programa.c -o programa
+wasm-ld: error: /tmp/programa-62bf3f.o: undefined symbol: soma
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+[código de saída: 1]</pre>
+
+<p>A função <code>soma</code> foi declarada (<code>int soma(int a, int b);</code>) e nunca escrita (veja <a href="como-funciona.html">Como o C Vira Programa</a>). No Linux, o ligador é o <code>ld</code>, e a mensagem sai em português ("referência não definida"; em inglês, nos fóruns, <code>undefined reference to</code>); no editor, o ligador é o <code>wasm-ld</code> (o ligador de WebAssembly), em inglês ("símbolo não definido"). Mesmo problema, mesma solução: escrever a função.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>gcc (terminais das aulas)</th><th>Clang (editor)</th></tr>
+<tr><td>Faltou <code>;</code></td><td><code>expected ‘;’ before ‘}’ token</code></td><td><code>expected ';' after expression</code></td></tr>
+<tr><td>Nome desconhecido</td><td><code>‘x’ undeclared (first use in this function)</code></td><td><code>use of undeclared identifier 'x'</code></td></tr>
+<tr><td>Função sem declaração</td><td><code>implicit declaration of function ‘f’</code></td><td><code>use of undeclared identifier 'f'</code></td></tr>
+<tr><td>Variável não usada</td><td><code>unused variable ‘x’ [-Wunused-variable]</code></td><td><code>unused variable 'x' [-Wunused-variable]</code></td></tr>
+<tr><td>Formato errado no <code>printf</code></td><td><code>format ‘%s’ expects argument of type ‘char *’, but argument 2 has type ‘int’</code></td><td><code>format specifies type 'char *' but the argument has type 'int'</code></td></tr>
+<tr><td>Função sem corpo</td><td><code>referência não definida para</code> (do <code>ld</code>)</td><td><code>undefined symbol:</code> (do <code>wasm-ld</code>)</td></tr>
+<tr><td>Contagem no fim</td><td>(não tem)</td><td><code>1 error generated.</code></td></tr>
+</table>
+</div>
+
+<p>Quando uma mensagem de um não fizer sentido, compare com a do outro: muitas vezes uma explica melhor que a outra.</p>
+
+<hr>
+
+<h2>O que funciona no editor</h2>
+<ul>
+  <li>Todo o C23 que o guia ensina, inclusive as novidades: <code>bool</code>, <code>nullptr</code>, <code>constexpr</code>, <code>typeof</code>, <code>1'000'000</code>, <code>0b1010</code>, <code>#embed</code> (aula <a href="novidades.html">Novidades do C99 ao C23</a>). Outras versões (<code>-std=c17</code>, <code>-std=c11</code>, <code>-std=c99</code>) quando a caixa pede.</li>
+  <li>A biblioteca padrão: <code>stdio.h</code>, <code>string.h</code>, <code>stdlib.h</code> (<code>malloc</code>, <code>free</code>, <code>qsort</code>, <code>rand</code>…), <code>ctype.h</code>, <code>math.h</code>, <code>time.h</code>, <code>stdint.h</code>, <code>assert.h</code>, <code>errno.h</code>, <code>setjmp.h</code>, <code>signal.h</code>.</li>
+  <li>Entrada (<code>scanf</code>, <code>fgets</code>, <code>getchar</code>), argumentos, arquivos das abas e arquivos criados pelo programa.</li>
+  <li>O <code>math.h</code> funciona sem a opção <code>-lm</code> (no gcc, às vezes ela é necessária: veja a aula <a href="matematica.html">Matemática</a>).</li>
+  <li>Os erros "clássicos" quebram o programa como no Linux: ponteiro nulo dá <code>Falha de segmentação (imagem do núcleo gravada)</code> (código 139), divisão inteira por zero dá <code>Exceção de ponto flutuante (imagem do núcleo gravada)</code> (136), <code>abort()</code> e <code>assert</code> dão <code>Abortado (imagem do núcleo gravada)</code> (134), e uma recursão sem fim estoura a pilha (139).</li>
+</ul>
+
+<h2>O que não funciona (só no seu computador)</h2>
+<ul>
+  <li><strong>Processos e threads:</strong> <code>fork</code>, <code>exec</code>, <code>pthread</code>. As aulas <a href="processos.html">Processos</a> e <a href="threads.html">Threads</a> usam o terminal.</li>
+  <li><strong><code>system()</code></strong> (rodar um comando do sistema) e <strong>rede</strong>: não há sistema nem rede dentro do navegador. <code>system("ls")</code> mostra <code>sh: 1: ls: not found</code>.</li>
+  <li><strong>Depurador e ferramentas de memória</strong> (<code>gdb</code>, <code>valgrind</code>, <code>-fsanitize</code>): as aulas <a href="depuracao-gdb.html">Depurar com gdb</a>, <a href="valgrind.html">Valgrind</a> e <a href="sanitizers.html">Sanitizers</a> usam o terminal.</li>
+  <li><strong>Fuso horário:</strong> o relógio do editor está em UTC (horário de Greenwich), 3 horas à frente de Brasília.</li>
+  <li><strong>Limites:</strong> 15 segundos rodando, 2 MB de saída, 256 MB de memória (um <code>malloc</code> maior que isso devolve <code>NULL</code>).</li>
+</ul>
+
+<hr>
+
+<h2>O que é diferente no editor × no seu computador</h2>
+<p>O editor gera um programa <strong>WebAssembly de 32 bits</strong> e usa a biblioteca C <strong>wasi-libc</strong> (feita a partir da musl). O gcc do Linux gera um programa <strong>x86-64 de 64 bits</strong> e usa a <strong>glibc</strong>, a biblioteca C do projeto GNU. Para programas corretos, isso quase nunca muda nada. Mas, quando o programa faz algo errado ou depende do tamanho dos tipos, as diferenças aparecem. Todas as linhas abaixo foram conferidas: no editor, com a ferramenta do guia que roda o mesmo compilador fora do navegador; no computador, com o gcc 15 da Ana.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Editor (Clang 22 + wasi-libc)</th><th>gcc 15 no Linux (glibc)</th></tr>
+<tr><td>Usar um ponteiro nulo (<code>*p</code> com <code>p = NULL</code>)</td><td><code>Falha de segmentação (imagem do núcleo gravada)</code>, código 139</td><td><code>Falha de segmentação</code>, código 139 (igual)</td></tr>
+<tr><td>Divisão inteira por zero</td><td><code>Exceção de ponto flutuante (imagem do núcleo gravada)</code>, código 136</td><td><code>Exceção de ponto flutuante</code>, código 136 (igual)</td></tr>
+<tr><td><code>assert(x &gt; 0)</code> falhou</td><td><code>Assertion failed: x &gt; 0 (programa.c: main: 3)</code>, <code>Abortado</code>, código 134</td><td><code>programa: programa.c:3: main: Assertion `x &gt; 0' failed.</code>, <code>Abortado</code>, código 134</td></tr>
+<tr><td><code>v[5]</code> num array de 3 elementos</td><td>passa em silêncio: mostra um número qualquer e o programa continua</td><td>também passa em silêncio (outro número qualquer)</td></tr>
+<tr><td><code>free</code> duas vezes no mesmo ponteiro</td><td>passa em silêncio, código 0</td><td><code>free(): double free detected in tcache 2</code>, <code>Abortado</code>, código 134</td></tr>
+<tr><td><code>sizeof(long)</code> e <code>sizeof</code> de um ponteiro</td><td><code>4</code> e <code>4</code> (32 bits)</td><td><code>8</code> e <code>8</code> (64 bits)</td></tr>
+<tr><td><code>sizeof(int)</code> e <code>sizeof(long long)</code></td><td><code>4</code> e <code>8</code></td><td><code>4</code> e <code>8</code> (igual)</td></tr>
+<tr><td><code>printf("%p", ...)</code> (um endereço)</td><td>números pequenos, como <code>0x801640</code></td><td>números grandes, como <code>0x7ffd012f7710</code>, que mudam a cada execução</td></tr>
+<tr><td><code>srand(42)</code> e depois <code>rand()</code></td><td><code>311430560</code>, <code>131117839</code>…</td><td><code>1483128881</code>, <code>708592740</code>… (outra sequência)</td></tr>
+<tr><td><code>sqrt(x)</code> compilado sem <code>-lm</code></td><td>funciona</td><td>pode dar <code>referência não definida para "sqrt"</code></td></tr>
+<tr><td><code>system("ls")</code></td><td><code>sh: 1: ls: not found</code></td><td>roda o <code>ls</code></td></tr>
+<tr><td>Erro de ligação</td><td><code>wasm-ld: error: …: undefined symbol: soma</code></td><td><code>referência não definida para "soma"</code></td></tr>
+</table>
+</div>
+
+<p>A lição mais importante está nas linhas do <code>v[5]</code> e do <code>free</code> duplo: um erro que "passa em silêncio" <strong>continua sendo um erro</strong>. Em C, ler fora do array ou liberar a memória duas vezes é <strong>comportamento indefinido</strong>: o programa pode travar, pode mostrar lixo, pode até parecer funcionar, e o resultado muda de um computador para outro. O editor e o gcc fizeram coisas diferentes justamente por isso. A aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a> trata do assunto, e as aulas <a href="sanitizers.html">Sanitizers</a> e <a href="valgrind.html">Valgrind</a> mostram as ferramentas que caçam esses erros no seu computador.</p>
+
+<p>Confira o tamanho dos tipos no editor. No terminal da Ana, o mesmo programa mostra <code>int: 4</code>, <code>long: 8</code>, <code>long long: 8</code> e <code>ponteiro: 8</code>:</p>
+
+<div class="tryc">
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("int: %zu\n", sizeof(int));
+    printf("long: %zu\n", sizeof(long));
+    printf("long long: %zu\n", sizeof(long long));
+    printf("ponteiro: %zu\n", sizeof(int *));
+    return 0;
+}
+</pre>
+</div>
+
+<p>Por isso o guia prefere <code>int</code> e <code>long long</code>, que têm o mesmo tamanho nos dois, ou os tipos de tamanho fixo de <code>stdint.h</code> (<code>int32_t</code>, <code>int64_t</code>), e explica os tamanhos nas aulas <a href="inteiros.html">Inteiros</a> e <a href="sizeof.html">Tamanho dos Tipos</a>.</p>
+
+<p>No terminal da Ana, os programas que "quebram" mostram estas mensagens (o bash escreve o nome do sinal e o do programa):</p>
+
+<pre class="term" data-cwd="~/c/sim">$ ./nulo
+antes
+Falha de segmentação     (imagem do núcleo gravada) ./nulo
+$ ./divzero
+antes
+Exceção de ponto flutuante (imagem do núcleo gravada) ./divzero
+$ ./freeduplo
+free(): double free detected in tcache 2
+Abortado                   (imagem do núcleo gravada) ./freeduplo</pre>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"Cliquei em Rodar e fica <code>Baixando o compilador…</code> para sempre"</strong>
+<p><strong>O que significa:</strong> o download de cerca de 23 MB está lento ou foi interrompido. Se falhar, a caixa mostra <code>Não consegui carregar o compilador: …</code>.</p>
+<p><strong>Como consertar:</strong> confira a internet e clique em Rodar de novo. Bloqueadores de conteúdo muito agressivos e o modo "economia de dados" de alguns celulares podem atrapalhar. Depois que baixa uma vez, não baixa mais.</p>
+</div>
+
+<div class="cenario">
+<strong>"O programa ficou parado e não mostrou nada"</strong>
+<p><strong>O que significa:</strong> quase sempre ele está <strong>esperando você digitar</strong>: há um <code>scanf</code> ou <code>fgets</code> e a caixa mostrou o campo de entrada no terminal. Outra possibilidade: um laço infinito, que o editor para sozinho em 15 segundos.</p>
+<p><strong>Como consertar:</strong> clique no terminal da caixa, digite e tecle Enter. Ou clique em ■ Parar.</p>
+</div>
+
+<div class="cenario">
+<strong>"O texto do <code>printf</code> sumiu antes da Falha de segmentação"</strong>
+<p><strong>O que significa:</strong> um <code>printf</code> sem <code>\n</code> guarda o texto num "buffer" (uma área de espera) e só o mostra depois. Se o programa quebra antes, o texto se perde. Acontece no editor e no terminal do Linux.</p>
+<p><strong>Como consertar:</strong> termine as mensagens com <code>\n</code>, ou chame <code>fflush(stdout);</code> depois do <code>printf</code>. A aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a> explica o buffer.</p>
+</div>
+
+<div class="cenario">
+<strong>"No editor funcionou, no meu computador deu erro" (ou o contrário)</strong>
+<p><strong>O que significa:</strong> três causas comuns. (1) O programa tem comportamento indefinido (tabela acima). (2) O programa depende de algo que muda entre os dois: o tamanho do <code>long</code>, o <code>rand()</code>, o horário. (3) O gcc pediu <code>-lm</code> para o <code>math.h</code>, que o editor não pede.</p>
+<p><strong>Como consertar:</strong> compile sempre com o comando padrão do guia, <code>gcc -std=c23 -Wall -Wextra</code>, leia os avisos, acrescente <code>-lm</code> quando usar <code>math.h</code>, e confira a tabela "O que é diferente".</p>
+</div>
+
+<div class="cenario">
+<strong>"A missão não se cumpre, mas a saída parece certa"</strong>
+<p><strong>O que significa:</strong> a comparação é exata: uma letra maiúscula, um acento, um espaço ou um ponto final a mais ou a menos fazem diferença. Algumas missões também pedem um recurso específico; a pista entre parênteses diz o que falta.</p>
+<p><strong>Como consertar:</strong> compare a sua saída com a pedida, caractere por caractere. Se ainda assim não sair, use Ver solução e compare os códigos.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No terminal da caixa</th><th>Significa</th></tr>
+<tr><td><code>$ clang -std=c23 -Wall -Wextra programa.c -o programa</code></td><td>O comando de compilação (o editor usa o Clang)</td></tr>
+<tr><td><code>(compilando…)</code></td><td>O compilador está trabalhando</td></tr>
+<tr><td><code>arquivo:linha:coluna: error: …</code></td><td>Erro de compilação: o programa não roda</td></tr>
+<tr><td><code>arquivo:linha:coluna: warning: …</code></td><td>Aviso: o programa roda, mas confira</td></tr>
+<tr><td><code>$ ./programa …</code></td><td>O programa começou a rodar, com os argumentos</td></tr>
+<tr><td><code>Abortado</code>, <code>Falha de segmentação</code>, <code>Exceção de ponto flutuante</code> + <code>(imagem do núcleo gravada)</code></td><td>O programa "quebrou" (como no Linux)</td></tr>
+<tr><td><code>[código de saída: N]</code></td><td>Como terminou: <code>0</code> bem; outro número, problema (1 = a compilação falhou ou o programa devolveu 1; 130 = interrompido; 134, 136, 139 = quebrou)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ação</th><th>Como</th></tr>
+<tr><td>Rodar</td><td>▶ Rodar ou <kbd>Ctrl</kbd>+<kbd>Enter</kbd></td></tr>
+<tr><td>Parar</td><td>■ Parar ou <kbd>Ctrl</kbd>+<kbd>C</kbd> no campo de entrada</td></tr>
+<tr><td>Digitar a entrada</td><td>No campo que aparece no terminal; <kbd>Enter</kbd> envia, <kbd>Ctrl</kbd>+<kbd>D</kbd> encerra</td></tr>
+<tr><td>Voltar ao original</td><td>Restaurar</td></tr>
+<tr><td>Ver uma solução</td><td>Ver solução → Sim, mostrar</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Qual compilador as caixas Experimente usam?</p>
+<label><input type="radio" name="q1"> O gcc instalado no seu computador.</label>
+<label><input type="radio" name="q1"> O Clang, funcionando dentro do navegador (WebAssembly).</label>
+<label><input type="radio" name="q1"> Nenhum: o editor só imita a saída.</label>
+<label><input type="radio" name="q1"> Um compilador num servidor da internet.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">2. O gcc diz <code>‘total’ undeclared (first use in this function)</code>. O que o Clang do editor diz no mesmo caso?</p>
+<label><input type="radio" name="q2"> <code>expected ';' after expression</code></label>
+<label><input type="radio" name="q2"> <code>unused variable 'total'</code></label>
+<label><input type="radio" name="q2"> <code>undefined symbol: total</code></label>
+<label><input type="radio" name="q2"> <code>use of undeclared identifier 'total'</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Um programa chama <code>free(p)</code> duas vezes. No editor, ele terminou com o código 0. O que isso prova?</p>
+<label><input type="radio" name="q3"> Que o código está certo.</label>
+<label><input type="radio" name="q3"> Que liberar duas vezes é permitido em C.</label>
+<label><input type="radio" name="q3"> Nada: é comportamento indefinido, e em outro computador o resultado pode ser outro (no gcc do Linux, o programa aborta com <code>double free detected</code>).</label>
+<label><input type="radio" name="q3"> Que o editor tem um defeito.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. O terminal da caixa terminou com <code>[código de saída: 130]</code>. O que aconteceu?</p>
+<label><input type="radio" name="q4"> O programa foi interrompido (■ Parar ou <kbd>Ctrl</kbd>+<kbd>C</kbd>).</label>
+<label><input type="radio" name="q4"> A compilação falhou.</label>
+<label><input type="radio" name="q4"> O programa terminou bem.</label>
+<label><input type="radio" name="q4"> Faltou internet.</label>
+</div>
+
+<div class="exercise">
+<h3>5. O tamanho do <code>long</code></h3>
+<p>Quantos bytes tem um <code>long</code> no editor do guia (WebAssembly de 32 bits)?</p>
+<div class="ex-code">sizeof(long) = <input data-answer="4" aria-label="bytes" size="3"></div>
+</div>
+
+<h3>Missão final: o código de saída</h3>
+
+<div class="tryc" data-goal="out:Arquivo não encontrado.,exit:3">
+<p class="try-task"><strong>Missão:</strong> programas avisam que algo deu errado terminando com um código diferente de 0. Faça este programa mostrar <code>Arquivo não encontrado.</code> e terminar com o código <code>3</code>: troque o texto e o <code>return 0;</code>. Confira o <code>[código de saída: 3]</code> no fim do terminal da caixa.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Tudo certo.\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Arquivo não encontrado.\n");
+    return 3;
+}
+</pre>
+</div>
+
+<p>No terminal da Ana, o código aparece com <code>echo $?</code>:</p>
+
+<pre class="term" data-cwd="~/c/sim">$ ./saida
+Arquivo não encontrado.
+$ echo $?
+3</pre>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>As caixas Experimente compilam C de verdade com o <strong>Clang 22</strong> em WebAssembly, no navegador, com <code>-std=c23 -Wall -Wextra</code>, e rodam o programa.</li>
+  <li>Na primeira vez, o navegador baixa uns 23 MB; depois, fica guardado.</li>
+  <li>O terminal da caixa mostra o comando, os erros e avisos, a saída e o <code>[código de saída: N]</code>.</li>
+  <li><code>scanf</code>, <code>fgets</code>, <code>getchar</code>: o programa pausa e você digita no terminal da caixa (Enter envia, <kbd>Ctrl</kbd>+<kbd>D</kbd> encerra, <kbd>Ctrl</kbd>+<kbd>C</kbd> para). Argumentos e abas funcionam como no terminal.</li>
+  <li>Missões conferem o resultado; Restaurar volta ao original; Ver solução mostra uma solução.</li>
+  <li>Clang e gcc dizem a mesma coisa com palavras diferentes: <code>use of undeclared identifier</code> × <code>undeclared (first use in this function)</code>. Leia sempre a primeira mensagem.</li>
+  <li>Diferenças: <code>long</code> e ponteiros têm 4 bytes no editor e 8 no Linux; <code>rand()</code> e <code>%p</code> dão outros números; threads, <code>system()</code>, gdb, valgrind e sanitizers só no seu computador; erros de memória podem passar em silêncio no editor.</li>
+  <li>Próximo passo: o seu primeiro programa, linha por linha, em <a href="primeiro-programa.html">Olá, Mundo</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
