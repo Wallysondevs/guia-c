@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C static e extern — esconder e compartilhar entre arquivos | Guia C</title>
+<meta name="description" content="static e extern em C, para quem nunca programou: por que toda função e toda variável global é vista pelos outros arquivos, como o static fora das funções esconde uma função auxiliar ou uma variável do módulo, como o extern compartilha uma variável global entre arquivos (declaração no .h, definição num .c só), o que o nm mostra (T e t, D, B e b, U), e os erros reais do ligador e do gcc 15: múltiplas definições de, referência não definida para, initialized and declared extern, conflicting types.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">static e extern</span></h1>
+
+<p class="intro">Quando um programa tem vários arquivos <code>.c</code>, surge uma pergunta: quem enxerga o quê? Em C, toda função e toda variável global que você escreve fora das funções é, por padrão, <strong>pública</strong>: o ligador a mostra para todos os outros arquivos. Isso é bom para as funções que você quer oferecer, e ruim para as funções auxiliares que só um arquivo usa. Nesta aula você vai conhecer as duas palavras que controlam essa visibilidade: <code>static</code>, que <strong>esconde</strong> um nome dentro do seu arquivo, e <code>extern</code>, que <strong>avisa</strong> que um nome existe em outro arquivo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que duas funções com o mesmo nome, em arquivos diferentes, dão <code>múltiplas definições de</code>.</li>
+  <li>A usar <code>static</code> antes de uma função para deixá-la particular do arquivo.</li>
+  <li>A usar <code>static</code> numa variável global para guardar o estado de um módulo, protegido dos outros arquivos.</li>
+  <li>A compartilhar uma variável global entre arquivos com <code>extern</code>: a declaração no <code>.h</code> e a definição num <code>.c</code> só.</li>
+  <li>A ler no <code>nm</code> a diferença entre um nome público (<code>T</code>, <code>D</code>, <code>B</code>) e um particular (<code>t</code>, <code>d</code>, <code>b</code>).</li>
+  <li>Os erros reais: <code>múltiplas definições de</code>, <code>referência não definida para</code>, <code>initialized and declared ‘extern’</code> e <code>conflicting types</code>.</li>
+</ul>
+</div>
+
+<p>Esta aula continua <a href="headers.html">Arquivos .h e .c</a> e <a href="multiplos-arquivos.html">Vários Arquivos</a>: lá você aprendeu a dividir o programa, a compilar com <code>gcc -c</code> e a ler os erros do ligador. Todos os comandos rodaram na máquina fictícia da Ana, na pasta <code>~/c/static</code>, com o <strong>gcc 15.2</strong>. O sistema dela está em português, e por isso as mensagens do ligador saem em português (o inglês vai citado ao lado).</p>
+
+<hr>
+
+<h2>A ideia: a vitrine e o depósito</h2>
+<p>Pense na lojinha da Ana. Na <strong>vitrine</strong> ficam os produtos que qualquer cliente pode ver e pedir. No <strong>depósito</strong>, nos fundos, ficam as caixas, as ferramentas e o caderninho de contas: coisas que a loja usa, mas que nenhum cliente deve mexer. Se a loja do lado também tem um depósito com uma escada, não há confusão: cada escada fica no seu depósito.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na lojinha</th><th>Em C</th></tr>
+<tr><td>Cada loja da rua</td><td>Cada arquivo <code>.c</code></td></tr>
+<tr><td>A vitrine (todos veem)</td><td>Funções e variáveis globais <strong>sem</strong> <code>static</code>: o ligador as mostra para todos os arquivos</td></tr>
+<tr><td>O depósito (só a loja vê)</td><td>Funções e variáveis globais <strong>com</strong> <code>static</code>: só o próprio arquivo as enxerga</td></tr>
+<tr><td>A placa "o caixa fica na loja 12"</td><td>Uma declaração com <code>extern</code>: "esta variável existe, mas mora em outro arquivo"</td></tr>
+</table>
+</div>
+
+<p>O nome técnico disso é <strong>ligação</strong> (<em>linkage</em>): um nome com <strong>ligação externa</strong> é visto por todos os arquivos do programa; um nome com <strong>ligação interna</strong>, só pelo seu arquivo. O <code>static</code> fora das funções troca a ligação de externa para interna.</p>
+
+<hr>
+
+<h2>1. O problema: dois arquivos, a mesma função auxiliar</h2>
+<p>O programa da lojinha tem um módulo de relatório e um de estoque. Cada um desenha as suas linhas de separação com uma pequena função auxiliar, e a Ana deu o mesmo nome às duas: <code>linha</code>. Os cabeçalhos só prometem a função principal de cada módulo:</p>
+
+<pre class="file" data-file="relatorio.h">#ifndef RELATORIO_H
+#define RELATORIO_H
+
+void relatorio_vendas(void);
+
+#endif
+</pre>
+
+<pre class="file" data-file="estoque.h">#ifndef ESTOQUE_H
+#define ESTOQUE_H
+
+void estoque_mostrar(void);
+
+#endif
+</pre>
+
+<p>Os dois <code>.c</code> têm a sua <code>linha</code>, cada uma com um desenho:</p>
+
+<pre class="file" data-file="relatorio.c">#include &lt;stdio.h&gt;
+#include "relatorio.h"
+
+void linha(void) {
+    printf("====================\n");
+}
+
+void relatorio_vendas(void) {
+    linha();
+    printf("Vendas de hoje: R$ 150\n");
+    linha();
+}
+</pre>
+
+<pre class="file" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include "estoque.h"
+
+void linha(void) {
+    printf("--------------------\n");
+}
+
+void estoque_mostrar(void) {
+    linha();
+    printf("Cadernos: 12\n");
+    printf("Lápis:    40\n");
+    linha();
+}
+</pre>
+
+<pre class="file" data-file="main.c">#include "relatorio.h"
+#include "estoque.h"
+
+int main(void) {
+    relatorio_vendas();
+    estoque_mostrar();
+    return 0;
+}
+</pre>
+
+<p>Cada arquivo, sozinho, está certo. Juntos, não ligam:</p>
+
+<pre class="term" data-cwd="~/c/static/dupla">$ gcc -std=c23 -Wall -Wextra main.c relatorio.c estoque.c -o loja
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccKuvut9.o: na função "linha":
+estoque.c:(.text+0x0): múltiplas definições de "linha"; /tmp/ccwUIgEv.o:relatorio.c:(.text+0x0): definido primeiro aqui
+collect2: error: ld returned 1 exit status</pre>
+
+<p>É o ligador falando (em inglês: <code>multiple definition of `linha'; … first defined here</code>): o <code>estoque.c</code> tem uma <code>linha</code>, e o <code>relatorio.c</code> já tinha uma. O <code>nm</code> (aula <a href="multiplos-arquivos.html">Vários Arquivos</a>) mostra por quê:</p>
+
+<pre class="term" data-cwd="~/c/static/dupla">$ gcc -std=c23 -Wall -Wextra -c relatorio.c estoque.c
+$ nm relatorio.o
+0000000000000000 T linha
+                 U puts
+000000000000001a T relatorio_vendas
+$ nm estoque.o
+000000000000001a T estoque_mostrar
+0000000000000000 T linha
+                 U puts</pre>
+
+<p>Os dois <code>.o</code> oferecem um <code>T linha</code>: as duas estão na "vitrine". Ninguém de fora precisa delas (o <code>main.c</code> nem sabe que existem), mas o C as publicou mesmo assim, porque esse é o padrão.</p>
+
+<hr>
+
+<h2>2. <code>static</code> numa função: só este arquivo enxerga</h2>
+<p>O conserto é uma palavra. Escreva <code>static</code> antes de cada <code>linha</code>:</p>
+
+<pre class="file" data-file="relatorio.c">#include &lt;stdio.h&gt;
+#include "relatorio.h"
+
+static void linha(void) {
+    printf("====================\n");
+}
+
+void relatorio_vendas(void) {
+    linha();
+    printf("Vendas de hoje: R$ 150\n");
+    linha();
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>static</dt><dd>Em inglês, "estático". Fora das funções, ele quer dizer: <strong>este nome é particular deste arquivo</strong>. O ligador não o mostra para os outros <code>.o</code>.</dd>
+  <dt>void linha(void)</dt><dd>O resto não muda. Dentro do <code>relatorio.c</code>, as chamadas <code>linha()</code> funcionam como antes.</dd>
+</dl>
+
+<p>Com o mesmo <code>static</code> na <code>linha</code> do <code>estoque.c</code>, o programa liga, e cada módulo usa a sua:</p>
+
+<pre class="term" data-cwd="~/c/static/dupla">$ gcc -std=c23 -Wall -Wextra main.c relatorio.c estoque.c -o loja
+$ ./loja
+====================
+Vendas de hoje: R$ 150
+====================
+--------------------
+Cadernos: 12
+Lápis:    40
+--------------------</pre>
+
+<p>O <code>nm</code> agora mostra a letra <strong>minúscula</strong>:</p>
+
+<pre class="term" data-cwd="~/c/static/dupla">$ gcc -std=c23 -Wall -Wextra -c relatorio.c estoque.c
+$ nm relatorio.o
+0000000000000000 t linha
+                 U puts
+000000000000001a T relatorio_vendas
+$ nm estoque.o
+000000000000001a T estoque_mostrar
+0000000000000000 t linha
+                 U puts</pre>
+
+<dl class="anatomy">
+  <dt>T relatorio_vendas</dt><dd>Maiúscula: <strong>pública</strong>. O ligador a oferece para os outros arquivos (é a que o <code>main.c</code> chama).</dd>
+  <dt>t linha</dt><dd>Minúscula: <strong>particular</strong> (local). Ela existe dentro do <code>.o</code>, mas o ligador não a usa para casar com o <code>U</code> de outro arquivo. Duas <code>t linha</code> em arquivos diferentes não brigam.</dd>
+</dl>
+
+<div class="tryc" data-goal="compila,out:Vendas de hoje: R$ 150,out:Lápis:    40,src:static\s+void\s+linha">
+<p class="try-task"><strong>Missão:</strong> rode e leia o erro do ligador do editor (<code>duplicate symbol: linha</code>, "símbolo duplicado"). Depois ponha <code>static</code> antes da <code>void linha(void)</code> nas abas <code>relatorio.c</code> e <code>estoque.c</code>, e rode de novo.</p>
+<pre class="script" data-file="main.c">#include "relatorio.h"
+#include "estoque.h"
+
+int main(void) {
+    relatorio_vendas();
+    estoque_mostrar();
+    return 0;
+}
+</pre>
+<pre class="script" data-file="relatorio.c">#include &lt;stdio.h&gt;
+#include "relatorio.h"
+
+void linha(void) {
+    printf("====================\n");
+}
+
+void relatorio_vendas(void) {
+    linha();
+    printf("Vendas de hoje: R$ 150\n");
+    linha();
+}
+</pre>
+<pre class="script" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include "estoque.h"
+
+void linha(void) {
+    printf("--------------------\n");
+}
+
+void estoque_mostrar(void) {
+    linha();
+    printf("Cadernos: 12\n");
+    printf("Lápis:    40\n");
+    linha();
+}
+</pre>
+<pre class="script" data-file="relatorio.h">#ifndef RELATORIO_H
+#define RELATORIO_H
+
+void relatorio_vendas(void);
+
+#endif
+</pre>
+<pre class="script" data-file="estoque.h">#ifndef ESTOQUE_H
+#define ESTOQUE_H
+
+void estoque_mostrar(void);
+
+#endif
+</pre>
+<pre class="solucao" data-file="relatorio.c">#include &lt;stdio.h&gt;
+#include "relatorio.h"
+
+static void linha(void) {
+    printf("====================\n");
+}
+
+void relatorio_vendas(void) {
+    linha();
+    printf("Vendas de hoje: R$ 150\n");
+    linha();
+}
+</pre>
+<pre class="solucao" data-file="estoque.c">#include &lt;stdio.h&gt;
+#include "estoque.h"
+
+static void linha(void) {
+    printf("--------------------\n");
+}
+
+void estoque_mostrar(void) {
+    linha();
+    printf("Cadernos: 12\n");
+    printf("Lápis:    40\n");
+    linha();
+}
+</pre>
+</div>
+
+<p>(Com <code>static</code> em uma só das duas já liga: sobra uma <code>linha</code> pública e uma particular, e o ligador não vê conflito. Mas o certo é marcar as duas: nenhuma delas é para os outros arquivos.)</p>
+
+<h3>De fora, a função <code>static</code> não existe</h3>
+<p>E se o <code>main.c</code> quiser usar a <code>linha</code> mesmo assim? Ele pode até escrever o protótipo, e o compilador acredita. Mas o ligador não acha nenhuma <code>linha</code> pública:</p>
+
+<pre class="file" data-file="main.c">#include "relatorio.h"
+#include "estoque.h"
+
+void linha(void);
+
+int main(void) {
+    relatorio_vendas();
+    estoque_mostrar();
+    linha();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/static/dupla">$ gcc -std=c23 -Wall -Wextra main.c relatorio.c estoque.c -o loja
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccEpcKxu.o: na função "main":
+main.c:(.text+0x13): referência não definida para "linha"
+collect2: error: ld returned 1 exit status</pre>
+
+<p>É exatamente o que a Ana queria: a <code>linha</code> é um detalhe do depósito, e ninguém de fora consegue depender dela. Se um dia ela mudar o desenho ou o nome, só o próprio arquivo é afetado.</p>
+
+<h3>Função <code>static</code> que ninguém usa: o aviso</h3>
+<p>Como uma função <code>static</code> só pode ser chamada no próprio arquivo, o compilador sabe dizer quando ela sobrou. No <code>ajuda.c</code>, a Ana escreveu uma <code>titulo</code> e esqueceu de chamá-la:</p>
+
+<pre class="file" data-file="ajuda.c">#include &lt;stdio.h&gt;
+
+static void linha(void) {
+    printf("--------------------\n");
+}
+
+static void titulo(void) {
+    printf("Lojinha da Ana\n");
+}
+
+void cabecalho(void) {
+    linha();
+    printf("Bem-vindo!\n");
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/static/sobra">$ gcc -std=c23 -Wall -Wextra -c ajuda.c
+ajuda.c:7:13: warning: ‘titulo’ defined but not used [-Wunused-function]
+    7 | static void titulo(void) {
+      |             ^~~~~~</pre>
+
+<p>"‘titulo’ definida mas não usada". Sem o <code>static</code>, não haveria aviso: uma função pública pode ser chamada por qualquer outro arquivo, e o compilador, que vê um arquivo por vez, não tem como saber. É mais um motivo para marcar as auxiliares com <code>static</code>: o compilador passa a ajudar a manter o arquivo limpo. (No editor, o Clang diz <code>unused function 'titulo'</code>.)</p>
+
+<hr>
+
+<h2>3. <code>static</code> numa variável global: o estado do módulo</h2>
+<p>O <code>static</code> também vale para variáveis globais, e aí ele é ainda mais útil. A Ana quer um módulo de caixa que soma as vendas do dia. O total tem de durar o programa inteiro (por isso é global), mas ninguém deve poder alterá-lo direto: só pela função <code>caixa_vender</code>, que recusa valores negativos.</p>
+
+<pre class="file" data-file="caixa.h">#ifndef CAIXA_H
+#define CAIXA_H
+
+void caixa_vender(int valor);
+int caixa_total(void);
+
+#endif
+</pre>
+
+<pre class="file" data-file="caixa.c">#include "caixa.h"
+
+static int total = 0;
+
+void caixa_vender(int valor) {
+    if (valor &gt; 0) {
+        total += valor;
+    }
+}
+
+int caixa_total(void) {
+    return total;
+}
+</pre>
+
+<pre class="file" data-file="main.c">#include &lt;stdio.h&gt;
+#include "caixa.h"
+
+int main(void) {
+    caixa_vender(36);
+    caixa_vender(10);
+    caixa_vender(-500);
+    printf("Total do dia: R$ %d\n", caixa_total());
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>static int total = 0;</dt><dd>Uma variável global, fora das funções: existe do começo ao fim do programa e é vista por todas as funções <strong>deste arquivo</strong>. O <code>static</code> a esconde dos outros arquivos.</dd>
+  <dt>caixa_vender</dt><dd>A única porta de entrada. Ela confere o valor antes de somar: a venda de <code>-500</code> é recusada.</dd>
+  <dt>caixa_total</dt><dd>A janela para ler o total, sem poder mudá-lo.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/static/contador">$ gcc -std=c23 -Wall -Wextra main.c caixa.c -o caixa
+$ ./caixa
+Total do dia: R$ 46
+$ gcc -std=c23 -Wall -Wextra -c caixa.c
+$ nm caixa.o
+0000000000000025 T caixa_total
+0000000000000000 T caixa_vender
+0000000000000000 b total</pre>
+
+<p>O <code>b</code> minúsculo diz: <code>total</code> é particular e mora na parte do programa chamada <code>.bss</code>, a das variáveis globais que começam em zero. (Uma global com outro valor inicial apareceria como <code>d</code>, de <em>data</em>; as letras maiúsculas <code>B</code> e <code>D</code> são as públicas.)</p>
+
+<p>Agora alguém tenta "trapacear" no <code>trapaca.c</code>, declarando o <code>total</code> por conta própria para mudá-lo direto:</p>
+
+<pre class="file" data-file="trapaca.c">#include &lt;stdio.h&gt;
+#include "caixa.h"
+
+extern int total;
+
+int main(void) {
+    total = 1000000;
+    printf("Total do dia: R$ %d\n", caixa_total());
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/static/contador">$ gcc -std=c23 -Wall -Wextra trapaca.c caixa.c -o trapaca
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cctcye9R.o: aviso: relocalização contra "total" em secção só de leitura ".text"
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cctcye9R.o: na função "main":
+trapaca.c:(.text+0xa): referência não definida para "total"
+/usr/bin/x86_64-linux-gnu-ld.bfd: aviso: a criar DT_TEXTREL num PIE.
+collect2: error: ld returned 1 exit status</pre>
+
+<p>A linha que importa é a do meio: <code>referência não definida para "total"</code> (<code>undefined reference to `total'</code>). As duas linhas com <code>aviso:</code> são efeito colateral do mesmo problema (o ligador não sabe onde colocar uma variável que não existe) e somem quando o erro é consertado. O <code>static</code> funcionou: o <code>total</code> está protegido, e o único jeito de mexer nele é pelas funções do <code>caixa.h</code>.</p>
+
+<div class="tip">
+<strong>Isso é encapsulamento.</strong> Um par <code>caixa.h</code> + <code>caixa.c</code> com variáveis <code>static</code> e funções públicas funciona como uma "caixa-preta": quem usa só vê as funções da vitrine. É a forma de o C fazer o que outras linguagens fazem com classes e <code>private</code>.
+</div>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode. Depois, na aba <code>main.c</code>, acrescente a linha <code>extern int total;</code> antes do <code>main</code> e um <code>total = 1000000;</code> dentro dele, depois das vendas: o ligador do editor responde <code>undefined symbol: total</code>. Por fim, tire o <code>static</code> da aba <code>caixa.c</code> e rode de novo: a trapaça passa, e o total vira um milhão.</p>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "caixa.h"
+
+int main(void) {
+    caixa_vender(36);
+    caixa_vender(10);
+    caixa_vender(-500);
+    printf("Total do dia: R$ %d\n", caixa_total());
+    return 0;
+}
+</pre>
+<pre class="script" data-file="caixa.c">#include "caixa.h"
+
+static int total = 0;
+
+void caixa_vender(int valor) {
+    if (valor &gt; 0) {
+        total += valor;
+    }
+}
+
+int caixa_total(void) {
+    return total;
+}
+</pre>
+<pre class="script" data-file="caixa.h">#ifndef CAIXA_H
+#define CAIXA_H
+
+void caixa_vender(int valor);
+int caixa_total(void);
+
+#endif
+</pre>
+</div>
+
+<h3>Os dois sentidos do <code>static</code></h3>
+<p>Na aula <a href="escopo.html">Escopo</a> você viu o <code>static</code> <strong>dentro</strong> de uma função. É a mesma palavra com outro efeito, e isso confunde muita gente:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde está o <code>static</code></th><th>O que muda</th><th>Exemplo</th></tr>
+<tr><td>Dentro de uma função</td><td>O <strong>tempo de vida</strong>: a variável não morre quando a função termina e guarda o valor entre as chamadas. Quem a enxerga continua sendo só a função.</td><td><code>static int chamadas = 0;</code> num contador de chamadas</td></tr>
+<tr><td>Fora das funções (variável global ou função)</td><td>A <strong>visibilidade</strong>: o nome fica particular do arquivo. O tempo de vida já era o do programa inteiro e não muda.</td><td><code>static int total = 0;</code> e <code>static void linha(void)</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>4. <code>extern</code>: compartilhar uma variável entre arquivos</h2>
+<p>Às vezes você <strong>quer</strong> que vários arquivos usem a mesma variável global: uma configuração do programa, por exemplo. A Ana guarda o desconto da loja e o nome dela num módulo <code>config</code>, e o módulo <code>preco</code> e o <code>main</code> usam os dois.</p>
+
+<p>A regra é a mesma das funções (aula <a href="headers.html">Arquivos .h e .c</a>): <strong>declarar</strong> no <code>.h</code>, quantas vezes for preciso; <strong>definir</strong> num <code>.c</code>, uma vez só. Para funções, o protótipo já é uma declaração. Para variáveis, <code>int desconto;</code> seria uma definição (reserva memória); para só declarar, é preciso o <code>extern</code>:</p>
+
+<pre class="file" data-file="config.h">#ifndef CONFIG_H
+#define CONFIG_H
+
+extern int desconto;
+extern const char nome_loja[];
+
+#endif
+</pre>
+
+<pre class="file" data-file="config.c">#include "config.h"
+
+int desconto = 10;
+const char nome_loja[] = "Lojinha da Ana";
+</pre>
+
+<dl class="anatomy">
+  <dt>extern int desconto;</dt><dd>Em inglês, "externo". Quer dizer: "existe uma variável <code>int</code> chamada <code>desconto</code>, definida em algum arquivo". Não reserva memória e não tem valor. Pode aparecer em quantos arquivos você quiser.</dd>
+  <dt>extern const char nome_loja[];</dt><dd>O mesmo para um texto. O tamanho pode ficar de fora na declaração: quem define é o <code>config.c</code>.</dd>
+  <dt>int desconto = 10;</dt><dd>A <strong>definição</strong>, no <code>config.c</code>: aqui a variável nasce, com o seu valor inicial. Uma vez só, no programa inteiro.</dd>
+  <dt>#include "config.h"</dt><dd>O <code>config.c</code> inclui o próprio <code>.h</code>. Assim, se a declaração e a definição não combinarem, o compilador avisa (você vai ver na seção 5).</dd>
+</dl>
+
+<p>Quem usa só inclui o <code>config.h</code>:</p>
+
+<pre class="file" data-file="preco.c">#include "config.h"
+#include "preco.h"
+
+int preco_final(int preco) {
+    return preco - preco * desconto / 100;
+}
+</pre>
+
+<pre class="file" data-file="main.c">#include &lt;stdio.h&gt;
+#include "config.h"
+#include "preco.h"
+
+int main(void) {
+    printf("%s (desconto de %d%%)\n", nome_loja, desconto);
+    printf("Caderno: R$ %d\n", preco_final(20));
+    desconto = 50;
+    printf("Liquidação! Caderno: R$ %d\n", preco_final(20));
+    return 0;
+}
+</pre>
+
+<p>(O <code>preco.h</code> tem só o protótipo <code>int preco_final(int preco);</code> com o include guard.)</p>
+
+<pre class="term" data-cwd="~/c/static/extern">$ gcc -std=c23 -Wall -Wextra main.c config.c preco.c -o loja
+$ ./loja
+Lojinha da Ana (desconto de 10%)
+Caderno: R$ 18
+Liquidação! Caderno: R$ 10</pre>
+
+<p>O <code>main</code> mudou o <code>desconto</code> para 50, e o <code>preco_final</code>, em outro arquivo, viu a mudança: é <strong>a mesma</strong> variável. O <code>nm</code> confirma quem define e quem só usa:</p>
+
+<pre class="term" data-cwd="~/c/static/extern">$ gcc -std=c23 -Wall -Wextra -c main.c config.c preco.c
+$ nm config.o
+0000000000000000 D desconto
+0000000000000000 R nome_loja
+$ nm main.o
+                 U desconto
+0000000000000000 T main
+                 U nome_loja
+                 U preco_final
+                 U printf</pre>
+
+<dl class="anatomy">
+  <dt>D desconto</dt><dd>Definida aqui, pública, na parte <em>data</em> (variáveis globais com valor inicial).</dd>
+  <dt>R nome_loja</dt><dd>Definida aqui, pública, na parte <em>read-only</em> ("só leitura"), porque é <code>const</code>.</dd>
+  <dt>U desconto</dt><dd>No <code>main.o</code>, o <code>extern</code> virou um "preciso disto": o ligador vai buscar o <code>desconto</code> no <code>config.o</code>.</dd>
+</dl>
+
+<h3>Esqueceu a definição?</h3>
+<p>O <code>extern</code> é só uma promessa. Se nenhum arquivo define a variável (aqui, a Ana esqueceu o <code>config.c</code> no comando), o compilador aceita e o ligador reclama:</p>
+
+<pre class="term" data-cwd="~/c/static/extern">$ gcc -std=c23 -Wall -Wextra main.c preco.c -o loja
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccWDl0aG.o: aviso: relocalização contra "desconto" em secção só de leitura ".text"
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccLIU07M.o: na função "main":
+main.c:(.text+0xa): referência não definida para "desconto"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x11): referência não definida para "nome_loja"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x4f): referência não definida para "desconto"
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccWDl0aG.o: na função "preco_final":
+preco.c:(.text+0xd): referência não definida para "desconto"
+/usr/bin/x86_64-linux-gnu-ld.bfd: aviso: a criar DT_TEXTREL num PIE.
+collect2: error: ld returned 1 exit status</pre>
+
+<p>Uma linha para cada uso: três no <code>main</code>, uma no <code>preco_final</code>. Ignore os dois <code>aviso:</code>, que são consequência; o conserto é passar o <code>config.c</code> ao gcc.</p>
+
+<h3>E as funções?</h3>
+<p>As funções já têm ligação externa sem que você escreva nada: <code>int preco_final(int preco);</code> e <code>extern int preco_final(int preco);</code> são a mesma coisa. Por isso quase ninguém escreve <code>extern</code> em protótipos. Você vai encontrá-lo nos cabeçalhos do sistema (o <code>&lt;stdio.h&gt;</code> está cheio de <code>extern int …</code>, veja <a href="preprocessador.html">Pré-processador</a>), mas no seu código use o <code>extern</code> só para <strong>variáveis</strong>.</p>
+
+<div class="warning">
+<strong>Global compartilhada continua sendo global.</strong> Tudo o que a aula <a href="escopo.html">Escopo</a> disse sobre os perigos das globais vale em dobro aqui: agora qualquer arquivo pode mudar o <code>desconto</code>. Prefira o jeito da seção 3 (variável <code>static</code> e funções para ler e mudar). Use <code>extern</code> para poucas coisas, de preferência constantes (<code>extern const …</code>) ou configurações lidas uma vez no começo.
+</div>
+
+<hr>
+
+<h2>5. Os enganos mais comuns com <code>extern</code></h2>
+
+<h3><code>int x;</code> em dois arquivos</h3>
+<p>Na pasta <code>comum</code>, a Ana escreveu <code>int visitas;</code> (sem <code>extern</code>, sem valor) no <code>main.c</code> e no <code>contar.c</code>, achando que a segunda só "avisava" que a variável existe:</p>
+
+<pre class="file" data-file="contar.c">int visitas;
+void contar(void) {
+    visitas++;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/static/comum">$ gcc -std=c23 -Wall -Wextra main.c contar.c -o visitas
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cczvhoAP.o:(.bss+0x0): múltiplas definições de "visitas"; /tmp/ccLHdFGp.o:(.bss+0x0): definido primeiro aqui
+collect2: error: ld returned 1 exit status</pre>
+
+<p><code>int visitas;</code> fora das funções é uma <strong>definição</strong> (vale zero, como toda global), e duas definições não podem. Você vai achar na internet programas antigos que fazem isso e "funcionam": até o gcc 9, o padrão era juntar essas variáveis numa só (a opção <code>-fcommon</code>). Desde o gcc 10, o padrão é <code>-fno-common</code>, e o erro aparece. Com <code>-fcommon</code>, o programa da Ana liga e mostra <code>Visitas: 1</code>, mas o conserto certo é <code>extern int visitas;</code> no <code>contar.c</code> (ou, melhor, num <code>.h</code>).</p>
+
+<h3><code>extern</code> com valor</h3>
+<pre class="file" data-file="x.c">extern int desconto = 10;
+int main(void) {
+    return desconto;
+}
+</pre>
+<pre class="term" data-cwd="~/c/static/init">$ gcc -std=c23 -Wall -Wextra x.c -o x
+x.c:1:12: warning: ‘desconto’ initialized and declared ‘extern’
+    1 | extern int desconto = 10;
+      |            ^~~~~~~~</pre>
+<p>"‘desconto’ inicializada e declarada <code>extern</code>". Com valor, a linha deixa de ser uma declaração e vira uma <strong>definição</strong>; o <code>extern</code> fica sem sentido, e o gcc avisa. Num <code>.h</code>, isso daria <code>múltiplas definições</code>. Declaração (<code>extern</code>, sem valor) no <code>.h</code>; definição (sem <code>extern</code>, com valor) no <code>.c</code>.</p>
+
+<h3>Tipos que não combinam</h3>
+<p>Na pasta <code>tipo</code>, o <code>config.c</code> define <code>int desconto = 10;</code>, e o <code>main.c</code>, por conta própria (sem incluir <code>.h</code> nenhum), declara a variável com o tipo errado:</p>
+
+<pre class="file" data-file="main.c">#include &lt;stdio.h&gt;
+extern double desconto;
+int main(void) {
+    printf("Desconto: %g\n", desconto);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/static/tipo">$ gcc -std=c23 -Wall -Wextra main.c config.c -o loja
+$ ./loja
+Desconto: 4.94066e-323</pre>
+
+<p>Nenhum erro, nenhum aviso, e um número absurdo. O compilador viu cada arquivo sozinho, e o ligador só casa <strong>nomes</strong>, não tipos: o <code>main</code> leu os bytes de um <code>int</code> como se fossem um <code>double</code>. (No editor do guia sai outro número absurdo, porque o lixo lido é outro.) O remédio é o que a seção 4 já fazia: a declaração mora num <code>.h</code>, e o <code>.c</code> que define <strong>inclui esse <code>.h</code></strong>. Aí o compilador vê as duas no mesmo arquivo e compara:</p>
+
+<pre class="term" data-cwd="~/c/static/tipo">$ gcc -std=c23 -Wall -Wextra -c config.c
+config.c:2:5: error: conflicting types for ‘desconto’; have ‘int’
+    2 | int desconto = 10;
+      |     ^~~~~~~~
+In file included from config.c:1:
+config.h:1:15: note: previous declaration of ‘desconto’ with type ‘double’
+    1 | extern double desconto;
+      |               ^~~~~~~~</pre>
+
+<p>"Tipos em conflito para ‘desconto’: aqui é ‘int’", e a nota aponta a declaração anterior, no <code>config.h</code>, com ‘double’. Agora o erro aparece na compilação, com arquivo e linha, em vez de virar um número maluco na tela.</p>
+
+<h3><code>static</code> num <code>.h</code>: uma cópia para cada arquivo</h3>
+<p>Na pasta <code>copia</code>, a Ana pôs o contador de pedidos no cabeçalho:</p>
+
+<pre class="file" data-file="contador.h">#ifndef CONTADOR_H
+#define CONTADOR_H
+
+static int pedidos = 0;
+
+void novo_pedido(void);
+
+#endif
+</pre>
+
+<pre class="file" data-file="contador.c">#include "contador.h"
+
+void novo_pedido(void) {
+    pedidos++;
+}
+</pre>
+
+<pre class="file" data-file="main.c">#include &lt;stdio.h&gt;
+#include "contador.h"
+
+int main(void) {
+    novo_pedido();
+    novo_pedido();
+    novo_pedido();
+    printf("Pedidos: %d\n", pedidos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/static/copia">$ gcc -std=c23 -Wall -Wextra main.c contador.c -o pedidos
+$ ./pedidos
+Pedidos: 0</pre>
+
+<p>Três pedidos, e o programa mostra zero, sem nenhum aviso. O <code>.h</code> foi colado nos dois <code>.c</code>, e o <code>static</code> deu a <strong>cada um</strong> a sua <code>pedidos</code> particular: o <code>novo_pedido</code> soma na cópia do <code>contador.c</code>, e o <code>main</code> lê a cópia dele, que nunca mudou. O conserto é o da seção 3: <code>static int pedidos = 0;</code> no <code>contador.c</code> e uma função <code>int total_pedidos(void)</code> no <code>.h</code>.</p>
+
+<div class="note">
+<strong>Uma exceção que você vai ver:</strong> funções pequenas marcadas <code>static inline</code> num <code>.h</code>. Lá, a cópia em cada arquivo é de propósito: é uma função sem estado, e cada <code>.c</code> recebe a sua para o compilador poder colá-la no lugar da chamada. É o assunto de <a href="inline.html">Funções inline</a>.
+</div>
+
+<hr>
+
+<h2>Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Escreva</th><th>Onde</th></tr>
+<tr><td>Uma função que outros arquivos chamam</td><td><code>int preco_final(int preco);</code> + a definição</td><td>Protótipo no <code>.h</code>, corpo no <code>.c</code></td></tr>
+<tr><td>Uma função auxiliar, só deste arquivo</td><td><code>static void linha(void) { … }</code></td><td>Só no <code>.c</code> (nunca no <code>.h</code>)</td></tr>
+<tr><td>Um estado do módulo, protegido</td><td><code>static int total = 0;</code> + funções para ler e mudar</td><td>A variável no <code>.c</code>; as funções no <code>.h</code></td></tr>
+<tr><td>Uma variável que vários arquivos leem e mudam</td><td><code>extern int desconto;</code> + <code>int desconto = 10;</code></td><td>O <code>extern</code> no <code>.h</code>; a definição num <code>.c</code> só, que inclui o <code>.h</code></td></tr>
+<tr><td>Uma constante para vários arquivos</td><td><code>extern const char nome_loja[];</code> + a definição; ou um <code>#define</code>/<code>enum</code> no <code>.h</code></td><td>Como a linha de cima</td></tr>
+</table>
+</div>
+
+<p><strong>Regra prática:</strong> comece tudo como <code>static</code> no <code>.c</code>. Só tire o <code>static</code> (e ponha o protótipo no <code>.h</code>) do que outro arquivo realmente precisa. Quanto menos coisas na vitrine, menos colisões de nome e menos lugares onde um erro pode nascer.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>múltiplas definições de "linha"</code> (<code>multiple definition of `linha'</code>)</strong>
+<p><strong>O que significa:</strong> dois arquivos definem uma função (ou uma variável global) pública com o mesmo nome. No editor: <code>duplicate symbol: linha</code>.</p>
+<p><strong>Como consertar:</strong> se é uma auxiliar que só o próprio arquivo usa, ponha <code>static</code> antes dela (nos dois arquivos). Se é uma variável que deve ser a mesma em todos, deixe a definição num <code>.c</code> e use <code>extern</code> nos outros (pelo <code>.h</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>referência não definida para "total"</code>, com o <code>static</code> no outro arquivo</strong>
+<p><strong>O que significa:</strong> o nome existe, mas é particular do arquivo onde está. Para o ligador, é como se não existisse. No editor: <code>undefined symbol: total</code>.</p>
+<p><strong>Como consertar:</strong> se outro arquivo precisa mesmo daquilo, ofereça uma função pública no <code>.h</code> (como <code>caixa_total</code>). Tirar o <code>static</code> também resolve, mas abre o depósito para todo mundo.</p>
+</div>
+
+<div class="cenario">
+<strong><code>referência não definida para "desconto"</code>, com <code>aviso: relocalização contra "desconto"</code></strong>
+<p><strong>O que significa:</strong> há um <code>extern int desconto;</code>, mas nenhum arquivo do comando tem a definição <code>int desconto = …;</code>. Os avisos de relocalização e de <code>DT_TEXTREL</code> vêm junto e são consequência.</p>
+<p><strong>Como consertar:</strong> escreva a definição num <code>.c</code> (uma vez só) e confira se esse <code>.c</code> está no comando do gcc.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘desconto’ initialized and declared ‘extern’</code></strong>
+<p><strong>O que significa:</strong> <code>extern int desconto = 10;</code>: um <code>extern</code> com valor é uma definição disfarçada.</p>
+<p><strong>Como consertar:</strong> no <code>.h</code>, <code>extern int desconto;</code> (sem valor); no <code>.c</code>, <code>int desconto = 10;</code> (sem <code>extern</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: conflicting types for ‘desconto’</code></strong>
+<p><strong>O que significa:</strong> a declaração (<code>extern double desconto;</code>) e a definição (<code>int desconto</code>) dizem tipos diferentes. É bom que o gcc tenha visto: sem o <code>#include</code> do <code>.h</code>, o programa ligaria e leria lixo.</p>
+<p><strong>Como consertar:</strong> escolha um tipo e use o mesmo nos dois lugares. E mantenha o <code>#include "config.h"</code> no <code>config.c</code>, que é o que permite essa conferência.</p>
+</div>
+
+<div class="cenario">
+<strong>O valor "não muda" entre arquivos (<code>Pedidos: 0</code>)</strong>
+<p><strong>O que significa:</strong> há um <code>static int …</code> num <code>.h</code>, e cada <code>.c</code> que o inclui ganhou a sua cópia. Não há erro nem aviso.</p>
+<p><strong>Como consertar:</strong> variável <code>static</code> fica no <code>.c</code>; para compartilhar, use funções ou <code>extern</code>. No <code>.h</code>, nunca defina variáveis.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrito fora das funções</th><th>O que é</th><th>Quem enxerga</th><th>No <code>nm</code></th></tr>
+<tr><td><code>void f(void) { … }</code></td><td>Definição de função</td><td>Todos os arquivos</td><td><code>T f</code></td></tr>
+<tr><td><code>static void f(void) { … }</code></td><td>Definição de função particular</td><td>Só este arquivo</td><td><code>t f</code></td></tr>
+<tr><td><code>void f(void);</code> ou <code>extern void f(void);</code></td><td>Declaração (protótipo)</td><td>Usa a <code>f</code> de outro arquivo</td><td><code>U f</code> (se for chamada)</td></tr>
+<tr><td><code>int x = 5;</code></td><td>Definição de variável global</td><td>Todos os arquivos</td><td><code>D x</code></td></tr>
+<tr><td><code>int x;</code></td><td>Definição de variável global, valendo zero</td><td>Todos os arquivos</td><td><code>B x</code></td></tr>
+<tr><td><code>static int x = 0;</code></td><td>Definição de variável particular</td><td>Só este arquivo</td><td><code>b x</code> (ou <code>d x</code>, com valor diferente de zero)</td></tr>
+<tr><td><code>extern int x;</code></td><td>Declaração: a variável está em outro arquivo</td><td>Usa a <code>x</code> de outro arquivo</td><td><code>U x</code> (se for usada)</td></tr>
+<tr><td><code>extern const int x;</code> + <code>const int x = 5;</code></td><td>Constante compartilhada</td><td>Todos os arquivos</td><td><code>R x</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Particular do arquivo</h3>
+<p>Complete para que a função <code>arredondar</code> só possa ser usada dentro do próprio <code>.c</code>:</p>
+<div class="ex-code"><input data-answer="static" aria-label="palavra"> int arredondar(int valor) {</div>
+</div>
+
+<div class="exercise">
+<h3>2. A declaração no <code>.h</code></h3>
+<p>O <code>config.c</code> tem <code>int limite_estoque = 100;</code>. Complete a linha do <code>config.h</code> que deixa os outros arquivos usarem essa variável:</p>
+<div class="ex-code"><input data-answer="extern int limite_estoque;|extern int limite_estoque" aria-label="declaração"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. O <code>nm loja.o</code> mostra <code>t formatar</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q3"> <code>formatar</code> é usada aqui, mas definida em outro arquivo</label>
+<label><input type="radio" name="q3"> <code>formatar</code> é pública e outros arquivos podem chamá-la</label>
+<label><input type="radio" name="q3"> <code>formatar</code> está definida aqui e é particular deste arquivo (<code>static</code>)</label>
+<label><input type="radio" name="q3"> <code>formatar</code> tem um erro</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual destas linhas pode ir num <code>.h</code> incluído por cinco <code>.c</code> sem dar <code>múltiplas definições</code>?</p>
+<label><input type="radio" name="q4"> <code>int clientes = 0;</code></label>
+<label><input type="radio" name="q4"> <code>extern int clientes;</code></label>
+<label><input type="radio" name="q4"> <code>extern int clientes = 0;</code></label>
+<label><input type="radio" name="q4"> <code>int clientes;</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana pôs <code>static int pedidos = 0;</code> num <code>.h</code> incluído pelo <code>main.c</code> e pelo <code>contador.c</code>. O que acontece?</p>
+<label><input type="radio" name="q5"> O ligador dá <code>múltiplas definições de "pedidos"</code></label>
+<label><input type="radio" name="q5"> O compilador dá um erro</label>
+<label><input type="radio" name="q5"> Os dois arquivos compartilham a mesma variável</label>
+<label><input type="radio" name="q5"> Compila sem aviso, e cada arquivo tem a sua própria <code>pedidos</code></label>
+</div>
+
+<h3>Missão final: o desconto da lojinha</h3>
+
+<div class="tryc" data-goal="compila,out:Caderno: R$ 18,out:Liquidação! Caderno: R$ 10,src:extern\s+int\s+desconto\s*;,src:static\s+void\s+linha">
+<p class="try-task"><strong>Missão:</strong> o projeto não liga: o ligador do editor aponta dois nomes duplicados (<code>duplicate symbol</code>), o <code>linha</code> e o <code>desconto</code>. Conserte os dois sem apagar nada que aparece na tela:</p>
+<ol>
+  <li>o <code>config.h</code> <strong>define</strong> o <code>desconto</code>, e ele é colado no <code>main.c</code> e no <code>preco.c</code>: troque por uma declaração <code>extern</code> e ponha a definição <code>int desconto = 10;</code> no <code>config.c</code>;</li>
+  <li>o <code>main.c</code> e o <code>preco.c</code> têm cada um a sua <code>linha</code> (com desenhos diferentes): deixe as duas particulares.</li>
+</ol>
+<pre class="out">====================
+Caderno: R$ 18
+====================
+--------------------
+Liquidação! Caderno: R$ 10
+--------------------</pre>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "config.h"
+#include "preco.h"
+
+void linha(void) {
+    printf("====================\n");
+}
+
+int main(void) {
+    linha();
+    printf("Caderno: R$ %d\n", preco_final(20));
+    linha();
+    desconto = 50;
+    mostrar_preco("Liquidação! Caderno", 20);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="preco.c">#include &lt;stdio.h&gt;
+#include "config.h"
+#include "preco.h"
+
+void linha(void) {
+    printf("--------------------\n");
+}
+
+int preco_final(int preco) {
+    return preco - preco * desconto / 100;
+}
+
+void mostrar_preco(const char *nome, int preco) {
+    linha();
+    printf("%s: R$ %d\n", nome, preco_final(preco));
+    linha();
+}
+</pre>
+<pre class="script" data-file="config.h">#ifndef CONFIG_H
+#define CONFIG_H
+
+int desconto = 10;
+
+#endif
+</pre>
+<pre class="script" data-file="config.c">#include "config.h"
+
+// a definição do desconto vem aqui
+</pre>
+<pre class="script" data-file="preco.h">#ifndef PRECO_H
+#define PRECO_H
+
+int preco_final(int preco);
+void mostrar_preco(const char *nome, int preco);
+
+#endif
+</pre>
+<pre class="solucao" data-file="main.c">#include &lt;stdio.h&gt;
+#include "config.h"
+#include "preco.h"
+
+static void linha(void) {
+    printf("====================\n");
+}
+
+int main(void) {
+    linha();
+    printf("Caderno: R$ %d\n", preco_final(20));
+    linha();
+    desconto = 50;
+    mostrar_preco("Liquidação! Caderno", 20);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="preco.c">#include &lt;stdio.h&gt;
+#include "config.h"
+#include "preco.h"
+
+static void linha(void) {
+    printf("--------------------\n");
+}
+
+int preco_final(int preco) {
+    return preco - preco * desconto / 100;
+}
+
+void mostrar_preco(const char *nome, int preco) {
+    linha();
+    printf("%s: R$ %d\n", nome, preco_final(preco));
+    linha();
+}
+</pre>
+<pre class="solucao" data-file="config.h">#ifndef CONFIG_H
+#define CONFIG_H
+
+extern int desconto;
+
+#endif
+</pre>
+<pre class="solucao" data-file="config.c">#include "config.h"
+
+int desconto = 10;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Fora das funções, toda função e toda variável global é <strong>pública</strong> (ligação externa): o ligador a mostra para todos os arquivos. Duas com o mesmo nome dão <code>múltiplas definições de</code> (<code>multiple definition of</code>).</li>
+  <li><code>static</code> fora das funções deixa o nome <strong>particular do arquivo</strong> (ligação interna). Use-o em toda função auxiliar e em todo estado do módulo. No <code>nm</code>, a letra fica minúscula (<code>t</code>, <code>b</code>, <code>d</code>).</li>
+  <li><code>static</code> dentro de uma função é outra coisa: muda o tempo de vida, não a visibilidade (aula <a href="escopo.html">Escopo</a>).</li>
+  <li><code>extern int x;</code> <strong>declara</strong> uma variável que mora em outro arquivo: vai no <code>.h</code>. A <strong>definição</strong>, <code>int x = 5;</code>, vai num <code>.c</code> só, que inclui o próprio <code>.h</code> (assim o gcc confere os tipos).</li>
+  <li><code>int x;</code> fora das funções já é definição: em dois arquivos, dá erro desde o gcc 10. <code>extern</code> com valor vira definição e dá aviso.</li>
+  <li>Nada de <code>static int</code> num <code>.h</code>: cada <code>.c</code> ganha uma cópia, sem aviso.</li>
+  <li>Comece tudo como <code>static</code>; publique (no <code>.h</code>) só o que outros arquivos precisam. O próximo passo para projetos com muitos arquivos é o <a href="make.html">Makefile</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
