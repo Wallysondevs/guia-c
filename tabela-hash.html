@@ -1,0 +1,1196 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Tabela Hash — função hash, baldes e colisões | Guia C</title>
+<meta name="description" content="Tabela hash em C para quem nunca programou: a função hash (da soma das letras ao djb2 com uint32_t), baldes, colisões e encadeamento com listas ligadas, guardar, achar e liberar com strdup e valgrind, fator de carga e crescer a tabela, sondagem linear e os erros reais (índice negativo com acentos, comparar chaves com ==, esquecer de copiar a chave), com saídas do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Tabela Hash</span></h1>
+
+<p class="intro">A lojinha da Ana tem centenas de produtos, e o caixa precisa achar o preço de "leite" na hora. Procurar um por um numa lista é lento; uma <a href="arvores-binarias.html">árvore de busca</a> já ajuda. A <strong>tabela hash</strong> vai além: ela transforma o nome do produto num <strong>número</strong>, e esse número diz em que gaveta o produto está. Em vez de procurar, o programa vai direto. É a estrutura por trás dos "dicionários" do Python, dos objetos do JavaScript e de quase todo cache. Em C, você monta a sua com um array e <a href="listas-ligadas.html">listas ligadas</a>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma <strong>função hash</strong> e por que ela precisa dar sempre o mesmo número para a mesma chave.</li>
+  <li>Por que somar as letras é um hash ruim, e como funciona o <strong>djb2</strong>, um hash simples e bom.</li>
+  <li>O que são <strong>baldes</strong> e <strong>colisões</strong>, e como resolver colisões com listas ligadas (<strong>encadeamento</strong>).</li>
+  <li>Como escrever <code>guardar</code>, <code>achar</code> e <code>liberar</code>, copiando as chaves com <code>strdup</code>.</li>
+  <li>O que é o <strong>fator de carga</strong> e como <strong>crescer</strong> a tabela.</li>
+  <li>Outra forma de resolver colisões: a <strong>sondagem linear</strong>.</li>
+  <li>Os erros clássicos: índice negativo, comparar textos com <code>==</code>, guardar o ponteiro sem copiar a chave.</li>
+</ul>
+</div>
+
+<p>Esta aula usa <a href="listas-ligadas.html">listas ligadas</a>, <a href="funcoes-string.html">funções de string</a> (<code>strcmp</code>), <a href="malloc-free.html">malloc e free</a> e <a href="stdint.html">inteiros de tamanho fixo</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o armário de escaninhos</h2>
+<p>No depósito da lojinha há um armário com 13 escaninhos, numerados de 0 a 12. A Ana combinou uma regra: para saber em que escaninho fica um produto, ela faz uma conta com as letras do nome, e o resultado (de 0 a 12) é o número do escaninho. Para guardar o arroz, faz a conta e põe no escaninho que deu. Para achar o arroz depois, faz <strong>a mesma conta</strong> e vai direto ao mesmo escaninho. Ela nunca precisa olhar os outros doze.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No depósito</th><th>Na tabela hash</th></tr>
+<tr><td>O nome do produto</td><td>A <strong>chave</strong> (<em>key</em>): o que você usa para procurar</td></tr>
+<tr><td>O preço, a quantidade</td><td>O <strong>valor</strong> (<em>value</em>) guardado junto da chave</td></tr>
+<tr><td>A conta com as letras</td><td>A <strong>função hash</strong>: transforma a chave num número</td></tr>
+<tr><td>Os escaninhos</td><td>Os <strong>baldes</strong> (<em>buckets</em>): as posições de um array</td></tr>
+<tr><td>Dois produtos que caem no mesmo escaninho</td><td>Uma <strong>colisão</strong></td></tr>
+</table>
+</div>
+
+<p>"Hash" quer dizer "picadinho" em inglês (como em <em>hash brown</em>, a batata ralada): a função "pica" a chave e mistura os pedaços até sair um número. A regra de ouro: <strong>a mesma chave sempre dá o mesmo número</strong>. Se a conta mudasse de um dia para outro, a Ana nunca mais acharia o arroz.</p>
+
+<hr>
+
+<h2>1. A primeira função hash: somar as letras</h2>
+<p>Cada letra é um número para o computador (o código dela; veja <a href="char.html">Caracteres</a>): <code>'a'</code> é 97, <code>'b'</code> é 98. A conta mais simples é somar os códigos e pegar o resto da divisão pelo número de baldes, que dá sempre um número de 0 a 12:</p>
+
+<pre class="file" data-file="soma_letras.c">#include &lt;stdio.h&gt;
+
+#define BALDES 13
+
+unsigned int hash(const char *s) {
+    unsigned int soma = 0;
+    for (int i = 0; s[i] != '\0'; i++) {
+        soma += (unsigned char)s[i];
+    }
+    return soma;
+}
+
+int main(void) {
+    const char *produtos[] = {"arroz", "cafe", "leite", "pao", "ovos", "sal", "amor", "roma"};
+    for (int i = 0; i &lt; 8; i++) {
+        unsigned int h = hash(produtos[i]);
+        printf("%-6s soma %3u -&gt; balde %u\n", produtos[i], h, h % BALDES);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra soma_letras.c -o soma_letras
+$ ./soma_letras
+arroz  soma 558 -&gt; balde 12
+cafe   soma 399 -&gt; balde 9
+leite  soma 531 -&gt; balde 11
+pao    soma 320 -&gt; balde 8
+ovos   soma 455 -&gt; balde 0
+sal    soma 320 -&gt; balde 8
+amor   soma 431 -&gt; balde 2
+roma   soma 431 -&gt; balde 2</pre>
+
+<dl class="anatomy">
+  <dt>#define BALDES 13</dt><dd>Quantos baldes a tabela tem. A conta final sempre cai entre 0 e <code>BALDES - 1</code>.</dd>
+  <dt>unsigned int soma = 0;</dt><dd>Um inteiro <strong>sem sinal</strong>: nunca fica negativo. Isso vai importar (veja <a href="#errado">Quando dá errado</a>).</dd>
+  <dt>(unsigned char)s[i]</dt><dd>Lê o caractere como um número de 0 a 255. Sem essa conversão, letras acentuadas viram números negativos no Linux (o <code>char</code> lá tem sinal).</dd>
+  <dt>h % BALDES</dt><dd>O resto da divisão por 13: de 0 a 12. É o número do balde.</dd>
+  <dt>%-6s e %3u</dt><dd>Alinham a saída: o nome à esquerda em 6 colunas, o número à direita em 3 (veja <a href="formatos-printf.html">Formatos do printf</a>). O <code>%u</code> é o formato do <code>unsigned int</code>.</dd>
+</dl>
+
+<p>Funciona, mas tem dois problemas visíveis. "pao" e "sal" deram a mesma soma (320) por coincidência. E "amor" e "roma" têm <strong>as mesmas letras</strong> em outra ordem: a soma não liga para a ordem, então palavras com as mesmas letras <strong>sempre</strong> caem juntas. Um bom hash precisa misturar a <strong>posição</strong> de cada letra também.</p>
+
+<hr>
+
+<h2>2. Um hash de verdade: o djb2</h2>
+<p>O <strong>djb2</strong>, criado pelo programador Daniel J. Bernstein, é uma das funções hash mais simples que funcionam bem para textos. Antes de somar cada letra, ele multiplica o que já tem por 33. Assim, a mesma letra vale diferente em cada posição:</p>
+
+<pre class="file" data-file="djb2.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+#define BALDES 13
+
+uint32_t hash(const char *s) {
+    uint32_t h = 5381;
+    for (int i = 0; s[i] != '\0'; i++) {
+        h = h * 33 + (unsigned char)s[i];
+    }
+    return h;
+}
+
+int main(void) {
+    const char *produtos[] = {"arroz", "cafe", "leite", "pao", "ovos", "sal", "amor", "roma"};
+    for (int i = 0; i &lt; 8; i++) {
+        uint32_t h = hash(produtos[i]);
+        printf("%-6s hash %10u -&gt; balde %u\n", produtos[i], h, h % BALDES);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra djb2.c -o djb2
+$ ./djb2
+arroz  hash  253411315 -&gt; balde 1
+cafe   hash 2090140468 -&gt; balde 0
+leite  hash  265979608 -&gt; balde 11
+pao    hash  193502277 -&gt; balde 7
+ovos   hash 2090594892 -&gt; balde 9
+sal    hash  193505541 -&gt; balde 8
+amor   hash 2090081972 -&gt; balde 4
+roma   hash 2090694996 -&gt; balde 0</pre>
+
+<dl class="anatomy">
+  <dt>uint32_t h = 5381;</dt><dd>Um inteiro sem sinal de <strong>exatamente 32 bits</strong> (aula <a href="stdint.html">stdint.h</a>). O 5381 é o valor inicial escolhido pelo autor; qualquer número serviria, mas este foi testado com muitos textos.</dd>
+  <dt>h = h * 33 + (unsigned char)s[i];</dt><dd>Multiplica o que já tem por 33 e soma a letra. Com "ab", fica <code>(5381 × 33 + 97) × 33 + 98</code>; com "ba", <code>(5381 × 33 + 98) × 33 + 97</code>: números diferentes.</dd>
+  <dt>(e quando passa de 4 bilhões?)</dt><dd>Com palavras de 5 ou 6 letras, o número já passa do máximo de 32 bits. Num tipo <strong>sem sinal</strong>, isso não é erro: a conta "dá a volta" e continua do zero, como um odômetro (é o comportamento definido pelo C). Num <code>int</code> com sinal, seria <a href="comportamento-indefinido.html">comportamento indefinido</a>.</dd>
+</dl>
+
+<p>Agora "amor" e "roma" se separaram, e também "pao" e "sal". Mas "cafe" e "roma" caíram juntos no balde 0. Isso não é defeito do djb2: com 8 palavras e 13 baldes, a chance de nenhuma cair junto de outra é pequena (é o "paradoxo do aniversário": numa sala com só 23 pessoas, a chance de duas fazerem aniversário no mesmo dia já passa de 50%). <strong>Colisões vão acontecer</strong>; a tabela precisa saber lidar com elas.</p>
+
+<div class="tip">
+<strong>Por que <code>uint32_t</code> e não <code>unsigned long</code>?</strong>
+<p>O tamanho do <code>long</code> muda de um sistema para outro: 8 bytes no gcc do Linux, 4 bytes no editor do guia (que roda em WebAssembly de 32 bits). Com <code>unsigned long</code>, o djb2 daria números diferentes nos dois e os produtos cairiam em baldes diferentes. Com <code>uint32_t</code>, a conta é a mesma em qualquer computador, e as saídas desta aula são idênticas no editor e no terminal. E por que 13 baldes? Com um número <strong>primo</strong>, o <code>%</code> usa todos os bits do hash; com 8 ou 16, ele olharia só os últimos bits, e hashes ruins se concentrariam em poucos baldes.</p>
+</div>
+
+<hr>
+
+<h2>3. Colisões: cada balde é uma lista</h2>
+<p>A solução mais comum para colisões se chama <strong>encadeamento</strong> (<em>separate chaining</em>): cada balde não guarda um item, mas uma <strong>lista ligada</strong> de itens. Quando dois produtos caem no mesmo balde, os dois entram na lista daquele balde. Para achar um produto, você calcula o balde e procura só naquela lista, que é curta.</p>
+
+<figure>
+<svg viewBox="0 0 560 386" role="img" aria-label="A tabela da lojinha: 13 baldes; os baldes 1 e 11 têm dois itens cada, ligados em lista" style="width:100%;max-width:560px;height:auto;display:block">
+<title>A tabela da lojinha: 13 baldes; os baldes 1 e 11 têm dois itens cada, ligados em lista</title>
+<text x="58" y="20" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:14px;text-anchor:middle">baldes[]</text><text x="22" y="52" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">0</text><rect x="30" y="34" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><circle cx="58" cy="47" r="3.5" style="fill:var(--text)"/><line x1="58" y1="47" x2="111" y2="47" style="stroke:var(--text);stroke-width:1.6"/><polygon points="120,47 111,42 111,52" style="fill:var(--text)"/><rect x="120" y="36" width="140" height="22" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="182" y="52" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;text-anchor:middle">cafe=1890</text><line x1="242" y1="36" x2="242" y2="58" style="stroke:var(--text);stroke-width:1"/><circle cx="251" cy="47" r="3" style="fill:var(--text)"/><line x1="251" y1="47" x2="267" y2="47" style="stroke:var(--text);stroke-width:1.4"/><text x="271" y="51" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">NULL</text><text x="22" y="78" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">1</text><rect x="30" y="60" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><circle cx="58" cy="73" r="3.5" style="fill:var(--text)"/><line x1="58" y1="73" x2="111" y2="73" style="stroke:var(--text);stroke-width:1.6"/><polygon points="120,73 111,68 111,78" style="fill:var(--text)"/><rect x="120" y="62" width="140" height="22" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="182" y="78" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;text-anchor:middle">queijo=4290</text><line x1="242" y1="62" x2="242" y2="84" style="stroke:var(--text);stroke-width:1"/><circle cx="251" cy="73" r="3" style="fill:var(--text)"/><line x1="251" y1="73" x2="301" y2="73" style="stroke:var(--text);stroke-width:1.6"/><polygon points="310,73 301,68 301,78" style="fill:var(--text)"/><rect x="310" y="62" width="140" height="22" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="372" y="78" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;text-anchor:middle">arroz=2590</text><line x1="432" y1="62" x2="432" y2="84" style="stroke:var(--text);stroke-width:1"/><circle cx="441" cy="73" r="3" style="fill:var(--text)"/><line x1="441" y1="73" x2="457" y2="73" style="stroke:var(--text);stroke-width:1.4"/><text x="461" y="77" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">NULL</text><text x="22" y="104" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">2</text><rect x="30" y="86" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="58" y="104" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;text-anchor:middle">NULL</text><text x="22" y="130" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">3</text><rect x="30" y="112" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="58" y="130" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;text-anchor:middle">NULL</text><text x="22" y="156" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">4</text><rect x="30" y="138" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="58" y="156" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;text-anchor:middle">NULL</text><text x="22" y="182" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">5</text><rect x="30" y="164" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="58" y="182" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;text-anchor:middle">NULL</text><text x="22" y="208" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">6</text><rect x="30" y="190" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="58" y="208" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;text-anchor:middle">NULL</text><text x="22" y="234" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">7</text><rect x="30" y="216" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><circle cx="58" cy="229" r="3.5" style="fill:var(--text)"/><line x1="58" y1="229" x2="111" y2="229" style="stroke:var(--text);stroke-width:1.6"/><polygon points="120,229 111,224 111,234" style="fill:var(--text)"/><rect x="120" y="218" width="140" height="22" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="182" y="234" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;text-anchor:middle">pao=75</text><line x1="242" y1="218" x2="242" y2="240" style="stroke:var(--text);stroke-width:1"/><circle cx="251" cy="229" r="3" style="fill:var(--text)"/><line x1="251" y1="229" x2="267" y2="229" style="stroke:var(--text);stroke-width:1.4"/><text x="271" y="233" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">NULL</text><text x="22" y="260" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">8</text><rect x="30" y="242" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><circle cx="58" cy="255" r="3.5" style="fill:var(--text)"/><line x1="58" y1="255" x2="111" y2="255" style="stroke:var(--text);stroke-width:1.6"/><polygon points="120,255 111,250 111,260" style="fill:var(--text)"/><rect x="120" y="244" width="140" height="22" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="182" y="260" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;text-anchor:middle">sal=350</text><line x1="242" y1="244" x2="242" y2="266" style="stroke:var(--text);stroke-width:1"/><circle cx="251" cy="255" r="3" style="fill:var(--text)"/><line x1="251" y1="255" x2="267" y2="255" style="stroke:var(--text);stroke-width:1.4"/><text x="271" y="259" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">NULL</text><text x="22" y="286" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">9</text><rect x="30" y="268" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><circle cx="58" cy="281" r="3.5" style="fill:var(--text)"/><line x1="58" y1="281" x2="111" y2="281" style="stroke:var(--text);stroke-width:1.6"/><polygon points="120,281 111,276 111,286" style="fill:var(--text)"/><rect x="120" y="270" width="140" height="22" rx="4" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="182" y="286" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;text-anchor:middle">ovos=1399</text><line x1="242" y1="270" x2="242" y2="292" style="stroke:var(--text);stroke-width:1"/><circle cx="251" cy="281" r="3" style="fill:var(--text)"/><line x1="251" y1="281" x2="267" y2="281" style="stroke:var(--text);stroke-width:1.4"/><text x="271" y="285" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">NULL</text><text x="22" y="312" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">10</text><rect x="30" y="294" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="58" y="312" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;text-anchor:middle">NULL</text><text x="22" y="338" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">11</text><rect x="30" y="320" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><circle cx="58" cy="333" r="3.5" style="fill:var(--text)"/><line x1="58" y1="333" x2="111" y2="333" style="stroke:var(--text);stroke-width:1.6"/><polygon points="120,333 111,328 111,338" style="fill:var(--text)"/><rect x="120" y="322" width="140" height="22" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="182" y="338" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;text-anchor:middle">feijao=899</text><line x1="242" y1="322" x2="242" y2="344" style="stroke:var(--text);stroke-width:1"/><circle cx="251" cy="333" r="3" style="fill:var(--text)"/><line x1="251" y1="333" x2="301" y2="333" style="stroke:var(--text);stroke-width:1.6"/><polygon points="310,333 301,328 301,338" style="fill:var(--text)"/><rect x="310" y="322" width="140" height="22" rx="4" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="372" y="338" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;text-anchor:middle">leite=599</text><line x1="432" y1="322" x2="432" y2="344" style="stroke:var(--text);stroke-width:1"/><circle cx="441" cy="333" r="3" style="fill:var(--text)"/><line x1="441" y1="333" x2="457" y2="333" style="stroke:var(--text);stroke-width:1.4"/><text x="461" y="337" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">NULL</text><text x="22" y="364" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:end">12</text><rect x="30" y="346" width="56" height="26" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="58" y="364" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;text-anchor:middle">NULL</text>
+</svg>
+<figcaption>A tabela da lojinha, montada na próxima seção. O array <code>baldes</code> tem 13 ponteiros; os baldes vazios valem <code>NULL</code>. "queijo" e "arroz" caíram no balde 1, e "feijao" e "leite" no balde 11 (verde): em cada um desses, os itens formam uma lista de dois nós. Para achar o leite, o programa calcula <code>hash("leite") % 13</code> = 11 e olha só os dois itens daquele balde.</figcaption>
+</figure>
+
+<hr>
+
+<h2>4. A tabela completa: guardar, achar e liberar</h2>
+<p>Cada item é um nó de lista: a chave (o nome), o valor (o preço em centavos, para não ter problemas com <a href="ponto-flutuante.html">float</a>) e o ponteiro para o próximo do mesmo balde. A tabela é um array de ponteiros para o primeiro item de cada balde:</p>
+
+<pre class="file" data-file="tabela.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define BALDES 13
+
+typedef struct Item {
+    char *chave;
+    int preco;
+    struct Item *prox;
+} Item;
+
+typedef struct {
+    Item *baldes[BALDES];
+} Tabela;
+
+uint32_t hash(const char *s) {
+    uint32_t h = 5381;
+    for (int i = 0; s[i] != '\0'; i++) {
+        h = h * 33 + (unsigned char)s[i];
+    }
+    return h;
+}
+
+Item *achar(const Tabela *t, const char *chave) {
+    Item *it = t-&gt;baldes[hash(chave) % BALDES];
+    while (it != NULL) {
+        if (strcmp(it-&gt;chave, chave) == 0) {
+            return it;
+        }
+        it = it-&gt;prox;
+    }
+    return NULL;
+}
+
+bool guardar(Tabela *t, const char *chave, int preco) {
+    Item *it = achar(t, chave);
+    if (it != NULL) {
+        it-&gt;preco = preco;
+        return true;
+    }
+    it = malloc(sizeof *it);
+    if (it == NULL) {
+        return false;
+    }
+    it-&gt;chave = strdup(chave);
+    if (it-&gt;chave == NULL) {
+        free(it);
+        return false;
+    }
+    it-&gt;preco = preco;
+    uint32_t b = hash(chave) % BALDES;
+    it-&gt;prox = t-&gt;baldes[b];
+    t-&gt;baldes[b] = it;
+    return true;
+}
+
+void liberar(Tabela *t) {
+    for (int b = 0; b &lt; BALDES; b++) {
+        Item *it = t-&gt;baldes[b];
+        while (it != NULL) {
+            Item *prox = it-&gt;prox;
+            free(it-&gt;chave);
+            free(it);
+            it = prox;
+        }
+        t-&gt;baldes[b] = NULL;
+    }
+}
+
+void mostrar(const Tabela *t) {
+    for (int b = 0; b &lt; BALDES; b++) {
+        printf("balde %2d:", b);
+        for (const Item *it = t-&gt;baldes[b]; it != NULL; it = it-&gt;prox) {
+            printf(" %s=%d", it-&gt;chave, it-&gt;preco);
+        }
+        printf("\n");
+    }
+}
+
+int main(void) {
+    Tabela loja = {0};
+    const char *nomes[] = {"arroz", "cafe", "leite", "pao", "ovos", "sal", "feijao", "queijo"};
+    int precos[] = {2590, 1890, 549, 75, 1399, 350, 899, 4290};
+    for (int i = 0; i &lt; 8; i++) {
+        if (!guardar(&amp;loja, nomes[i], precos[i])) {
+            fprintf(stderr, "Sem memória\n");
+            liberar(&amp;loja);
+            return 1;
+        }
+    }
+    guardar(&amp;loja, "leite", 599);
+    mostrar(&amp;loja);
+
+    const char *procurar[] = {"leite", "queijo", "acucar"};
+    for (int i = 0; i &lt; 3; i++) {
+        Item *it = achar(&amp;loja, procurar[i]);
+        if (it != NULL) {
+            printf("%s custa R$ %d,%02d\n", procurar[i], it-&gt;preco / 100, it-&gt;preco % 100);
+        } else {
+            printf("%s: não temos\n", procurar[i]);
+        }
+    }
+    liberar(&amp;loja);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g tabela.c -o tabela
+$ ./tabela
+balde  0: cafe=1890
+balde  1: queijo=4290 arroz=2590
+balde  2:
+balde  3:
+balde  4:
+balde  5:
+balde  6:
+balde  7: pao=75
+balde  8: sal=350
+balde  9: ovos=1399
+balde 10:
+balde 11: feijao=899 leite=599
+balde 12:
+leite custa R$ 5,99
+queijo custa R$ 42,90
+acucar: não temos
+$ valgrind --leak-check=full ./tabela 2&gt;&amp;1 | grep -E 'total heap|All heap|ERROR SUM'
+==429526==   total heap usage: 17 allocs, 17 frees, 4,332 bytes allocated
+==429526== All heap blocks were freed -- no leaks are possible
+==429526== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>typedef struct Item { char *chave; int preco; struct Item *prox; } Item;</code></td><td>O nó da lista de cada balde. A chave é um <code>char *</code> porque cada item vai ter a <strong>sua própria cópia</strong> do nome, no heap.</td></tr>
+<tr><td><code>typedef struct { Item *baldes[BALDES]; } Tabela;</code></td><td>A tabela: 13 ponteiros, um para o começo da lista de cada balde.</td></tr>
+<tr><td><code>Tabela loja = {0};</code></td><td>Começa com todos os ponteiros zerados (<code>NULL</code>): todos os baldes vazios.</td></tr>
+<tr><td><code>t-&gt;baldes[hash(chave) % BALDES]</code></td><td>Em <code>achar</code>: vai direto ao balde certo e pega o primeiro item da lista dele.</td></tr>
+<tr><td><code>strcmp(it-&gt;chave, chave) == 0</code></td><td>Compara os <strong>textos</strong> (aula <a href="funcoes-string.html">Funções de String</a>). Vários nomes podem cair no mesmo balde, então é preciso conferir se é mesmo o produto procurado.</td></tr>
+<tr><td><code>Item *it = achar(t, chave); if (it != NULL) { it-&gt;preco = preco; … }</code></td><td>Em <code>guardar</code>: se a chave já existe, só <strong>atualiza</strong> o valor. Uma chave aparece uma vez só na tabela. Por isso o leite ficou com 599 (o segundo <code>guardar</code>), não com 549.</td></tr>
+<tr><td><code>it-&gt;chave = strdup(chave);</code></td><td>Faz uma cópia do nome no heap (<code>strdup</code> = "string duplicate", duplicar texto) <span class="versao">C23</span>. É um <code>malloc</code> + <code>strcpy</code> numa linha; por isso também pode devolver <code>NULL</code>, e por isso também precisa de <code>free</code>.</td></tr>
+<tr><td><code>it-&gt;prox = t-&gt;baldes[b]; t-&gt;baldes[b] = it;</code></td><td>Pendura o item novo no <strong>começo</strong> da lista do balde, como o "inserir no início" da lista ligada. Por isso "queijo" aparece antes de "arroz": entrou depois.</td></tr>
+<tr><td><code>free(it-&gt;chave); free(it);</code></td><td>Em <code>liberar</code>: dois <code>free</code> por item, um para a cópia do nome e outro para o nó. O <code>valgrind</code> confirma: 17 reservas (8 nós, 8 nomes e o buffer do <code>printf</code>), 17 liberações.</td></tr>
+<tr><td><code>it-&gt;preco / 100, it-&gt;preco % 100</code></td><td>Reais e centavos: 599 vira <code>5</code> e <code>99</code>. O <code>%02d</code> garante dois dígitos: 5 centavos sai <code>0,05</code>, e não <code>0,5</code>.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong><code>strdup</code> antes do C23</strong>
+<p>O <code>strdup</code> existia há décadas no Linux (ele é do POSIX), mas só entrou no C padrão no C23. Com <code>-std=c17</code>, o gcc só o declara se você pedir os recursos do POSIX com <code>#define _POSIX_C_SOURCE 200809L</code> antes dos <code>#include</code>. Em código antigo, você vai ver a versão "à mão": <code>malloc(strlen(chave) + 1)</code> seguido de <code>strcpy</code> (aula <a href="strings-dinamicas.html">Strings Dinâmicas</a>).</p>
+</div>
+
+<p>Quanto custa achar um produto? Calcular o hash (umas poucas contas por letra) e andar por uma lista de um ou dois itens. Com 8 produtos ou com 8 milhões, se a tabela tiver baldes suficientes, o trabalho é praticamente o mesmo. Essa é a grande vantagem sobre a lista (que olha tudo) e a árvore (que olha a altura).</p>
+
+<div class="tryc" data-goal="out:acucar custa R$ 4\,89">
+<p class="try-task"><strong>Missão:</strong> a lojinha começou a vender açúcar. Acrescente, no <code>main</code>, um <code>guardar</code> para <code>"acucar"</code> com o preço de 489 centavos, antes do <code>mostrar</code>. Rode e veja em que balde ele caiu. A saída deve ter a linha <code>acucar custa R$ 4,89</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define BALDES 13
+
+typedef struct Item {
+    char *chave;
+    int preco;
+    struct Item *prox;
+} Item;
+
+typedef struct {
+    Item *baldes[BALDES];
+} Tabela;
+
+uint32_t hash(const char *s) {
+    uint32_t h = 5381;
+    for (int i = 0; s[i] != '\0'; i++) {
+        h = h * 33 + (unsigned char)s[i];
+    }
+    return h;
+}
+
+Item *achar(const Tabela *t, const char *chave) {
+    Item *it = t-&gt;baldes[hash(chave) % BALDES];
+    while (it != NULL) {
+        if (strcmp(it-&gt;chave, chave) == 0) {
+            return it;
+        }
+        it = it-&gt;prox;
+    }
+    return NULL;
+}
+
+bool guardar(Tabela *t, const char *chave, int preco) {
+    Item *it = achar(t, chave);
+    if (it != NULL) {
+        it-&gt;preco = preco;
+        return true;
+    }
+    it = malloc(sizeof *it);
+    if (it == NULL) {
+        return false;
+    }
+    it-&gt;chave = strdup(chave);
+    if (it-&gt;chave == NULL) {
+        free(it);
+        return false;
+    }
+    it-&gt;preco = preco;
+    uint32_t b = hash(chave) % BALDES;
+    it-&gt;prox = t-&gt;baldes[b];
+    t-&gt;baldes[b] = it;
+    return true;
+}
+
+void liberar(Tabela *t) {
+    for (int b = 0; b &lt; BALDES; b++) {
+        Item *it = t-&gt;baldes[b];
+        while (it != NULL) {
+            Item *prox = it-&gt;prox;
+            free(it-&gt;chave);
+            free(it);
+            it = prox;
+        }
+        t-&gt;baldes[b] = NULL;
+    }
+}
+
+void mostrar(const Tabela *t) {
+    for (int b = 0; b &lt; BALDES; b++) {
+        printf("balde %2d:", b);
+        for (const Item *it = t-&gt;baldes[b]; it != NULL; it = it-&gt;prox) {
+            printf(" %s=%d", it-&gt;chave, it-&gt;preco);
+        }
+        printf("\n");
+    }
+}
+
+int main(void) {
+    Tabela loja = {0};
+    const char *nomes[] = {"arroz", "cafe", "leite", "pao", "ovos", "sal", "feijao", "queijo"};
+    int precos[] = {2590, 1890, 549, 75, 1399, 350, 899, 4290};
+    for (int i = 0; i &lt; 8; i++) {
+        if (!guardar(&amp;loja, nomes[i], precos[i])) {
+            fprintf(stderr, "Sem memória\n");
+            liberar(&amp;loja);
+            return 1;
+        }
+    }
+    guardar(&amp;loja, "leite", 599);
+    mostrar(&amp;loja);
+
+    const char *procurar[] = {"leite", "queijo", "acucar"};
+    for (int i = 0; i &lt; 3; i++) {
+        Item *it = achar(&amp;loja, procurar[i]);
+        if (it != NULL) {
+            printf("%s custa R$ %d,%02d\n", procurar[i], it-&gt;preco / 100, it-&gt;preco % 100);
+        } else {
+            printf("%s: não temos\n", procurar[i]);
+        }
+    }
+    liberar(&amp;loja);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define BALDES 13
+
+typedef struct Item {
+    char *chave;
+    int preco;
+    struct Item *prox;
+} Item;
+
+typedef struct {
+    Item *baldes[BALDES];
+} Tabela;
+
+uint32_t hash(const char *s) {
+    uint32_t h = 5381;
+    for (int i = 0; s[i] != '\0'; i++) {
+        h = h * 33 + (unsigned char)s[i];
+    }
+    return h;
+}
+
+Item *achar(const Tabela *t, const char *chave) {
+    Item *it = t-&gt;baldes[hash(chave) % BALDES];
+    while (it != NULL) {
+        if (strcmp(it-&gt;chave, chave) == 0) {
+            return it;
+        }
+        it = it-&gt;prox;
+    }
+    return NULL;
+}
+
+bool guardar(Tabela *t, const char *chave, int preco) {
+    Item *it = achar(t, chave);
+    if (it != NULL) {
+        it-&gt;preco = preco;
+        return true;
+    }
+    it = malloc(sizeof *it);
+    if (it == NULL) {
+        return false;
+    }
+    it-&gt;chave = strdup(chave);
+    if (it-&gt;chave == NULL) {
+        free(it);
+        return false;
+    }
+    it-&gt;preco = preco;
+    uint32_t b = hash(chave) % BALDES;
+    it-&gt;prox = t-&gt;baldes[b];
+    t-&gt;baldes[b] = it;
+    return true;
+}
+
+void liberar(Tabela *t) {
+    for (int b = 0; b &lt; BALDES; b++) {
+        Item *it = t-&gt;baldes[b];
+        while (it != NULL) {
+            Item *prox = it-&gt;prox;
+            free(it-&gt;chave);
+            free(it);
+            it = prox;
+        }
+        t-&gt;baldes[b] = NULL;
+    }
+}
+
+void mostrar(const Tabela *t) {
+    for (int b = 0; b &lt; BALDES; b++) {
+        printf("balde %2d:", b);
+        for (const Item *it = t-&gt;baldes[b]; it != NULL; it = it-&gt;prox) {
+            printf(" %s=%d", it-&gt;chave, it-&gt;preco);
+        }
+        printf("\n");
+    }
+}
+
+int main(void) {
+    Tabela loja = {0};
+    const char *nomes[] = {"arroz", "cafe", "leite", "pao", "ovos", "sal", "feijao", "queijo"};
+    int precos[] = {2590, 1890, 549, 75, 1399, 350, 899, 4290};
+    for (int i = 0; i &lt; 8; i++) {
+        if (!guardar(&amp;loja, nomes[i], precos[i])) {
+            fprintf(stderr, "Sem memória\n");
+            liberar(&amp;loja);
+            return 1;
+        }
+    }
+    guardar(&amp;loja, "leite", 599);
+    guardar(&amp;loja, "acucar", 489);
+    mostrar(&amp;loja);
+
+    const char *procurar[] = {"leite", "queijo", "acucar"};
+    for (int i = 0; i &lt; 3; i++) {
+        Item *it = achar(&amp;loja, procurar[i]);
+        if (it != NULL) {
+            printf("%s custa R$ %d,%02d\n", procurar[i], it-&gt;preco / 100, it-&gt;preco % 100);
+        } else {
+            printf("%s: não temos\n", procurar[i]);
+        }
+    }
+    liberar(&amp;loja);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Fator de carga: quando a tabela lota</h2>
+<p>A conta "quantos itens por balde, em média" tem nome: <strong>fator de carga</strong> (<em>load factor</em>) = itens ÷ baldes. Se ele cresce, as listas crescem, e a tabela vira um monte de listas ligadas lentas. Este programa coloca 1000 chaves (<code>produto0</code>, <code>produto1</code>…) em tabelas de tamanhos diferentes e mede o resultado:</p>
+
+<pre class="file" data-file="carga.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+uint32_t hash(const char *s) {
+    uint32_t h = 5381;
+    for (int i = 0; s[i] != '\0'; i++) {
+        h = h * 33 + (unsigned char)s[i];
+    }
+    return h;
+}
+
+int main(void) {
+    const int itens = 1000;
+    const int tamanhos[] = {13, 101, 1009, 2003};
+    for (int k = 0; k &lt; 4; k++) {
+        int nb = tamanhos[k];
+        int contagem[2003] = {0};
+        char chave[20];
+        for (int i = 0; i &lt; itens; i++) {
+            snprintf(chave, sizeof chave, "produto%d", i);
+            contagem[hash(chave) % (uint32_t)nb]++;
+        }
+        int maior = 0, vazios = 0;
+        for (int b = 0; b &lt; nb; b++) {
+            if (contagem[b] &gt; maior) {
+                maior = contagem[b];
+            }
+            if (contagem[b] == 0) {
+                vazios++;
+            }
+        }
+        printf("%4d baldes: carga %5.2f, maior balde %3d, baldes vazios %4d\n",
+               nb, (double)itens / nb, maior, vazios);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra carga.c -o carga
+$ ./carga
+  13 baldes: carga 76.92, maior balde  79, baldes vazios    0
+ 101 baldes: carga  9.90, maior balde  15, baldes vazios    0
+1009 baldes: carga  0.99, maior balde   3, baldes vazios  254
+2003 baldes: carga  0.50, maior balde   2, baldes vazios 1069</pre>
+
+<p>Com 13 baldes, há quase 77 itens por balde, e o pior balde tem 79: achar um produto ali é quase tão lento quanto numa lista. Com cerca de um balde por item (1009), o pior balde tem só 3 itens. Mais baldes ainda (2003) gastam memória com baldes vazios e quase não melhoram. A regra prática: mantenha o fator de carga <strong>perto de 1 ou abaixo</strong>. (O <code>(uint32_t)nb</code> converte o número de baldes para o mesmo tipo do hash antes do <code>%</code>, para a conta ser feita sem sinal.)</p>
+
+<h3>Crescer: dobrar os baldes e redistribuir</h3>
+<p>Quando você não sabe quantos itens vão chegar, a tabela começa pequena e <strong>cresce</strong>: quando o fator de carga passa de um limite, ela reserva o dobro de baldes e passa cada item para o balde novo dele (em inglês, <em>rehash</em>). Os itens precisam mudar de balde porque o <code>% nb</code> mudou:</p>
+
+<pre class="file" data-file="crescer.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct Item {
+    char chave[20];
+    struct Item *prox;
+} Item;
+
+typedef struct {
+    Item **baldes;
+    size_t nb;
+    size_t qtd;
+} Tabela;
+
+uint32_t hash(const char *s) {
+    uint32_t h = 5381;
+    for (int i = 0; s[i] != '\0'; i++) {
+        h = h * 33 + (unsigned char)s[i];
+    }
+    return h;
+}
+
+bool crescer(Tabela *t) {
+    size_t novo_nb = t-&gt;nb * 2;
+    Item **novos = calloc(novo_nb, sizeof *novos);
+    if (novos == NULL) {
+        return false;
+    }
+    for (size_t b = 0; b &lt; t-&gt;nb; b++) {
+        Item *it = t-&gt;baldes[b];
+        while (it != NULL) {
+            Item *prox = it-&gt;prox;
+            size_t destino = hash(it-&gt;chave) % novo_nb;
+            it-&gt;prox = novos[destino];
+            novos[destino] = it;
+            it = prox;
+        }
+    }
+    free(t-&gt;baldes);
+    t-&gt;baldes = novos;
+    t-&gt;nb = novo_nb;
+    return true;
+}
+
+bool guardar(Tabela *t, const char *chave) {
+    if (t-&gt;qtd + 1 &gt; t-&gt;nb) {
+        printf("  %zu itens em %zu baldes: crescendo para %zu\n", t-&gt;qtd, t-&gt;nb, t-&gt;nb * 2);
+        if (!crescer(t)) {
+            return false;
+        }
+    }
+    Item *it = malloc(sizeof *it);
+    if (it == NULL) {
+        return false;
+    }
+    snprintf(it-&gt;chave, sizeof it-&gt;chave, "%s", chave);
+    size_t b = hash(chave) % t-&gt;nb;
+    it-&gt;prox = t-&gt;baldes[b];
+    t-&gt;baldes[b] = it;
+    t-&gt;qtd++;
+    return true;
+}
+
+void liberar(Tabela *t) {
+    for (size_t b = 0; b &lt; t-&gt;nb; b++) {
+        Item *it = t-&gt;baldes[b];
+        while (it != NULL) {
+            Item *prox = it-&gt;prox;
+            free(it);
+            it = prox;
+        }
+    }
+    free(t-&gt;baldes);
+}
+
+int main(void) {
+    Tabela t = {calloc(4, sizeof(Item *)), 4, 0};
+    if (t.baldes == NULL) {
+        return 1;
+    }
+    char chave[20];
+    for (int i = 0; i &lt; 20; i++) {
+        snprintf(chave, sizeof chave, "produto%d", i);
+        if (!guardar(&amp;t, chave)) {
+            fprintf(stderr, "Sem memória\n");
+            liberar(&amp;t);
+            return 1;
+        }
+    }
+    printf("Final: %zu itens em %zu baldes\n", t.qtd, t.nb);
+    liberar(&amp;t);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra crescer.c -o crescer
+$ ./crescer
+  4 itens em 4 baldes: crescendo para 8
+  8 itens em 8 baldes: crescendo para 16
+  16 itens em 16 baldes: crescendo para 32
+Final: 20 itens em 32 baldes</pre>
+
+<dl class="anatomy">
+  <dt>Item **baldes; size_t nb;</dt><dd>Agora o array de baldes mora no heap e tem tamanho variável, como o <a href="array-dinamico.html">array que cresce</a>. <code>nb</code> é o número de baldes; <code>qtd</code>, o de itens.</dd>
+  <dt>calloc(novo_nb, sizeof *novos)</dt><dd>Reserva o array novo já zerado: todos os baldes começam <code>NULL</code> (aula <a href="calloc-realloc.html">calloc e realloc</a>).</dd>
+  <dt>size_t destino = hash(it-&gt;chave) % novo_nb;</dt><dd>O balde de cada item na tabela nova. Repare que o hash é o mesmo; só o resto da divisão muda.</dd>
+  <dt>it-&gt;prox = novos[destino]; novos[destino] = it;</dt><dd>Os <strong>nós</strong> não são copiados: os mesmos nós são pendurados nas listas novas. Só os ponteiros mudam.</dd>
+  <dt>free(t-&gt;baldes);</dt><dd>Libera o array velho de baldes (não os itens, que agora estão no novo).</dd>
+  <dt>if (t-&gt;qtd + 1 &gt; t-&gt;nb)</dt><dd>O limite escolhido aqui: crescer quando o item novo deixaria a carga acima de 1. Bibliotecas de verdade usam limites como 0,75.</dd>
+</dl>
+
+<p>Crescer dá trabalho (passar por todos os itens), mas, como a tabela dobra, isso acontece cada vez mais raramente: para chegar a um milhão de itens, começando com 4 baldes, ela cresce só 18 vezes.</p>
+
+<hr>
+
+<h2>Formas diferentes</h2>
+
+<h3>Sondagem linear: sem listas, procurando a próxima vaga</h3>
+<p>Outra forma de lidar com colisões é o <strong>endereçamento aberto</strong> (<em>open addressing</em>): cada vaga do array guarda <strong>um</strong> item, e, se a vaga calculada estiver ocupada, o item vai para a próxima livre. A versão mais simples se chama <strong>sondagem linear</strong> (<em>linear probing</em>): tenta a vaga seguinte, depois a outra, dando a volta no fim do array com o <code>%</code>, como na <a href="pilhas-filas.html">fila circular</a>.</p>
+
+<pre class="file" data-file="sondagem.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;string.h&gt;
+
+#define VAGAS 13
+
+typedef struct {
+    const char *chave;
+    int preco;
+} Vaga;
+
+uint32_t hash(const char *s) {
+    uint32_t h = 5381;
+    for (int i = 0; s[i] != '\0'; i++) {
+        h = h * 33 + (unsigned char)s[i];
+    }
+    return h;
+}
+
+bool guardar(Vaga t[], const char *chave, int preco) {
+    uint32_t i = hash(chave) % VAGAS;
+    for (int tentativas = 0; tentativas &lt; VAGAS; tentativas++) {
+        if (t[i].chave == NULL || strcmp(t[i].chave, chave) == 0) {
+            t[i].chave = chave;
+            t[i].preco = preco;
+            printf("%-6s queria a vaga %2u, ficou na %2u\n", chave, hash(chave) % VAGAS, i);
+            return true;
+        }
+        i = (i + 1) % VAGAS;
+    }
+    return false;
+}
+
+const Vaga *achar(const Vaga t[], const char *chave) {
+    uint32_t i = hash(chave) % VAGAS;
+    for (int tentativas = 0; tentativas &lt; VAGAS; tentativas++) {
+        if (t[i].chave == NULL) {
+            return NULL;
+        }
+        if (strcmp(t[i].chave, chave) == 0) {
+            return &amp;t[i];
+        }
+        i = (i + 1) % VAGAS;
+    }
+    return NULL;
+}
+
+int main(void) {
+    Vaga loja[VAGAS] = {0};
+    const char *nomes[] = {"arroz", "cafe", "leite", "pao", "ovos", "sal", "feijao", "queijo"};
+    int precos[] = {2590, 1890, 549, 75, 1399, 350, 899, 4290};
+    for (int i = 0; i &lt; 8; i++) {
+        guardar(loja, nomes[i], precos[i]);
+    }
+    const Vaga *v = achar(loja, "queijo");
+    if (v != NULL) {
+        printf("queijo custa %d centavos\n", v-&gt;preco);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sondagem.c -o sondagem
+$ ./sondagem
+arroz  queria a vaga  1, ficou na  1
+cafe   queria a vaga  0, ficou na  0
+leite  queria a vaga 11, ficou na 11
+pao    queria a vaga  7, ficou na  7
+ovos   queria a vaga  9, ficou na  9
+sal    queria a vaga  8, ficou na  8
+feijao queria a vaga 11, ficou na 12
+queijo queria a vaga  1, ficou na  2
+queijo custa 4290 centavos</pre>
+
+<dl class="anatomy">
+  <dt>Vaga loja[VAGAS] = {0};</dt><dd>Um array de structs, sem <code>malloc</code>. Uma vaga com <code>chave == NULL</code> está livre. Aqui as chaves são textos fixos do programa, que existem até o fim; por isso não precisam de cópia.</dd>
+  <dt>i = (i + 1) % VAGAS;</dt><dd>Vaga ocupada por outra chave: tenta a seguinte. O "feijao" queria a 11 (do leite) e ficou na 12; o "queijo" queria a 1 (do arroz) e ficou na 2.</dd>
+  <dt>if (t[i].chave == NULL) return NULL;</dt><dd>Em <code>achar</code>: se chegou a uma vaga vazia sem encontrar a chave, ela não está na tabela (se estivesse, teria parado antes daquela vaga).</dd>
+  <dt>tentativas &lt; VAGAS</dt><dd>Nunca dá mais que uma volta completa: com a tabela cheia, <code>guardar</code> devolve <code>false</code> em vez de rodar para sempre.</dd>
+</dl>
+
+<p>A sondagem tem um preço escondido: <strong>remover</strong> é complicado. Se você esvaziar a vaga do "arroz", a busca pelo "queijo" (que está depois dela) vai parar na vaga vazia e dizer que ele não existe. As implementações de verdade marcam a vaga removida com uma "lápide" (<em>tombstone</em>) em vez de esvaziá-la.</p>
+
+<h3>Qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Vantagens</th><th>Cuidados</th></tr>
+<tr><td>Encadeamento (lista em cada balde)</td><td>Simples de entender; aguenta carga alta; remover é só remover da lista</td><td>Um <code>malloc</code> por item; os itens ficam espalhados na memória</td></tr>
+<tr><td>Sondagem linear (próxima vaga livre)</td><td>Tudo num array só, sem <code>malloc</code> por item; rápida enquanto a carga é baixa</td><td>Precisa de carga bem abaixo de 1 (cerca de 0,7); remover exige lápides</td></tr>
+</table>
+</div>
+
+<h3>Tabela hash, árvore ou array ordenado?</h3>
+<ul>
+  <li><strong>Achar pela chave exata</strong> ("qual o preço do leite?"), com muitos itens: <strong>tabela hash</strong>.</li>
+  <li><strong>Precisa da ordem</strong> (listar em ordem alfabética, o menor, o maior, "todos entre B e D"): <a href="arvores-binarias.html">árvore de busca</a>, ou um array ordenado. A tabela hash espalha as chaves de propósito: a ordem dos baldes não quer dizer nada.</li>
+  <li><strong>Dados que quase não mudam</strong>: um array ordenado com <a href="ordenacao.html">qsort</a> e procurado com <a href="busca.html">bsearch</a> é o mais simples.</li>
+  <li><strong>Poucos itens</strong> (algumas dezenas): um array e um <code>for</code>. Ninguém vai notar a diferença.</li>
+</ul>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Índice negativo: <code>int</code> no hash e uma fruta com acento</strong>
+<pre class="file" data-file="negativo.c">#include &lt;stdio.h&gt;
+
+#define BALDES 13
+
+int hash(const char *s) {
+    int h = 0;
+    for (int i = 0; s[i] != '\0'; i++) {
+        h = h * 31 + s[i];
+    }
+    return h % BALDES;
+}
+
+int main(void) {
+    int contagem[BALDES] = {0};
+    const char *frutas[] = {"uva", "kiwi", "maçã", "melão"};
+    for (int i = 0; i &lt; 4; i++) {
+        int b = hash(frutas[i]);
+        printf("%s -&gt; balde %d\n", frutas[i], b);
+        contagem[b]++;
+    }
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra negativo.c -o negativo
+$ ./negativo
+uva -&gt; balde 11
+kiwi -&gt; balde 8
+maçã -&gt; balde -8
+melão -&gt; balde -1</pre>
+<p><strong>O que significa:</strong> o gcc não avisou nada, e o programa "funcionou", mas mostrou baldes <strong>negativos</strong>, e o <code>contagem[b]++</code> escreveu em <code>contagem[-8]</code> e <code>contagem[-1]</code>, fora do array. Dois motivos juntos: no Linux, o <code>char</code> tem sinal, e as letras acentuadas (que em <a href="acentos-utf8.html">UTF-8</a> ocupam dois bytes acima de 127) viram números negativos; e o <code>h</code> é um <code>int</code>, que pode ficar negativo e, pior, estoura com nomes compridos. Em C, o resto de um número negativo é negativo: <code>-21 % 13</code> dá <code>-8</code>. Os <a href="sanitizers.html">sanitizers</a> mostram os dois problemas:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address,undefined negativo.c -o negativo
+$ ./negativo
+uva -&gt; balde 11
+kiwi -&gt; balde 8
+negativo.c:8:15: runtime error: signed integer overflow: 103492075 * 31 cannot be represented in type 'int'
+maçã -&gt; balde -8
+negativo.c:19:17: runtime error: index -8 out of bounds for type 'int [13]'
+=================================================================
+==432907==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7bde120f0040 at pc 0x555651571a58 bp 0x7ffe1bcd1db0 sp 0x7ffe1bcd1da0
+READ of size 4 at 0x7bde120f0040 thread T0
+    #0 0x555651571a57 in main /home/ana/c/negativo.c:19
+«  (… mais linhas: o mapa da memória em volta do erro …)</pre>
+<p><em>Signed integer overflow</em> = "estouro de inteiro com sinal": na linha 8, <code>h * 31</code> passou do máximo do <code>int</code>. <em>Index -8 out of bounds</em> = "índice -8 fora dos limites" do array de 13 posições, na linha 19. O editor do guia não tem sanitizers: mostraria os mesmos baldes negativos, sem nenhum alarme.</p>
+<p><strong>Como consertar:</strong> faça a conta com um tipo <strong>sem sinal</strong> e leia cada letra como <code>unsigned char</code>, como o djb2 da seção 2: <code>uint32_t h</code> e <code>h * 33 + (unsigned char)s[i]</code>. Um número sem sinal nunca é negativo, então o <code>%</code> sempre dá um balde de 0 a 12, e o estouro "dá a volta" sem comportamento indefinido.</p>
+</div>
+
+<div class="cenario">
+<strong>Comparar as chaves com <code>==</code>: "não temos", mas tem</strong>
+<pre class="file" data-file="erro_igual.c">Item *achar(Item *baldes[], const char *chave) {
+    for (Item *it = baldes[hash(chave) % BALDES]; it != NULL; it = it-&gt;prox) {
+        if (it-&gt;chave == chave) {        // compara endereços, não textos
+            return it;
+        }
+    }
+    return NULL;
+}
+…
+    Item leite = {strdup("leite"), 599, NULL};
+    baldes[hash("leite") % BALDES] = &amp;leite;
+    Item *it = achar(baldes, "leite");
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra erro_igual.c -o erro_igual
+$ ./erro_igual
+leite: não temos</pre>
+<p><strong>O que significa:</strong> nenhum aviso. O leite está no balde certo, mas <code>it-&gt;chave == chave</code> compara dois <strong>ponteiros</strong>: o endereço da cópia feita pelo <code>strdup</code> e o endereço do texto <code>"leite"</code> escrito no <code>main</code>. São dois lugares diferentes da memória, com o mesmo texto dentro. Os endereços são diferentes, então a comparação dá falso (veja <a href="ponteiros-strings.html">Ponteiros e Strings</a>).</p>
+<p><strong>Como consertar:</strong> textos se comparam com <code>strcmp(it-&gt;chave, chave) == 0</code>, que olha letra por letra.</p>
+</div>
+
+<div class="cenario">
+<strong>Guardar o ponteiro sem copiar a chave: todos viram "leite"</strong>
+<p>Uma versão do <code>guardar</code> que faz <code>it-&gt;chave = chave;</code> (sem <code>strdup</code>), com o <code>main</code> lendo os produtos da entrada para o mesmo array <code>char nome[20]</code>:</p>
+<pre class="file" data-file="sem_copia.c">    char nome[20];
+    int preco;
+    while (scanf("%19s %d", nome, &amp;preco) == 2) {
+        guardar(baldes, nome, preco);     // guarda o endereço de nome
+    }
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sem_copia.c -o sem_copia
+$ printf 'arroz 2590\ncafe 1890\nleite 599\n' | ./sem_copia
+balde  0: leite=1890
+balde  1: leite=2590
+balde 11: leite=599
+arroz: não temos</pre>
+<p><strong>O que significa:</strong> os três itens foram para os baldes certos (arroz no 1, café no 0, leite no 11) e com os preços certos, mas todos guardaram o <strong>mesmo endereço</strong>: o do array <code>nome</code>. Cada <code>scanf</code> escreveu um nome novo por cima do anterior, e no fim o array diz "leite". Agora o item do arroz se chama "leite", e a busca por "arroz" falha. Se <code>nome</code> fosse uma variável local de outra função, seria pior: os itens apontariam para memória que nem existe mais.</p>
+<p><strong>Como consertar:</strong> a tabela guarda a <strong>sua própria cópia</strong> de cada chave: <code>it-&gt;chave = strdup(chave);</code>, conferindo o <code>NULL</code> e com o <code>free(it-&gt;chave)</code> correspondente no <code>liberar</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Peça</th><th>Código</th></tr>
+<tr><td>Hash djb2 (texto)</td><td><code>uint32_t h = 5381; for (…) h = h * 33 + (unsigned char)s[i];</code></td></tr>
+<tr><td>Balde de uma chave</td><td><code>hash(chave) % BALDES</code></td></tr>
+<tr><td>Item (encadeamento)</td><td><code>typedef struct Item { char *chave; int valor; struct Item *prox; } Item;</code></td></tr>
+<tr><td>Tabela vazia</td><td><code>Item *baldes[BALDES] = {0};</code></td></tr>
+<tr><td>Achar</td><td>Andar pela lista do balde comparando com <code>strcmp(…) == 0</code></td></tr>
+<tr><td>Guardar</td><td>Se achou, atualiza; senão, <code>malloc</code> + <code>strdup</code> e pendura no começo do balde</td></tr>
+<tr><td>Liberar</td><td>Para cada balde, para cada item: <code>free(it-&gt;chave); free(it);</code></td></tr>
+<tr><td>Fator de carga</td><td><code>itens / baldes</code>; mantenha perto de 1 (encadeamento) ou abaixo de 0,7 (sondagem)</td></tr>
+<tr><td>Crescer</td><td><code>calloc</code> do dobro de baldes, reinserir cada nó em <code>hash % novo_nb</code>, <code>free</code> do array velho</td></tr>
+<tr><td>Sondagem linear</td><td><code>i = (i + 1) % VAGAS</code> até achar a chave ou uma vaga vazia</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O número do balde</h3>
+<p>Uma chave teve hash 40, e a tabela tem 13 baldes. Em que balde ela cai? (<code>40 % 13</code>)</p>
+<div class="ex-code"><input data-answer="1" aria-label="balde"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Comparar as chaves</h3>
+<p>Complete a condição que confere se o item é mesmo o procurado:</p>
+<div class="ex-code">if (<input data-answer="strcmp(it-&gt;chave, chave) == 0|strcmp(chave, it-&gt;chave) == 0|!strcmp(it-&gt;chave, chave)|!strcmp(chave, it-&gt;chave)" aria-label="condição">) return it;</div>
+</div>
+
+<div class="exercise">
+<h3>3. A cópia da chave</h3>
+<p>Qual função do C23 faz uma cópia de um texto no heap, para a tabela guardar?</p>
+<div class="ex-code"><input data-answer="strdup|strdup()" aria-label="função"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que é uma colisão numa tabela hash?</p>
+<label><input type="radio" name="q4"> Duas chaves iguais guardadas duas vezes</label>
+<label><input type="radio" name="q4"> Duas chaves diferentes que caem no mesmo balde</label>
+<label><input type="radio" name="q4"> Um erro que derruba o programa</label>
+<label><input type="radio" name="q4"> Um hash maior que o número de baldes</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que somar as letras é uma função hash ruim?</p>
+<label><input type="radio" name="q5"> Porque é lenta</label>
+<label><input type="radio" name="q5"> Porque dá números negativos</label>
+<label><input type="radio" name="q5"> Porque ignora a ordem das letras: "amor" e "roma" sempre caem juntas</label>
+<label><input type="radio" name="q5"> Porque não funciona com o <code>%</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Uma tabela com encadeamento tem 10 baldes e 500 itens. O que fazer?</p>
+<label><input type="radio" name="q6"> Nada: tabela hash é sempre rápida</label>
+<label><input type="radio" name="q6"> Trocar o <code>strcmp</code> por <code>==</code>, que é mais rápido</label>
+<label><input type="radio" name="q6"> Remover itens até sobrar 10</label>
+<label><input type="radio" name="q6"> Crescer a tabela: com fator de carga 50, cada busca anda por listas de uns 50 itens</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. Você precisa mostrar os produtos em ordem alfabética. A tabela hash ajuda?</p>
+<label><input type="radio" name="q7"> Não: ela espalha as chaves pelos baldes sem ordem; use uma árvore ou ordene com <code>qsort</code></label>
+<label><input type="radio" name="q7"> Sim: basta mostrar os baldes do 0 ao último</label>
+<label><input type="radio" name="q7"> Sim, se o número de baldes for primo</label>
+<label><input type="radio" name="q7"> Sim, com sondagem linear</label>
+</div>
+
+<h3>Missão final: contar as palavras</h3>
+
+<div class="tryc" data-goal="outre:^o: 2\nrato: 2\nrei: 2\nroma: 1\ngato: 0\n$,src:strdup\s*\(">
+<p class="try-task"><strong>Missão:</strong> contar quantas vezes cada palavra aparece num texto é um dos usos mais comuns de uma tabela hash: a palavra é a chave, e o valor é a contagem. O programa já separa as palavras do trava-língua com <code>strtok</code> (que corta o texto nos espaços; aula <a href="funcoes-string.html">Funções de String</a>) e chama <code>contar</code> para cada uma. Complete <code>contar</code>: se a palavra já está na tabela, some 1; senão, crie o item (com <code>malloc</code> e <code>strdup</code>), com <code>vezes</code> em 1, no começo do balde dela. A saída deve ser:</p>
+<pre class="out">o: 2
+rato: 2
+rei: 2
+roma: 1
+gato: 0</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define BALDES 13
+
+typedef struct Item {
+    char *palavra;
+    int vezes;
+    struct Item *prox;
+} Item;
+
+typedef struct {
+    Item *baldes[BALDES];
+} Tabela;
+
+uint32_t hash(const char *s) {
+    uint32_t h = 5381;
+    for (int i = 0; s[i] != '\0'; i++) {
+        h = h * 33 + (unsigned char)s[i];
+    }
+    return h;
+}
+
+Item *achar(const Tabela *t, const char *palavra) {
+    for (Item *it = t-&gt;baldes[hash(palavra) % BALDES]; it != NULL; it = it-&gt;prox) {
+        if (strcmp(it-&gt;palavra, palavra) == 0) {
+            return it;
+        }
+    }
+    return NULL;
+}
+
+bool contar(Tabela *t, const char *palavra) {
+    Item *it = achar(t, palavra);
+    // COMPLETE:
+    // 1. se achou (it != NULL), some 1 em it-&gt;vezes e devolva true;
+    // 2. senão, reserve um Item com malloc, copie a palavra com strdup,
+    //    comece vezes em 1 e pendure o item no começo do balde
+    //    hash(palavra) % BALDES (confira os dois retornos: NULL = sem memória).
+    (void)it;
+    return true;
+}
+
+int vezes(const Tabela *t, const char *palavra) {
+    Item *it = achar(t, palavra);
+    return it != NULL ? it-&gt;vezes : 0;
+}
+
+void liberar(Tabela *t) {
+    for (int b = 0; b &lt; BALDES; b++) {
+        Item *it = t-&gt;baldes[b];
+        while (it != NULL) {
+            Item *prox = it-&gt;prox;
+            free(it-&gt;palavra);
+            free(it);
+            it = prox;
+        }
+    }
+}
+
+int main(void) {
+    char texto[] = "o rato roeu a roupa do rei de roma e o rei riu do rato";
+    Tabela t = {0};
+    for (char *p = strtok(texto, " "); p != NULL; p = strtok(NULL, " ")) {
+        if (!contar(&amp;t, p)) {
+            fprintf(stderr, "Sem memória\n");
+            liberar(&amp;t);
+            return 1;
+        }
+    }
+    const char *perguntas[] = {"o", "rato", "rei", "roma", "gato"};
+    for (int i = 0; i &lt; 5; i++) {
+        printf("%s: %d\n", perguntas[i], vezes(&amp;t, perguntas[i]));
+    }
+    liberar(&amp;t);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define BALDES 13
+
+typedef struct Item {
+    char *palavra;
+    int vezes;
+    struct Item *prox;
+} Item;
+
+typedef struct {
+    Item *baldes[BALDES];
+} Tabela;
+
+uint32_t hash(const char *s) {
+    uint32_t h = 5381;
+    for (int i = 0; s[i] != '\0'; i++) {
+        h = h * 33 + (unsigned char)s[i];
+    }
+    return h;
+}
+
+Item *achar(const Tabela *t, const char *palavra) {
+    for (Item *it = t-&gt;baldes[hash(palavra) % BALDES]; it != NULL; it = it-&gt;prox) {
+        if (strcmp(it-&gt;palavra, palavra) == 0) {
+            return it;
+        }
+    }
+    return NULL;
+}
+
+bool contar(Tabela *t, const char *palavra) {
+    Item *it = achar(t, palavra);
+    if (it != NULL) {
+        it-&gt;vezes++;
+        return true;
+    }
+    it = malloc(sizeof *it);
+    if (it == NULL) {
+        return false;
+    }
+    it-&gt;palavra = strdup(palavra);
+    if (it-&gt;palavra == NULL) {
+        free(it);
+        return false;
+    }
+    it-&gt;vezes = 1;
+    uint32_t b = hash(palavra) % BALDES;
+    it-&gt;prox = t-&gt;baldes[b];
+    t-&gt;baldes[b] = it;
+    return true;
+}
+
+int vezes(const Tabela *t, const char *palavra) {
+    Item *it = achar(t, palavra);
+    return it != NULL ? it-&gt;vezes : 0;
+}
+
+void liberar(Tabela *t) {
+    for (int b = 0; b &lt; BALDES; b++) {
+        Item *it = t-&gt;baldes[b];
+        while (it != NULL) {
+            Item *prox = it-&gt;prox;
+            free(it-&gt;palavra);
+            free(it);
+            it = prox;
+        }
+    }
+}
+
+int main(void) {
+    char texto[] = "o rato roeu a roupa do rei de roma e o rei riu do rato";
+    Tabela t = {0};
+    for (char *p = strtok(texto, " "); p != NULL; p = strtok(NULL, " ")) {
+        if (!contar(&amp;t, p)) {
+            fprintf(stderr, "Sem memória\n");
+            liberar(&amp;t);
+            return 1;
+        }
+    }
+    const char *perguntas[] = {"o", "rato", "rei", "roma", "gato"};
+    for (int i = 0; i &lt; 5; i++) {
+        printf("%s: %d\n", perguntas[i], vezes(&amp;t, perguntas[i]));
+    }
+    liberar(&amp;t);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Com um texto do tamanho de um livro, o programa é o mesmo: só a tabela precisa de mais baldes (ou crescer sozinha, como na seção 5). É assim que funcionam os contadores de palavras, os índices de busca e os "mais vendidos" da lojinha.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>tabela hash</strong> guarda pares chave → valor num array de <strong>baldes</strong>. A <strong>função hash</strong> transforma a chave num número, e <code>hash % BALDES</code> diz o balde. A mesma chave sempre dá o mesmo balde.</li>
+  <li>Somar as letras é um hash ruim (ignora a ordem). O <strong>djb2</strong> (<code>h = h * 33 + c</code>, começando em 5381) é simples e bom. Use <code>uint32_t</code> e <code>(unsigned char)</code>: sem sinal, nunca dá balde negativo, e o resultado é igual em qualquer computador.</li>
+  <li><strong>Colisões</strong> sempre acontecem. No <strong>encadeamento</strong>, cada balde é uma lista ligada; na <strong>sondagem linear</strong>, o item vai para a próxima vaga livre.</li>
+  <li>Compare chaves com <code>strcmp</code>, nunca com <code>==</code>. Guarde uma <strong>cópia</strong> da chave (<code>strdup</code>, <span class="versao">C23</span>) e libere-a junto com o item.</li>
+  <li>Mantenha o <strong>fator de carga</strong> (itens ÷ baldes) perto de 1; quando passar, <strong>cresça</strong>: dobre os baldes e redistribua os itens.</li>
+  <li>Hash é para achar pela chave exata. Para ordem, use árvore ou <a href="ordenacao.html">ordenação</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
