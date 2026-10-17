@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Acentos e UTF-8 — por que "maçã" tem 6 bytes | Guia C</title>
+<meta name="description" content="Acentos em C para quem nunca programou: Unicode e UTF-8, por que &quot;maçã&quot; tem 4 letras e 6 bytes, a regra dos bytes do UTF-8, contar caracteres de verdade, as armadilhas (strlen, largura do printf, cortar no meio de uma letra, toupper, char c = 'ç'), ç e U'ç', caracteres largos com wchar_t e setlocale, a vírgula do LC_ALL e o OlÃ¡ do Windows, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Acentos e UTF-8</span></h1>
+
+<p class="intro">Em várias aulas, os acentos apareceram como um pequeno mistério: "feijão" tem 6 letras, mas o <code>strlen</code> diz 7; a tabela do <code>printf</code> sai torta na linha do "Café"; o <code>toupper</code> não transforma <code>ç</code> em <code>Ç</code>; e <code>char c = 'ç';</code> nem funciona. Tudo tem a mesma causa: em C, uma string é uma fileira de <strong>bytes</strong>, e uma letra acentuada ocupa <strong>mais de um byte</strong>. Esta aula explica como o texto é guardado (o padrão <strong>UTF-8</strong>), o que isso quebra nos seus programas e como trabalhar com acentos sem susto.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são o <strong>Unicode</strong> (o catálogo de caracteres) e o <strong>UTF-8</strong> (o jeito de guardá-los em bytes).</li>
+  <li>Por que <code>"maçã"</code> tem 4 letras e 6 bytes, e como ver esses bytes.</li>
+  <li>A regra do UTF-8, que diz quantos bytes cada caractere ocupa.</li>
+  <li>Como contar os <strong>caracteres</strong> de um texto, e não os bytes.</li>
+  <li>As armadilhas: <code>strlen</code>, a largura do <code>printf</code>, cortar uma letra ao meio, <code>toupper</code> e <code>char c = 'ç'</code>.</li>
+  <li>Como escrever acentos por código (<code>ç</code>) e o que são os caracteres largos (<code>wchar_t</code>) e o <code>setlocale</code>.</li>
+  <li>De onde vem o <code>OlÃ¡</code> que aparece no Windows, e como evitar.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>, Linux em português, <code>pt_BR.UTF-8</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Antes desta aula, veja <a href="char.html">Caracteres</a>, <a href="strings.html">Strings</a> e <a href="ctype.html">Classificar Caracteres</a>.</p>
+
+<hr>
+
+<h2>A ideia: o catálogo e a embalagem</h2>
+<p>A tabela ASCII da aula <a href="char.html">Caracteres</a> tem só 128 posições: letras sem acento, algarismos, pontuação. Não cabem <code>ç</code>, <code>ã</code>, o <code>€</code>, o alfabeto grego, o japonês nem os emojis. Para isso existem duas peças, e vale separar bem uma da outra:</p>
+
+<ul>
+  <li><strong>Unicode</strong> é um <strong>catálogo</strong>: uma lista enorme (mais de 150 mil caracteres) em que cada caractere do mundo tem um número fixo, o <strong>ponto de código</strong>. O <code>A</code> é o 65 (igual ao ASCII), o <code>ç</code> é o 231, o <code>€</code> é o 8364. Escreve-se <code>U+00E7</code> (o 231 em hexadecimal).</li>
+  <li><strong>UTF-8</strong> é a <strong>embalagem</strong>: a regra que diz como guardar esses números em bytes. Número pequeno vai numa caixa de 1 byte; número maior, em 2, 3 ou 4 bytes.</li>
+</ul>
+
+<p>Pense nos Correios: o catálogo diz <strong>o que</strong> é cada produto; a embalagem decide <strong>quantas caixas</strong> ele ocupa no caminhão. O C só enxerga as caixas, um byte de cada vez. Hoje, quase todo arquivo, página da web e terminal (o Linux, o macOS, o editor do guia) usa UTF-8.</p>
+
+<hr>
+
+<h2>1. Os bytes de "maçã"</h2>
+
+<pre class="file" data-file="bytes.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char palavra[] = "maçã";
+    printf("\"%s\": strlen = %zu, sizeof = %zu\n", palavra, strlen(palavra), sizeof palavra);
+    for (int i = 0; palavra[i] != '\0'; i++) {
+        unsigned char b = palavra[i];
+        printf("palavra[%d] = %3d = 0x%02X\n", i, b, b);
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>char palavra[] = "maçã";</dt><dd>O arquivo <code>bytes.c</code> foi salvo em UTF-8, e o gcc copia os bytes do texto do jeito que estão no arquivo.</dd>
+  <dt>strlen / sizeof</dt><dd>O <code>strlen</code> conta os bytes até o <code>'\0'</code>; o <code>sizeof</code> mede o array inteiro, com o <code>'\0'</code> (aulas <a href="funcoes-string.html">Funções de String</a> e <a href="sizeof.html">Tamanho dos Tipos</a>).</dd>
+  <dt>unsigned char b = palavra[i];</dt><dd>Lê cada byte como um número de 0 a 255. Num <code>char</code> comum, os bytes acima de 127 apareceriam negativos (aula <a href="ctype.html">Classificar Caracteres</a>).</dd>
+  <dt>0x%02X</dt><dd>Mostra o byte em hexadecimal com 2 dígitos (aula <a href="formatos-printf.html">Formatos do printf</a>). Em hexadecimal, os padrões do UTF-8 ficam fáceis de ver.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra bytes.c -o bytes
+$ ./bytes
+"maçã": strlen = 6, sizeof = 7
+palavra[0] = 109 = 0x6D      « m
+palavra[1] =  97 = 0x61      « a
+palavra[2] = 195 = 0xC3      « ç (1º byte)
+palavra[3] = 167 = 0xA7      « ç (2º byte)
+palavra[4] = 195 = 0xC3      « ã (1º byte)
+palavra[5] = 163 = 0xA3      « ã (2º byte)</pre>
+
+<p>4 letras, <strong>6 bytes</strong>, e 7 no array com o <code>'\0'</code>. O <code>m</code> e o <code>a</code> são os mesmos números do ASCII. O <code>ç</code> virou o par <code>C3 A7</code> e o <code>ã</code>, o par <code>C3 A3</code>. Repare: o <code>printf("%s")</code> mostrou <code>maçã</code> certinho. Ele não sabe nada de acentos; só entregou os 6 bytes ao terminal, e o <strong>terminal</strong>, que também fala UTF-8, juntou os pares e desenhou as letras.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> troque <code>"maçã"</code> pelo seu nome, por <code>"Ação"</code>, <code>"€5"</code> ou por um emoji (<code>"😀"</code>), e conte os bytes. Quais caracteres ocupam 1 byte? E 2, 3, 4?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char palavra[] = "maçã";
+    printf("\"%s\": %zu bytes\n", palavra, strlen(palavra));
+    for (int i = 0; palavra[i] != '\0'; i++) {
+        printf("%02X ", (unsigned char) palavra[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. A regra do UTF-8</h2>
+<p>Quantos bytes cada caractere ocupa depende só do seu número no catálogo:</p>
+
+<pre class="file" data-file="tamanhos.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *textos[] = {"a", "ç", "€", "😀"};
+    for (int t = 0; t &lt; 4; t++) {
+        printf("%s: %zu byte(s):", textos[t], strlen(textos[t]));
+        for (size_t i = 0; textos[t][i] != '\0'; i++) {
+            printf(" %02X", (unsigned char) textos[t][i]);
+        }
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanhos.c -o tamanhos
+$ ./tamanhos
+a: 1 byte(s): 61
+ç: 2 byte(s): C3 A7
+€: 3 byte(s): E2 82 AC
+😀: 4 byte(s): F0 9F 98 80</pre>
+
+<p>(O <code>const char *textos[]</code> é uma lista de textos fixos, um array de ponteiros; ele é explicado em <a href="ponteiros-strings.html">Ponteiros e Strings</a>. Aqui basta saber que <code>textos[t]</code> é o texto número <code>t</code>.)</p>
+
+<p>O segredo está nos <strong>primeiros bits</strong> de cada byte (bits e hexadecimal: aula <a href="operadores-bits.html">Operadores de Bits</a>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caracteres</th><th>Bytes</th><th>1º byte</th><th>Bytes seguintes</th><th>Exemplos</th></tr>
+<tr><td>ASCII (0 a 127)</td><td>1</td><td><code>0xxxxxxx</code> (00 a 7F)</td><td>nenhum</td><td><code>a</code>, <code>7</code>, <code>!</code>, espaço</td></tr>
+<tr><td>Até 2047</td><td>2</td><td><code>110xxxxx</code> (C2 a DF)</td><td><code>10xxxxxx</code> (80 a BF)</td><td><code>ç ã é Ç</code>, grego, árabe</td></tr>
+<tr><td>Até 65535</td><td>3</td><td><code>1110xxxx</code> (E0 a EF)</td><td>2 × <code>10xxxxxx</code></td><td><code>€</code>, chinês, japonês</td></tr>
+<tr><td>Até 1114111</td><td>4</td><td><code>11110xxx</code> (F0 a F4)</td><td>3 × <code>10xxxxxx</code></td><td>emojis, símbolos raros</td></tr>
+</table>
+</div>
+
+<p>Três consequências que deixam o UTF-8 ótimo para o C:</p>
+<ul>
+  <li><strong>Todo texto ASCII já é UTF-8.</strong> Um programa antigo, que só usa ASCII, continua igual.</li>
+  <li><strong>Os bytes de um caractere acentuado são todos 128 ou mais.</strong> Nunca aparece um <code>'\0'</code>, um <code>'\n'</code> ou um espaço "escondido" no meio de um <code>ç</code>. Por isso <code>printf</code>, <code>strcpy</code>, <code>strcat</code>, <code>fgets</code> e <code>strchr(s, ' ')</code> funcionam com acentos sem nenhum cuidado especial.</li>
+  <li><strong>O começo de cada caractere é reconhecível:</strong> os bytes de <strong>continuação</strong> sempre começam com os bits <code>10</code>. Isso permite contar caracteres, como na próxima seção.</li>
+</ul>
+
+<hr>
+
+<h2>3. Contar caracteres, e não bytes</h2>
+<p>Se os bytes de continuação começam com <code>10</code>, basta contar os bytes que <strong>não</strong> começam assim: cada um deles é o começo de um caractere.</p>
+
+<pre class="file" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char texto[] = "Atenção: café não é chá!";
+    int caracteres = 0;
+    for (int i = 0; texto[i] != '\0'; i++) {
+        unsigned char b = texto[i];
+        if ((b &amp; 0xC0) != 0x80) {
+            caracteres++;
+        }
+    }
+    printf("%s\n", texto);
+    printf("bytes: %zu, caracteres: %d\n", strlen(texto), caracteres);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>b &amp; 0xC0</dt><dd>O <code>&amp;</code> bit a bit (aula <a href="mascaras-bits.html">Máscaras de Bits</a>) com <code>0xC0</code> (binário <code>11000000</code>) apaga tudo menos os 2 primeiros bits do byte.</dd>
+  <dt>!= 0x80</dt><dd><code>0x80</code> é o binário <code>10000000</code>. Se os 2 primeiros bits <strong>não</strong> são <code>10</code>, o byte não é continuação: é o começo de um caractere (ASCII ou o 1º byte de um acentuado). Conta mais um.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar
+Atenção: café não é chá!
+bytes: 30, caracteres: 24</pre>
+
+<p>São 6 letras acentuadas (ç, ã, é, ã, é, á), cada uma com 1 byte a mais: 24 + 6 = 30. Esse laço conta <strong>pontos de código</strong>, o que, para português, é o mesmo que contar letras.</p>
+
+<div class="tryc" data-goal="out:caracteres: 12,src:0x80|0x[cC]0|128|192">
+<p class="try-task"><strong>Missão:</strong> o cadastro da lojinha aceita nomes com até 20 <strong>caracteres</strong>, mas o programa está contando <strong>bytes</strong>. Mude a conta para contar só os bytes que começam um caractere (os que <strong>não</strong> são de continuação). A saída deve ser <code>caracteres: 12</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[] = "Conceição Sá";
+    int caracteres = 0;
+    for (int i = 0; nome[i] != '\0'; i++) {
+        unsigned char b = nome[i];
+        caracteres++;   // conta todos os bytes: corrija
+        (void) b;
+    }
+    printf("%s\n", nome);
+    printf("caracteres: %d\n", caracteres);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[] = "Conceição Sá";
+    int caracteres = 0;
+    for (int i = 0; nome[i] != '\0'; i++) {
+        unsigned char b = nome[i];
+        if ((b &amp; 0xC0) != 0x80) {
+            caracteres++;
+        }
+    }
+    printf("%s\n", nome);
+    printf("caracteres: %d\n", caracteres);
+    return 0;
+}
+</pre>
+</div>
+
+<p>(O <code>(void) b;</code> do código inicial só existe para o compilador não avisar que <code>b</code> não é usado. Na sua solução, você usa o <code>b</code> e pode apagar essa linha.)</p>
+
+<div class="note">
+<strong>Letra, ponto de código e o que a pessoa vê</strong>
+<p>Para português, um ponto de código é uma letra. Mas o Unicode permite escrever o <code>é</code> de dois jeitos: um ponto de código só (U+00E9) ou um <code>e</code> seguido de um acento "solto" (U+0301), que o terminal desenha em cima do <code>e</code>. No segundo jeito, o laço acima conta 2. E alguns emojis (como as famílias e as bandeiras) são vários pontos de código colados. Contar "o que a pessoa vê" exige bibliotecas especializadas, como a ICU; para nomes e textos comuns digitados em português, o laço basta.</p>
+</div>
+
+<hr>
+
+<h2>4. As armadilhas</h2>
+<p>Agora que você sabe que <code>ç</code> são dois bytes, cada estranheza das outras aulas se explica.</p>
+
+<h3><code>strlen</code> e o tamanho do array contam bytes</h3>
+<p>O <code>strlen("João")</code> é <strong>5</strong>, e o array precisa de 6. Ao escolher o tamanho de um array para texto com acentos, conte <strong>bytes</strong>: em português, reserve folga (o dobro do número de letras é seguro, porque toda letra do português ocupa no máximo 2 bytes). Os limites de <code>fgets</code> e <code>snprintf</code> também são em bytes, e é isso que os mantém seguros.</p>
+
+<h3>A largura do <code>printf</code> conta bytes</h3>
+<p>Na aula <a href="formatos-printf.html">Formatos do printf</a>, a tabela saiu torta nas linhas com acento. Veja o porquê:</p>
+
+<pre class="file" data-file="alinhar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("[%-8s] [%-8s] [%-8s]\n", "Arroz", "Feijão", "Maçã");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra alinhar.c -o alinhar
+$ ./alinhar
+[Arroz   ] [Feijão ] [Maçã  ]</pre>
+
+<p>O <code>%-8s</code> completa com espaços até <strong>8 bytes</strong>. "Arroz" tem 5 bytes e ganhou 3 espaços: certo. "Feijão" tem 7 bytes (6 letras) e ganhou 1 espaço; "Maçã" tem 6 bytes (4 letras) e ganhou 2. Na tela, as duas colunas ficaram 1 e 2 posições mais curtas. O conserto é contar as letras com o laço da seção 3 e completar com espaços à mão: é a missão final desta aula.</p>
+
+<h3>Cortar no meio de uma letra</h3>
+
+<pre class="file" data-file="cortar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[] = "João";
+    nome[3] = '\0';
+    printf("[%s]\n", nome);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra cortar.c -o cortar
+$ ./cortar
+[Jo�]          « sobrou só o 1º byte do ã</pre>
+
+<p>A Ana queria as 3 primeiras letras ("Joã"), mas cortou no byte 3, que é o meio do <code>ã</code> (<code>J o C3 A3 o</code>). Sobrou o <code>C3</code> sozinho, que não é um caractere completo, e o terminal desenhou o <strong>caractere de substituição</strong> <code>�</code>, o "não sei o que é isto" do Unicode. O mesmo acontece com <code>strncpy</code>, <code>snprintf</code> ou <code>%.3s</code> cortando um texto acentuado: eles cortam bytes. Para cortar letras, ande pelo texto com a regra da seção 3 e corte no começo de um caractere.</p>
+
+<h3><code>toupper</code> e o <code>ctype.h</code> olham um byte</h3>
+
+<pre class="file" data-file="maiuscula.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char texto[] = "ação";
+    for (int i = 0; texto[i] != '\0'; i++) {
+        texto[i] = (char) toupper((unsigned char) texto[i]);
+    }
+    printf("%s\n", texto);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra maiuscula.c -o maiuscula
+$ ./maiuscula
+AçãO</pre>
+
+<p>O <code>a</code> e o <code>o</code> viraram maiúsculas; o <code>ç</code> e o <code>ã</code> não. Para o <code>toupper</code>, os bytes <code>C3</code>, <code>A7</code> e <code>A3</code> não são letras (aula <a href="ctype.html">Classificar Caracteres</a>, seção 6), então voltam iguais. Pelo menos ele não estraga nada. Para converter acentos, a seção 6 mostra os caracteres largos.</p>
+
+<h3><code>char c = 'ç'</code> não cabe</h3>
+<p>Um <code>char</code> guarda <strong>1</strong> byte e o <code>ç</code> são 2. A aula <a href="char.html">Caracteres</a> mostrou o resultado: o gcc avisa <code>multi-character character constant</code> e guarda só o último byte; o Clang do editor recusa com <code>error: character too large for enclosing character literal type</code>. Guarde um caractere acentuado sozinho como <strong>string</strong>, <code>char c[] = "ç";</code> (3 bytes, com o <code>'\0'</code>), ou como caractere largo, <code>wchar_t c = L'ç';</code> (seção 6).</p>
+
+<h3>Comparar e ordenar</h3>
+<p>O <code>strcmp</code> compara <strong>bytes</strong>. Como o 1º byte das letras acentuadas do português (o <code>C3</code>) é maior que qualquer letra ASCII (o <code>z</code> é <code>7A</code>), <code>"Ábaco"</code> fica <strong>depois</strong> de <code>"zebra"</code>. A aula <a href="funcoes-string.html">Funções de String</a> mostra esse efeito; para listas em ordem alfabética "de dicionário", existe o <code>strcoll</code>, que segue as regras do idioma: depois de <code>setlocale(LC_COLLATE, "")</code> (seção 7), no notebook da Ana, <code>strcoll("Ábaco", "zebra")</code> já põe o "Ábaco" antes.</p>
+
+<hr>
+
+<h2>5. Escrever acentos por código: <code>\u</code> e <code>U'ç'</code> <span class="versao">C99</span> <span class="versao">C11</span></h2>
+<p>Se você não consegue digitar um caractere (ou quer deixar claro qual é), escreva o ponto de código. Dentro de uma string, <code>\u</code> seguido de 4 dígitos hexadecimais (ou <code>\U</code> com 8) vira o caractere, já em UTF-8. E um literal com <code>U</code> na frente, <code>U'ç'</code>, dá o <strong>número do catálogo</strong> do caractere:</p>
+
+<pre class="file" data-file="escape.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char a[] = "maçã";
+    char b[] = "maçã";
+    printf("%s %s, iguais: %s\n", a, b, strcmp(a, b) == 0 ? "sim" : "não");
+    printf("U'ç' = %u, U'€' = %u\n", (unsigned) U'ç', (unsigned) U'€');
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra escape.c -o escape
+$ ./escape
+maçã maçã, iguais: sim
+U'ç' = 231, U'€' = 8364</pre>
+
+<dl class="anatomy">
+  <dt>"maçã"</dt><dd><code>ç</code> é o U+00E7 (<code>ç</code>) e <code>ã</code> é o U+00E3 (<code>ã</code>). O compilador grava os mesmos 6 bytes de <code>"maçã"</code>: as duas strings são iguais. Esses "nomes universais de caractere" são do <span class="versao">C99</span>.</dd>
+  <dt>U'ç'</dt><dd>Um literal do tipo <code>char32_t</code> (<span class="versao">C11</span>, de <code>&lt;uchar.h&gt;</code>), que guarda o ponto de código inteiro: 231. Diferente de <code>'ç'</code>, ele cabe, porque o <code>char32_t</code> tem 4 bytes.</dd>
+</dl>
+
+<p>O <code>\u</code> é útil quando o arquivo pode ser aberto num editor que não salva em UTF-8: o código só tem ASCII, e o texto sai certo do mesmo jeito.</p>
+
+<hr>
+
+<h2>6. Caracteres largos: <code>wchar_t</code> e <code>setlocale</code></h2>
+<p>O C tem um segundo jeito de guardar texto: um array de <strong>caracteres largos</strong>, <code>wchar_t</code> ("wide character"), em que cada elemento guarda um caractere <strong>inteiro</strong>, seja ASCII ou acentuado. As funções têm um <code>w</code> no nome: <code>wcslen</code> (o <code>strlen</code> largo), <code>towupper</code> (o <code>toupper</code> largo), <code>iswalpha</code> (o <code>isalpha</code> largo).</p>
+
+<pre class="file" data-file="largo.c">#include &lt;locale.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;wchar.h&gt;
+#include &lt;wctype.h&gt;
+
+int main(void) {
+    setlocale(LC_CTYPE, "");
+    wchar_t texto[] = L"Atenção: café";
+    printf("caracteres: %zu\n", wcslen(texto));
+    for (size_t i = 0; texto[i] != L'\0'; i++) {
+        texto[i] = towupper(texto[i]);
+    }
+    printf("%ls\n", texto);
+    printf("iswalpha(L'ç') = %d\n", iswalpha(L'ç') != 0);
+    printf("sizeof(wchar_t) = %zu\n", sizeof(wchar_t));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>setlocale(LC_CTYPE, "")</dt><dd>Liga as configurações regionais do sistema (o <strong>locale</strong>) para a parte de caracteres (<code>LC_CTYPE</code>, "character type"). O <code>""</code> quer dizer "a do sistema": no notebook da Ana, <code>pt_BR.UTF-8</code>. Sem isso, o programa fica no locale <code>"C"</code>, que só conhece ASCII.</dd>
+  <dt>wchar_t texto[] = L"…";</dt><dd>O <code>L</code> na frente das aspas cria um texto largo: um <code>wchar_t</code> por caractere, mais o <code>L'\0'</code> no fim.</dd>
+  <dt>wcslen(texto)</dt><dd>Conta <strong>caracteres</strong>: 13, e não 15 bytes.</dd>
+  <dt>towupper(texto[i])</dt><dd>Converte um caractere inteiro: agora o <code>ç</code> vira <code>Ç</code> e o <code>é</code> vira <code>É</code>.</dd>
+  <dt>%ls</dt><dd>O formato do <code>printf</code> para texto largo. Ele converte de volta para os bytes UTF-8 que o terminal entende, e para isso precisa do <code>setlocale</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra largo.c -o largo
+$ ./largo
+caracteres: 13
+ATENÇÃO: CAFÉ
+iswalpha(L'ç') = 1
+sizeof(wchar_t) = 4</pre>
+
+<h3>Converter de bytes para largo: <code>mbstowcs</code></h3>
+<p>Textos que chegam do teclado ou de um arquivo vêm em bytes (UTF-8). A função <code>mbstowcs</code> ("multibyte string to wide character string") converte para largo e devolve quantos caracteres achou:</p>
+
+<pre class="file" data-file="converter.c">#include &lt;locale.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;wchar.h&gt;
+
+int main(void) {
+    if (setlocale(LC_CTYPE, "") == NULL) {
+        printf("locale não disponível\n");
+        return 1;
+    }
+    char texto[] = "pão de queijo";
+    wchar_t largo[50];
+    size_t n = mbstowcs(largo, texto, 50);
+    if (n == (size_t) -1) {
+        printf("texto com bytes inválidos\n");
+        return 1;
+    }
+    printf("\"%s\": %zu bytes, %zu caracteres\n", texto, sizeof texto - 1, n);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra converter.c -o converter
+$ ./converter
+"pão de queijo": 14 bytes, 13 caracteres</pre>
+
+<dl class="anatomy">
+  <dt>setlocale(…) == NULL</dt><dd>O <code>setlocale</code> devolve <code>NULL</code> se o locale pedido não existe na máquina. Confira, como todo retorno.</dd>
+  <dt>mbstowcs(largo, texto, 50)</dt><dd>Converte <code>texto</code> para <code>largo</code>, escrevendo no máximo 50 caracteres largos (o tamanho do array).</dd>
+  <dt>(size_t) -1</dt><dd>O sinal de erro: o texto tinha bytes que não formam UTF-8 válido (como o <code>C3</code> sozinho do <code>cortar.c</code>).</dd>
+</dl>
+
+<h3>Sem o <code>setlocale</code>, o <code>%ls</code> falha</h3>
+<p>Esquecer o <code>setlocale</code> é o erro clássico com caracteres largos:</p>
+
+<pre class="term" data-cwd="~/c">$ cat largo-sem.c
+#include &lt;stdio.h&gt;
+#include &lt;wchar.h&gt;
+#include &lt;wctype.h&gt;
+
+int main(void) {
+    wchar_t texto[] = L"café";
+    printf("caracteres: %zu\n", wcslen(texto));
+    texto[3] = towupper(texto[3]);
+    int r = printf("[%ls]\n", texto);
+    printf("printf devolveu %d\n", r);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra largo-sem.c -o largo-sem
+$ ./largo-sem
+caracteres: 4
+printf devolveu -1        « a linha do café não apareceu</pre>
+
+<p>O <code>wcslen</code> funcionou (contar não precisa de locale), mas o <code>printf</code> não soube transformar o <code>é</code> em bytes no locale <code>"C"</code>, desistiu e devolveu <strong>−1</strong>, o sinal de erro do <code>printf</code>. A linha inteira sumiu, sem mensagem.</p>
+
+<div class="note">
+<strong>No editor do guia</strong>
+<p>O editor usa outra biblioteca C (a wasi-libc), e os caracteres largos se comportam um pouco diferente. O <code>largo.c</code> dá a mesma saída. Sem o <code>setlocale</code>, o <code>printf("%ls")</code> também falha, mas mostra o <code>[</code> antes de desistir (<code>[printf devolveu -1</code>), e o <code>iswalpha(L'ç')</code> responde 1 mesmo sem <code>setlocale</code>, enquanto o gcc do laboratório responde 0. Programe como no Linux: <strong>sempre</strong> chame o <code>setlocale</code> antes de usar caracteres largos.</p>
+</div>
+
+<h3>Bytes ou largos: qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>Use</th></tr>
+<tr><td>Guardar, copiar, juntar, mostrar, ler e gravar texto</td><td><code>char</code> com UTF-8, como sempre. Funciona com acentos sem nada especial.</td></tr>
+<tr><td>Procurar um caractere ASCII (<code>' '</code>, <code>','</code>, <code>'\n'</code>)</td><td><code>char</code>: <code>strchr</code>, <code>strtok</code>, <code>strcspn</code> funcionam.</td></tr>
+<tr><td>Contar letras de um nome</td><td>O laço da seção 3, ou <code>mbstowcs</code></td></tr>
+<tr><td>Maiúscula, minúscula ou "é letra?" com acentos</td><td><code>wchar_t</code> + <code>setlocale(LC_CTYPE, "")</code> + <code>towupper</code>/<code>iswalpha</code></td></tr>
+<tr><td>Ordenar em ordem de dicionário</td><td><code>strcoll</code> com o <code>setlocale</code></td></tr>
+<tr><td>Texto "de verdade" em vários idiomas (um editor de texto, por exemplo)</td><td>Uma biblioteca especializada, como a ICU</td></tr>
+</table>
+</div>
+
+<p>O <code>wchar_t</code> tem 4 bytes no Linux e no editor, mas <strong>2 bytes no Windows</strong>, onde emojis precisam de dois <code>wchar_t</code>. Por isso, muitos programas guardam tudo em UTF-8 (<code>char</code>) e só convertem para largo no momento de classificar ou converter letras.</p>
+
+<hr>
+
+<h2>7. <code>setlocale</code> muda mais do que os acentos</h2>
+<p>Muitos tutoriais mandam começar o programa com <code>setlocale(LC_ALL, "")</code>. Cuidado: <code>LC_ALL</code> liga <strong>todas</strong> as configurações regionais, inclusive o formato dos números. Em português, o separador decimal é a vírgula:</p>
+
+<pre class="file" data-file="virgula.c">#include &lt;locale.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("antes:     %.2f\n", 3.14159);
+    setlocale(LC_ALL, "");
+    printf("LC_ALL:    %.2f\n", 3.14159);
+    setlocale(LC_ALL, "C");
+    setlocale(LC_CTYPE, "");
+    printf("LC_CTYPE:  %.2f\n", 3.14159);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra virgula.c -o virgula
+$ ./virgula
+antes:     3.14
+LC_ALL:    3,14         « vírgula: o locale pt_BR mudou o printf
+LC_CTYPE:  3.14</pre>
+
+<p>Para a tela, a vírgula pode até ser bem-vinda. Mas o mesmo vale para o <code>scanf("%lf")</code> e o <code>strtod</code>: depois do <code>LC_ALL</code>, eles esperam <code>3,14</code>, e um arquivo CSV com <code>3.14</code> passa a ser lido errado. O <code>setlocale(LC_ALL, "C")</code> volta ao padrão. A recomendação do guia: quando só precisa de acentos, use <strong><code>setlocale(LC_CTYPE, "")</code></strong>, que muda só a parte de caracteres. (No editor do guia, o <code>setlocale</code> não muda a vírgula: as três linhas saem com ponto.)</p>
+
+<hr>
+
+<h2>8. Outras codificações e o <code>OlÃ¡</code></h2>
+<p>Antes do UTF-8, cada região usava a sua tabela de 1 byte. No Brasil, a mais comum era a <strong>Latin-1</strong> (ISO-8859-1) e a sua prima do Windows, a <strong>Windows-1252</strong>: nelas, o <code>á</code> é um byte só, o <code>E1</code>. O mesmo texto, em duas embalagens:</p>
+
+<pre class="file" data-file="hexa.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int c;
+    while ((c = getchar()) != EOF &amp;&amp; c != '\n') {
+        printf("%02X ", c);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra hexa.c -o hexa
+$ echo 'Olá' | ./hexa
+4F 6C C3 A1                                       « UTF-8: o á são 2 bytes
+$ echo 'Olá' | iconv -f UTF-8 -t ISO-8859-1 | ./hexa
+4F 6C E1                                          « Latin-1: o á é 1 byte
+$ echo 'Olá' | iconv -f ISO-8859-1 -t UTF-8
+OlÃ¡                                              « os bytes UTF-8 lidos como Latin-1</pre>
+
+<p>O <code>iconv</code> (programa do Linux que converte codificações) mostra o fenômeno do <strong><code>OlÃ¡</code></strong>: pegou os bytes UTF-8 de "Olá" e os leu como se fossem Latin-1. O <code>C3</code>, em Latin-1, é o <code>Ã</code>; o <code>A1</code> é o <code>¡</code>. É exatamente o que acontece quando um programa escreve UTF-8 num console que espera outra codificação, como o Prompt de Comando do Windows (aula <a href="instalar-windows-mac.html">Instalar no Windows e no Mac</a>). Os bytes estão certos; quem lê é que usa a tabela errada.</p>
+
+<p>Como evitar:</p>
+<ul>
+  <li><strong>Salve os arquivos <code>.c</code> em UTF-8.</strong> Todo editor moderno faz isso por padrão (aula <a href="editores.html">Editores</a>).</li>
+  <li><strong>No Windows,</strong> rode <code>chcp 65001</code> no console antes do programa (65001 é o número do UTF-8 no Windows), ou use o terminal do MSYS2.</li>
+  <li><strong>Para um sistema antigo que só entende Latin-1,</strong> o gcc pode gravar os textos do programa nessa codificação com <code>-fexec-charset=ISO-8859-1</code>. Com ele, o <code>bytes.c</code> mostra o <code>ç</code> como um byte só, <code>0xE7</code>, e o <code>ã</code> como <code>0xE3</code>. Só use se precisar mesmo: num terminal UTF-8, esses bytes aparecem como <code>�</code>.</li>
+</ul>
+
+<div class="tip">
+<strong>E os nomes de variáveis?</strong>
+<p>O gcc 15 e o Clang aceitam <code>int ação = 3;</code> (o <span class="versao">C23</span> definiu quais letras do Unicode valem em nomes, aula <a href="identificadores.html">Nomes de Variáveis</a>). Funciona, mas quase ninguém usa: outros programadores, ferramentas e compiladores antigos podem tropeçar. Acentos, só dentro das aspas.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O texto aparece como <code>OlÃ¡</code>, <code>Ã§</code>, <code>Ã£</code></strong>
+<p><strong>O que significa:</strong> bytes UTF-8 lidos como Latin-1/Windows-1252. Quase sempre é o console do Windows, ou um arquivo de texto aberto com a codificação errada.</p>
+<p><strong>Como consertar:</strong> <code>chcp 65001</code> no console do Windows (ou o terminal do MSYS2); abra o arquivo informando a codificação UTF-8.</p>
+</div>
+
+<div class="cenario">
+<strong>O texto aparece com <code>�</code> no lugar de uma letra</strong>
+<p><strong>O que significa:</strong> o terminal recebeu bytes que não formam um caractere UTF-8 válido: um texto cortado no meio de uma letra (seção 4), um arquivo em Latin-1 mostrado num terminal UTF-8, ou um programa compilado com <code>-fexec-charset=ISO-8859-1</code>.</p>
+<p><strong>Como consertar:</strong> corte textos no começo de um caractere; converta arquivos antigos com <code>iconv -f ISO-8859-1 -t UTF-8 velho.txt &gt; novo.txt</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A tabela do <code>printf</code> sai torta nas linhas com acento</strong>
+<p><strong>O que significa:</strong> <code>%-10s</code> conta bytes, e cada letra acentuada tem 1 byte a mais.</p>
+<p><strong>Como consertar:</strong> conte as letras (seção 3) e complete com espaços à mão, como na missão final.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: multi-character character constant [-Wmultichar]</code> com <code>'ç'</code></strong>
+<p><strong>O que significa:</strong> um caractere acentuado entre aspas simples são 2 bytes, que não cabem num <code>char</code>. No editor, é erro: <code>character too large for enclosing character literal type</code>.</p>
+<p><strong>Como consertar:</strong> use uma string (<code>"ç"</code>), um <code>wchar_t</code> (<code>L'ç'</code>) ou o número do catálogo (<code>U'ç'</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>Uma linha com <code>%ls</code> não aparece, e o <code>printf</code> devolve −1</strong>
+<p><strong>O que significa:</strong> o programa usou caracteres largos sem chamar o <code>setlocale</code>, e o <code>printf</code> não conseguiu converter os acentos.</p>
+<p><strong>Como consertar:</strong> <code>setlocale(LC_CTYPE, "");</code> no começo do <code>main</code>, com <code>#include &lt;locale.h&gt;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Depois do <code>setlocale</code>, os números saem com vírgula, ou o <code>scanf</code> não lê <code>3.14</code></strong>
+<p><strong>O que significa:</strong> o <code>setlocale(LC_ALL, "")</code> ligou também o formato de números do português.</p>
+<p><strong>Como consertar:</strong> troque por <code>setlocale(LC_CTYPE, "")</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>strlen("maçã")</code></td><td>6: conta bytes, não letras</td></tr>
+<tr><td><code>(b &amp; 0xC0) != 0x80</code></td><td>O byte <code>b</code> começa um caractere (não é continuação)</td></tr>
+<tr><td><code>"ç"</code></td><td>O <code>ç</code> escrito pelo ponto de código (C99)</td></tr>
+<tr><td><code>U'ç'</code></td><td>O número do catálogo: 231 (<code>char32_t</code>, C11)</td></tr>
+<tr><td><code>setlocale(LC_CTYPE, "")</code></td><td>Liga o locale do sistema só para caracteres (<code>&lt;locale.h&gt;</code>)</td></tr>
+<tr><td><code>setlocale(LC_ALL, "")</code></td><td>Liga tudo, inclusive a vírgula nos números</td></tr>
+<tr><td><code>wchar_t s[] = L"Ação";</code></td><td>Texto largo: um elemento por caractere (<code>&lt;wchar.h&gt;</code>)</td></tr>
+<tr><td><code>wcslen(s)</code></td><td>Número de caracteres de um texto largo</td></tr>
+<tr><td><code>towupper(c)</code> / <code>towlower(c)</code></td><td>Maiúscula / minúscula, com acentos (<code>&lt;wctype.h&gt;</code>)</td></tr>
+<tr><td><code>iswalpha(c)</code></td><td>"É letra?", com acentos (<code>&lt;wctype.h&gt;</code>)</td></tr>
+<tr><td><code>printf("%ls", s)</code></td><td>Mostra um texto largo (precisa do <code>setlocale</code>)</td></tr>
+<tr><td><code>mbstowcs(largo, s, n)</code></td><td>Converte UTF-8 para largo; devolve o número de caracteres ou <code>(size_t) -1</code> (<code>&lt;stdlib.h&gt;</code>)</td></tr>
+<tr><td><code>chcp 65001</code></td><td>Põe o console do Windows em UTF-8</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Quantos bytes?</h3>
+<p>Em UTF-8, quantos bytes tem o texto <code>"pé"</code> (sem contar o <code>'\0'</code>)?</p>
+<div class="ex-code">strlen("pé") == <input data-answer="3" aria-label="bytes"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O tamanho do array</h3>
+<p>Quantos bytes ocupa <code>char cidade[] = "Goiânia";</code>, com o <code>'\0'</code>?</p>
+<div class="ex-code">sizeof cidade == <input data-answer="9" aria-label="bytes"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Só caracteres</h3>
+<p>Complete a função que liga os acentos sem trocar o ponto dos números pela vírgula:</p>
+<div class="ex-code">setlocale(<input data-answer="LC_CTYPE" aria-label="categoria">, "");</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que é o Unicode?</p>
+<label><input type="radio" name="q4"> Uma forma de guardar texto em 2 bytes por letra</label>
+<label><input type="radio" name="q4"> Um catálogo que dá um número a cada caractere do mundo</label>
+<label><input type="radio" name="q4"> Uma biblioteca do C</label>
+<label><input type="radio" name="q4"> O mesmo que ASCII</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O byte <code>0xA7</code> (binário <code>10100111</code>) aparece no meio de um texto UTF-8. O que ele é?</p>
+<label><input type="radio" name="q5"> Uma letra ASCII</label>
+<label><input type="radio" name="q5"> O começo de um caractere de 2 bytes</label>
+<label><input type="radio" name="q5"> Um byte de continuação: o pedaço de um caractere que começou antes</label>
+<label><input type="radio" name="q5"> O fim da string</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que o <code>strchr(texto, ' ')</code> encontra o espaço certo mesmo num texto cheio de acentos?</p>
+<label><input type="radio" name="q6"> Porque os bytes de um caractere acentuado são todos 128 ou mais e nunca se confundem com um caractere ASCII</label>
+<label><input type="radio" name="q6"> Porque o <code>strchr</code> entende UTF-8</label>
+<label><input type="radio" name="q6"> Porque o espaço tem 2 bytes</label>
+<label><input type="radio" name="q6"> Não encontra: acentos atrapalham o <code>strchr</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. A Ana vê <code>OlÃ¡</code> no lugar de <code>Olá</code> no console do Windows. O que aconteceu?</p>
+<label><input type="radio" name="q7"> O programa gravou o texto errado</label>
+<label><input type="radio" name="q7"> Faltou o <code>setlocale</code></label>
+<label><input type="radio" name="q7"> O <code>printf</code> não aceita acentos</label>
+<label><input type="radio" name="q7"> Os bytes UTF-8 estão certos, mas o console os leu com outra tabela (Windows-1252)</label>
+</div>
+
+<h3>Missão final: a etiqueta de preços alinhada</h3>
+
+<div class="tryc" data-goal="outre:^Arroz {7}R\$  22\.90\nFeijão {6}R\$   8\.50\nMaçã {8}R\$   1\.25\nPão de mel {2}R\$   3\.00\n$,src:0x80|0x[cC]0|128|192">
+<p class="try-task"><strong>Missão:</strong> a lista de preços da lojinha sai torta, porque o <code>%-12s</code> conta bytes. Troque o <code>%-12s</code> por <code>%s</code> e, depois do nome, mostre <strong>você mesmo</strong> os espaços que faltam para completar <strong>12 caracteres</strong>: conte as letras de cada nome com a regra da seção 3 (os bytes que não são de continuação) e imprima <code>12 - letras</code> espaços. Os preços têm de ficar alinhados.</p>
+<pre class="out">Arroz       R$  22.90
+Feijão      R$   8.50
+Maçã        R$   1.25
+Pão de mel  R$   3.00</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    const char *produtos[] = {"Arroz", "Feijão", "Maçã", "Pão de mel"};
+    double precos[] = {22.90, 8.50, 1.25, 3.00};
+    for (int p = 0; p &lt; 4; p++) {
+        printf("%-12sR$ %6.2f\n", produtos[p], precos[p]);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    const char *produtos[] = {"Arroz", "Feijão", "Maçã", "Pão de mel"};
+    double precos[] = {22.90, 8.50, 1.25, 3.00};
+    for (int p = 0; p &lt; 4; p++) {
+        int letras = 0;
+        for (int i = 0; produtos[p][i] != '\0'; i++) {
+            unsigned char b = produtos[p][i];
+            if ((b &amp; 0xC0) != 0x80) {
+                letras++;
+            }
+        }
+        printf("%s", produtos[p]);
+        for (int k = letras; k &lt; 12; k++) {
+            printf(" ");
+        }
+        printf("R$ %6.2f\n", precos[p]);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<p>Na solução, <code>produtos[p][i]</code> é o byte <code>i</code> do produto <code>p</code>: dois índices, como numa tabela (aula <a href="arrays-multidimensionais.html">Arrays Multidimensionais</a>). O laço dos espaços começa no número de letras e vai até 12: "Feijão" (6 letras) ganha 6 espaços, mesmo tendo 7 bytes. É assim que programas de verdade alinham colunas com acentos.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Unicode</strong> é o catálogo (cada caractere tem um número, como U+00E7 para o <code>ç</code>); <strong>UTF-8</strong> é a embalagem: de 1 a 4 bytes por caractere. Letras sem acento ocupam 1 byte; as acentuadas do português, 2.</li>
+  <li>Uma string em C é uma fileira de bytes: <code>strlen("maçã")</code> é 6. <code>printf</code>, <code>strcpy</code>, <code>fgets</code> e <code>strchr</code> com caracteres ASCII funcionam com acentos sem cuidado especial.</li>
+  <li>Os bytes de continuação começam com <code>10</code>: conte os bytes com <code>(b &amp; 0xC0) != 0x80</code> para contar caracteres.</li>
+  <li>Armadilhas: tamanho de array e largura do <code>printf</code> em bytes; cortar no meio de uma letra dá <code>�</code>; <code>toupper</code> e o <code>ctype.h</code> não conhecem acentos; <code>'ç'</code> não cabe num <code>char</code>; <code>strcmp</code> ordena por bytes.</li>
+  <li>Para letras com acento uma a uma: <code>setlocale(LC_CTYPE, "")</code>, <code>wchar_t</code>, <code>L"…"</code>, <code>wcslen</code>, <code>towupper</code>, <code>iswalpha</code>, <code>%ls</code>. Sem <code>setlocale</code>, o <code>%ls</code> falha.</li>
+  <li><code>setlocale(LC_ALL, "")</code> também troca o ponto pela vírgula nos números: prefira <code>LC_CTYPE</code>.</li>
+  <li><code>OlÃ¡</code> é UTF-8 lido como Latin-1 (o console do Windows: <code>chcp 65001</code>); <code>�</code> é um byte que não forma caractere.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
