@@ -1,0 +1,1278 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Projeto Contador de Palavras — linhas, palavras e letras como o wc | Guia C</title>
+<meta name="description" content="Projeto passo a passo: um contador de linhas, palavras e letras em C, igual ao wc do Linux. getchar e EOF com int, o estado dentro/fora de palavra com isspace, arquivos pelo nome com argc/argv, fopen e getc, o total de vários arquivos, e bytes × caracteres × letras no UTF-8. Quatro versões comparadas com o wc real, com saídas do gcc 15 e os erros do char c e do continue esquecido.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto <span class="hl">Contador de Palavras</span></h1>
+
+<p class="intro">A Ana escreve os textos da vitrine da lojinha e das postagens nas redes sociais, e às vezes precisa saber quantas palavras ou letras eles têm. O Linux já tem um programa para isso, o <code>wc</code> (<em>word count</em>, contagem de palavras). Neste projeto você vai escrever o seu próprio <code>wc</code> em C, do zero, e conferir cada versão contra o <code>wc</code> de verdade. No caminho, vai entender como um programa lê um texto letra por letra e por que "café" tem 4 letras e 5 bytes.</p>
+
+<div class="note">
+<strong>Você vai praticar</strong>
+<ul>
+  <li>Ler a entrada um caractere por vez com <code>getchar</code> até o <code>EOF</code>, e por que a variável tem de ser <code>int</code>.</li>
+  <li>Mandar um arquivo para a entrada do programa com <code>&lt;</code> e digitar até o Ctrl+D.</li>
+  <li>Contar palavras com uma variável de <strong>estado</strong> ("estou dentro de uma palavra?") e <code>isspace</code> (<a href="ctype.html">ctype.h</a>).</li>
+  <li>Abrir os arquivos que vêm na linha de comando (<a href="argc-argv.html">argc e argv</a>), juntar as contagens numa struct e mostrar o total.</li>
+  <li>Separar bytes, caracteres e letras no UTF-8 (<a href="acentos-utf8.html">Acentos e UTF-8</a>) com uma máscara de bits.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que vamos construir</h2>
+<p>O contador pronto, na máquina da Ana, com dois textos dela. Logo abaixo, o <code>wc</code> do Linux com as mesmas colunas: os números batem.</p>
+
+<pre class="term" data-cwd="~/c/texto">$ ./contar poema.txt lista.txt
+ Linhas Palavras  Letras  Caract.   Bytes  Arquivo
+      5       24      93      123     126  poema.txt
+      3        5      23       30      33  lista.txt
+      8       29     116      153     159  total
+$ wc -lwmc poema.txt lista.txt
+  5  24 123 126 poema.txt
+  3   5  30  33 lista.txt
+  8  29 153 159 total</pre>
+
+<p>O <code>wc -lwmc</code> mostra linhas (<code>-l</code>), palavras (<code>-w</code>), caracteres (<code>-m</code>) e bytes (<code>-c</code>). O <code>wc</code> não conta letras; o nosso conta.</p>
+
+<ol class="passo">
+  <li><a href="#versao1">Linhas e caracteres com getchar</a>.</li>
+  <li><a href="#versao2">Palavras: dentro ou fora</a>.</li>
+  <li><a href="#versao3">Arquivos pelo nome e o total</a>.</li>
+  <li><a href="#versao4">Letras, acentos e bytes</a>.</li>
+</ol>
+
+<h3>Antes de começar</h3>
+<p>Você precisa ter visto <a href="while.html">while</a>, <a href="char.html">Caracteres (char)</a>, <a href="if-else.html">if e else</a> e, para a versão 3, <a href="argc-argv.html">Argumentos da Linha de Comando</a> e <a href="arquivos.html">Arquivos (fopen e fclose)</a>. A Ana criou a pasta e dois textos de teste com o editor de textos dela. O <code>poema.txt</code> tem uma linha em branco e acentos; a <code>lista.txt</code> tem espaços duplos de propósito:</p>
+
+<pre class="term" data-cwd="~/c/texto">$ mkdir -p ~/c/texto
+$ cd ~/c/texto
+$ cat poema.txt
+A lojinha da Ana abre às oito.
+Tem caderno, caneta e borracha,
+e um gato que dorme no balcão.
+
+Quem chega cedo ganha café.
+$ cat lista.txt
+arroz
+feijão  e  macarrão
+pão</pre>
+
+<hr>
+
+<h2 id="versao1">Versão 1 · Linhas e caracteres com getchar</h2>
+<p>Pense numa caixa de supermercado que conta moedas: ela pega uma por uma, até o pote ficar vazio. O programa faz igual com o texto: pega um caractere com <code>getchar</code> ("get character", pegar um caractere), soma 1 no contador e repete, até a entrada acabar. Cada vez que o caractere é o Enter (<code>'\n'</code>), uma linha terminou.</p>
+
+<pre class="file" data-file="contar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    long linhas = 0;
+    long caracteres = 0;
+    int c;
+
+    while ((c = getchar()) != EOF) {
+        caracteres++;
+        if (c == '\n') {
+            linhas++;
+        }
+    }
+
+    printf("Linhas:     %ld\n", linhas);
+    printf("Caracteres: %ld\n", caracteres);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>long linhas = 0;</code></td><td>Os contadores começam em zero. São <code>long</code> porque um texto pode ser grande (no gcc do laboratório, um <code>long</code> vai até 9 quintilhões; no editor do guia, até 2 bilhões, o que também sobra).</td></tr>
+<tr><td><code>int c;</code></td><td>Guarda o caractere lido. É <code>int</code>, e não <code>char</code>, de propósito: o <code>getchar</code> devolve um byte (de 0 a 255) <strong>ou</strong> o valor especial <code>EOF</code>, e precisa de um tipo que caiba os 257 valores (veja o cenário abaixo).</td></tr>
+<tr><td><code>while ((c = getchar()) != EOF)</code></td><td>Três coisas numa linha: lê um caractere, guarda em <code>c</code> e compara com <code>EOF</code> ("end of file", fim do arquivo). Os parênteses em volta de <code>c = getchar()</code> são obrigatórios: sem eles, o <code>!=</code> seria feito primeiro (aula <a href="precedencia.html">Precedência</a>).</td></tr>
+<tr><td><code>caracteres++;</code></td><td>Todo caractere conta, inclusive espaços e Enters.</td></tr>
+<tr><td><code>if (c == '\n') linhas++;</code></td><td>Uma linha termina no Enter. Contar linhas é contar <code>'\n'</code>.</td></tr>
+</table>
+</div>
+
+<p>Há dois jeitos de dar um texto para o programa. O primeiro é <strong>mandar um arquivo para a entrada</strong> com <code>&lt;</code>: o terminal abre o arquivo e o <code>getchar</code> lê dele, como se alguém digitasse muito rápido (aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>). O <code>wc</code> confirma as contas:</p>
+
+<pre class="term" data-cwd="~/c/texto">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar &lt; poema.txt
+Linhas:     5
+Caracteres: 126
+$ wc -l -c poema.txt
+  5 126 poema.txt</pre>
+
+<p>O segundo é <strong>digitar</strong>. O programa espera; você escreve as linhas e, no fim, aperta <strong>Ctrl+D</strong> numa linha vazia, que no terminal do Linux quer dizer "a entrada acabou". Aí o <code>getchar</code> devolve <code>EOF</code> e o laço termina:</p>
+
+<pre class="term" data-cwd="~/c/texto">$ ./contar
+Olá, mundo!
+Tchau.                          « depois do Enter, a Ana apertou Ctrl+D
+Linhas:     2
+Caracteres: 20</pre>
+
+<p>20 caracteres? <code>Olá, mundo!</code> tem 11 e <code>Tchau.</code> tem 6, mais os dois Enters: 19. O que sobrou é o <code>á</code>, que ocupa <strong>2 bytes</strong> no UTF-8, e o <code>getchar</code> lê bytes. Por enquanto, o que chamamos de "caracteres" é na verdade "bytes", como o <code>wc -c</code>. A versão 4 conserta o nome e a conta.</p>
+
+<div class="note">
+<strong>A última linha sem Enter não conta</strong>
+<p>Se o arquivo não termina com Enter, a última linha não tem <code>'\n'</code>, e nem o nosso programa nem o <code>wc</code> a contam:</p>
+<pre class="term" data-cwd="~/c/texto">$ printf 'um\ndois\ntrês' &gt; sem-enter.txt
+$ cat sem-enter.txt
+um
+dois
+três$ ./contar &lt; sem-enter.txt                « o $ grudou: não há Enter depois de "três"
+Linhas:     2
+Caracteres: 13
+$ wc -l sem-enter.txt
+2 sem-enter.txt</pre>
+<p>Não é defeito: no Linux, uma "linha" é por definição um texto que <strong>termina</strong> em <code>'\n'</code>, e o <code>wc -l</code> conta os <code>'\n'</code>. Por isso os editores de código põem um Enter no fim do arquivo. Contar também a última linha incompleta é um dos desafios.</p>
+</div>
+
+<div class="cenario">
+<strong><code>char c</code>: o programa para no meio do arquivo</strong>
+<p>A Ana escreveu <code>char c;</code> em vez de <code>int c;</code>. Compilou sem nenhum aviso, e com o poema funcionou. Depois ela testou com um arquivo que não é texto, o próprio programa <code>ls</code> do Linux:</p>
+<pre class="term" data-cwd="~/c/texto">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar &lt; poema.txt
+Linhas:     5
+Caracteres: 126
+$ ./contar &lt; /usr/bin/ls
+Linhas:     3
+Caracteres: 8288
+$ wc -c /usr/bin/ls
+150568 /usr/bin/ls
+$ xxd -s 8284 -l 8 /usr/bin/ls
+0000205c: 0000 0000 ffd2 0100                      ........</pre>
+<p><strong>O que aconteceu:</strong> o programa parou depois de 8288 bytes, de um arquivo de 150568. O <code>xxd</code> mostra o byte seguinte, o de posição 8288 (<code>0x2060</code>): é <code>ff</code>, o 255. O <code>EOF</code> vale <code>-1</code>, e um <code>char</code> com sinal (o padrão no gcc e no editor) só guarda de -128 a 127: o byte 255 vira -1 ao entrar em <code>c</code>, e o programa acha que o arquivo acabou. Num texto em português o byte 255 não aparece (no UTF-8 ele nunca é usado), por isso o erro passou despercebido com o poema.</p>
+<p><strong>Como consertar:</strong> <code>int c;</code>. Com <code>int</code>, o byte 255 é 255 e o <code>EOF</code> é -1: dois valores diferentes. Vale para <code>getchar</code>, <code>getc</code> e <code>fgetc</code>, que devolvem <code>int</code> pelo mesmo motivo (aula <a href="char.html">Caracteres</a>).</p>
+</div>
+
+<div class="tryc" data-stdin="A lojinha da Ana abre às oito.\nTem caderno, caneta e borracha,\ne um gato que dorme no balcão.\n\nQuem chega cedo ganha café.\n" data-goal="out:Linhas:     5,out:Caracteres: 126">
+<p class="try-task"><strong>Missão (versão 1):</strong> o contador conta os caracteres, mas as linhas saem <code>0</code>. No lugar do comentário, conte uma linha cada vez que <code>c</code> for o Enter (<code>'\n'</code>). A entrada da missão é o poema da Ana: devem sair <code>Linhas:     5</code> e <code>Caracteres: 126</code>.</p>
+<pre class="script" data-file="contar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    long linhas = 0;
+    long caracteres = 0;
+    int c;
+
+    while ((c = getchar()) != EOF) {
+        caracteres++;
+        // se c for o Enter ('\n'), conte mais uma linha
+    }
+
+    printf("Linhas:     %ld\n", linhas);
+    printf("Caracteres: %ld\n", caracteres);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="contar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    long linhas = 0;
+    long caracteres = 0;
+    int c;
+
+    while ((c = getchar()) != EOF) {
+        caracteres++;
+        if (c == '\n') {
+            linhas++;
+        }
+    }
+
+    printf("Linhas:     %ld\n", linhas);
+    printf("Caracteres: %ld\n", caracteres);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao2">Versão 2 · Palavras: dentro ou fora</h2>
+<p>Contar palavras parece fácil: "conte os espaços". Mas entre duas palavras pode haver dois espaços, um Tab ou uma linha em branco. Um jeito que nunca erra: imagine o porteiro de uma loja, que conta quem <strong>entra</strong>. Ele não conta os passos de cada cliente, só o momento em que alguém passa da rua para dentro. O programa guarda numa variável se está <strong>dentro</strong> de uma palavra ou <strong>fora</strong> (num espaço); cada vez que passa de fora para dentro, começou uma palavra nova.</p>
+
+<figure>
+<pre class="term">texto:    feijão  e  macarrão
+estado:   DDDDDDFFDFFDDDDDDDD          « D = dentro, F = fora
+          ↑       ↑  ↑
+          1       2  3                 « conta só quando passa de F para D</pre>
+</figure>
+
+<pre class="file" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+int main(void) {
+    long linhas = 0;
+    long palavras = 0;
+    long caracteres = 0;
+    bool dentro = false;    // estou no meio de uma palavra?
+    int c;
+
+    while ((c = getchar()) != EOF) {
+        caracteres++;
+        if (c == '\n') {
+            linhas++;
+        }
+        if (isspace(c)) {
+            dentro = false;         // espaço, Tab ou Enter: a palavra acabou
+        } else if (!dentro) {
+            dentro = true;          // primeira letra de uma palavra nova
+            palavras++;
+        }
+    }
+
+    printf("Linhas:     %ld\n", linhas);
+    printf("Palavras:   %ld\n", palavras);
+    printf("Caracteres: %ld\n", caracteres);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;ctype.h&gt;</dt><dd>A biblioteca que classifica caracteres (aula <a href="ctype.html">ctype.h</a>).</dd>
+  <dt>bool dentro = false;</dt><dd>O estado: começa <strong>fora</strong> de palavra. No C23, <code>bool</code>, <code>true</code> e <code>false</code> já vêm na linguagem <span class="versao">C23</span>; antes era preciso <code>#include &lt;stdbool.h&gt;</code> (aula <a href="bool.html">Booleanos</a>).</dd>
+  <dt>isspace(c)</dt><dd>Verdadeiro para os "espaços em branco": o espaço, o Tab (<code>'\t'</code>), o Enter (<code>'\n'</code>) e alguns outros (<code>'\r'</code>, <code>'\v'</code>, <code>'\f'</code>). O <code>wc</code> separa as palavras do mesmo jeito.</dd>
+  <dt>dentro = false;</dt><dd>Achou um espaço: a palavra acabou (ou já estava fora, e continua fora).</dd>
+  <dt>else if (!dentro)</dt><dd>Não é espaço e estava fora: é a <strong>primeira</strong> letra de uma palavra. Marca <code>dentro = true</code> e conta. As letras seguintes da mesma palavra caem no <code>else if</code> com <code>dentro</code> já verdadeiro, e não contam de novo.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/texto">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar &lt; poema.txt
+Linhas:     5
+Palavras:   24
+Caracteres: 126
+$ wc poema.txt
+  5  24 126 poema.txt
+$ ./contar &lt; lista.txt
+Linhas:     3
+Palavras:   5
+Caracteres: 33
+$ wc lista.txt
+ 3  5 33 lista.txt
+$ printf 'um\tdois   três\n\n\n  quatro\n' | ./contar
+Linhas:     4
+Palavras:   4
+Caracteres: 27</pre>
+
+<p>Sem argumentos, o <code>wc</code> mostra as três contagens nesta ordem: linhas, palavras e bytes. Ele também ajusta a largura das colunas ao tamanho dos arquivos; o que importa são os números. O último teste, com o <code>printf … |</code> (o <code>|</code> manda a saída de um comando para a entrada do outro), tem um Tab, três espaços seguidos, duas linhas em branco e espaços no começo da linha: são 4 palavras, e o programa não se confunde. Repare também que <code>"caderno,"</code> é <strong>uma</strong> palavra: para o <code>wc</code> e para nós, palavra é tudo o que fica entre espaços, pontuação inclusa.</p>
+
+<div class="cenario">
+<strong>Uma palavra a mais no poema e duas a mais na lista</strong>
+<p>A primeira ideia da Ana foi "toda palavra termina num espaço ou num Enter; basta contar os dois":</p>
+<pre class="file" data-file="contar.c">        if (c == ' ' || c == '\n') {
+            palavras++;     // toda palavra termina num espaço ou num Enter
+        }</pre>
+<pre class="term" data-cwd="~/c/texto">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar &lt; poema.txt
+Linhas:     5
+Palavras:   25                « o wc diz 24
+Caracteres: 126
+$ ./contar &lt; lista.txt
+Linhas:     3
+Palavras:   7                 « o wc diz 5
+Caracteres: 33</pre>
+<p><strong>O que aconteceu:</strong> a linha em branco do poema é um Enter sem palavra antes, e contou como palavra. Na lista, cada espaço duplo de <code>feijão  e  macarrão</code> conta duas vezes. O programa contou <strong>separadores</strong>, e o número de separadores só é igual ao de palavras quando o texto é "bem comportado". Um Tab no lugar do espaço ainda grudaria duas palavras numa.</p>
+<p><strong>Como consertar:</strong> conte as <strong>passagens</strong> de fora para dentro de uma palavra, com a variável <code>dentro</code>, e use <code>isspace</code> para reconhecer todos os tipos de espaço.</p>
+</div>
+
+<div class="tryc" data-stdin="arroz\nfeijão  e  macarrão\npão\n" data-goal="out:Palavras:   5,out:Linhas:     3">
+<p class="try-task"><strong>Missão (versão 2):</strong> as palavras saem <code>0</code>. No lugar dos dois comentários, escreva o <code>if</code> com <code>isspace(c)</code> e o <code>else if (!dentro)</code> que conta uma palavra nova. A entrada da missão é a lista da Ana, com os espaços duplos: devem sair <code>Palavras:   5</code> e <code>Linhas:     3</code>.</p>
+<pre class="script" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+int main(void) {
+    long linhas = 0;
+    long palavras = 0;
+    long caracteres = 0;
+    bool dentro = false;    // estou no meio de uma palavra?
+    int c;
+
+    while ((c = getchar()) != EOF) {
+        caracteres++;
+        if (c == '\n') {
+            linhas++;
+        }
+        // se c for espaço (isspace), a palavra acabou: dentro = false
+        // senão, se ainda não estava dentro, começou uma palavra nova
+    }
+
+    printf("Linhas:     %ld\n", linhas);
+    printf("Palavras:   %ld\n", palavras);
+    printf("Caracteres: %ld\n", caracteres);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+int main(void) {
+    long linhas = 0;
+    long palavras = 0;
+    long caracteres = 0;
+    bool dentro = false;    // estou no meio de uma palavra?
+    int c;
+
+    while ((c = getchar()) != EOF) {
+        caracteres++;
+        if (c == '\n') {
+            linhas++;
+        }
+        if (isspace(c)) {
+            dentro = false;         // espaço, Tab ou Enter: a palavra acabou
+        } else if (!dentro) {
+            dentro = true;          // primeira letra de uma palavra nova
+            palavras++;
+        }
+    }
+
+    printf("Linhas:     %ld\n", linhas);
+    printf("Palavras:   %ld\n", palavras);
+    printf("Caracteres: %ld\n", caracteres);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao3">Versão 3 · Arquivos pelo nome e o total</h2>
+<p>O <code>wc</code> de verdade recebe os nomes dos arquivos na linha de comando (<code>wc poema.txt lista.txt</code>), mostra uma linha para cada um e, se forem vários, o total. Para isso, a versão 3 tem três novidades:</p>
+<ul>
+  <li>a contagem vira uma <strong>função</strong>, <code>contar(FILE *f)</code>, que lê de qualquer arquivo aberto, inclusive do teclado;</li>
+  <li>as três contagens viajam juntas numa <strong>struct</strong>, <code>Contagem</code>;</li>
+  <li>o <code>main</code> recebe os nomes em <code>argv</code> e abre um arquivo por vez.</li>
+</ul>
+
+<pre class="file" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+typedef struct {
+    long linhas;
+    long palavras;
+    long caracteres;
+} Contagem;
+
+// Conta tudo o que der para ler de f, até o fim do arquivo.
+Contagem contar(FILE *f) {
+    Contagem t = {0};
+    bool dentro = false;
+    int c;
+    while ((c = getc(f)) != EOF) {
+        t.caracteres++;
+        if (c == '\n') {
+            t.linhas++;
+        }
+        if (isspace(c)) {
+            dentro = false;
+        } else if (!dentro) {
+            dentro = true;
+            t.palavras++;
+        }
+    }
+    return t;
+}
+
+void mostrar(Contagem t, const char *nome) {
+    printf("%7ld %8ld %7ld  %s\n", t.linhas, t.palavras, t.caracteres, nome);
+}
+
+int main(int argc, char *argv[]) {
+    printf(" Linhas Palavras  Caract.  Arquivo\n");
+
+    if (argc == 1) {                    // sem nomes: lê o teclado (stdin)
+        mostrar(contar(stdin), "-");
+        return 0;
+    }
+
+    Contagem total = {0};
+    int erros = 0;
+    for (int i = 1; i &lt; argc; i++) {
+        FILE *f = fopen(argv[i], "r");
+        if (f == NULL) {
+            perror(argv[i]);
+            erros++;
+            continue;                   // pula para o próximo arquivo
+        }
+        Contagem t = contar(f);
+        fclose(f);
+        mostrar(t, argv[i]);
+        total.linhas += t.linhas;
+        total.palavras += t.palavras;
+        total.caracteres += t.caracteres;
+    }
+    if (argc &gt; 2) {
+        mostrar(total, "total");
+    }
+    return erros &gt; 0 ? 1 : 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>typedef struct { … } Contagem;</code></td><td>As três contagens de um texto numa ficha só (aula <a href="structs.html">Structs</a>). A função devolve a ficha inteira de uma vez.</td></tr>
+<tr><td><code>Contagem t = {0};</code></td><td>Todos os campos começam em zero.</td></tr>
+<tr><td><code>getc(f)</code></td><td>O mesmo que o <code>getchar</code>, mas do arquivo <code>f</code>. Na verdade, <code>getchar()</code> é o mesmo que <code>getc(stdin)</code>.</td></tr>
+<tr><td><code>printf("%7ld %8ld %7ld  %s\n", …)</code></td><td>Cada número numa coluna de largura fixa, alinhado à direita, embaixo do título (aula <a href="formatos-printf.html">Formatos do printf</a>).</td></tr>
+<tr><td><code>int main(int argc, char *argv[])</code></td><td><code>argc</code> é quantas palavras há na linha de comando, contando o próprio programa; <code>argv[1]</code>, <code>argv[2]</code>… são os nomes dos arquivos (aula <a href="argc-argv.html">Argumentos da Linha de Comando</a>).</td></tr>
+<tr><td><code>if (argc == 1) mostrar(contar(stdin), "-");</code></td><td>Sem nomes, lê a entrada padrão (<code>stdin</code>), que também é um <code>FILE *</code>, como o <code>wc</code> faz. O <code>"-"</code> no lugar do nome é a convenção do Linux para "entrada padrão".</td></tr>
+<tr><td><code>perror(argv[i]); erros++; continue;</code></td><td>O arquivo não abriu: mostra o motivo (aula <a href="errno.html">errno e perror</a>), anota o erro e <strong>pula</strong> para o próximo nome. Um arquivo faltando não impede de contar os outros.</td></tr>
+<tr><td><code>fclose(f);</code></td><td>Fecha cada arquivo assim que termina de contar. Um programa que conta mil arquivos sem fechar nenhum esgota o limite de arquivos abertos do sistema.</td></tr>
+<tr><td><code>total.linhas += t.linhas;</code></td><td>Acumula a contagem de cada arquivo no total.</td></tr>
+<tr><td><code>if (argc &gt; 2)</code></td><td>Só mostra o total quando há mais de um arquivo, como o <code>wc</code>.</td></tr>
+<tr><td><code>return erros &gt; 0 ? 1 : 0;</code></td><td>Código de saída 1 se algum arquivo falhou, como o <code>wc</code> (aula <a href="ternario.html">Operador Ternário</a>). Um script que use o contador fica sabendo que algo deu errado.</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/texto">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar poema.txt
+ Linhas Palavras  Caract.  Arquivo
+      5       24     126  poema.txt
+$ ./contar poema.txt lista.txt
+ Linhas Palavras  Caract.  Arquivo
+      5       24     126  poema.txt
+      3        5      33  lista.txt
+      8       29     159  total
+$ wc poema.txt lista.txt
+  5  24 126 poema.txt
+  3   5  33 lista.txt
+  8  29 159 total
+$ ./contar &lt; lista.txt
+ Linhas Palavras  Caract.  Arquivo
+      3        5      33  -</pre>
+
+<p>E com um arquivo que não existe no meio? Os dois avisam, contam os outros e saem com o código 1:</p>
+
+<pre class="term" data-cwd="~/c/texto">$ ./contar poema.txt nao-existe.txt lista.txt; echo $?
+ Linhas Palavras  Caract.  Arquivo
+      5       24     126  poema.txt
+nao-existe.txt: No such file or directory
+      3        5      33  lista.txt
+      8       29     159  total
+1
+$ wc poema.txt nao-existe.txt lista.txt; echo $?
+  5  24 126 poema.txt
+wc: nao-existe.txt: Arquivo ou diretório inexistente
+  3   5  33 lista.txt
+  8  29 159 total
+1</pre>
+
+<p>A única diferença é a língua do erro. O <code>wc</code> chama <code>setlocale</code> ao começar e usa o idioma do sistema da Ana, o português; o nosso programa não chama, e o <code>perror</code> fala inglês, o padrão do C. O editor do guia também mostra <code>No such file or directory</code>.</p>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> quando falta um arquivo</strong>
+<p>Numa primeira versão, a Ana esqueceu o <code>continue</code> depois do <code>perror</code>. O gcc não avisou nada:</p>
+<pre class="term" data-cwd="~/c/texto">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar poema.txt nao-existe.txt lista.txt
+ Linhas Palavras  Caract.  Arquivo
+      5       24     126  poema.txt
+nao-existe.txt: No such file or directory
+Falha de segmentação     (imagem do núcleo gravada) ./contar poema.txt nao-existe.txt lista.txt
+$ echo $?
+139</pre>
+<p><strong>O que aconteceu:</strong> o <code>perror</code> mostrou o erro, mas o programa seguiu em frente e chamou <code>contar(f)</code> com <code>f</code> valendo <code>NULL</code>. O <code>getc(NULL)</code> tentou ler da memória do endereço zero, e o sistema matou o programa (código 139; veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>). A <code>lista.txt</code> nem chegou a ser contada.</p>
+<p><strong>Como consertar:</strong> depois de tratar o erro, saia do caminho normal: <code>continue</code> (pula para o próximo arquivo, dentro de um laço) ou <code>return</code>. Conferir o <code>NULL</code> só adianta se o programa fizer alguma coisa diferente quando ele aparece.</p>
+</div>
+
+<div class="tryc" data-args="poema.txt lista.txt" data-goal="outre:8\s+29\s+159\s+total,src:total\.palavras">
+<p class="try-task"><strong>Missão (versão 3):</strong> o programa conta os dois arquivos das abas, mas a linha <code>total</code> sai zerada. No lugar do comentário, some <code>t</code> em <code>total</code>, campo por campo (<code>total.linhas += t.linhas;</code> e os outros dois). O total deve ser <code>8 29 159</code>.</p>
+<pre class="script" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+typedef struct {
+    long linhas;
+    long palavras;
+    long caracteres;
+} Contagem;
+
+// Conta tudo o que der para ler de f, até o fim do arquivo.
+Contagem contar(FILE *f) {
+    Contagem t = {0};
+    bool dentro = false;
+    int c;
+    while ((c = getc(f)) != EOF) {
+        t.caracteres++;
+        if (c == '\n') {
+            t.linhas++;
+        }
+        if (isspace(c)) {
+            dentro = false;
+        } else if (!dentro) {
+            dentro = true;
+            t.palavras++;
+        }
+    }
+    return t;
+}
+
+void mostrar(Contagem t, const char *nome) {
+    printf("%7ld %8ld %7ld  %s\n", t.linhas, t.palavras, t.caracteres, nome);
+}
+
+int main(int argc, char *argv[]) {
+    printf(" Linhas Palavras  Caract.  Arquivo\n");
+
+    if (argc == 1) {                    // sem nomes: lê o teclado (stdin)
+        mostrar(contar(stdin), "-");
+        return 0;
+    }
+
+    Contagem total = {0};
+    int erros = 0;
+    for (int i = 1; i &lt; argc; i++) {
+        FILE *f = fopen(argv[i], "r");
+        if (f == NULL) {
+            perror(argv[i]);
+            erros++;
+            continue;                   // pula para o próximo arquivo
+        }
+        Contagem t = contar(f);
+        fclose(f);
+        mostrar(t, argv[i]);
+        // some t em total, campo por campo
+    }
+    if (argc &gt; 2) {
+        mostrar(total, "total");
+    }
+    return erros &gt; 0 ? 1 : 0;
+}
+</pre>
+<pre class="script" data-file="poema.txt">A lojinha da Ana abre às oito.
+Tem caderno, caneta e borracha,
+e um gato que dorme no balcão.
+
+Quem chega cedo ganha café.
+
+</pre>
+<pre class="script" data-file="lista.txt">arroz
+feijão  e  macarrão
+pão
+
+</pre>
+<pre class="solucao" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+typedef struct {
+    long linhas;
+    long palavras;
+    long caracteres;
+} Contagem;
+
+// Conta tudo o que der para ler de f, até o fim do arquivo.
+Contagem contar(FILE *f) {
+    Contagem t = {0};
+    bool dentro = false;
+    int c;
+    while ((c = getc(f)) != EOF) {
+        t.caracteres++;
+        if (c == '\n') {
+            t.linhas++;
+        }
+        if (isspace(c)) {
+            dentro = false;
+        } else if (!dentro) {
+            dentro = true;
+            t.palavras++;
+        }
+    }
+    return t;
+}
+
+void mostrar(Contagem t, const char *nome) {
+    printf("%7ld %8ld %7ld  %s\n", t.linhas, t.palavras, t.caracteres, nome);
+}
+
+int main(int argc, char *argv[]) {
+    printf(" Linhas Palavras  Caract.  Arquivo\n");
+
+    if (argc == 1) {                    // sem nomes: lê o teclado (stdin)
+        mostrar(contar(stdin), "-");
+        return 0;
+    }
+
+    Contagem total = {0};
+    int erros = 0;
+    for (int i = 1; i &lt; argc; i++) {
+        FILE *f = fopen(argv[i], "r");
+        if (f == NULL) {
+            perror(argv[i]);
+            erros++;
+            continue;                   // pula para o próximo arquivo
+        }
+        Contagem t = contar(f);
+        fclose(f);
+        mostrar(t, argv[i]);
+        total.linhas += t.linhas;
+        total.palavras += t.palavras;
+        total.caracteres += t.caracteres;
+    }
+    if (argc &gt; 2) {
+        mostrar(total, "total");
+    }
+    return erros &gt; 0 ? 1 : 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2 id="versao4">Versão 4 · Letras, acentos e bytes</h2>
+<p>Na versão 1 ficou uma pendência: <code>Olá, mundo!</code> deu um "caractere" a mais. É que o <code>getc</code> lê <strong>bytes</strong>, e no UTF-8, a codificação de texto do Linux e da internet, as letras acentuadas ocupam 2 bytes (aula <a href="acentos-utf8.html">Acentos e UTF-8</a>). Veja os bytes de "café":</p>
+
+<pre class="term" data-cwd="~/c/texto">$ echo -n 'café' | xxd
+00000000: 6361 66c3 a9                             caf..
+$ echo -n 'café' | wc -m
+4
+$ echo -n 'café' | LANG=C wc -m
+5</pre>
+
+<p>São 5 bytes: <code>63</code> (c), <code>61</code> (a), <code>66</code> (f) e o par <code>c3 a9</code>, que juntos formam o <code>é</code>. O <code>wc -m</code> conta 4 caracteres, porque sabe que o sistema da Ana está em UTF-8 (<code>pt_BR.UTF-8</code>); com <code>LANG=C</code>, ele passa a contar bytes e diz 5. A versão 4 separa as três ideias:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Contagem</th><th>"café"</th><th>O que conta</th><th>Igual a</th></tr>
+<tr><td>bytes</td><td>5</td><td>cada byte do arquivo</td><td><code>wc -c</code></td></tr>
+<tr><td>caracteres</td><td>4</td><td>cada símbolo que aparece na tela, inclusive espaços e pontuação</td><td><code>wc -m</code></td></tr>
+<tr><td>letras</td><td>4</td><td>só as letras, com ou sem acento</td><td>(o <code>wc</code> não tem)</td></tr>
+</table>
+</div>
+
+<h3>Como achar o começo de cada caractere</h3>
+<p>O UTF-8 foi desenhado para isso ser fácil. Os bytes do <strong>meio</strong> de um caractere (os que continuam um caractere já começado, como o <code>a9</code> do <code>é</code>) sempre começam com os bits <code>10</code>. Nenhum outro byte começa assim:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Byte</th><th>Em binário</th><th>O que é</th></tr>
+<tr><td><code>63</code> (c)</td><td><code>0110 0011</code></td><td>começa com <code>0</code>: um caractere inteiro de 1 byte (ASCII)</td></tr>
+<tr><td><code>c3</code></td><td><code>1100 0011</code></td><td>começa com <code>11</code>: o <strong>primeiro</strong> byte de um caractere de 2 bytes ou mais</td></tr>
+<tr><td><code>a9</code></td><td><code>1010 1001</code></td><td>começa com <code>10</code>: <strong>continuação</strong>; não é um caractere novo</td></tr>
+</table>
+</div>
+
+<p>Para olhar só os dois primeiros bits, a máscara <code>0xC0</code> (<code>1100 0000</code>) apaga os outros seis (aula <a href="mascaras-bits.html">Máscaras e Flags</a>): <code>c &amp; 0xC0</code> dá <code>0x80</code> (<code>1000 0000</code>) exatamente para os bytes de continuação. Então: <strong>caracteres = bytes que não são continuação</strong>.</p>
+<p>E as letras? As do inglês, o <code>isalpha</code> reconhece. As acentuadas do português (<code>á à â ã é ê í ó ô õ ú ç</code> e as maiúsculas) começam todas pelo byte <code>0xC3</code> no UTF-8. Contamos uma letra para cada <code>0xC3</code>, e a continuação dele não conta de novo.</p>
+
+<pre class="file" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+typedef struct {
+    long linhas;
+    long palavras;
+    long letras;
+    long caracteres;    // como o wc -m: "ã" conta uma vez
+    long bytes;         // como o wc -c: "ã" conta duas
+} Contagem;
+
+// No UTF-8, os bytes de 0x80 a 0xBF (10xxxxxx) continuam uma letra
+// que começou antes. Todos os outros começam um caractere novo.
+bool continua_caractere(int c) {
+    return (c &amp; 0xC0) == 0x80;
+}
+
+// As letras acentuadas do português (á, ã, ç, é, ô, ú...) começam
+// todas pelo byte 0xC3 no UTF-8.
+bool comeca_letra(int c) {
+    return isalpha(c) || c == 0xC3;
+}
+
+Contagem contar(FILE *f) {
+    Contagem t = {0};
+    bool dentro = false;
+    int c;
+    while ((c = getc(f)) != EOF) {
+        t.bytes++;
+        if (!continua_caractere(c)) {
+            t.caracteres++;
+        }
+        if (comeca_letra(c)) {
+            t.letras++;
+        }
+        if (c == '\n') {
+            t.linhas++;
+        }
+        if (isspace(c)) {
+            dentro = false;
+        } else if (!dentro) {
+            dentro = true;
+            t.palavras++;
+        }
+    }
+    return t;
+}
+
+void mostrar(Contagem t, const char *nome) {
+    printf("%7ld %8ld %7ld %8ld %7ld  %s\n", t.linhas, t.palavras,
+           t.letras, t.caracteres, t.bytes, nome);
+}
+
+void somar(Contagem *total, Contagem t) {
+    total-&gt;linhas += t.linhas;
+    total-&gt;palavras += t.palavras;
+    total-&gt;letras += t.letras;
+    total-&gt;caracteres += t.caracteres;
+    total-&gt;bytes += t.bytes;
+}
+
+int main(int argc, char *argv[]) {
+    printf(" Linhas Palavras  Letras  Caract.   Bytes  Arquivo\n");
+
+    if (argc == 1) {
+        mostrar(contar(stdin), "-");
+        return 0;
+    }
+
+    Contagem total = {0};
+    int erros = 0;
+    for (int i = 1; i &lt; argc; i++) {
+        FILE *f = fopen(argv[i], "r");
+        if (f == NULL) {
+            perror(argv[i]);
+            erros++;
+            continue;
+        }
+        Contagem t = contar(f);
+        fclose(f);
+        mostrar(t, argv[i]);
+        somar(&amp;total, t);
+    }
+    if (argc &gt; 2) {
+        mostrar(total, "total");
+    }
+    return erros &gt; 0 ? 1 : 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>long letras; long caracteres; long bytes;</dt><dd>A struct ganhou dois campos; o antigo <code>caracteres</code>, que contava bytes, agora se chama <code>bytes</code>.</dd>
+  <dt>bool continua_caractere(int c)</dt><dd><code>(c &amp; 0xC0) == 0x80</code>: verdadeiro só para os bytes <code>10xxxxxx</code>. Com uma função de nome claro, o <code>if</code> lá embaixo se lê como uma frase: "se não continua um caractere, conte um caractere".</dd>
+  <dt>bool comeca_letra(int c)</dt><dd>Uma letra sem acento (<code>isalpha</code>, que no padrão do C só reconhece A a Z e a a z) ou o primeiro byte de uma letra acentuada (<code>0xC3</code>).</dd>
+  <dt>void somar(Contagem *total, Contagem t)</dt><dd>Com cinco campos, as somas do <code>main</code> viraram uma função. Ela recebe o <strong>endereço</strong> do total para poder mudá-lo, e usa <code>-&gt;</code> para chegar nos campos (aula <a href="structs-ponteiros.html">Structs e Ponteiros</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/texto">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar poema.txt lista.txt
+ Linhas Palavras  Letras  Caract.   Bytes  Arquivo
+      5       24      93      123     126  poema.txt
+      3        5      23       30      33  lista.txt
+      8       29     116      153     159  total
+$ wc -lwmc poema.txt lista.txt
+  5  24 123 126 poema.txt
+  3   5  30  33 lista.txt
+  8  29 153 159 total</pre>
+
+<p>O poema tem 3 letras acentuadas (<code>às</code>, <code>balcão</code>, <code>café</code>): 126 bytes − 3 = 123 caracteres, como o <code>wc -m</code>. A lista tem 3 também (<code>feijão</code>, <code>macarrão</code>, <code>pão</code>). E as letras? O <code>wc</code> não conta, mas o <code>grep</code> sabe separar letras: <code>grep -o '[[:alpha:]]'</code> mostra cada letra numa linha, e o <code>wc -l</code> conta as linhas.</p>
+
+<pre class="term" data-cwd="~/c/texto">$ grep -o '[[:alpha:]]' poema.txt | wc -l
+93</pre>
+
+<div class="warning">
+<strong>O limite do <code>0xC3</code></strong>
+<p>O teste <code>c == 0xC3</code> cobre as letras acentuadas do português, do espanhol e do francês. Letras de outras línguas (o <code>ł</code> do polonês, o grego, o russo) começam por outros bytes e não seriam contadas; e o <code>0xC3</code> também começa dois símbolos que não são letras, o <code>×</code> e o <code>÷</code>. Para um contador que entenda qualquer língua, a saída é a biblioteca de caracteres "largos" do C (<code>&lt;wchar.h&gt;</code> e <code>&lt;wctype.h&gt;</code>, com <code>setlocale</code>), que fica para depois.</p>
+</div>
+
+<div class="cenario">
+<strong>As letras acentuadas contam dobrado</strong>
+<p>A primeira ideia da Ana para as letras acentuadas foi "todo byte acima de 127 é parte de uma letra": <code>return isalpha(c) || c &gt;= 0x80;</code>.</p>
+<pre class="term" data-cwd="~/c/texto">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar poema.txt lista.txt
+ Linhas Palavras  Letras  Caract.   Bytes  Arquivo
+      5       24      96      123     126  poema.txt          « eram 93
+      3        5      26       30      33  lista.txt          « eram 23
+      8       29     122      153     159  total</pre>
+<p><strong>O que aconteceu:</strong> cada letra acentuada tem dois bytes acima de 127 (<code>c3</code> e a continuação), e as duas contaram. O poema e a lista têm 3 acentos cada um: 3 a mais em cada.</p>
+<p><strong>Como consertar:</strong> conte só o <strong>primeiro</strong> byte da letra (<code>0xC3</code>), nunca a continuação. A mesma ideia vale para os caracteres: o que conta é o começo, e não cada pedaço.</p>
+</div>
+
+<div class="tryc" data-args="poema.txt lista.txt" data-goal="outre:5\s+24\s+93\s+123\s+126\s+poema\.txt,outre:3\s+5\s+23\s+30\s+33\s+lista\.txt,src:continua_caractere\s*\(\s*c\s*\)">
+<p class="try-task"><strong>Missão (versão 4):</strong> a coluna <code>Caract.</code> está igual à coluna <code>Bytes</code>, porque o programa conta todo byte como caractere. Use a função <code>continua_caractere</code> para contar só os bytes que começam um caractere. O poema deve dar <code>123</code> caracteres e a lista <code>30</code>, como o <code>wc -m</code>.</p>
+<pre class="script" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+typedef struct {
+    long linhas;
+    long palavras;
+    long letras;
+    long caracteres;    // como o wc -m: "ã" conta uma vez
+    long bytes;         // como o wc -c: "ã" conta duas
+} Contagem;
+
+// No UTF-8, os bytes de 0x80 a 0xBF (10xxxxxx) continuam uma letra
+// que começou antes. Todos os outros começam um caractere novo.
+bool continua_caractere(int c) {
+    return (c &amp; 0xC0) == 0x80;
+}
+
+// As letras acentuadas do português (á, ã, ç, é, ô, ú...) começam
+// todas pelo byte 0xC3 no UTF-8.
+bool comeca_letra(int c) {
+    return isalpha(c) || c == 0xC3;
+}
+
+Contagem contar(FILE *f) {
+    Contagem t = {0};
+    bool dentro = false;
+    int c;
+    while ((c = getc(f)) != EOF) {
+        t.bytes++;
+        t.caracteres++;     // conta todo byte: está igual a t.bytes
+        if (comeca_letra(c)) {
+            t.letras++;
+        }
+        if (c == '\n') {
+            t.linhas++;
+        }
+        if (isspace(c)) {
+            dentro = false;
+        } else if (!dentro) {
+            dentro = true;
+            t.palavras++;
+        }
+    }
+    return t;
+}
+
+void mostrar(Contagem t, const char *nome) {
+    printf("%7ld %8ld %7ld %8ld %7ld  %s\n", t.linhas, t.palavras,
+           t.letras, t.caracteres, t.bytes, nome);
+}
+
+void somar(Contagem *total, Contagem t) {
+    total-&gt;linhas += t.linhas;
+    total-&gt;palavras += t.palavras;
+    total-&gt;letras += t.letras;
+    total-&gt;caracteres += t.caracteres;
+    total-&gt;bytes += t.bytes;
+}
+
+int main(int argc, char *argv[]) {
+    printf(" Linhas Palavras  Letras  Caract.   Bytes  Arquivo\n");
+
+    if (argc == 1) {
+        mostrar(contar(stdin), "-");
+        return 0;
+    }
+
+    Contagem total = {0};
+    int erros = 0;
+    for (int i = 1; i &lt; argc; i++) {
+        FILE *f = fopen(argv[i], "r");
+        if (f == NULL) {
+            perror(argv[i]);
+            erros++;
+            continue;
+        }
+        Contagem t = contar(f);
+        fclose(f);
+        mostrar(t, argv[i]);
+        somar(&amp;total, t);
+    }
+    if (argc &gt; 2) {
+        mostrar(total, "total");
+    }
+    return erros &gt; 0 ? 1 : 0;
+}
+</pre>
+<pre class="script" data-file="poema.txt">A lojinha da Ana abre às oito.
+Tem caderno, caneta e borracha,
+e um gato que dorme no balcão.
+
+Quem chega cedo ganha café.
+
+</pre>
+<pre class="script" data-file="lista.txt">arroz
+feijão  e  macarrão
+pão
+
+</pre>
+<pre class="solucao" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+typedef struct {
+    long linhas;
+    long palavras;
+    long letras;
+    long caracteres;    // como o wc -m: "ã" conta uma vez
+    long bytes;         // como o wc -c: "ã" conta duas
+} Contagem;
+
+// No UTF-8, os bytes de 0x80 a 0xBF (10xxxxxx) continuam uma letra
+// que começou antes. Todos os outros começam um caractere novo.
+bool continua_caractere(int c) {
+    return (c &amp; 0xC0) == 0x80;
+}
+
+// As letras acentuadas do português (á, ã, ç, é, ô, ú...) começam
+// todas pelo byte 0xC3 no UTF-8.
+bool comeca_letra(int c) {
+    return isalpha(c) || c == 0xC3;
+}
+
+Contagem contar(FILE *f) {
+    Contagem t = {0};
+    bool dentro = false;
+    int c;
+    while ((c = getc(f)) != EOF) {
+        t.bytes++;
+        if (!continua_caractere(c)) {
+            t.caracteres++;
+        }
+        if (comeca_letra(c)) {
+            t.letras++;
+        }
+        if (c == '\n') {
+            t.linhas++;
+        }
+        if (isspace(c)) {
+            dentro = false;
+        } else if (!dentro) {
+            dentro = true;
+            t.palavras++;
+        }
+    }
+    return t;
+}
+
+void mostrar(Contagem t, const char *nome) {
+    printf("%7ld %8ld %7ld %8ld %7ld  %s\n", t.linhas, t.palavras,
+           t.letras, t.caracteres, t.bytes, nome);
+}
+
+void somar(Contagem *total, Contagem t) {
+    total-&gt;linhas += t.linhas;
+    total-&gt;palavras += t.palavras;
+    total-&gt;letras += t.letras;
+    total-&gt;caracteres += t.caracteres;
+    total-&gt;bytes += t.bytes;
+}
+
+int main(int argc, char *argv[]) {
+    printf(" Linhas Palavras  Letras  Caract.   Bytes  Arquivo\n");
+
+    if (argc == 1) {
+        mostrar(contar(stdin), "-");
+        return 0;
+    }
+
+    Contagem total = {0};
+    int erros = 0;
+    for (int i = 1; i &lt; argc; i++) {
+        FILE *f = fopen(argv[i], "r");
+        if (f == NULL) {
+            perror(argv[i]);
+            erros++;
+            continue;
+        }
+        Contagem t = contar(f);
+        fclose(f);
+        mostrar(t, argv[i]);
+        somar(&amp;total, t);
+    }
+    if (argc &gt; 2) {
+        mostrar(total, "total");
+    }
+    return erros &gt; 0 ? 1 : 0;
+}
+</pre>
+</div>
+
+<p>Agora é a sua vez: a caixa abaixo é o contador pronto, sem arquivo. Clique em Rodar, digite um texto seu (com acentos), aperte Enter no fim de cada linha e, para terminar, <strong>Ctrl+D</strong>. Confira as contas à mão com uma frase curta.</p>
+
+<div class="tryc">
+<pre class="script" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+typedef struct {
+    long linhas;
+    long palavras;
+    long letras;
+    long caracteres;    // como o wc -m: "ã" conta uma vez
+    long bytes;         // como o wc -c: "ã" conta duas
+} Contagem;
+
+// No UTF-8, os bytes de 0x80 a 0xBF (10xxxxxx) continuam uma letra
+// que começou antes. Todos os outros começam um caractere novo.
+bool continua_caractere(int c) {
+    return (c &amp; 0xC0) == 0x80;
+}
+
+// As letras acentuadas do português (á, ã, ç, é, ô, ú...) começam
+// todas pelo byte 0xC3 no UTF-8.
+bool comeca_letra(int c) {
+    return isalpha(c) || c == 0xC3;
+}
+
+Contagem contar(FILE *f) {
+    Contagem t = {0};
+    bool dentro = false;
+    int c;
+    while ((c = getc(f)) != EOF) {
+        t.bytes++;
+        if (!continua_caractere(c)) {
+            t.caracteres++;
+        }
+        if (comeca_letra(c)) {
+            t.letras++;
+        }
+        if (c == '\n') {
+            t.linhas++;
+        }
+        if (isspace(c)) {
+            dentro = false;
+        } else if (!dentro) {
+            dentro = true;
+            t.palavras++;
+        }
+    }
+    return t;
+}
+
+void mostrar(Contagem t, const char *nome) {
+    printf("%7ld %8ld %7ld %8ld %7ld  %s\n", t.linhas, t.palavras,
+           t.letras, t.caracteres, t.bytes, nome);
+}
+
+void somar(Contagem *total, Contagem t) {
+    total-&gt;linhas += t.linhas;
+    total-&gt;palavras += t.palavras;
+    total-&gt;letras += t.letras;
+    total-&gt;caracteres += t.caracteres;
+    total-&gt;bytes += t.bytes;
+}
+
+int main(int argc, char *argv[]) {
+    printf(" Linhas Palavras  Letras  Caract.   Bytes  Arquivo\n");
+
+    if (argc == 1) {
+        mostrar(contar(stdin), "-");
+        return 0;
+    }
+
+    Contagem total = {0};
+    int erros = 0;
+    for (int i = 1; i &lt; argc; i++) {
+        FILE *f = fopen(argv[i], "r");
+        if (f == NULL) {
+            perror(argv[i]);
+            erros++;
+            continue;
+        }
+        Contagem t = contar(f);
+        fclose(f);
+        mostrar(t, argv[i]);
+        somar(&amp;total, t);
+    }
+    if (argc &gt; 2) {
+        mostrar(total, "total");
+    }
+    return erros &gt; 0 ? 1 : 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>O programa completo</h2>
+<p>A versão final, igual à versão 4. Compile com <code>gcc -std=c23 -Wall -Wextra contar.c -o contar</code>:</p>
+
+<pre class="file" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+typedef struct {
+    long linhas;
+    long palavras;
+    long letras;
+    long caracteres;    // como o wc -m: "ã" conta uma vez
+    long bytes;         // como o wc -c: "ã" conta duas
+} Contagem;
+
+// No UTF-8, os bytes de 0x80 a 0xBF (10xxxxxx) continuam uma letra
+// que começou antes. Todos os outros começam um caractere novo.
+bool continua_caractere(int c) {
+    return (c &amp; 0xC0) == 0x80;
+}
+
+// As letras acentuadas do português (á, ã, ç, é, ô, ú...) começam
+// todas pelo byte 0xC3 no UTF-8.
+bool comeca_letra(int c) {
+    return isalpha(c) || c == 0xC3;
+}
+
+Contagem contar(FILE *f) {
+    Contagem t = {0};
+    bool dentro = false;
+    int c;
+    while ((c = getc(f)) != EOF) {
+        t.bytes++;
+        if (!continua_caractere(c)) {
+            t.caracteres++;
+        }
+        if (comeca_letra(c)) {
+            t.letras++;
+        }
+        if (c == '\n') {
+            t.linhas++;
+        }
+        if (isspace(c)) {
+            dentro = false;
+        } else if (!dentro) {
+            dentro = true;
+            t.palavras++;
+        }
+    }
+    return t;
+}
+
+void mostrar(Contagem t, const char *nome) {
+    printf("%7ld %8ld %7ld %8ld %7ld  %s\n", t.linhas, t.palavras,
+           t.letras, t.caracteres, t.bytes, nome);
+}
+
+void somar(Contagem *total, Contagem t) {
+    total-&gt;linhas += t.linhas;
+    total-&gt;palavras += t.palavras;
+    total-&gt;letras += t.letras;
+    total-&gt;caracteres += t.caracteres;
+    total-&gt;bytes += t.bytes;
+}
+
+int main(int argc, char *argv[]) {
+    printf(" Linhas Palavras  Letras  Caract.   Bytes  Arquivo\n");
+
+    if (argc == 1) {
+        mostrar(contar(stdin), "-");
+        return 0;
+    }
+
+    Contagem total = {0};
+    int erros = 0;
+    for (int i = 1; i &lt; argc; i++) {
+        FILE *f = fopen(argv[i], "r");
+        if (f == NULL) {
+            perror(argv[i]);
+            erros++;
+            continue;
+        }
+        Contagem t = contar(f);
+        fclose(f);
+        mostrar(t, argv[i]);
+        somar(&amp;total, t);
+    }
+    if (argc &gt; 2) {
+        mostrar(total, "total");
+    }
+    return erros &gt; 0 ? 1 : 0;
+}
+</pre>
+
+<p>O que o projeto juntou: <a href="while.html">while</a> com <code>getchar</code> e <code>EOF</code>, <a href="ctype.html">isspace e isalpha</a>, uma variável de estado <a href="bool.html">bool</a>, <a href="structs.html">structs</a>, <a href="argc-argv.html">argc e argv</a>, <a href="arquivos.html">fopen e fclose</a>, <a href="errno.html">perror</a>, <a href="mascaras-bits.html">máscaras de bits</a> e o <a href="acentos-utf8.html">UTF-8</a>.</p>
+
+<h3>Rodando no laboratório</h3>
+<p>A Ana conferiu uma frase digitada, com quatro letras acentuadas, e olhou os bytes com o <code>xxd</code>:</p>
+
+<pre class="term" data-cwd="~/c/texto">$ ./contar
+ Linhas Palavras  Letras  Caract.   Bytes  Arquivo
+Ação e reação.                  « Enter e depois Ctrl+D
+      1        3      11       15      19  -
+$ echo 'Ação e reação.' | xxd
+00000000: 41c3 a7c3 a36f 2065 2072 6561 c3a7 c3a3  A....o e rea....
+00000010: 6f2e 0a                                  o..</pre>
+
+<p>11 letras (<code>Ação</code> 4, <code>e</code> 1, <code>reação</code> 6), 15 caracteres (as letras, 2 espaços, o ponto e o Enter) e 19 bytes, porque <code>ç</code> (<code>c3 a7</code>) e <code>ã</code> (<code>c3 a3</code>) aparecem duas vezes cada um, com 2 bytes.</p>
+
+<hr>
+
+<h2>Desafios extras</h2>
+<ol>
+  <li><strong>Escolher as colunas.</strong> Como o <code>wc</code>, aceite as opções <code>-l</code>, <code>-w</code> e <code>-c</code> antes dos nomes dos arquivos e mostre só as colunas pedidas (um <code>argv[i][0] == '-'</code> indica uma opção).</li>
+  <li><strong>A última linha sem Enter.</strong> Conte também a última linha quando o arquivo não termina em <code>'\n'</code>. Dica: guarde o último caractere lido; no fim, se ele não for <code>'\n'</code> e o arquivo não estiver vazio, some 1.</li>
+  <li><strong>A linha mais comprida.</strong> Mostre o tamanho da maior linha, em caracteres, como o <code>wc -L</code>.</li>
+  <li><strong>Palavras sem pontuação.</strong> Faça <code>"caderno,"</code> e <code>"caderno"</code> serem iguais: trate também <code>ispunct(c)</code> como separador. Quantas palavras dá o poema agora? E <code>"guarda-chuva"</code>?</li>
+  <li><strong>Frequência das letras.</strong> Com um array <code>long freq[26]</code>, conte quantas vezes aparece cada letra de A a Z (sem diferenciar maiúscula de minúscula, com <code>tolower</code>) e mostre a mais comum.</li>
+</ol>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Por que a variável que recebe o <code>getchar()</code> deve ser <code>int</code>, e não <code>char</code>?</p>
+<label><input type="radio" name="q1"> Porque <code>char</code> não guarda letras acentuadas.</label>
+<label><input type="radio" name="q1"> Porque o <code>getchar</code> pode devolver qualquer byte de 0 a 255 e também o <code>EOF</code>, e num <code>char</code> o byte 255 se confunde com o <code>EOF</code>.</label>
+<label><input type="radio" name="q1"> Porque <code>int</code> é mais rápido.</label>
+<label><input type="radio" name="q1"> Porque o <code>getchar</code> só funciona com <code>int</code> e dá erro de compilação com <code>char</code>.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Quantas palavras o contador da versão 2 acha em <code>"  bom   dia  "</code> (com os espaços)?</p>
+<label><input type="radio" name="q2"> 7</label>
+<label><input type="radio" name="q2"> 5</label>
+<label><input type="radio" name="q2"> 2</label>
+<label><input type="radio" name="q2"> 0</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. O arquivo <code>oi.txt</code> tem só o texto <code>pão</code> e um Enter. Quantos bytes e quantos caracteres ele tem?</p>
+<label><input type="radio" name="q3"> 5 bytes e 4 caracteres</label>
+<label><input type="radio" name="q3"> 4 bytes e 4 caracteres</label>
+<label><input type="radio" name="q3"> 3 bytes e 3 caracteres</label>
+<label><input type="radio" name="q3"> 5 bytes e 5 caracteres</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. No UTF-8, quais bytes <strong>continuam</strong> um caractere começado antes?</p>
+<label><input type="radio" name="q4"> Os que começam com o bit <code>0</code>.</label>
+<label><input type="radio" name="q4"> Os que começam com os bits <code>11</code>.</label>
+<label><input type="radio" name="q4"> O <code>0xC3</code>.</label>
+<label><input type="radio" name="q4"> Os que começam com os bits <code>10</code>, ou seja, <code>(c &amp; 0xC0) == 0x80</code>.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete o laço que lê a entrada até o fim:</p>
+<div class="ex-code">while ((c = getchar()) != <input data-answer="EOF" aria-label="valor do fim" size="4">)</div>
+</div>
+
+<div class="exercise">
+<p>6. Complete o comando que manda o arquivo <code>poema.txt</code> para a entrada do contador:</p>
+<div class="ex-code">./contar <input data-answer="&lt;" aria-label="redirecionamento" size="2"> poema.txt</div>
+</div>
+
+<div class="exercise">
+<p>7. Complete a chamada que lê um caractere do arquivo <code>f</code>, e não do teclado:</p>
+<div class="ex-code">c = <input data-answer="getc|fgetc" aria-label="função" size="6">(f);</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>getchar</code> e <code>getc</code> leem um byte por vez e devolvem <code>int</code>: um byte de 0 a 255 ou <code>EOF</code>. Com <code>char c</code>, o byte 255 vira o fim do arquivo.</li>
+  <li>No terminal, a entrada acaba com Ctrl+D; com <code>&lt; arquivo</code>, o programa lê o arquivo como se fosse o teclado.</li>
+  <li>Linhas = número de <code>'\n'</code>; uma última linha sem Enter não conta, nem no <code>wc</code>.</li>
+  <li>Palavras: conte as passagens de fora para dentro de uma palavra, com uma variável de estado e <code>isspace</code>. Contar espaços erra com espaços duplos e linhas em branco.</li>
+  <li>Um <code>FILE *</code> serve para arquivos e para o <code>stdin</code>; depois de um <code>perror</code>, saia do caminho normal (<code>continue</code> ou <code>return</code>).</li>
+  <li>No UTF-8, bytes ≠ caracteres: os bytes <code>10xxxxxx</code> continuam um caractere, e <code>(c &amp; 0xC0) != 0x80</code> acha os começos.</li>
+  <li>Compare sempre com uma ferramenta de confiança: o <code>wc</code> mostrou cada erro na hora.</li>
+</ul>
+<p>Próximo projeto: <a href="projeto-tarefas.html">Lista de Tarefas</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
