@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Glossário — os termos do guia explicados em poucas palavras | Guia C</title>
+<meta name="description" content="Glossário do Guia C: compilador, ligador, pré-processador, cabeçalho, variável, tipo, ponteiro, endereço, array, string, '\0', struct, malloc, free, pilha, heap, comportamento indefinido, falha de segmentação, sanitizer, Valgrind, macro, errno, EOF, size_t, volatile, restrict, C23 e mais, em ordem alfabética, cada um com link para a aula.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Glossário</span></h1>
+
+<p class="intro">Os termos que aparecem no guia, em ordem alfabética, explicados em uma ou duas frases, cada um com o link para a aula em que é explicado com calma. Termos em inglês aparecem com a tradução. Quando o nome em inglês é o mais usado no dia a dia (como <em>buffer</em> ou <code>malloc</code>), ele é a entrada principal.</p>
+
+<div class="tip">
+<strong>Dica</strong>
+<p>Use <kbd>Ctrl</kbd>+<kbd>F</kbd> no navegador para achar um termo, ou o índice de letras abaixo. Para consultas rápidas, veja também as referências de <a href="ref-printf.html">printf e scanf</a>, de <a href="ref-string.html">string.h</a>, de <a href="ref-tipos.html">tipos e limites</a>, de <a href="ref-operadores.html">operadores</a> e de <a href="ref-erros.html">erros comuns</a>.</p>
+</div>
+
+<p class="indice-letras"><a href="#g-A">A</a> · <a href="#g-B">B</a> · <a href="#g-C">C</a> · <a href="#g-D">D</a> · <a href="#g-E">E</a> · <a href="#g-F">F</a> · <a href="#g-G">G</a> · <a href="#g-H">H</a> · <a href="#g-I">I</a> · <a href="#g-L">L</a> · <a href="#g-M">M</a> · <a href="#g-N">N</a> · <a href="#g-O">O</a> · <a href="#g-P">P</a> · <a href="#g-R">R</a> · <a href="#g-S">S</a> · <a href="#g-T">T</a> · <a href="#g-U">U</a> · <a href="#g-V">V</a> · <a href="#g-W">W</a></p>
+
+<h2 id="g-A">A</h2>
+<dl class="glossario">
+<dt><strong>abort</strong></dt>
+<dd>Função do <code>stdlib.h</code> que encerra o programa na hora, sem arrumar nada. No terminal aparece <code>Abortado (imagem do núcleo gravada)</code> e o código de saída é 134. É o que o <code>assert</code> chama quando falha. Veja: <a href="testes.html">Testes (assert)</a> e <a href="exit.html">Encerrar o Programa</a>.</dd>
+<dt><strong>Alocação dinâmica</strong></dt>
+<dd>Pedir memória enquanto o programa roda, no <strong>heap</strong>, com <code>malloc</code>, <code>calloc</code> ou <code>realloc</code>, em vez de declarar uma variável comum. Toda memória pedida assim tem de ser devolvida com <code>free</code>. Veja: <a href="malloc-free.html">malloc e free</a>.</dd>
+<dt><strong>argc</strong> e <strong>argv</strong></dt>
+<dd>Os parâmetros da forma <code>int main(int argc, char *argv[])</code>: quantos argumentos vieram na linha de comando (<em>argument count</em>) e a lista deles, como textos (<em>argument vector</em>). <code>argv[0]</code> é o nome do programa. Veja: <a href="argc-argv.html">Argumentos da Linha de Comando</a>.</dd>
+<dt><strong>Argumento</strong></dt>
+<dd>O valor que você entrega a uma função quando a chama: em <code>soma(2, 3)</code>, os argumentos são <code>2</code> e <code>3</code>. Do lado de dentro, eles chegam nos <strong>parâmetros</strong>. Veja: <a href="parametros.html">Parâmetros</a>.</dd>
+<dt><strong>Array</strong> (vetor)</dt>
+<dd>Uma fileira de variáveis do mesmo tipo, lado a lado na memória, com tamanho fixo: <code>int notas[3];</code>. O primeiro elemento é o de índice 0. O C não confere se o índice passou do fim. Veja: <a href="arrays.html">Arrays</a> e <a href="arrays-multidimensionais.html">Arrays Multidimensionais</a>.</dd>
+<dt><strong>ASCII</strong></dt>
+<dd>A tabela que dá um número a cada letra, algarismo e símbolo: <code>'A'</code> é 65, <code>'a'</code> é 97, <code>'0'</code> é 48. Tem 128 posições e nenhuma letra acentuada. Veja: <a href="char.html">Caracteres (char)</a>.</dd>
+<dt><strong>assert</strong></dt>
+<dd>Macro do <code>assert.h</code> que confere uma certeza do programador enquanto o programa roda: <code>assert(qtd &gt; 0);</code>. Se for falsa, mostra a condição, o arquivo e a linha e aborta. É desligada com <code>-DNDEBUG</code>. Veja: <a href="testes.html">Testes (assert)</a>.</dd>
+<dt><strong>Atributo</strong> <span class="versao">C23</span></dt>
+<dd>Uma etiqueta entre colchetes duplos que dá uma informação a mais ao compilador: <code>[[nodiscard]]</code> (não ignore o retorno), <code>[[maybe_unused]]</code>, <code>[[deprecated]]</code>, <code>[[fallthrough]]</code>. Veja: <a href="atributos.html">Atributos</a>.</dd>
+<dt><strong>Atribuição</strong></dt>
+<dd>Guardar um valor numa variável que já existe, com <code>=</code>: <code>idade = 31;</code>. Não confunda com a comparação <code>==</code>. Os atalhos <code>+=</code>, <code>-=</code>, <code>*=</code> fazem a conta e guardam. Veja: <a href="variaveis.html">Variáveis</a> e <a href="operadores-atribuicao.html">Operadores de Atribuição</a>.</dd>
+<dt><strong>Aviso</strong> (<em>warning</em>)</dt>
+<dd>Mensagem do compilador sobre algo suspeito que <strong>não</strong> impede o programa de ser criado, como uma variável não usada ou um formato errado no <code>printf</code>. Quase sempre aponta um defeito real; ligue os avisos com <code>-Wall -Wextra</code>. Veja: <a href="compilar.html">Compilar com gcc</a> e <a href="avisos.html">Avisos</a>.</dd>
+</dl>
+
+<h2 id="g-B">B</h2>
+<dl class="glossario">
+<dt><strong>Biblioteca padrão</strong></dt>
+<dd>As funções que vêm com todo compilador C e fazem parte do padrão ISO, divididas em cabeçalhos: <code>stdio.h</code> (entrada e saída), <code>string.h</code>, <code>stdlib.h</code>, <code>math.h</code>… No Linux, quem as implementa é a glibc; no editor do guia, a wasi-libc. Veja: <a href="simulador.html">O Editor do Guia</a> e <a href="bibliotecas.html">Bibliotecas</a>.</dd>
+<dt><strong>Bit</strong> e <strong>byte</strong></dt>
+<dd>O bit é a menor informação do computador: 0 ou 1. Um byte são 8 bits e guarda um número de 0 a 255; é a "gaveta" de memória que tem endereço. Um <code>char</code> ocupa 1 byte; um <code>int</code>, 4. Veja: <a href="memoria.html">Memória e Endereços</a> e <a href="operadores-bits.html">Operadores de Bits</a>.</dd>
+<dt><strong>Bloco</strong></dt>
+<dd>Um trecho de código entre chaves <code>{ }</code>. As variáveis criadas dentro de um bloco só existem até a <code>}</code> que o fecha. Veja: <a href="sintaxe.html">Sintaxe</a> e <a href="escopo.html">Escopo</a>.</dd>
+<dt><strong>bool</strong></dt>
+<dd>O tipo que só guarda <code>true</code> (verdadeiro, 1) ou <code>false</code> (falso, 0). No C23 é palavra-chave; no C99 a C17, precisa de <code>#include &lt;stdbool.h&gt;</code>. Veja: <a href="bool.html">Booleanos</a>.</dd>
+<dt><strong>break</strong></dt>
+<dd>Sai na hora do laço (<code>for</code>, <code>while</code>, <code>do while</code>) ou do <code>switch</code> em que está. Num laço dentro de outro, só sai do de dentro. Veja: <a href="break-continue.html">break e continue</a>.</dd>
+<dt><strong>Buffer</strong></dt>
+<dd>Uma área de memória usada para guardar dados de passagem, como o array onde o <code>fgets</code> põe a linha lida. A saída do <code>printf</code> também passa por um buffer antes de chegar à tela. Veja: <a href="fgets.html">fgets</a>.</dd>
+<dt><strong>Buffer overflow</strong> (estouro de buffer)</dt>
+<dd>Escrever além do fim de um array, invadindo a memória vizinha: <code>scanf("%s", nome)</code> sem limite, <code>strcpy</code> sem espaço. É comportamento indefinido e uma das falhas de segurança mais antigas. Veja: <a href="seguranca.html">Segurança</a>.</dd>
+</dl>
+
+<h2 id="g-C">C</h2>
+<dl class="glossario">
+<dt><strong>C23</strong> (e C89, C99, C11, C17)</dt>
+<dd>As versões do padrão da linguagem, com o ano em que saíram. O guia ensina o <strong>C23</strong> (<code>-std=c23</code>), que trouxe <code>bool</code> como palavra-chave, <code>nullptr</code>, <code>constexpr</code>, <code>typeof</code>, atributos e <code>#embed</code>. Veja: <a href="versoes.html">Versões do C</a> e <a href="novidades.html">Novidades do C99 ao C23</a>.</dd>
+<dt><strong>Cabeçalho</strong> (<em>header</em>, arquivo <code>.h</code>)</dt>
+<dd>Arquivo com declarações (protótipos, structs, constantes) que outros arquivos incluem com <code>#include</code>. Os da biblioteca padrão vão entre <code>&lt; &gt;</code> (<code>&lt;stdio.h&gt;</code>); os seus, entre aspas (<code>"datas.h"</code>). Veja: <a href="headers.html">Arquivos .h e .c</a>.</dd>
+<dt><strong>Callback</strong></dt>
+<dd>Uma função passada para outra função, por um ponteiro para função, para ser chamada lá dentro. O exemplo clássico é a função de comparação do <code>qsort</code>. Veja: <a href="ponteiros-funcao.html">Ponteiros para Funções</a>.</dd>
+<dt><strong>calloc</strong> e <strong>realloc</strong></dt>
+<dd><code>calloc</code> reserva memória para N itens e a enche de zeros; <code>realloc</code> muda o tamanho de um bloco já reservado (e pode mudá-lo de lugar). Veja: <a href="calloc-realloc.html">calloc e realloc</a> e <a href="array-dinamico.html">Array que Cresce</a>.</dd>
+<dt><strong>Campo de bits</strong></dt>
+<dd>Um campo de struct com largura em bits, escrita depois de dois-pontos: <code>unsigned int ligado : 1;</code>. Guarda vários valores pequenos num só inteiro. Veja: <a href="campos-bits.html">Campos de Bits</a>.</dd>
+<dt><strong>Caractere nulo</strong> (<code>'\0'</code>)</dt>
+<dd>O caractere de código 0, que marca o <strong>fim</strong> de uma string. <code>"Ana"</code> ocupa 4 bytes: <code>'A'</code>, <code>'n'</code>, <code>'a'</code> e <code>'\0'</code>. Sem ele, as funções de texto continuam lendo a memória vizinha. Veja: <a href="strings.html">Strings</a>.</dd>
+<dt><strong>Cast</strong> (conversão explícita)</dt>
+<dd>Pedir uma conversão de tipo escrevendo o tipo entre parênteses: <code>(double) soma / n</code>. Veja: <a href="conversao-tipos.html">Conversão de Tipos</a>.</dd>
+<dt><strong>char</strong></dt>
+<dd>O tipo de um caractere, escrito entre aspas simples: <code>'A'</code>. Ocupa 1 byte e, por dentro, é um número pequeno (o código da tabela ASCII). <code>'ç'</code> não cabe: em UTF-8 são 2 bytes. Veja: <a href="char.html">Caracteres (char)</a>.</dd>
+<dt><strong>Clang</strong></dt>
+<dd>Um compilador de C (do projeto LLVM), alternativa ao gcc, com as mesmas opções principais. É o compilador do editor do guia e o "gcc" do macOS. As mensagens de erro dizem a mesma coisa com outras palavras. Veja: <a href="simulador.html">O Editor do Guia</a> e <a href="compilar.html">Compilar com gcc</a>.</dd>
+<dt><strong>CMake</strong></dt>
+<dd>Ferramenta que descreve como montar um projeto (arquivo <code>CMakeLists.txt</code>) e gera os arquivos para o <code>make</code> ou o Ninja: <code>cmake -B build</code> e <code>cmake --build build</code>. Veja: <a href="cmake.html">CMake</a>.</dd>
+<dt><strong>Código de saída</strong> (<em>exit code</em>)</dt>
+<dd>O número que o programa devolve ao terminar, visto com <code>echo $?</code>: <code>0</code> = sucesso. É o valor do <code>return</code> do <code>main</code> ou do <code>exit</code>. Quando o sistema mata o programa, é 128 + o número do sinal: 139 = falha de segmentação, 134 = abortado. Veja: <a href="primeiro-programa.html">Olá, Mundo</a> e <a href="exit.html">Encerrar o Programa</a>.</dd>
+<dt><strong>Código-fonte</strong></dt>
+<dd>O texto que você escreve (<code>ola.c</code>), que pessoas leem e o compilador traduz para um executável. Veja: <a href="como-funciona.html">Como o C Vira Programa</a>.</dd>
+<dt><strong>Comentário</strong></dt>
+<dd>Texto que o compilador ignora, escrito para pessoas: <code>// até o fim da linha</code> ou <code>/* em bloco */</code>. Veja: <a href="comentarios.html">Comentários</a>.</dd>
+<dt><strong>Compilação condicional</strong></dt>
+<dd>Trechos de código que só existem se um nome estiver definido, escolhidos pelo pré-processador antes da compilação: <code>#ifdef</code>, <code>#if</code>, <code>#else</code>, <code>#endif</code> e a opção <code>-D</code> do gcc. Veja: <a href="compilacao-condicional.html">Compilação Condicional</a>.</dd>
+<dt><strong>Compilador</strong></dt>
+<dd>O programa que traduz o código-fonte em código de máquina: no guia, o <strong>gcc</strong> (nos terminais) e o <strong>Clang</strong> (no editor). Veja: <a href="como-funciona.html">Como o C Vira Programa</a> e <a href="compilar.html">Compilar com gcc</a>.</dd>
+<dt><strong>Comportamento indefinido</strong> (<em>undefined behavior</em>, UB)</dt>
+<dd>O que acontece quando o programa quebra uma regra do C que o compilador não é obrigado a conferir: índice fora do array, variável sem valor inicial, estouro de <code>int</code>, ponteiro solto. O padrão não diz o que acontece: pode "funcionar", dar lixo ou travar, e mudar com <code>-O2</code>. Veja: <a href="comportamento-indefinido.html">Comportamento Indefinido</a>.</dd>
+<dt><strong>const</strong></dt>
+<dd>Marca uma variável que não pode ser mudada depois de criada: <code>const double PI = 3.14159;</code>. Num parâmetro ponteiro (<code>const char *s</code>), promete que a função não muda o que é apontado. Veja: <a href="constantes.html">Constantes</a> e <a href="const-ponteiros.html">const e Ponteiros</a>.</dd>
+<dt><strong>constexpr</strong> <span class="versao">C23</span></dt>
+<dd>Uma constante de verdade, com valor conhecido na compilação, que pode ser usada até no tamanho de um array: <code>constexpr int MAX = 10;</code>. Veja: <a href="constantes.html">Constantes</a>.</dd>
+<dt><strong>continue</strong></dt>
+<dd>Pula o resto da volta atual do laço e passa para a próxima. Veja: <a href="break-continue.html">break e continue</a>.</dd>
+<dt><strong>Conversão implícita</strong></dt>
+<dd>A conversão que o C faz sozinho, sem você pedir: guardar <code>3.9</code> num <code>int</code> vira <code>3</code>; somar <code>int</code> com <code>double</code> dá <code>double</code>. O <code>-Wconversion</code> avisa quando ela perde informação. Veja: <a href="conversao-tipos.html">Conversão de Tipos</a>.</dd>
+<dt><strong>Curto-circuito</strong></dt>
+<dd>O <code>&amp;&amp;</code> e o <code>||</code> param de calcular assim que sabem a resposta: em <code>p != NULL &amp;&amp; *p &gt; 0</code>, se <code>p</code> for nulo, o <code>*p</code> nem é lido. Veja: <a href="operadores-logicos.html">Operadores Lógicos</a>.</dd>
+</dl>
+
+<h2 id="g-D">D</h2>
+<dl class="glossario">
+<dt><strong>Declaração</strong> × <strong>definição</strong></dt>
+<dd>Declarar é <strong>anunciar</strong> que um nome existe e qual é o seu tipo (<code>int dobro(int x);</code>); definir é <strong>criar</strong> de verdade (a função com o corpo, a variável com a memória). Um nome pode ser declarado várias vezes, mas definido uma só. Veja: <a href="headers.html">Arquivos .h e .c</a> e <a href="prototipos.html">Protótipos</a>.</dd>
+<dt><strong>Depurador</strong> (<em>debugger</em>)</dt>
+<dd>Programa que roda o seu passo a passo, para você ver as variáveis e achar a linha de um erro. No guia, o <code>gdb</code>; compile com <code>-g</code>. Veja: <a href="depuracao-gdb.html">Depurar com gdb</a>.</dd>
+<dt><strong>Desreferenciar</strong></dt>
+<dd>Ir até o endereço guardado num ponteiro, com <code>*</code>: se <code>p</code> aponta para <code>x</code>, <code>*p</code> é o próprio <code>x</code>. Desreferenciar um ponteiro nulo dá falha de segmentação. Veja: <a href="ponteiros.html">Ponteiros</a> e <a href="ponteiro-nulo.html">Ponteiro Nulo</a>.</dd>
+<dt><strong>do while</strong></dt>
+<dd>Laço que roda o bloco <strong>pelo menos uma vez</strong> e só depois confere a condição: <code>do { … } while (cond);</code>. Bom para menus e para pedir de novo uma resposta inválida. Veja: <a href="do-while.html">do while</a>.</dd>
+<dt><strong>double</strong> e <strong>float</strong></dt>
+<dd>Os tipos de número com casas decimais (ponto flutuante). <code>double</code> tem cerca de 15 algarismos de precisão; <code>float</code>, cerca de 7. São aproximações: <code>0.1 + 0.2</code> não dá exatamente <code>0.3</code>. Veja: <a href="ponto-flutuante.html">float e double</a>.</dd>
+</dl>
+
+<h2 id="g-E">E</h2>
+<dl class="glossario">
+<dt><strong>else</strong> e <strong>else if</strong></dt>
+<dd>O caminho alternativo de um <code>if</code> ("senão") e a cadeia de várias alternativas, testadas em ordem até a primeira verdadeira. Veja: <a href="if-else.html">if e else</a> e <a href="else-if.html">else if</a>.</dd>
+<dt><strong>Endereço</strong></dt>
+<dd>O número da "gaveta" de memória onde uma variável mora, obtido com <code>&amp;</code>: <code>&amp;idade</code>. É o que o <code>scanf</code> recebe e o que um ponteiro guarda. Mostra-se com <code>%p</code>. Veja: <a href="memoria.html">Memória e Endereços</a>.</dd>
+<dt><strong>enum</strong> (enumeração)</dt>
+<dd>Um tipo com uma lista de constantes inteiras com nome: <code>enum cor { VERMELHO, VERDE, AZUL };</code> (valem 0, 1 e 2). Veja: <a href="enums.html">Enums</a> e <a href="constantes.html">Constantes</a>.</dd>
+<dt><strong>EOF</strong> (<em>end of file</em>, fim do arquivo)</dt>
+<dd>O valor especial (−1) que <code>getchar</code> e <code>scanf</code> devolvem quando a entrada acaba (Ctrl+D no terminal, fim de um arquivo). Por isso o <code>getchar</code> se guarda num <code>int</code>, e não num <code>char</code>. Veja: <a href="char.html">Caracteres (char)</a> e <a href="scanf.html">Entrada com scanf</a>.</dd>
+<dt><strong>errno</strong> e <strong>perror</strong></dt>
+<dd><code>errno</code> é a variável onde as funções do sistema deixam o número do erro quando falham (<code>ENOENT</code> = arquivo não existe); <code>perror</code> mostra a frase correspondente: <code>No such file or directory</code>. Veja: <a href="errno.html">errno e perror</a>.</dd>
+<dt><strong>Escape</strong> (sequência de escape)</dt>
+<dd>Uma barra invertida seguida de uma letra, para escrever caracteres especiais num texto: <code>\n</code> (nova linha), <code>\t</code> (tabulação), <code>\"</code> (aspas), <code>\\</code> (a própria barra), <code>\0</code> (o nulo). Veja: <a href="escapes.html">Novas Linhas e Escapes</a>.</dd>
+<dt><strong>Escopo</strong></dt>
+<dd>A parte do código onde um nome existe. Uma variável local só existe dentro da sua função (ou do seu bloco); uma global existe no arquivo inteiro. Veja: <a href="escopo.html">Escopo e Variáveis static</a>.</dd>
+<dt><strong>Estouro de inteiro</strong> (<em>overflow</em>)</dt>
+<dd>Quando uma conta passa do limite do tipo. Num <code>unsigned</code>, ela "dá a volta" (definido); num <code>int</code> com sinal, é comportamento indefinido: <code>2147483647 + 1</code> costuma dar <code>-2147483648</code>. Veja: <a href="inteiros.html">Inteiros</a>.</dd>
+<dt><strong>Estouro de pilha</strong> (<em>stack overflow</em>)</dt>
+<dd>Quando a pilha (8 MB no Linux) acaba, em geral por uma recursão que não para ou por um array local enorme. O programa morre com falha de segmentação. Veja: <a href="pilha-heap.html">Pilha e Heap</a> e <a href="recursao.html">Recursão</a>.</dd>
+<dt><strong>Executável</strong></dt>
+<dd>O programa pronto para rodar, que o compilador cria a partir do código-fonte (<code>gcc ola.c -o ola</code> cria <code>ola</code>; sem <code>-o</code>, <code>a.out</code>). Só roda no sistema para o qual foi compilado. Veja: <a href="primeiro-programa.html">Olá, Mundo</a>.</dd>
+<dt><strong>exit</strong></dt>
+<dd>Função do <code>stdlib.h</code> que encerra o programa de qualquer lugar, com um código de saída: <code>exit(1);</code>. Diferente do <code>abort</code>, ela esvazia os buffers e roda as funções do <code>atexit</code>. Veja: <a href="exit.html">Encerrar o Programa</a>.</dd>
+<dt><strong>extern</strong></dt>
+<dd>Declara uma variável global que está <strong>definida em outro arquivo</strong>: <code>extern int contador;</code>. Veja: <a href="static-extern.html">static e extern</a>.</dd>
+</dl>
+
+<h2 id="g-F">F</h2>
+<dl class="glossario">
+<dt><strong>Falha de segmentação</strong> (<em>segmentation fault</em>)</dt>
+<dd>O sistema matou o programa porque ele mexeu numa memória que não é dele, como um ponteiro nulo. No terminal aparece <code>Falha de segmentação (imagem do núcleo gravada)</code> e o código de saída é 139. Veja: <a href="ponteiro-nulo.html">Ponteiro Nulo</a> e <a href="depuracao-gdb.html">Depurar com gdb</a>.</dd>
+<dt><strong>fgets</strong></dt>
+<dd>Lê uma linha inteira, com espaços, sem passar do tamanho do array: <code>fgets(nome, sizeof nome, stdin)</code>. O <code>\n</code> do Enter vem junto. É o substituto seguro do <code>gets</code>, que foi removido. Veja: <a href="fgets.html">Ler uma Linha (fgets)</a>.</dd>
+<dt><strong>FILE *</strong>, <strong>fopen</strong> e <strong>fclose</strong></dt>
+<dd>Um arquivo aberto é representado por um <code>FILE *</code>, devolvido pelo <code>fopen("notas.txt", "r")</code> (ou <code>NULL</code>, se falhar) e fechado com <code>fclose</code>. Veja: <a href="arquivos.html">Arquivos (fopen e fclose)</a>.</dd>
+<dt><strong>for</strong></dt>
+<dd>Laço com as três partes numa linha: começo, condição e passo: <code>for (int i = 0; i &lt; 10; i++)</code>. O preferido para repetir um número conhecido de vezes. Veja: <a href="for.html">for</a>.</dd>
+<dt><strong>fread</strong> e <strong>fwrite</strong></dt>
+<dd>Leem e gravam bytes "crus" num arquivo binário, como uma fotocópia da memória: um array de structs inteiro de uma vez. Veja: <a href="arquivos-binarios.html">Arquivos Binários</a>.</dd>
+<dt><strong>free</strong></dt>
+<dd>Devolve ao sistema a memória reservada com <code>malloc</code>, <code>calloc</code> ou <code>realloc</code>. Depois do <code>free</code>, o ponteiro não pode mais ser usado, e liberar duas vezes é erro. Veja: <a href="malloc-free.html">malloc e free</a>.</dd>
+<dt><strong>fseek</strong> e <strong>ftell</strong></dt>
+<dd>Mudam e informam a posição de leitura e escrita dentro de um arquivo aberto, como um marcador de páginas. Veja: <a href="fseek.html">Posição no Arquivo</a>.</dd>
+<dt><strong>Função</strong></dt>
+<dd>Um bloco de código com nome, que recebe parâmetros e pode devolver um valor com <code>return</code>: <code>int dobro(int x) { return 2 * x; }</code>. Todo programa C começa pela função <code>main</code>. Veja: <a href="funcoes.html">Funções</a>.</dd>
+<dt><strong>Função pura</strong></dt>
+<dd>Função que recebe tudo pelos parâmetros, devolve o resultado com <code>return</code> e não faz mais nada (não lê o teclado, não imprime, não muda globais). É a mais fácil de testar. Veja: <a href="testes.html">Testes (assert)</a>.</dd>
+<dt><strong>Função variádica</strong></dt>
+<dd>Função que aceita um número variável de argumentos, como o <code>printf</code>. Declara-se com <code>...</code> e lê-se com <code>va_list</code>, <code>va_start</code> e <code>va_arg</code>, do <code>stdarg.h</code>. Veja: <a href="variadicas.html">Funções Variádicas</a>.</dd>
+</dl>
+
+<h2 id="g-G">G</h2>
+<dl class="glossario">
+<dt><strong>gcc</strong></dt>
+<dd>O compilador C do projeto GNU, o mais usado no Linux. O comando padrão do guia é <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Veja: <a href="compilar.html">Compilar com gcc</a> e <a href="instalar-linux.html">Instalar no Linux</a>.</dd>
+<dt><strong>gdb</strong></dt>
+<dd>O depurador do projeto GNU: <code>break</code> (parar numa linha), <code>next</code>, <code>step</code>, <code>print</code> e <code>backtrace</code> (onde o programa caiu). Veja: <a href="depuracao-gdb.html">Depurar com gdb</a>.</dd>
+<dt><strong>_Generic</strong> <span class="versao">C11</span></dt>
+<dd>Escolhe uma expressão conforme o <strong>tipo</strong> de outra, na compilação. Serve para fazer macros que funcionam com vários tipos. Veja: <a href="generic.html">_Generic</a>.</dd>
+<dt><strong>getchar</strong> e <strong>putchar</strong></dt>
+<dd>Leem e escrevem <strong>um</strong> caractere: <code>int c = getchar();</code> e <code>putchar(c);</code>. Veja: <a href="char.html">Caracteres (char)</a> e <a href="printf.html">Saída com printf</a>.</dd>
+<dt><strong>Global</strong> (variável global)</dt>
+<dd>Variável declarada fora de qualquer função, visível no arquivo inteiro e viva durante todo o programa. Começa com zero. Use pouco: qualquer função pode mudá-la. Veja: <a href="escopo.html">Escopo e Variáveis static</a>.</dd>
+<dt><strong>goto</strong></dt>
+<dd>Pula para um rótulo dentro da mesma função. Raro em código moderno; o uso aceito é sair de vários laços ou ir a um trecho de limpeza no fim da função. Veja: <a href="goto.html">goto</a>.</dd>
+</dl>
+
+<h2 id="g-H">H</h2>
+<dl class="glossario">
+<dt><strong>Heap</strong> (monte)</dt>
+<dd>A região da memória de onde vêm os blocos do <code>malloc</code>. É grande, e a memória fica lá até você chamar <code>free</code>, mesmo depois que a função que a pediu terminou. Veja: <a href="pilha-heap.html">Pilha e Heap</a>.</dd>
+<dt><strong>Hexadecimal</strong></dt>
+<dd>Números na base 16, com os algarismos 0 a 9 e as letras a a f: <code>0xff</code> = 255. É como endereços e bits costumam ser mostrados (<code>%x</code>, <code>%p</code>). Veja: <a href="inteiros.html">Inteiros</a> e <a href="operadores-bits.html">Operadores de Bits</a>.</dd>
+</dl>
+
+<h2 id="g-I">I</h2>
+<dl class="glossario">
+<dt><strong>Identificador</strong></dt>
+<dd>O nome que você dá a uma variável, função ou tipo. Começa com letra ou <code>_</code>, não pode ser palavra-chave, e maiúsculas e minúsculas são diferentes (<code>Nota</code> ≠ <code>nota</code>). Veja: <a href="identificadores.html">Nomes de Variáveis</a>.</dd>
+<dt><strong>if</strong></dt>
+<dd>Executa um bloco só se a condição for verdadeira (diferente de zero): <code>if (nota &gt;= 6) { … }</code>. Veja: <a href="if-else.html">if e else</a>.</dd>
+<dt><strong>#include</strong></dt>
+<dd>Ordem do pré-processador que cola outro arquivo naquele ponto: <code>#include &lt;stdio.h&gt;</code> traz as declarações do <code>printf</code>. Veja: <a href="preprocessador.html">Pré-processador</a>.</dd>
+<dt><strong>Include guard</strong></dt>
+<dd>As linhas <code>#ifndef DATAS_H</code> / <code>#define DATAS_H</code> / <code>#endif</code> em volta de um <code>.h</code>, para ele não ser incluído duas vezes no mesmo arquivo. Veja: <a href="compilacao-condicional.html">Compilação Condicional</a> e <a href="headers.html">Arquivos .h e .c</a>.</dd>
+<dt><strong>Índice</strong></dt>
+<dd>A posição de um elemento num array, começando em 0: num <code>int v[5]</code>, os índices vão de 0 a 4. Usar <code>v[5]</code> é passar do fim. Veja: <a href="arrays.html">Arrays</a>.</dd>
+<dt><strong>Inicializar</strong></dt>
+<dd>Dar um valor à variável no momento em que ela é criada: <code>int total = 0;</code>. Uma variável local sem valor inicial contém lixo. Veja: <a href="variaveis.html">Variáveis</a>.</dd>
+<dt><strong>inline</strong></dt>
+<dd>Uma dica ao compilador para copiar o corpo de uma função pequena no lugar de cada chamada. Num <code>.h</code>, use <code>static inline</code>. Veja: <a href="inline.html">Funções inline</a>.</dd>
+<dt><strong>int</strong></dt>
+<dd>O tipo inteiro do dia a dia: 4 bytes no gcc do laboratório e no editor, de −2147483648 a 2147483647. Os parentes são <code>short</code>, <code>long</code>, <code>long long</code> e as versões <code>unsigned</code>. Veja: <a href="inteiros.html">Inteiros</a> e <a href="tipos-dados.html">Tipos de Dados</a>.</dd>
+</dl>
+
+<h2 id="g-L">L</h2>
+<dl class="glossario">
+<dt><strong>Laço</strong> (<em>loop</em>, repetição)</dt>
+<dd>Um bloco que se repete enquanto uma condição for verdadeira: <code>while</code>, <code>do while</code> e <code>for</code>. Um laço cuja condição nunca fica falsa é um <strong>laço infinito</strong>. Veja: <a href="while.html">while</a>, <a href="for.html">for</a> e <a href="lacos-aninhados.html">Laços Aninhados</a>.</dd>
+<dt><strong>Ligador</strong> (<em>linker</em>, <code>ld</code>)</dt>
+<dd>A última etapa da compilação: junta os arquivos <code>.o</code> e as bibliotecas num executável. Os erros dele (<code>referência não definida para "soma"</code>, em inglês <code>undefined reference</code>) aparecem quando falta uma função ou há duas iguais. Veja: <a href="como-funciona.html">Como o C Vira Programa</a> e <a href="multiplos-arquivos.html">Vários Arquivos</a>.</dd>
+<dt><strong>Lista ligada</strong></dt>
+<dd>Uma sequência de <strong>nós</strong> criados com <code>malloc</code>, em que cada um guarda um valor e um ponteiro para o próximo; o último aponta para <code>NULL</code>. Cresce e encolhe sem copiar nada. Veja: <a href="listas-ligadas.html">Listas Ligadas</a>.</dd>
+<dt><strong>Literal</strong></dt>
+<dd>Um valor escrito direto no código: <code>42</code>, <code>3.14</code>, <code>'A'</code>, <code>"Ana"</code>, <code>0xff</code>. Um literal de string não pode ser alterado. Veja: <a href="inteiros.html">Inteiros</a> e <a href="strings.html">Strings</a>.</dd>
+<dt><strong>long</strong> e <strong>long long</strong></dt>
+<dd>Inteiros maiores que o <code>int</code>. O <code>long long</code> tem 8 bytes em todo lugar; o <code>long</code> tem 8 no Linux de 64 bits e 4 no Windows e no editor do guia. Para um tamanho garantido, use <code>int64_t</code>. Veja: <a href="inteiros.html">Inteiros</a> e <a href="stdint.html">stdint.h</a>.</dd>
+<dt><strong>lvalue</strong></dt>
+<dd>Algo que pode ficar à esquerda do <code>=</code>, porque tem um lugar na memória: uma variável, <code>v[2]</code>, <code>*p</code>. O resultado de um ternário ou de uma conta não é. O gcc avisa com <code>lvalue required as left operand of assignment</code>. Veja: <a href="ternario.html">Operador Ternário</a>.</dd>
+</dl>
+
+<h2 id="g-M">M</h2>
+<dl class="glossario">
+<dt><strong>Macro</strong></dt>
+<dd>Um nome definido com <code>#define</code> que o pré-processador troca por um texto antes da compilação: <code>#define MAX 100</code>, ou com parâmetros, <code>#define DOBRO(x) ((x) * 2)</code>. Não confere tipos, e o argumento pode ser calculado duas vezes. Veja: <a href="preprocessador.html">Pré-processador</a> e <a href="macros.html">Macros com Parâmetros</a>.</dd>
+<dt><strong>main</strong></dt>
+<dd>A função por onde todo programa C começa: <code>int main(void)</code>, ou <code>int main(int argc, char *argv[])</code> para receber argumentos. O <code>return</code> dela vira o código de saída. Veja: <a href="primeiro-programa.html">Olá, Mundo</a>.</dd>
+<dt><strong>make</strong> e <strong>Makefile</strong></dt>
+<dd>O <code>make</code> lê um arquivo <code>Makefile</code> com as regras de como montar o programa e recompila só o que mudou. Veja: <a href="make.html">Makefile</a>.</dd>
+<dt><strong>malloc</strong> (<em>memory allocation</em>)</dt>
+<dd>Reserva um bloco de memória no heap e devolve o endereço dele, ou <code>NULL</code> se faltar memória: <code>int *v = malloc(n * sizeof *v);</code>. A memória vem com lixo. Todo <code>malloc</code> tem o seu <code>free</code>. Veja: <a href="malloc-free.html">malloc e free</a>.</dd>
+<dt><strong>Máscara de bits</strong> e <strong>flag</strong></dt>
+<dd>Um número com só alguns bits ligados, usado para ligar (<code>x |= m</code>), desligar (<code>x &amp;= ~m</code>), inverter (<code>x ^= m</code>) ou testar (<code>x &amp; m</code>) esses bits. Cada bit pode ser uma opção sim/não, uma <em>flag</em> ("bandeira"). Veja: <a href="mascaras-bits.html">Máscaras e Flags</a>.</dd>
+<dt><strong>memcpy</strong> e <strong>memmove</strong></dt>
+<dd>Copiam N bytes de um lugar da memória para outro. O <code>memcpy</code> exige que as áreas não se sobreponham; o <code>memmove</code> aceita. Na dúvida, <code>memmove</code>. Veja: <a href="volatile-restrict.html">volatile e restrict</a> e <a href="ref-string.html">string.h</a>.</dd>
+<dt><strong>Montador</strong> (<em>assembler</em>)</dt>
+<dd>A etapa que transforma o código de montagem (<code>.s</code>) em código de máquina, num arquivo objeto (<code>.o</code>). Veja: <a href="como-funciona.html">Como o C Vira Programa</a>.</dd>
+</dl>
+
+<h2 id="g-N">N</h2>
+<dl class="glossario">
+<dt><strong>NDEBUG</strong></dt>
+<dd>Se este nome estiver definido (<code>-DNDEBUG</code>), todos os <code>assert</code> somem do programa. Por isso, nada que precise acontecer pode ficar dentro de um <code>assert</code>. Veja: <a href="testes.html">Testes (assert)</a>.</dd>
+<dt><strong>Nó</strong></dt>
+<dd>Cada "pedaço" de uma lista ligada ou de uma árvore: uma struct com o valor e um ou mais ponteiros para outros nós. Veja: <a href="listas-ligadas.html">Listas Ligadas</a> e <a href="arvores-binarias.html">Árvores Binárias</a>.</dd>
+<dt><strong>NULL</strong> e <strong>nullptr</strong></dt>
+<dd>O ponteiro nulo, que não aponta para lugar nenhum. <code>NULL</code> é a forma antiga (uma macro); <code>nullptr</code> é a palavra-chave do C23. Funções como <code>malloc</code> e <code>fopen</code> devolvem nulo quando falham. Veja: <a href="ponteiro-nulo.html">Ponteiro Nulo</a>.</dd>
+</dl>
+
+<h2 id="g-O">O</h2>
+<dl class="glossario">
+<dt><strong>Operador</strong></dt>
+<dd>Um símbolo que faz uma operação: aritméticos (<code>+ - * / %</code>), de comparação (<code>== != &lt; &gt;</code>), lógicos (<code>&amp;&amp; || !</code>), de bits (<code>&amp; | ^ ~ &lt;&lt; &gt;&gt;</code>) e de atribuição (<code>= +=</code>). Veja: <a href="operadores-aritmeticos.html">Operadores Aritméticos</a> e <a href="ref-operadores.html">Referência de Operadores</a>.</dd>
+<dt><strong>Operador ternário</strong> (<code>? :</code>)</dt>
+<dd>Escolhe um entre dois valores numa expressão: <code>maior = a &gt; b ? a : b;</code>. É o único operador do C com três partes. Veja: <a href="ternario.html">Operador Ternário</a>.</dd>
+<dt><strong>Otimização</strong> (<code>-O2</code>)</dt>
+<dd>Com <code>-O2</code>, o compilador reescreve o programa por dentro para ele ficar mais rápido: guarda valores em registradores, apaga contas sem efeito. Um programa com comportamento indefinido pode mudar de resultado com <code>-O2</code>. Veja: <a href="compilar.html">Compilar com gcc</a> e <a href="volatile-restrict.html">volatile e restrict</a>.</dd>
+</dl>
+
+<h2 id="g-P">P</h2>
+<dl class="glossario">
+<dt><strong>Padrão ISO</strong></dt>
+<dd>O documento oficial que define a linguagem C, mantido por um comitê internacional. Cada edição é uma versão (C99, C11, C17, C23); os compiladores seguem o padrão e acrescentam extensões. Veja: <a href="versoes.html">Versões do C</a>.</dd>
+<dt><strong>Palavra-chave</strong></dt>
+<dd>Uma palavra reservada da linguagem, que não pode ser nome de variável: <code>int</code>, <code>if</code>, <code>while</code>, <code>return</code>, <code>struct</code>… Veja: <a href="identificadores.html">Nomes de Variáveis</a>.</dd>
+<dt><strong>Parâmetro</strong></dt>
+<dd>A variável, na definição da função, que recebe o valor do argumento: em <code>int dobro(int x)</code>, <code>x</code> é o parâmetro. Veja: <a href="parametros.html">Parâmetros</a>.</dd>
+<dt><strong>Passagem por valor</strong> e <strong>por ponteiro</strong></dt>
+<dd>Em C, a função sempre recebe uma <strong>cópia</strong> dos argumentos (por valor) e não consegue mudar as variáveis de quem chamou. Para mudar, passa-se o endereço (<code>&amp;x</code>) e a função usa um ponteiro. Veja: <a href="parametros.html">Parâmetros</a> e <a href="passagem-ponteiro.html">Passar por Ponteiro</a>.</dd>
+<dt><strong>Pilha</strong> (memória, <em>stack</em>)</dt>
+<dd>A região da memória onde ficam as variáveis locais. Cada chamada de função ganha uma "bandeja" que some quando a função termina. É rápida, mas pequena (8 MB no Linux). Veja: <a href="pilha-heap.html">Pilha e Heap</a>.</dd>
+<dt><strong>Pilha</strong> e <strong>fila</strong> (estruturas de dados)</dt>
+<dd>Na pilha, o último que entra é o primeiro que sai (<code>push</code> e <code>pop</code>, como pratos empilhados); na fila, o primeiro que entra é o primeiro que sai (como a fila do banco). Veja: <a href="pilhas-filas.html">Pilhas e Filas</a>.</dd>
+<dt><strong>Ponteiro</strong></dt>
+<dd>Uma variável que guarda um <strong>endereço</strong>: <code>int *p = &amp;x;</code>. Com <code>*p</code> você lê e muda o <code>x</code> à distância. Veja: <a href="ponteiros.html">Ponteiros</a>, <a href="ponteiros-arrays.html">Ponteiros e Arrays</a> e <a href="ponteiro-ponteiro.html">Ponteiro para Ponteiro</a>.</dd>
+<dt><strong>Ponteiro para função</strong></dt>
+<dd>Um ponteiro que guarda o endereço de uma função, para chamá-la depois ou passá-la a outra: <code>int (*op)(int, int) = soma;</code>. Veja: <a href="ponteiros-funcao.html">Ponteiros para Funções</a>.</dd>
+<dt><strong>Ponteiro solto</strong> (<em>dangling pointer</em>)</dt>
+<dd>Um ponteiro que ainda guarda um endereço que não vale mais: memória já liberada com <code>free</code>, ou uma variável local de uma função que terminou. Usá-lo é comportamento indefinido. Veja: <a href="comportamento-indefinido.html">Comportamento Indefinido</a> e <a href="retorno.html">Valor de Retorno</a>.</dd>
+<dt><strong>Pré-processador</strong></dt>
+<dd>A primeira etapa da compilação: executa as linhas que começam com <code>#</code> (<code>#include</code>, <code>#define</code>, <code>#ifdef</code>) e entrega o texto resultante ao compilador. <code>gcc -E</code> mostra o resultado. Veja: <a href="preprocessador.html">Pré-processador</a>.</dd>
+<dt><strong>Precedência</strong></dt>
+<dd>A ordem em que os operadores são aplicados: <code>2 + 3 * 4</code> é <code>2 + (3 * 4)</code>. Na dúvida, use parênteses. Veja: <a href="precedencia.html">Precedência</a>.</dd>
+<dt><strong>printf</strong> (<em>print formatted</em>)</dt>
+<dd>Mostra um texto na tela, com lacunas (<code>%d</code>, <code>%f</code>, <code>%s</code>…) preenchidas pelos valores seguintes: <code>printf("%s tem %d anos\n", nome, idade);</code>. Veja: <a href="printf.html">Saída com printf</a>, <a href="formatos-printf.html">Formatos do printf</a> e <a href="ref-printf.html">Referência do printf</a>.</dd>
+<dt><strong>Protótipo</strong></dt>
+<dd>A declaração de uma função sem o corpo, terminada em <code>;</code>: <code>int dobro(int x);</code>. Permite chamar a função antes da definição, ou em outro arquivo. Os <code>.h</code> são listas de protótipos. Veja: <a href="prototipos.html">Protótipos</a>.</dd>
+</dl>
+
+<h2 id="g-R">R</h2>
+<dl class="glossario">
+<dt><strong>Recursão</strong></dt>
+<dd>Uma função que chama a si mesma, com um problema menor a cada vez, até chegar a um caso simples (o caso base). Sem caso base, estoura a pilha. Veja: <a href="recursao.html">Recursão</a> e <a href="arvores-binarias.html">Árvores Binárias</a>.</dd>
+<dt><strong>Registrador</strong></dt>
+<dd>Uma "gaveta" dentro do próprio processador, muito mais rápida que a memória. Com <code>-O2</code>, o compilador guarda nos registradores os valores mais usados. Veja: <a href="volatile-restrict.html">volatile e restrict</a>.</dd>
+<dt><strong>restrict</strong> <span class="versao">C99</span></dt>
+<dd>Promessa, num parâmetro ponteiro, de que aquela memória não é acessada por nenhum outro ponteiro durante a função: <code>int *restrict a</code>. Permite otimizar; quebrar a promessa é comportamento indefinido. Veja: <a href="volatile-restrict.html">volatile e restrict</a>.</dd>
+<dt><strong>return</strong></dt>
+<dd>Encerra a função e devolve um valor a quem chamou: <code>return a + b;</code>. No <code>main</code>, o valor vira o código de saída. Veja: <a href="retorno.html">Valor de Retorno</a>.</dd>
+</dl>
+
+<h2 id="g-S">S</h2>
+<dl class="glossario">
+<dt><strong>Sanitizer</strong></dt>
+<dd>Um "fiscal" que o compilador põe dentro do programa e que para tudo, com um relatório, no primeiro erro de memória (<code>-fsanitize=address</code>) ou de comportamento indefinido (<code>-fsanitize=undefined</code>). Veja: <a href="sanitizers.html">Sanitizers</a>.</dd>
+<dt><strong>scanf</strong> (<em>scan formatted</em>)</dt>
+<dd>Lê valores do teclado conforme um formato e os guarda nos <strong>endereços</strong> recebidos: <code>scanf("%d", &amp;idade)</code>. Devolve quantos campos leu: confira sempre. Veja: <a href="scanf.html">Entrada com scanf</a> e <a href="validar-entrada.html">Validar a Entrada</a>.</dd>
+<dt><strong>setjmp</strong> e <strong>longjmp</strong></dt>
+<dd><code>setjmp</code> marca um ponto do programa; <code>longjmp</code> volta para ele de dentro de outras funções, como um ponto de salvamento de jogo. Veja: <a href="setjmp.html">setjmp e longjmp</a>.</dd>
+<dt><strong>Sinal</strong> (<em>signal</em>)</dt>
+<dd>Um aviso que o sistema manda ao programa: o Ctrl+C (<code>SIGINT</code>), um alarme (<code>SIGALRM</code>), o acesso proibido à memória (<code>SIGSEGV</code>). Com <code>signal</code> você escolhe uma função para tratá-lo. Veja: <a href="sinais.html">Sinais</a>.</dd>
+<dt><strong>size_t</strong></dt>
+<dd>O tipo inteiro sem sinal dos tamanhos: é o que <code>sizeof</code> e <code>strlen</code> devolvem. Mostra-se com <code>%zu</code>. Tem 8 bytes no Linux de 64 bits e 4 no editor. Veja: <a href="sizeof.html">Tamanho dos Tipos</a> e <a href="stdint.html">stdint.h</a>.</dd>
+<dt><strong>sizeof</strong></dt>
+<dd>Operador que diz quantos bytes um tipo ou uma variável ocupa: <code>sizeof(int)</code> é 4. Num array, dá o tamanho inteiro; num ponteiro, só o do ponteiro. Veja: <a href="sizeof.html">Tamanho dos Tipos</a>.</dd>
+<dt><strong>snprintf</strong></dt>
+<dd>Como o <code>printf</code>, mas escreve numa string, sem passar do tamanho informado: <code>snprintf(buf, sizeof buf, "%d", n)</code>. É o substituto seguro do <code>sprintf</code>. Veja: <a href="string-numero.html">Texto ↔ Número</a>.</dd>
+<dt><strong>static</strong></dt>
+<dd>Dentro de uma função, cria uma variável que <strong>lembra</strong> o valor entre as chamadas. Fora das funções, esconde uma função ou variável global dos outros arquivos. Veja: <a href="escopo.html">Escopo e Variáveis static</a> e <a href="static-extern.html">static e extern</a>.</dd>
+<dt><strong>static_assert</strong></dt>
+<dd>Confere uma condição na <strong>compilação</strong>: se for falsa, o programa nem é criado. <code>static_assert(sizeof(int) == 4);</code>. Veja: <a href="static-assert.html">static_assert</a>.</dd>
+<dt><strong>stdin</strong>, <strong>stdout</strong> e <strong>stderr</strong></dt>
+<dd>Os três canais que todo programa recebe ao começar: a entrada (o teclado), a saída (a tela) e a saída de erros. <code>fprintf(stderr, …)</code> escreve mensagens de erro. Veja: <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>.</dd>
+<dt><strong>stdint.h</strong></dt>
+<dd>O cabeçalho dos inteiros com tamanho escrito no nome: <code>int32_t</code>, <code>uint8_t</code>, <code>int64_t</code>, iguais em todo computador. Veja: <a href="stdint.html">Inteiros de Tamanho Fixo</a>.</dd>
+<dt><strong>String</strong></dt>
+<dd>Em C, um texto é um array de <code>char</code> terminado em <code>'\0'</code>: <code>char nome[] = "Ana";</code>. Não se compara com <code>==</code> (use <code>strcmp</code>) nem se copia com <code>=</code> (use <code>snprintf</code> ou <code>strcpy</code>). Veja: <a href="strings.html">Strings</a> e <a href="funcoes-string.html">Funções de String</a>.</dd>
+<dt><strong>strlen</strong>, <strong>strcpy</strong>, <strong>strcmp</strong></dt>
+<dd>Funções do <code>string.h</code>: o tamanho de uma string (sem o <code>'\0'</code>), a cópia (cuidado com o espaço do destino) e a comparação (0 = iguais). Veja: <a href="funcoes-string.html">Funções de String</a> e <a href="ref-string.html">string.h</a>.</dd>
+<dt><strong>struct</strong> (estrutura)</dt>
+<dd>Um tipo novo que junta vários campos, como uma ficha de cadastro: <code>struct aluno { char nome[40]; double nota; };</code>. Acessa-se com <code>.</code> (<code>a.nota</code>) ou, por um ponteiro, com <code>-&gt;</code> (<code>p-&gt;nota</code>). Veja: <a href="structs.html">Structs</a> e <a href="structs-ponteiros.html">Structs e Ponteiros</a>.</dd>
+<dt><strong>switch</strong></dt>
+<dd>Escolhe um caminho conforme o valor inteiro de uma expressão, com um <code>case</code> para cada valor e <code>default</code> para os outros. Sem <code>break</code>, a execução continua no próximo <code>case</code>. Veja: <a href="switch.html">switch</a>.</dd>
+</dl>
+
+<h2 id="g-T">T</h2>
+<dl class="glossario">
+<dt><strong>Tabela hash</strong> (tabela de espalhamento)</dt>
+<dd>Estrutura que guarda pares chave–valor e acha uma chave quase na hora, calculando a posição dela com uma função de <em>hash</em>. Veja: <a href="tabela-hash.html">Tabela Hash</a>.</dd>
+<dt><strong>Teste automático</strong></dt>
+<dd>Um programa separado que chama as suas funções com exemplos de resposta conhecida e confere os resultados, sempre que você quiser. Veja: <a href="testes.html">Testes (assert)</a>.</dd>
+<dt><strong>Tipo</strong></dt>
+<dd>O que uma variável guarda e quanto espaço ocupa: <code>int</code>, <code>double</code>, <code>char</code>, <code>bool</code>, ponteiros, structs… Em C, o tipo é decidido na compilação e não muda. Veja: <a href="tipos-dados.html">Tipos de Dados</a> e <a href="ref-tipos.html">Tipos e Limites</a>.</dd>
+<dt><strong>typedef</strong></dt>
+<dd>Dá um apelido a um tipo: <code>typedef struct aluno Aluno;</code> permite escrever só <code>Aluno</code>. Veja: <a href="typedef.html">typedef</a>.</dd>
+<dt><strong>typeof</strong> <span class="versao">C23</span></dt>
+<dd>Dá o tipo de uma expressão, para declarar outra variável igual: <code>typeof(x) copia = x;</code>. Veja: <a href="novidades.html">Novidades do C99 ao C23</a>.</dd>
+</dl>
+
+<h2 id="g-U">U</h2>
+<dl class="glossario">
+<dt><strong>UB</strong></dt>
+<dd>Sigla de <em>undefined behavior</em>: veja <strong>Comportamento indefinido</strong>. Veja: <a href="comportamento-indefinido.html">Comportamento Indefinido</a>.</dd>
+<dt><strong>union</strong> (união)</dt>
+<dd>Parecida com a struct, mas todos os campos dividem a <strong>mesma</strong> memória: só um deles vale de cada vez. Veja: <a href="unions.html">Unions</a>.</dd>
+<dt><strong>unsigned</strong> (sem sinal)</dt>
+<dd>Inteiro que não aceita negativos e, em troca, vai mais longe no positivo: <code>unsigned int</code> vai de 0 a 4294967295. Misturar com e sem sinal numa comparação dá surpresas. Veja: <a href="inteiros.html">Inteiros</a> e <a href="conversao-tipos.html">Conversão de Tipos</a>.</dd>
+<dt><strong>UTF-8</strong></dt>
+<dd>O jeito de guardar texto usado hoje: as letras sem acento ocupam 1 byte (como no ASCII) e as acentuadas, 2 ou mais. Por isso <code>strlen("ação")</code> dá 6. Veja: <a href="acentos-utf8.html">Acentos e UTF-8</a> e <a href="char.html">Caracteres (char)</a>.</dd>
+</dl>
+
+<h2 id="g-V">V</h2>
+<dl class="glossario">
+<dt><strong>Valgrind</strong></dt>
+<dd>Ferramenta que roda o programa "por dentro" de um simulador e aponta vazamentos, leituras fora do lugar (<code>Invalid read</code>) e valores sem inicializar. Use com <code>valgrind --leak-check=full ./programa</code>. Veja: <a href="valgrind.html">Valgrind</a>.</dd>
+<dt><strong>Variável</strong></dt>
+<dd>Um espaço na memória com nome e tipo, que guarda um valor que pode mudar: <code>int idade = 30;</code>. Veja: <a href="variaveis.html">Variáveis</a>.</dd>
+<dt><strong>Vazamento de memória</strong> (<em>memory leak</em>)</dt>
+<dd>Memória reservada com <code>malloc</code> e nunca liberada com <code>free</code>. Num programa que roda por muito tempo, o consumo só cresce. O Valgrind e o <code>-fsanitize=address</code> acham. Veja: <a href="vazamentos.html">Vazamentos de Memória</a> e <a href="valgrind.html">Valgrind</a>.</dd>
+<dt><strong>VLA</strong> (<em>variable length array</em>) <span class="versao">C99</span></dt>
+<dd>Um array local cujo tamanho vem de uma variável: <code>int v[n];</code>. Fica na pilha, então um <code>n</code> grande demais estoura a pilha. Veja: <a href="arrays.html">Arrays</a>.</dd>
+<dt><strong>void</strong></dt>
+<dd>"Nenhum valor": o tipo de retorno de uma função que não devolve nada (<code>void mostrar(void)</code>) e, nos parênteses, "sem parâmetros". Veja: <a href="funcoes.html">Funções</a> e <a href="tipos-dados.html">Tipos de Dados</a>.</dd>
+<dt><strong>void *</strong> (ponteiro genérico)</dt>
+<dd>Um ponteiro que aceita o endereço de qualquer tipo, mas não pode ser desreferenciado sem conversão. É o que o <code>malloc</code> devolve. Veja: <a href="void-ponteiro.html">Ponteiro void*</a>.</dd>
+<dt><strong>volatile</strong></dt>
+<dd>Avisa o compilador que a variável pode mudar "por fora" (hardware, um tratador de sinal): cada leitura e escrita tem de acontecer de verdade. Para sinais, <code>volatile sig_atomic_t</code>. Não serve para threads. Veja: <a href="volatile-restrict.html">volatile e restrict</a>.</dd>
+</dl>
+
+<h2 id="g-W">W</h2>
+<dl class="glossario">
+<dt><strong>-Wall -Wextra</strong></dt>
+<dd>As opções do compilador que ligam os avisos mais úteis. O guia compila sempre com elas. Veja: <a href="compilar.html">Compilar com gcc</a> e <a href="avisos.html">Avisos</a>.</dd>
+<dt><strong>WebAssembly</strong></dt>
+<dd>Um formato de programa que roda dentro do navegador. O editor do guia compila o seu C com o Clang para WebAssembly e o roda na própria página. Veja: <a href="simulador.html">O Editor do Guia</a>.</dd>
+<dt><strong>while</strong></dt>
+<dd>Laço que repete o bloco enquanto a condição for verdadeira, conferindo antes de cada volta: pode rodar zero vezes. Veja: <a href="while.html">while</a>.</dd>
+</dl>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
