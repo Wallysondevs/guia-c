@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Instalar no Windows e macOS — MSYS2, WSL, Visual Studio e Xcode | Guia C</title>
+<meta name="description" content="Como instalar um compilador C no Windows (MSYS2 com o gcc do MinGW-w64, WSL com Ubuntu, Visual Studio com o MSVC) e no macOS (xcode-select --install, o gcc que na verdade é o Clang, e o GCC pelo Homebrew), com os erros mais comuns de cada sistema.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Instalar no Windows e macOS</span></h1>
+
+<p class="intro">O Windows e o macOS não vêm com um compilador de C, mas instalar um é questão de minutos. No <strong>Windows</strong> há três caminhos: o <strong>MSYS2</strong>, que traz o mesmo gcc do guia; o <strong>WSL</strong>, um Linux de verdade dentro do Windows; e o <strong>Visual Studio</strong>, o ambiente da Microsoft. No <strong>macOS</strong>, um único comando instala as ferramentas da Apple, com uma surpresa: o <code>gcc</code> do Mac é, na verdade, o Clang. Nesta aula você vai escolher o seu caminho, instalar e conferir.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Os três caminhos no Windows e qual escolher: MSYS2 (gcc), WSL (Linux) e Visual Studio (MSVC).</li>
+  <li>Como instalar o gcc pelo MSYS2 e usá-lo no PowerShell.</li>
+  <li>Como compilar C no Visual Studio e o que muda no compilador da Microsoft.</li>
+  <li>Como instalar as ferramentas da Apple com <code>xcode-select --install</code>, e por que o <code>gcc</code> do Mac é o Clang.</li>
+  <li>Como instalar o GCC de verdade no Mac pelo Homebrew.</li>
+  <li>Os erros mais comuns de cada sistema, como os acentos que viram <code>OlÃ¡</code>.</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>Telas ilustrativas</strong>
+<p>A máquina do guia é um Linux, então os comandos desta aula não puderam ser rodados nela. As telas de Windows e macOS seguem a documentação oficial de cada ferramenta e estão marcadas como <strong>ilustrativas</strong>: os números de versão e os detalhes podem variar no seu computador. As saídas marcadas com o terminal da Ana (<code>ana@notebook</code>) são reais. Se você usa Linux, a aula certa é <a href="instalar-linux.html">Instalar no Linux</a>.</p>
+</div>
+
+<hr>
+
+<h2>Antes de tudo: o terminal</h2>
+<p>O guia compila os programas pelo <strong>terminal</strong> (a janela de texto onde você digita comandos), porque assim você vê exatamente o que acontece. Cada sistema tem o seu:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sistema</th><th>Terminal</th><th>Como abrir</th></tr>
+<tr><td>Windows</td><td>Terminal do Windows (com PowerShell) ou o terminal do MSYS2</td><td>Menu Iniciar → digite "Terminal" (ou "MSYS2 UCRT64")</td></tr>
+<tr><td>macOS</td><td>Terminal</td><td><kbd>Cmd</kbd>+<kbd>Espaço</kbd> → digite "Terminal"</td></tr>
+</table>
+</div>
+
+<p>Depois, se preferir, você pode compilar com um botão dentro de um editor (aula <a href="editores.html">Editores e IDEs</a>). Mas saber o comando ajuda a entender o que o botão faz, e a resolver os problemas quando o botão falha.</p>
+
+<hr>
+
+<h2>Windows</h2>
+
+<h3>Qual caminho escolher?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caminho</th><th>O que você ganha</th><th>Tamanho</th><th>Bom para</th></tr>
+<tr><td><strong>1. MSYS2</strong> (gcc do MinGW-w64)</td><td>O mesmo gcc do Linux e do guia, com as mesmas opções e mensagens. Gera programas <code>.exe</code> normais do Windows.</td><td>Algumas centenas de MB</td><td>Seguir o guia com o VS Code ou outro editor. É o caminho recomendado.</td></tr>
+<tr><td><strong>2. WSL</strong></td><td>Um Ubuntu de verdade dentro do Windows: tudo o que o guia mostra funciona igualzinho, inclusive <code>make</code>, <code>gdb</code>, <code>valgrind</code>, <code>fork</code> e threads.</td><td>Alguns GB</td><td>Quem quer o ambiente exatamente igual ao do guia, principalmente no Nível 3.</td></tr>
+<tr><td><strong>3. Visual Studio Community</strong></td><td>O compilador da Microsoft (MSVC) e um ambiente completo, com depurador visual.</td><td>Vários GB</td><td>Quem já usa o Visual Studio ou vai programar para Windows. Para aprender C, é o menos indicado dos três (veja por quê lá embaixo).</td></tr>
+</table>
+</div>
+
+<p>Não precisa escolher um só: muita gente tem o MSYS2 e o WSL no mesmo computador.</p>
+
+<h3>Caminho 1: MSYS2, passo a passo</h3>
+<p>O <strong>MSYS2</strong> é um pequeno "mundo Linux" para Windows: um terminal e um gerenciador de pacotes, o <code>pacman</code> (o mesmo do Arch Linux), de onde você instala o <strong>MinGW-w64</strong>, o GCC adaptado para gerar programas do Windows.</p>
+
+<ol class="passo">
+  <li>Entre em <a href="https://www.msys2.org/">msys2.org</a> e baixe o instalador (um arquivo como <code>msys2-x86_64-20260927.exe</code>; a data no nome muda). É preciso Windows 10 ou 11, de 64 bits.</li>
+  <li>Rode o instalador e aceite a pasta sugerida, <code>C:\msys64</code>. Clique em Avançar até o fim e depois em Concluir.</li>
+  <li>Abre-se um terminal chamado <strong>MSYS2 UCRT64</strong> (se não abrir, procure por ele no menu Iniciar). UCRT64 é o "ambiente" recomendado: programas de 64 bits, usando a biblioteca do C moderna do Windows (a <em>Universal C Runtime</em>).</li>
+  <li>Nesse terminal, instale o kit completo (gcc, gdb, make e companhia):
+<pre class="file" data-file="terminal MSYS2 UCRT64">pacman -S mingw-w64-ucrt-x86_64-toolchain</pre></li>
+  <li>O <code>pacman</code> pergunta quais itens do kit você quer (tecle Enter para "todos") e depois mostra a lista de pacotes e pergunta <code>:: Proceed with installation? [Y/n]</code> ("continuar com a instalação?"). Tecle Enter de novo.</li>
+  <li>Confira:
+<pre class="file" data-file="terminal MSYS2 UCRT64 (ilustrativo)">$ gcc --version
+gcc.exe (Rev6, Built by MSYS2 project) 16.2.0
+Copyright (C) 2026 Free Software Foundation, Inc.
+...</pre></li>
+</ol>
+
+<dl class="anatomy">
+  <dt>pacman</dt><dd>O gerenciador de pacotes do MSYS2.</dd>
+  <dt>-S</dt><dd><em>Sync</em>: baixar e instalar.</dd>
+  <dt>mingw-w64-ucrt-x86_64-toolchain</dt><dd>O nome do pacote: o kit de ferramentas (<code>toolchain</code>) do MinGW-w64 (<code>mingw-w64</code>), para o ambiente UCRT64 (<code>ucrt</code>), em processadores de 64 bits (<code>x86_64</code>). Se quiser só o compilador, o pacote é <code>mingw-w64-ucrt-x86_64-gcc</code>.</dd>
+</dl>
+
+<p>Duas diferenças do MSYS2 para o Linux do guia: o <code>make</code> do kit se chama <code>mingw32-make</code> (o nome é antigo, mas ele gera programas de 64 bits normalmente), e as aulas do Nível 3 sobre processos (<code>fork</code>), sinais e Valgrind são coisas do Linux; para elas, use o WSL. Para atualizar tudo: <code>pacman -Syu</code>.</p>
+
+<h3>Usar o gcc fora do terminal do MSYS2</h3>
+<p>O gcc funciona dentro do terminal UCRT64. Para usá-lo também no PowerShell, no Terminal do Windows e no VS Code, acrescente a pasta dele ao <strong>PATH</strong> (a lista de pastas onde o Windows procura programas):</p>
+
+<ol class="passo">
+  <li>Menu Iniciar → digite <strong>variáveis de ambiente</strong> → "Editar as variáveis de ambiente para sua conta".</li>
+  <li>Selecione <strong>Path</strong> → <strong>Editar</strong> → <strong>Novo</strong> → digite <code>C:\msys64\ucrt64\bin</code> → OK em todas as janelas.</li>
+  <li>Feche e abra de novo o terminal (o PATH só é lido quando o terminal abre) e confira com <code>gcc --version</code>.</li>
+</ol>
+
+<h3>Compilar no Windows</h3>
+<p>O comando é o mesmo do guia. A diferença é que o executável ganha a extensão <code>.exe</code> sozinho, e, no PowerShell, você roda o programa com <code>.\</code> em vez de <code>./</code>:</p>
+
+<pre class="file" data-file="PowerShell, na pasta do ola.c (ilustrativo)">PS C:\Users\Ana\c&gt; gcc -std=c23 -Wall -Wextra ola.c -o ola
+PS C:\Users\Ana\c&gt; .\ola.exe
+Olá, mundo!</pre>
+
+<p>Se em vez de <code>Olá</code> aparecer <code>OlÃ¡</code>, não se assuste: é um problema de acentos do console do Windows, e a solução está em <a href="#quando-errado">Quando dá errado</a>.</p>
+
+<h3>Caminho 2: WSL, um Linux dentro do Windows</h3>
+<p>O <strong>WSL</strong> (<em>Windows Subsystem for Linux</em>, "subsistema Windows para Linux") roda um Linux de verdade ao lado do Windows, sem máquina virtual para configurar. Com ele, tudo o que o guia mostra no terminal funciona igual, do primeiro programa ao Valgrind.</p>
+
+<ol class="passo">
+  <li>Abra o Terminal (ou PowerShell) como administrador: clique com o botão direito no menu Iniciar → "Terminal (Administrador)".</li>
+  <li>Digite:
+<pre class="file" data-file="Terminal do Windows, como administrador">wsl --install</pre>
+  Esse comando instala o WSL e o Ubuntu. Reinicie o computador quando ele pedir.</li>
+  <li>Depois de reiniciar, abra o <strong>Ubuntu</strong> no menu Iniciar. Na primeira vez, ele pede um nome de usuário e uma senha para o Linux (não precisam ser os do Windows).</li>
+  <li>Pronto: você está num terminal Ubuntu. Siga a aula <a href="instalar-linux.html">Instalar no Linux</a>: <code>sudo apt update</code> e <code>sudo apt install build-essential gdb</code>.</li>
+</ol>
+
+<p>Os arquivos do Windows aparecem dentro do Linux em <code>/mnt/c/</code> (o disco C:). Mas, para compilar mais rápido, guarde os seus programas na pasta pessoal do Linux (<code>~/c</code>). O VS Code abre essa pasta direto com a extensão WSL (aula <a href="editores.html">Editores e IDEs</a>).</p>
+
+<h3>Caminho 3: Visual Studio Community</h3>
+<p>O <strong>Visual Studio</strong> (não confunda com o VS Code, que é só um editor) é o ambiente completo da Microsoft, e a edição Community é gratuita para estudantes, uso pessoal e equipes pequenas. O compilador dele, o <strong>MSVC</strong>, foi feito pensando principalmente em C++: ele compila C, mas só ganhou suporte ao C11 e ao C17 em 2020, e o C23 ainda está chegando aos poucos. Por isso, para seguir este guia, prefira o MSYS2 ou o WSL. Se mesmo assim quiser usá-lo:</p>
+
+<ol class="passo">
+  <li>Baixe o instalador em <a href="https://visualstudio.microsoft.com/">visualstudio.microsoft.com</a> (Visual Studio Community) e rode-o.</li>
+  <li>Na tela <strong>Cargas de trabalho</strong>, marque <strong>Desenvolvimento para desktop com C++</strong>. É ela que traz o compilador (que serve para C e para C++), as bibliotecas do Windows e o depurador.</li>
+  <li>Clique em <strong>Instalar</strong>. São vários gigabytes: pode demorar.</li>
+  <li>O Visual Studio não tem um modelo de projeto "C". Crie um <strong>Projeto Vazio</strong> (de C++), clique com o botão direito em <strong>Arquivos de Origem</strong> → <strong>Adicionar</strong> → <strong>Novo Item</strong>, e dê ao arquivo um nome terminado em <strong><code>.c</code></strong>, como <code>ola.c</code>. A extensão é o que faz o Visual Studio compilar como C (com <code>.cpp</code>, ele compila como C++).</li>
+  <li>Para escolher a versão do C: <strong>Projeto → Propriedades → C/C++ → Linguagem → Padrão da Linguagem C</strong> → escolha o mais recente.</li>
+  <li>Para compilar e rodar: <kbd>Ctrl</kbd>+<kbd>F5</kbd> (Iniciar Sem Depuração).</li>
+</ol>
+
+<p>O compilador também funciona no terminal: abra o <strong>Developer PowerShell for VS</strong> (instalado junto, no menu Iniciar) e use o comando <code>cl</code>. As opções têm outra forma (ilustrativo):</p>
+
+<pre class="file" data-file="Developer PowerShell for VS (ilustrativo)">cl /std:c17 /W4 ola.c
+.\ola.exe</pre>
+
+<dl class="anatomy">
+  <dt>cl</dt><dd>O compilador da Microsoft (de <em>compile and link</em>, compilar e ligar).</dd>
+  <dt>/std:c17</dt><dd>A versão do C, como o <code>-std=</code> do gcc. As versões novas do Visual Studio também aceitam <code>/std:clatest</code>, a mais nova que ele conhece.</dd>
+  <dt>/W4</dt><dd>Nível 4 de avisos: o equivalente aproximado do <code>-Wall -Wextra</code>.</dd>
+  <dt>ola.c</dt><dd>O arquivo. Com a extensão <code>.c</code>, o <code>cl</code> compila como C. O executável sai com o mesmo nome: <code>ola.exe</code>.</dd>
+</dl>
+
+<p>As mensagens de erro do MSVC são diferentes das do gcc e do Clang (têm códigos como <code>C2143</code>), mas dizem a mesma coisa. E ele tem uma mania que confunde quem está aprendendo: reclama de funções padrão do C, como o <code>scanf</code>, e sugere versões só da Microsoft (veja <a href="#quando-errado">Quando dá errado</a>).</p>
+
+<hr>
+
+<h2>macOS</h2>
+<p>No Mac, o compilador "oficial" é o <strong>Clang da Apple</strong>, que vem nas <strong>Command Line Tools</strong> (as "ferramentas de linha de comando" do Xcode). Você não precisa instalar o Xcode inteiro, que é enorme: as ferramentas bastam.</p>
+
+<h3>1. Command Line Tools: <code>xcode-select --install</code></h3>
+<ol class="passo">
+  <li>Abra o Terminal e digite:
+<pre class="file" data-file="Terminal do macOS">xcode-select --install</pre></li>
+  <li>Uma janela pergunta se você quer instalar as ferramentas de linha de comando. Clique em <strong>Instalar</strong> e aceite a licença. O download leva alguns minutos.</li>
+  <li>Confira:
+<pre class="file" data-file="Terminal do macOS (ilustrativo)">% clang --version
+Apple clang version 17.0.0 (clang-1700.3.19.1)
+Target: arm64-apple-darwin25.0.0
+Thread model: posix
+InstalledDir: /Library/Developer/CommandLineTools/usr/bin</pre></li>
+</ol>
+
+<p>O <code>arm64</code> na linha <code>Target</code> indica um Mac com chip Apple (M1, M2, M3…); num Mac antigo, com Intel, aparece <code>x86_64</code>. O <code>%</code> no começo da linha é o prompt do Terminal do macOS (o shell zsh), no papel do <code>$</code> do Linux. As ferramentas também trazem o <code>make</code> e o depurador <code>lldb</code>.</p>
+
+<h3>No Mac, o <code>gcc</code> é o Clang disfarçado</h3>
+<p>As Command Line Tools também instalam um comando chamado <code>gcc</code>. Mas veja o que ele responde (ilustrativo):</p>
+
+<pre class="file" data-file="Terminal do macOS (ilustrativo)">% gcc --version
+Apple clang version 17.0.0 (clang-1700.3.19.1)
+Target: arm64-apple-darwin25.0.0
+Thread model: posix
+InstalledDir: /Library/Developer/CommandLineTools/usr/bin</pre>
+
+<p>É a mesma resposta do <code>clang</code>: no Mac, <code>gcc</code> é só um <strong>atalho</strong> para o Clang da Apple, mantido para que scripts e Makefiles antigos que chamam <code>gcc</code> continuem funcionando. Para o guia, isso não é problema: as opções principais são as mesmas, e você pode digitar os comandos das aulas como estão. Só não estranhe se as mensagens de erro no seu Mac se parecerem mais com as do editor do guia (que também usa o Clang) do que com as do terminal da Ana. Compile e rode exatamente como no Linux:</p>
+
+<pre class="file" data-file="Terminal do macOS (ilustrativo)">% gcc -std=c23 -Wall -Wextra ola.c -o ola
+% ./ola
+Olá, mundo!</pre>
+
+<p>Se o seu Apple clang for mais antigo e reclamar de <code>-std=c23</code>, use <code>-std=c2x</code>, o nome antigo da mesma versão (aula <a href="versoes.html">Versões do C</a>).</p>
+
+<div class="note">
+<strong>gdb e Valgrind no Mac</strong>
+<p>Nos Macs com chip Apple, o <code>gdb</code> e o Valgrind não funcionam. As aulas que usam essas ferramentas têm equivalentes no Mac: o <strong><code>lldb</code></strong> (o depurador do projeto LLVM, que vem nas Command Line Tools) no lugar do <code>gdb</code>, e os <a href="sanitizers.html">sanitizers</a> (<code>-fsanitize=address</code>), que o Clang da Apple aceita, no lugar do Valgrind.</p>
+</div>
+
+<h3>2. Opcional: o GCC pelo Homebrew</h3>
+<p>Se você quiser o mesmo compilador do guia (o GCC de verdade), instale-o pelo <strong>Homebrew</strong>, o gerenciador de pacotes mais usado no Mac:</p>
+
+<ol class="passo">
+  <li>Instale o Homebrew, se ainda não tiver, com o comando que está na página <a href="https://brew.sh/">brew.sh</a> (copie de lá; ele começa com <code>/bin/bash -c "$(curl -fsSL …)"</code>). No fim, o instalador mostra dois ou três comandos para colar no Terminal: cole-os, eles colocam o <code>brew</code> no PATH.</li>
+  <li>Instale o GCC:
+<pre class="file" data-file="Terminal do macOS">brew install gcc</pre></li>
+  <li>O Homebrew não ocupa o nome <code>gcc</code> (que é o Clang da Apple): o GCC vem com o número da versão no nome (ilustrativo):
+<pre class="file" data-file="Terminal do macOS (ilustrativo)">% gcc-16 --version
+gcc-16 (Homebrew GCC 16.2.0) 16.2.0
+...
+% gcc-16 -std=c23 -Wall -Wextra ola.c -o ola
+% ./ola
+Olá, mundo!</pre></li>
+</ol>
+
+<p>Nos comandos do guia, troque <code>gcc</code> por <code>gcc-16</code> (ou pelo número que o seu Homebrew instalou). Para atualizar: <code>brew upgrade gcc</code>.</p>
+
+<hr>
+
+<h2>Testando: o mesmo programa nos três sistemas</h2>
+<p>Seja qual for o caminho, o teste é o mesmo: o <code>ola.c</code> e o <code>teste23.c</code> da aula <a href="instalar-linux.html">Instalar no Linux</a>. Os comandos lado a lado:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sistema e caminho</th><th>Compilar</th><th>Rodar</th></tr>
+<tr><td>Linux, WSL</td><td><code>gcc -std=c23 -Wall -Wextra ola.c -o ola</code></td><td><code>./ola</code></td></tr>
+<tr><td>Windows, MSYS2 (terminal UCRT64)</td><td><code>gcc -std=c23 -Wall -Wextra ola.c -o ola</code></td><td><code>./ola</code> (ou <code>./ola.exe</code>)</td></tr>
+<tr><td>Windows, MSYS2 (PowerShell)</td><td><code>gcc -std=c23 -Wall -Wextra ola.c -o ola</code></td><td><code>.\ola.exe</code></td></tr>
+<tr><td>Windows, Visual Studio</td><td><kbd>Ctrl</kbd>+<kbd>F5</kbd>, ou <code>cl /std:c17 /W4 ola.c</code></td><td>(abre sozinho) ou <code>.\ola.exe</code></td></tr>
+<tr><td>macOS, Command Line Tools</td><td><code>gcc -std=c23 -Wall -Wextra ola.c -o ola</code> (é o Clang)</td><td><code>./ola</code></td></tr>
+<tr><td>macOS, Homebrew</td><td><code>gcc-16 -std=c23 -Wall -Wextra ola.c -o ola</code></td><td><code>./ola</code></td></tr>
+</table>
+</div>
+
+<p>Um detalhe importante: o executável de um sistema não roda no outro. O <code>ola.exe</code> do Windows não abre no Mac, e o <code>ola</code> do Linux não abre no Windows. O código-fonte é o mesmo; o programa precisa ser compilado em cada sistema (a aula <a href="como-funciona.html">Como o C Vira Programa</a> explica por quê).</p>
+
+<p>Enquanto a instalação não termina, rode o programa abaixo no editor do guia. Ele usa o pré-processador para descobrir para qual sistema foi compilado: cada compilador define um nome diferente (<code>_WIN32</code> no Windows, <code>__APPLE__</code> no Mac, <code>__linux__</code> no Linux), e o <code>#if</code> escolhe a linha certa antes mesmo da compilação (aula <a href="compilacao-condicional.html">Compilação Condicional</a>).</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e veja o que o editor do guia responde. Ele não é Windows, nem Mac, nem Linux: o programa roda dentro do navegador, num formato chamado WebAssembly (WASI). Compile o mesmo arquivo no seu computador depois e compare.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+#if defined(_WIN32)
+    printf("Compilado para: Windows\n");
+#elif defined(__APPLE__)
+    printf("Compilado para: macOS\n");
+#elif defined(__linux__)
+    printf("Compilado para: Linux\n");
+#elif defined(__wasi__)
+    printf("Compilado para: WebAssembly (o editor do guia)\n");
+#else
+    printf("Compilado para: outro sistema\n");
+#endif
+    return 0;
+}
+</pre>
+</div>
+
+<p>No terminal da Ana, com o gcc, o mesmo programa responde:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sistema.c -o sistema
+$ ./sistema
+Compilado para: Linux</pre>
+
+<hr>
+
+<h2 id="quando-errado">Quando dá errado</h2>
+<p>As mensagens abaixo são as que aparecem nos sistemas configurados em português; o texto exato pode variar com a versão (<strong>ilustrativo</strong>).</p>
+
+<div class="cenario">
+<strong>Windows: <code>O termo 'gcc' não é reconhecido como nome de cmdlet, função, arquivo de script ou programa operável</code></strong>
+<p><strong>O que significa:</strong> o PowerShell não achou o <code>gcc</code>. Ou ele não foi instalado, ou a pasta <code>C:\msys64\ucrt64\bin</code> não está no PATH, ou o terminal foi aberto antes de você mudar o PATH.</p>
+<p><strong>Como consertar:</strong> confira se <code>gcc --version</code> funciona no terminal <strong>MSYS2 UCRT64</strong>. Se funciona lá, o problema é o PATH: refaça os passos de "Usar o gcc fora do terminal do MSYS2" e <strong>abra um terminal novo</strong>. Atenção: se você instalou pelo terminal "MSYS2 MSYS" (e não o UCRT64), o pacote foi para outro lugar; use o UCRT64.</p>
+</div>
+
+<div class="cenario">
+<strong>Windows: o programa mostra <code>OlÃ¡, mundo!</code> em vez de <code>Olá, mundo!</code></strong>
+<p><strong>O que significa:</strong> o programa escreveu o <code>á</code> corretamente, no formato <strong>UTF-8</strong> (dois bytes, como você viu no <code>\303\241</code> do assembly da aula <a href="como-funciona.html">Como o C Vira Programa</a>), mas o console do Windows interpretou esses bytes numa codificação antiga, e cada byte virou um caractere estranho. O terminal do MSYS2 não tem esse problema; o PowerShell e o Prompt de Comando, muitas vezes, têm.</p>
+<p><strong>Como consertar:</strong> digite <code>chcp 65001</code> antes de rodar o programa (troca o console para UTF-8), ou rode pelo terminal do MSYS2. A aula <a href="acentos-utf8.html">Acentos e UTF-8</a> explica em detalhes.</p>
+</div>
+
+<div class="cenario">
+<strong>Windows, Visual Studio: <code>'scanf': This function or variable may be unsafe</code></strong>
+<pre class="file" data-file="saída do Visual Studio (ilustrativo)">error C4996: 'scanf': This function or variable may be unsafe. Consider using scanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.</pre>
+<p><strong>O que significa:</strong> o compilador da Microsoft desaconselha várias funções padrão do C (<code>scanf</code>, <code>strcpy</code>, <code>fopen</code>…) e sugere versões "seguras" com <code>_s</code> no fim, que <strong>só existem no Visual Studio</strong>. Nos projetos novos, essa reclamação vira erro. O código do guia está correto: ele usa as funções padrão do jeito seguro (conferindo o retorno do <code>scanf</code>, usando <code>fgets</code> e <code>snprintf</code>).</p>
+<p><strong>Como consertar:</strong> coloque <code>#define _CRT_SECURE_NO_WARNINGS</code> como <strong>primeira linha</strong> do arquivo, antes dos <code>#include</code>. Não troque para <code>scanf_s</code>: o seu programa deixaria de compilar no gcc e no Clang. (Ou, melhor ainda para seguir o guia, use o MSYS2 ou o WSL.)</p>
+</div>
+
+<div class="cenario">
+<strong>Windows: <code>cannot open output file ola.exe: Permission denied</code></strong>
+<p><strong>O que significa:</strong> "não foi possível abrir o arquivo de saída <code>ola.exe</code>: permissão negada". No Windows, um <code>.exe</code> que está rodando fica "trancado": o ligador não consegue escrever a versão nova por cima. Também acontece quando o antivírus está examinando o arquivo recém-criado.</p>
+<p><strong>Como consertar:</strong> feche o programa que ainda está aberto (uma janela de console esquecida, por exemplo) e compile de novo. Se for o antivírus, espere alguns segundos.</p>
+</div>
+
+<div class="cenario">
+<strong>macOS: <code>xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools), missing xcrun</code></strong>
+<p><strong>O que significa:</strong> as ferramentas de linha de comando não estão instaladas, ou foram desativadas por uma atualização grande do macOS (acontece com frequência depois de mudar de versão do sistema).</p>
+<p><strong>Como consertar:</strong> rode <code>xcode-select --install</code> de novo e clique em Instalar.</p>
+</div>
+
+<div class="cenario">
+<strong>macOS: instalei o GCC pelo Homebrew, mas <code>gcc --version</code> ainda diz <code>Apple clang</code></strong>
+<p><strong>O que significa:</strong> é o esperado. O Homebrew instala o GCC com o número da versão no nome, para não esconder o <code>gcc</code> da Apple, de que outros programas dependem.</p>
+<p><strong>Como consertar:</strong> use <code>gcc-16</code> (confira o número com <code>ls $(brew --prefix)/bin/gcc-*</code>).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caminho</th><th>Instalar</th><th>Compilador</th><th>Conferir</th></tr>
+<tr><td>Windows, MSYS2</td><td><a href="https://www.msys2.org/">msys2.org</a> + <code>pacman -S mingw-w64-ucrt-x86_64-toolchain</code></td><td><code>gcc</code> (GCC)</td><td><code>gcc --version</code></td></tr>
+<tr><td>Windows, WSL</td><td><code>wsl --install</code> + <code>sudo apt install build-essential gdb</code></td><td><code>gcc</code> (GCC, no Ubuntu)</td><td><code>gcc --version</code></td></tr>
+<tr><td>Windows, Visual Studio</td><td>Instalador + "Desenvolvimento para desktop com C++"</td><td><code>cl</code> (MSVC)</td><td><code>cl</code> (sem nada) no Developer PowerShell</td></tr>
+<tr><td>macOS, Command Line Tools</td><td><code>xcode-select --install</code></td><td><code>clang</code> (Apple Clang), também chamado de <code>gcc</code></td><td><code>clang --version</code></td></tr>
+<tr><td>macOS, Homebrew</td><td><code>brew install gcc</code></td><td><code>gcc-16</code> (GCC)</td><td><code>gcc-16 --version</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O kit do MSYS2</h3>
+<p>Complete o comando que instala o kit de ferramentas (gcc, gdb, make) no ambiente UCRT64 do MSYS2:</p>
+<div class="ex-code">pacman -S <input data-answer="mingw-w64-ucrt-x86_64-toolchain|mingw-w64-ucrt-x86_64-gcc" aria-label="pacote" size="32"></div>
+</div>
+
+<div class="exercise">
+<h3>2. As ferramentas da Apple</h3>
+<p>Complete o comando que instala as Command Line Tools no macOS:</p>
+<div class="ex-code">xcode-select <input data-answer="--install" aria-label="opção" size="10"></div>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. No Mac, a Ana digitou <code>gcc --version</code> e apareceu <code>Apple clang version …</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q3"> A instalação falhou.</label>
+<label><input type="radio" name="q3"> O Mac não aceita C.</label>
+<label><input type="radio" name="q3"> Ela precisa reinstalar o macOS.</label>
+<label><input type="radio" name="q3"> Nada de errado: no Mac, o <code>gcc</code> é um atalho para o Clang da Apple.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A Ana quer seguir o Nível 3 no Windows, com <code>fork</code>, sinais e Valgrind. Qual caminho é o melhor?</p>
+<label><input type="radio" name="q4"> Visual Studio.</label>
+<label><input type="radio" name="q4"> WSL, porque é um Linux de verdade.</label>
+<label><input type="radio" name="q4"> Qualquer um: o Windows tem <code>fork</code> igual ao Linux.</label>
+<label><input type="radio" name="q4"> Nenhum: essas aulas só funcionam no Mac.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. A Ana compilou o <code>ola.c</code> no Windows e mandou o <code>ola.exe</code> para um amigo com Mac. O que acontece?</p>
+<label><input type="radio" name="q5"> Não roda: ele precisa compilar o <code>ola.c</code> no Mac.</label>
+<label><input type="radio" name="q5"> Roda normalmente.</label>
+<label><input type="radio" name="q5"> Roda, mas sem os acentos.</label>
+<label><input type="radio" name="q5"> Roda, se ele instalar o Visual Studio.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. No Visual Studio, a Ana criou o arquivo <code>ola.cpp</code> e escreveu um programa em C. O que acontece?</p>
+<label><input type="radio" name="q6"> Nada de diferente: a extensão não importa.</label>
+<label><input type="radio" name="q6"> O Visual Studio converte o arquivo para <code>.c</code> sozinho.</label>
+<label><input type="radio" name="q6"> Ele é compilado como C++, que tem regras diferentes; para compilar como C, o arquivo precisa terminar em <code>.c</code>.</label>
+<label><input type="radio" name="q6"> O Visual Studio se recusa a abrir o arquivo.</label>
+</div>
+
+<h3>Missão final: pronto para o Nível 1</h3>
+
+<div class="tryc" data-goal="out:Sistema: Windows,out:Compilador: gcc do MSYS2">
+<p class="try-task"><strong>Missão:</strong> a Ana escolheu o Windows com o MSYS2. Complete o programa trocando os <code>???</code>, para ele mostrar as duas linhas abaixo:</p>
+<pre class="out">Sistema: Windows
+Compilador: gcc do MSYS2</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Sistema: ???\n");
+    printf("Compilador: ???\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Sistema: Windows\n");
+    printf("Compilador: gcc do MSYS2\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Windows, recomendado:</strong> MSYS2 + <code>pacman -S mingw-w64-ucrt-x86_64-toolchain</code>, no terminal UCRT64; para usar no PowerShell e no VS Code, coloque <code>C:\msys64\ucrt64\bin</code> no PATH.</li>
+  <li><strong>Windows, igual ao guia:</strong> <code>wsl --install</code>, e depois a aula do Linux. É o melhor para o Nível 3 (<code>fork</code>, sinais, Valgrind).</li>
+  <li><strong>Windows, Visual Studio:</strong> funciona para C (arquivos <code>.c</code>, <code>cl /std:c17</code>), mas o MSVC é pensado para C++ e reclama de funções padrão como o <code>scanf</code>.</li>
+  <li><strong>macOS:</strong> <code>xcode-select --install</code> traz o <code>clang</code>, o <code>make</code>, o <code>lldb</code> e um <code>gcc</code> que é o Clang disfarçado; <code>brew install gcc</code> traz o GCC de verdade como <code>gcc-16</code>.</li>
+  <li>O comando de compilação é o mesmo em todo lugar; o executável de um sistema não roda no outro.</li>
+  <li>Acentos virando <code>OlÃ¡</code> no Windows: <code>chcp 65001</code>.</li>
+  <li>Próximo passo: escolher onde escrever o código, em <a href="editores.html">Editores e IDEs</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

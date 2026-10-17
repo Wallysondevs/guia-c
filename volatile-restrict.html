@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C volatile e restrict — o que o otimizador pode e não pode fazer | Guia C</title>
+<meta name="description" content="volatile e restrict em C para quem está começando: volatile proíbe o compilador de eliminar leituras (hardware, sinais, setjmp), visto no código de máquina com gcc -O2 -S; restrict promete que dois ponteiros não se sobrepõem; memcpy × memmove e o snprintf que escreve em cima de si mesmo. Saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">volatile e restrict</span></h1>
+
+<p class="intro">Quando você compila com <code>-O2</code>, o compilador reescreve o seu programa por dentro para ele ficar mais rápido: guarda valores em vez de reler, apaga contas que "não servem para nada", junta operações. Quase sempre isso é ótimo. Mas há duas situações em que <strong>você</strong> sabe algo que o compilador não sabe, e precisa contar para ele. <code>volatile</code> ("volátil") diz: "esta variável pode mudar sem o programa mexer nela; leia de verdade toda vez". <code>restrict</code> ("restrito") diz o contrário: "estes ponteiros nunca apontam para o mesmo lugar; pode otimizar à vontade". Esta aula mostra as duas palavras em ação, no código de máquina e nos resultados.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o otimizador faz com leituras repetidas e laços "vazios".</li>
+  <li>Quando usar <code>volatile</code>: hardware, sinais (<code>volatile sig_atomic_t</code>) e <code>setjmp</code>; e quando <strong>não</strong> usar (threads).</li>
+  <li>Como ver a diferença no código de máquina com <code>gcc -O2 -S</code>.</li>
+  <li>O que <code>restrict</code> promete e o que acontece quando a promessa é quebrada.</li>
+  <li>Por que <code>memcpy</code> não aceita áreas que se sobrepõem e <code>memmove</code> aceita.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/volatile-restrict</code>, com o comando padrão do guia (<code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>; veja <a href="compilar.html">Compilar com gcc</a>) e, muitas vezes, com <code>-O2</code>, que liga as otimizações. Esta é uma aula avançada: ajuda ter visto <a href="ponteiros.html">Ponteiros</a> e <a href="comportamento-indefinido.html">Comportamento Indefinido</a>.</p>
+
+<hr>
+
+<h2>A ideia: o caderninho do atendente</h2>
+<p>Na lojinha, a Ana pergunta ao atendente quantos cafés há no estoque. Ele vai ao depósito, conta 12 e anota num caderninho. Cinco minutos depois ela pergunta de novo. Um atendente esperto pensa: "ninguém vendeu nem comprou café desde a última vez", e responde 12 olhando o caderninho, sem ir ao depósito. É exatamente o que o compilador faz com <code>-O2</code>: ele guarda o valor num <strong>registrador</strong> (o "caderninho" do processador, muito mais rápido que a memória) em vez de reler.</p>
+
+<ul>
+  <li>Mas e se o depósito tem uma <strong>porta para a rua</strong>, por onde o fornecedor entrega café sem passar pelo balcão? Aí o caderninho mente. A Ana precisa avisar: "o estoque de café é <strong>volátil</strong>; vá contar toda vez". Isso é <code>volatile</code>.</li>
+  <li>Agora o contrário. A Ana pede: "anote o estoque de café na ficha A e o de açúcar na ficha B". Um atendente cuidadoso, depois de mexer na ficha B, vai reler a ficha A, porque <em>talvez</em> A e B sejam a mesma ficha. Se a Ana garantir "são fichas diferentes, sempre", ele não precisa reler. Isso é <code>restrict</code>.</li>
+</ul>
+
+<hr>
+
+<h2>1. O que o otimizador faz com uma variável</h2>
+<p>Este programa mede quanto tempo um laço vazio leva, contando até 100 milhões, com <code>clock()</code> (veja <a href="tempo.html">Data e Hora</a>):</p>
+
+<pre class="file" data-file="laco.c">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    clock_t inicio = clock();
+    for (int i = 0; i &lt; 100000000; i++) {
+    }
+    double segundos = (double) (clock() - inicio) / CLOCKS_PER_SEC;
+    printf("O laço levou %.2f s\n", segundos);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/volatile-restrict">$ gcc -std=c23 -Wall -Wextra laco.c -o laco
+$ ./laco
+O laço levou 0.25 s
+$ gcc -std=c23 -Wall -Wextra -O2 laco.c -o laco-O2
+$ ./laco-O2
+O laço levou 0.00 s            « o laço sumiu!</pre>
+
+<p>Com <code>-O2</code>, o gcc percebeu que o laço não muda nada que alguém veja depois, e o <strong>apagou</strong>. Isso é permitido: o padrão só exige que o programa se comporte "como se" fizesse tudo o que está escrito, no que dá para observar (a saída, os arquivos, as variáveis <code>volatile</code>). Agora mude uma palavra, <code>for (volatile int i = 0; …)</code>, e compile de novo com <code>-O2</code>:</p>
+
+<pre class="term" data-cwd="~/c/volatile-restrict">$ gcc -std=c23 -Wall -Wextra -O2 laco2.c -o laco2-O2
+$ ./laco2-O2
+O laço levou 0.27 s            « com volatile, o laço voltou</pre>
+
+<p>Toda leitura e toda escrita de uma variável <code>volatile</code> conta como "algo observável". O compilador é obrigado a fazer cada uma, na ordem, sem guardar no caderninho e sem apagar.</p>
+
+<div class="tryc" data-flags="-std=c23 -Wall -Wextra -O2">
+<p class="try-task"><strong>Experimente:</strong> esta caixa compila com <code>-O2</code>. Rode e veja o tempo. Depois troque <code>int i</code> por <code>volatile int i</code> e rode de novo. (O tempo exato depende do seu computador.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+
+int main(void) {
+    clock_t inicio = clock();
+    for (int i = 0; i &lt; 100000000; i++) {
+    }
+    double segundos = (double) (clock() - inicio) / CLOCKS_PER_SEC;
+    printf("O laço levou %.2f s\n", segundos);
+    return 0;
+}
+</pre>
+</div>
+
+<div class="warning">
+<strong><code>volatile</code> não é para deixar o programa mais lento de propósito</strong>
+<p>Ninguém escreve laços vazios num programa de verdade; este é só o jeito mais fácil de ver o efeito. O uso real de <code>volatile</code> é para valores que mudam <strong>por fora</strong>, como nas próximas seções.</p>
+</div>
+
+<hr>
+
+<h2>2. <code>volatile</code> no código de máquina</h2>
+<p>Para ver o que o compilador fez, peça o <strong>código de montagem</strong> com <code>-S</code> (as instruções do processador, uma por linha; veja <a href="como-funciona.html">Como o C Vira Programa</a>). Imagine que <code>sensor</code> é um termômetro ligado ao computador: cada leitura pode dar um valor diferente.</p>
+
+<pre class="file" data-file="leitura.c">int sensor;
+volatile int sensor_v;
+
+int le_duas(void) {
+    return sensor + sensor;
+}
+
+int le_duas_v(void) {
+    return sensor_v + sensor_v;
+}
+</pre>
+
+<p>O <code>gcc -O2 -S leitura.c</code> cria o arquivo <code>leitura.s</code>. O <code>sed -n '/^le_duas:/,/ret/p'</code> mostra só o pedaço de uma função, do nome até o <code>ret</code> (de <em>return</em>, "voltar"):</p>
+
+<pre class="term" data-cwd="~/c/volatile-restrict">$ gcc -std=c23 -O2 -S leitura.c
+$ sed -n '/^le_duas:/,/ret/p' leitura.s
+le_duas:
+.LFB0:
+	.cfi_startproc
+	endbr64
+	movl	sensor(%rip), %eax     « lê sensor UMA vez
+	addl	%eax, %eax             « soma o valor com ele mesmo
+	ret
+$ sed -n '/^le_duas_v:/,/ret/p' leitura.s
+le_duas_v:
+.LFB1:
+	.cfi_startproc
+	endbr64
+	movl	sensor_v(%rip), %eax   « lê sensor_v...
+	movl	sensor_v(%rip), %edx   « ...e lê DE NOVO
+	addl	%edx, %eax
+	ret</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Instrução</th><th>O que faz</th></tr>
+<tr><td><code>movl sensor(%rip), %eax</code></td><td><em>move long</em>: copia o valor de <code>sensor</code> (da memória) para o registrador <code>%eax</code></td></tr>
+<tr><td><code>addl %eax, %eax</code></td><td>Soma <code>%eax</code> com ele mesmo</td></tr>
+<tr><td><code>ret</code></td><td>Volta para quem chamou, com o resultado em <code>%eax</code></td></tr>
+<tr><td><code>.cfi_startproc</code>, <code>endbr64</code>, <code>.LFB0:</code></td><td>Marcações para o depurador e para a segurança; pode ignorar</td></tr>
+</table>
+</div>
+
+<p>Sem <code>volatile</code>, o gcc leu <code>sensor</code> uma vez só e dobrou o valor: para ele, ler duas vezes seguidas dá sempre o mesmo. Com <code>volatile</code>, ele fez as <strong>duas</strong> leituras que você escreveu, porque o termômetro pode ter mudado entre uma e outra.</p>
+
+<h3>O laço de espera</h3>
+<p>Fica mais sério num laço que espera alguém de fora mudar uma variável:</p>
+
+<pre class="file" data-file="espera.c">int pronto;
+volatile int pronto_v;
+
+void espera(void) {
+    while (!pronto) {
+    }
+}
+
+void espera_v(void) {
+    while (!pronto_v) {
+    }
+}
+</pre>
+<pre class="term" data-cwd="~/c/volatile-restrict">$ gcc -std=c23 -O2 -S espera.c
+$ sed -n '/^espera:/,/^\.LFE/p' espera.s
+espera:
+.LFB0:
+	.cfi_startproc
+	endbr64
+	movl	pronto(%rip), %eax     « lê pronto uma vez
+	testl	%eax, %eax
+	je	.L3                    « se for 0, vai para .L3...
+	ret
+.L3:
+	jmp	.L3                    « ...e fica pulando para si mesmo PARA SEMPRE
+	.cfi_endproc
+.LFE0:
+$ sed -n '/^espera_v:/,/ret/p' espera.s
+espera_v:
+.LFB1:
+	.cfi_startproc
+	endbr64
+	.p2align 4
+	.p2align 4
+	.p2align 3
+.L6:
+	movl	pronto_v(%rip), %eax   « lê pronto_v
+	testl	%eax, %eax
+	je	.L6                    « se for 0, volta e LÊ DE NOVO
+	ret</pre>
+
+<p>Sem <code>volatile</code>, o gcc leu <code>pronto</code> uma vez. Se era 0, ele raciocinou: "dentro do laço ninguém muda <code>pronto</code>, então vai ser 0 para sempre", e trocou o laço por <code>jmp .L3</code>, um pulo para o próprio lugar: um laço infinito que nunca mais olha a variável. Com <code>volatile</code>, cada volta relê <code>pronto_v</code> (o <code>je .L6</code> volta para o <code>movl</code>). Se algo de fora mudar a variável, o laço termina.</p>
+
+<hr>
+
+<h2>3. Quando usar <code>volatile</code></h2>
+
+<h3>Hardware</h3>
+<p>Em placas como o Arduino e em programas que conversam com o hardware (o <em>kernel</em> do Linux, por exemplo), alguns endereços de memória não são memória: são <strong>registradores de dispositivos</strong>. Ler o endereço de um botão diz se ele está apertado <em>agora</em>; escrever no endereço de um LED o acende. Cada leitura e cada escrita tem de acontecer de verdade, na ordem. É para isso que o <code>volatile</code> foi criado:</p>
+
+<pre class="file" data-file="botao.c">// exemplo ilustrativo: o endereço depende da placa
+volatile unsigned int *const botao = (volatile unsigned int *) 0x40020010;
+
+while ((*botao &amp; 1) == 0) {
+    // espera o botão ser apertado
+}
+</pre>
+<p>Esse código só faz sentido numa placa com um botão naquele endereço; num computador comum, o programa morreria ao ler um endereço que não é seu. Leia o tipo da direita para a esquerda: <code>botao</code> é um ponteiro <code>const</code> (não muda de endereço) para um <code>unsigned int</code> <code>volatile</code> (o valor lá muda sozinho). Veja <a href="const-ponteiros.html">const e Ponteiros</a>.</p>
+
+<h3>Sinais: <code>volatile sig_atomic_t</code></h3>
+<p>Um <strong>sinal</strong> é um aviso que o sistema manda ao programa: o Ctrl+C, o fim de um alarme (veja <a href="sinais.html">Sinais</a>). Quando chega, o programa para o que está fazendo, roda uma função de tratamento e volta. Para o compilador, essa função "nunca é chamada" pelo laço principal, então o que ela muda é invisível para ele. Este programa pede um alarme de 1 segundo e conta voltas até o alarme mudar <code>parar</code>:</p>
+
+<pre class="file" data-file="alarme.c">#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+
+int parar = 0;
+
+void tratar(int sinal) {
+    (void) sinal;
+    parar = 1;
+}
+
+int main(void) {
+    signal(SIGALRM, tratar);
+    alarm(1);
+    long voltas = 0;
+    while (!parar) {
+        voltas++;
+    }
+    printf("Parou depois de %ld voltas.\n", voltas);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>signal(SIGALRM, tratar)</dt><dd>"Quando chegar o sinal de alarme, chame <code>tratar</code>."</dd>
+  <dt>alarm(1)</dt><dd>Pede ao sistema um alarme daqui a 1 segundo (do <code>unistd.h</code>, que existe no Linux e no macOS, não no C puro).</dd>
+  <dt>(void) sinal;</dt><dd>Diz ao compilador "sei que não uso este parâmetro", para o <code>-Wextra</code> não avisar.</dd>
+  <dt>while (!parar)</dt><dd>Conta voltas até <code>parar</code> virar 1.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/volatile-restrict">$ gcc -std=c23 -Wall -Wextra alarme.c -o alarme
+$ ./alarme
+Parou depois de 370852492 voltas.
+$ gcc -std=c23 -Wall -Wextra -O2 alarme.c -o alarme-O2
+$ timeout 3 ./alarme-O2
+$ echo $?
+124                            « nunca parou: o timeout matou depois de 3 s</pre>
+
+<p>Sem otimização, funcionou: o alarme tocou, <code>tratar</code> mudou <code>parar</code>, o laço viu. Com <code>-O2</code>, foi o caso do <code>espera.c</code>: o laço lê <code>parar</code> uma vez e nunca mais. O alarme tocou e mudou a variável, mas ninguém olhou. O <code>timeout 3</code> matou o programa (código 124). O conserto é declarar a variável com o tipo que o padrão recomenda para sinais:</p>
+
+<pre class="file" data-file="alarme2.c (a única linha que muda)">volatile sig_atomic_t parar = 0;
+</pre>
+<pre class="term" data-cwd="~/c/volatile-restrict">$ gcc -std=c23 -Wall -Wextra -O2 alarme2.c -o alarme2-O2
+$ ./alarme2-O2
+Parou depois de 2141691903 voltas.</pre>
+
+<dl class="anatomy">
+  <dt>volatile</dt><dd>Obriga o laço a reler <code>parar</code> a cada volta.</dd>
+  <dt>sig_atomic_t</dt><dd>Um tipo inteiro (do <code>signal.h</code>) que o processador lê e escreve de uma vez só, sem o sinal poder chegar "no meio" da escrita. <em>Atomic</em> = "indivisível".</dd>
+</dl>
+
+<p>Repare: com <code>-O2</code> e <code>volatile</code>, o programa deu quase 6 vezes mais voltas no mesmo segundo do que sem otimização. O <code>volatile</code> só obriga a reler <code>parar</code>; o resto continua otimizado. O editor do guia não tem sinais vindos de fora, então este exemplo fica só no terminal.</p>
+
+<h3><code>setjmp</code> e <code>longjmp</code></h3>
+<p>Variáveis locais que mudam entre um <code>setjmp</code> e um <code>longjmp</code> também precisam de <code>volatile</code>, por um motivo parecido. A aula <a href="setjmp.html">setjmp e longjmp</a> mostra o caso.</p>
+
+<h3>Quando <strong>não</strong> usar: threads</h3>
+<p>É comum ver <code>volatile</code> em variáveis divididas entre <strong>threads</strong> (partes do programa rodando ao mesmo tempo). Isso <strong>não</strong> basta: <code>volatile</code> não impede que duas threads escrevam ao mesmo tempo, nem garante que uma veja as escritas da outra na ordem certa. Para threads, use <code>_Atomic</code> (de <code>stdatomic.h</code>, <span class="versao">C11</span>) ou um <em>mutex</em> (veja <a href="threads.html">Threads</a>).</p>
+
+<hr>
+
+<h2>4. <code>restrict</code>: a promessa de não sobrepor <span class="versao">C99</span></h2>
+<p><code>restrict</code> só vale para ponteiros. Escrever <code>int *restrict a</code> é uma <strong>promessa sua</strong> ao compilador: "enquanto esta função roda, a memória que eu acesso por <code>a</code> não é acessada por nenhum outro ponteiro". Em troca, ele pode guardar valores no caderninho sem medo. Veja a diferença:</p>
+
+<pre class="file" data-file="promessa.c">#include &lt;stdio.h&gt;
+
+int sem_restrict(int *a, int *b) {
+    *a = 1;
+    *b = 2;
+    return *a;
+}
+
+int com_restrict(int *restrict a, int *restrict b) {
+    *a = 1;
+    *b = 2;
+    return *a;
+}
+
+int main(void) {
+    int x, y;
+    printf("ponteiros diferentes: %d %d\n", sem_restrict(&amp;x, &amp;y), com_restrict(&amp;x, &amp;y));
+    printf("o mesmo ponteiro:     %d %d\n", sem_restrict(&amp;x, &amp;x), com_restrict(&amp;x, &amp;x));
+    return 0;
+}
+</pre>
+
+<p>As duas funções escrevem 1 em <code>*a</code>, 2 em <code>*b</code> e devolvem <code>*a</code>. Se <code>a</code> e <code>b</code> apontam para lugares diferentes, a resposta é 1. Se apontam para o <strong>mesmo</strong> lugar, o 2 escreveu por cima do 1, e a resposta certa é 2. Veja o que sai:</p>
+
+<pre class="term" data-cwd="~/c/volatile-restrict">$ gcc -std=c23 -Wall -Wextra promessa.c -o promessa
+promessa.c: In function ‘main’:
+promessa.c:18:80: warning: passing argument 1 to ‘restrict’-qualified parameter aliases with argument 2 [-Wrestrict]
+   18 |     printf("o mesmo ponteiro:     %d %d\n", sem_restrict(&amp;x, &amp;x), com_restrict(&amp;x, &amp;x));
+      |                                                                                ^~  ~~
+$ ./promessa
+ponteiros diferentes: 1 1
+o mesmo ponteiro:     2 2
+$ gcc -std=c23 -Wall -Wextra -O2 promessa.c -o promessa-O2
+promessa.c: In function ‘main’:
+promessa.c:18:80: warning: passing argument 1 to ‘restrict’-qualified parameter aliases with argument 2 [-Wrestrict]
+   18 |     printf("o mesmo ponteiro:     %d %d\n", sem_restrict(&amp;x, &amp;x), com_restrict(&amp;x, &amp;x));
+      |                                                                                ^~  ~~
+$ ./promessa-O2
+ponteiros diferentes: 1 1
+o mesmo ponteiro:     2 1      « com -O2, a promessa quebrada deu resposta errada</pre>
+
+<p>O <code>-Wall</code> já avisou: <em>passing argument 1 to ‘restrict’-qualified parameter aliases with argument 2</em> = "o argumento 1, passado a um parâmetro <code>restrict</code>, é um <strong>apelido</strong> do argumento 2" (<em>alias</em>, "apelido": dois nomes para a mesma memória). Sem otimização, as duas funções deram 2. Com <code>-O2</code>, a <code>com_restrict</code> deu 1. O código de máquina mostra por quê:</p>
+
+<pre class="term" data-cwd="~/c/volatile-restrict">$ gcc -std=c23 -O2 -S promessa.c
+$ sed -n '/^sem_restrict:/,/ret/p' promessa.s
+sem_restrict:
+.LFB12:
+	.cfi_startproc
+	endbr64
+	movl	$1, (%rdi)             « *a = 1
+	movl	$2, (%rsi)             « *b = 2
+	movl	(%rdi), %eax           « relê *a, porque b pode ter mudado
+	ret
+$ sed -n '/^com_restrict:/,/ret/p' promessa.s
+com_restrict:
+.LFB13:
+	.cfi_startproc
+	endbr64
+	movl	$1, (%rdi)             « *a = 1
+	movl	$1, %eax               « resposta = 1, sem reler: "b não mexe em a"
+	movl	$2, (%rsi)             « *b = 2
+	ret</pre>
+
+<p>Com <code>restrict</code>, o gcc confiou na promessa e respondeu 1 direto, sem reler <code>*a</code>. Uma instrução a menos. Num laço que roda milhões de vezes, coisas assim fazem diferença, e é por isso que funções como <code>memcpy</code> usam <code>restrict</code>. Mas, se a promessa é falsa, a resposta sai errada: comportamento indefinido.</p>
+
+<div class="tryc" data-flags="-std=c23 -Wall -Wextra -O2">
+<p class="try-task"><strong>Experimente:</strong> esta caixa compila com <code>-O2</code>, e o Clang do editor faz a mesma otimização do gcc. Rode e veja o <code>2 1</code>. Depois apague as duas palavras <code>restrict</code> e rode de novo.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int com_restrict(int *restrict a, int *restrict b) {
+    *a = 1;
+    *b = 2;
+    return *a;
+}
+
+int main(void) {
+    int x, y;
+    printf("ponteiros diferentes: %d\n", com_restrict(&amp;x, &amp;y));
+    printf("o mesmo ponteiro:     %d\n", com_restrict(&amp;x, &amp;x));
+    return 0;
+}
+</pre>
+</div>
+
+<p>No editor, sem <code>-O2</code>, a resposta é 2 com ou sem <code>restrict</code>. E o Clang não dá o aviso <code>-Wrestrict</code>: esse aviso é do gcc.</p>
+
+<hr>
+
+<h2>5. <code>memcpy</code> × <code>memmove</code></h2>
+<p>As duas copiam <code>n</code> bytes de um lugar da memória para outro (veja <a href="funcoes-string.html">Funções de String</a>). A diferença está no protótipo:</p>
+
+<pre class="file" data-file="string.h (trecho)">void *memcpy(void *restrict destino, const void *restrict origem, size_t n);
+void *memmove(void *destino, const void *origem, size_t n);
+</pre>
+
+<p>O <code>memcpy</code> tem <code>restrict</code>: <strong>você</strong> promete que o destino e a origem não se sobrepõem, e ele copia do jeito mais rápido que conseguir. O <code>memmove</code> não pede promessa nenhuma: ele confere se as áreas se sobrepõem e, se sim, copia na ordem certa (de trás para a frente, se for preciso). Veja os dois "empurrando" um texto uma posição para a direita, com origem e destino sobrepostos:</p>
+
+<pre class="file" data-file="memcpy.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char a[] = "abcdefgh";
+    char b[] = "abcdefgh";
+    memmove(a + 1, a, 7);
+    memcpy(b + 1, b, 7);
+    printf("memmove: %s\n", a);
+    printf("memcpy:  %s\n", b);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/volatile-restrict">$ gcc -std=c23 -Wall -Wextra memcpy.c -o memcpy
+$ ./memcpy
+memmove: aabcdefg
+memcpy:  aabcdefg              « "certo", por sorte
+$ gcc -std=c23 -Wall -Wextra -O2 memcpy.c -o memcpy-O2
+In file included from /usr/include/string.h:580,
+                 from memcpy.c:2:
+In function ‘memcpy’,
+    inlined from ‘main’ at memcpy.c:8:5:
+/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ accessing 7 bytes at offsets 1 and 0 overlaps 6 bytes at offset 1 [-Wrestrict]
+   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   30 |                                  __glibc_objsize0 (__dest));
+      |                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~
+$ ./memcpy-O2
+memmove: aabcdefg
+memcpy:  aabccdfg              « errado: letras repetidas e uma sumiu</pre>
+
+<p>Com <code>a + 1</code> como destino e <code>a</code> como origem, as áreas se sobrepõem em 6 bytes. O <code>memmove</code> deu <code>aabcdefg</code> nas duas compilações. O <code>memcpy</code> acertou sem otimização e errou com <code>-O2</code> (<code>aabccdfg</code>), depois de o gcc avisar: <em>accessing 7 bytes at offsets 1 and 0 overlaps 6 bytes at offset 1</em> = "acessando 7 bytes nas posições 1 e 0, que se sobrepõem em 6 bytes a partir da posição 1". No editor do guia, o <code>memcpy</code> sobreposto acerta nas duas compilações e não há aviso: é o tipo de erro que passa calado.</p>
+
+<p><strong>Regra:</strong> se as áreas <strong>podem</strong> se sobrepor (mexer dentro do mesmo array), use <code>memmove</code>. Se são certamente separadas (copiar de um array para outro), <code>memcpy</code>. Na dúvida, <code>memmove</code>: a diferença de velocidade é pequena.</p>
+
+<div class="tryc" data-goal="out:5 10 20 30 40 50,src:memmove\s*\(">
+<p class="try-task"><strong>Missão:</strong> a Ana quer pôr um cliente novo (o número 5) no <strong>começo</strong> da fila. Para isso, todos andam uma posição para trás. O laço abaixo faz isso do jeito errado: cada um copia o da frente <em>já copiado</em>. Rode e veja o problema. Troque o laço por um único <code>memmove</code> que empurre os 5 números uma posição, para a saída ser <code>5 10 20 30 40 50</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    int fila[6] = {10, 20, 30, 40, 50, 0};
+    int tamanho = 5;
+    for (int i = 0; i &lt; tamanho; i++) {
+        fila[i + 1] = fila[i];
+    }
+    fila[0] = 5;
+    tamanho++;
+    for (int i = 0; i &lt; tamanho; i++) {
+        printf("%d ", fila[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    int fila[6] = {10, 20, 30, 40, 50, 0};
+    int tamanho = 5;
+    memmove(&amp;fila[1], &amp;fila[0], tamanho * sizeof(int));
+    fila[0] = 5;
+    tamanho++;
+    for (int i = 0; i &lt; tamanho; i++) {
+        printf("%d ", fila[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>O laço errado deu <code>5 10 10 10 10 10</code>: o 10 foi copiado para a posição 1, depois a posição 1 (já 10) para a 2, e assim por diante. É o mesmo problema que um <code>memcpy</code> sobreposto pode ter. O <code>memmove</code> resolve porque, quando o destino está depois da origem, ele copia de trás para a frente. O terceiro argumento é em <strong>bytes</strong>: 5 números × <code>sizeof(int)</code>.</p>
+
+<h3>Outras funções com <code>restrict</code></h3>
+<p>Desde o C99, muitas funções da biblioteca têm <code>restrict</code> nos parâmetros: <code>strcpy</code>, <code>strcat</code>, <code>printf</code>, <code>snprintf</code>, <code>fgets</code>, <code>scanf</code>… Em todas, passar a mesma memória em dois parâmetros <code>restrict</code> é comportamento indefinido. Um erro clássico é tentar acrescentar algo a um texto usando ele mesmo:</p>
+
+<pre class="file" data-file="sprintf.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[32] = "Ana";
+    snprintf(nome, sizeof nome, "%s Souza", nome);
+    printf("%s\n", nome);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/volatile-restrict">$ gcc -std=c23 -Wall -Wextra sprintf.c -o sprintf
+sprintf.c: In function ‘main’:
+sprintf.c:5:36: warning: ‘ Souza’ directive output may be truncated writing 6 bytes into a region of size between 1 and 32 [-Wformat-truncation=]
+    5 |     snprintf(nome, sizeof nome, "%s Souza", nome);
+      |                                    ^~~~~~
+sprintf.c:5:5: note: ‘snprintf’ output between 7 and 38 bytes into a destination of size 32
+    5 |     snprintf(nome, sizeof nome, "%s Souza", nome);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+sprintf.c:5:5: warning: ‘snprintf’ argument 4 overlaps destination object ‘nome’ [-Wrestrict]
+sprintf.c:4:10: note: destination object referenced by ‘restrict’-qualified argument 1 was declared here
+    4 |     char nome[32] = "Ana";
+      |          ^~~~
+$ ./sprintf
+ Souza                         « o "Ana" sumiu</pre>
+
+<p><em>‘snprintf’ argument 4 overlaps destination object ‘nome’</em> = "o argumento 4 do <code>snprintf</code> se sobrepõe ao destino <code>nome</code>". O <code>snprintf</code> começou a escrever em <code>nome</code> e apagou o "Ana" antes de lê-lo. O conserto é escrever num <strong>outro</strong> array. (O primeiro aviso, <code>-Wformat-truncation</code>, diz que o resultado pode não caber em 32 bytes; veja <a href="string-numero.html">Texto ↔ Número</a>.)</p>
+
+<hr>
+
+<h2>Formas diferentes: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Variável mudada por um tratador de sinal</td><td><code>volatile sig_atomic_t</code></td></tr>
+<tr><td>Registrador de hardware (placas, drivers)</td><td>Ponteiro para <code>volatile</code></td></tr>
+<tr><td>Variável local que muda entre <code>setjmp</code> e <code>longjmp</code></td><td><code>volatile</code></td></tr>
+<tr><td>Variável dividida entre threads</td><td><code>_Atomic</code> ou mutex, <strong>não</strong> <code>volatile</code></td></tr>
+<tr><td>Variável comum</td><td>Nada: <code>volatile</code> só deixa o programa mais lento</td></tr>
+<tr><td>Função que recebe dois ponteiros e você <strong>garante</strong> que nunca se sobrepõem (e quer velocidade)</td><td><code>restrict</code> nos parâmetros</td></tr>
+<tr><td>Na dúvida sobre sobreposição</td><td>Sem <code>restrict</code>; para copiar, <code>memmove</code></td></tr>
+</table>
+</div>
+<p>Para quem está começando, a regra é simples: você vai <strong>ler</strong> <code>restrict</code> nos protótipos da biblioteca muito mais do que escrever. Quando ler, entenda como "não passe a mesma memória aqui".</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Um laço de espera (ou um programa com sinal) funciona com <code>-O0</code> e trava com <code>-O2</code></strong>
+<p><strong>O que significa:</strong> a variável que o laço espera é mudada "por fora" (tratador de sinal, hardware), mas não é <code>volatile</code>. O otimizador leu uma vez e transformou o laço em infinito.</p>
+<p><strong>Como consertar:</strong> declare a variável como <code>volatile sig_atomic_t</code> (sinais) ou acesse o hardware por um ponteiro para <code>volatile</code>. Se quem muda é outra thread, use <code>_Atomic</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: passing argument 1 to ‘restrict’-qualified parameter aliases with argument 2 [-Wrestrict]</code></strong>
+<p><strong>O que significa:</strong> você passou o mesmo ponteiro (ou a mesma memória) em dois parâmetros <code>restrict</code>. A promessa foi quebrada: comportamento indefinido, que pode dar resposta errada só com <code>-O2</code>.</p>
+<p><strong>Como consertar:</strong> passe memórias diferentes. Se a função precisa aceitar a mesma memória nos dois, tire o <code>restrict</code> dela.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘__builtin_memcpy’ accessing N bytes at offsets 1 and 0 overlaps …</code></strong>
+<p><strong>O que significa:</strong> um <code>memcpy</code> com origem e destino sobrepostos. Pode funcionar com <code>-O0</code> e errar com <code>-O2</code> (o <code>aabccdfg</code> acima). O aviso só aparece quando o gcc consegue calcular as posições; muitas vezes não aparece.</p>
+<p><strong>Como consertar:</strong> troque por <code>memmove</code>, com os mesmos argumentos.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘snprintf’ argument 4 overlaps destination object</code></strong>
+<p><strong>O que significa:</strong> o texto que você está montando também é usado como argumento. O <code>snprintf</code> apaga o original antes de lê-lo.</p>
+<p><strong>Como consertar:</strong> monte o resultado num array separado (<code>char completo[64];</code>) e, se precisar, copie de volta depois.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: invalid use of ‘restrict’</code></strong>
+<p><strong>O que significa:</strong> o <code>restrict</code> só vale para ponteiros, e depois do <code>*</code>: <code>int *restrict p</code>. Escrever <code>restrict int x</code> ou <code>restrict int *p</code> não faz sentido.</p>
+<p><strong>Como consertar:</strong> ponha o <code>restrict</code> logo depois do <code>*</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que significa</th></tr>
+<tr><td><code>volatile int x;</code></td><td>Toda leitura e escrita de <code>x</code> acontece de verdade, na ordem</td></tr>
+<tr><td><code>volatile sig_atomic_t parar;</code></td><td>O tipo certo para uma variável mudada por um tratador de sinal</td></tr>
+<tr><td><code>volatile int *p;</code></td><td>Ponteiro para um <code>int</code> volátil (o valor apontado muda sozinho)</td></tr>
+<tr><td><code>int *volatile p;</code></td><td>O próprio ponteiro é volátil (raro)</td></tr>
+<tr><td><code>int *restrict p;</code> <span class="versao">C99</span></td><td>Promessa: só <code>p</code> acessa essa memória enquanto <code>p</code> existe</td></tr>
+<tr><td><code>memcpy(dest, orig, n)</code></td><td>Copia <code>n</code> bytes; as áreas <strong>não</strong> podem se sobrepor</td></tr>
+<tr><td><code>memmove(dest, orig, n)</code></td><td>Copia <code>n</code> bytes; as áreas podem se sobrepor</td></tr>
+<tr><td><code>gcc -O2 -S arquivo.c</code></td><td>Gera <code>arquivo.s</code> com o código de montagem otimizado</td></tr>
+<tr><td><code>-Wrestrict</code></td><td>Aviso do gcc (já no <code>-Wall</code>) quando a mesma memória vai para dois parâmetros <code>restrict</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Sinal</h3>
+<p>Complete a declaração da variável que um tratador de sinal muda:</p>
+<div class="ex-code"><input data-answer="volatile" aria-label="qualificador"> sig_atomic_t terminou = 0;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Copiar dentro do mesmo array</h3>
+<p>Qual função copia corretamente quando origem e destino se sobrepõem?</p>
+<div class="ex-code"><input data-answer="memmove" aria-label="função">(&amp;v[1], &amp;v[0], 4 * sizeof(int));</div>
+</div>
+
+<div class="exercise">
+<h3>3. Onde vai o restrict</h3>
+<p>Complete o parâmetro para prometer que <code>destino</code> não se sobrepõe a nenhum outro ponteiro:</p>
+<div class="ex-code">void copia(int *<input data-answer="restrict" aria-label="qualificador"> destino, const int *restrict origem, int n);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Sem <code>volatile</code>, um laço <code>while (!pronto) { }</code> trava com <code>-O2</code> mesmo quando um sinal muda <code>pronto</code>. Por quê?</p>
+<label><input type="radio" name="q4"> O sinal não chega em programas otimizados</label>
+<label><input type="radio" name="q4"> O <code>-O2</code> desliga os sinais</label>
+<label><input type="radio" name="q4"> O compilador leu <code>pronto</code> uma vez e, como nada no laço o muda, transformou o laço em infinito</label>
+<label><input type="radio" name="q4"> <code>pronto</code> precisa ser <code>double</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que acontece se você passar o mesmo ponteiro para dois parâmetros <code>restrict</code>?</p>
+<label><input type="radio" name="q5"> Comportamento indefinido: pode funcionar com <code>-O0</code> e dar resposta errada com <code>-O2</code></label>
+<label><input type="radio" name="q5"> Erro de compilação, sempre</label>
+<label><input type="radio" name="q5"> O compilador tira o <code>restrict</code> sozinho e funciona</label>
+<label><input type="radio" name="q5"> O programa fica mais rápido e continua certo</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Duas threads usam a mesma variável <code>contador</code>. O que usar?</p>
+<label><input type="radio" name="q6"> <code>volatile int contador</code></label>
+<label><input type="radio" name="q6"> <code>_Atomic int contador</code> (ou um mutex)</label>
+<label><input type="radio" name="q6"> <code>int *restrict contador</code></label>
+<label><input type="radio" name="q6"> <code>static int contador</code></label>
+</div>
+
+<h3>Missão final: o nome completo</h3>
+<div class="tryc" data-goal="out:Cliente: Ana Souza">
+<p class="try-task"><strong>Missão:</strong> o programa tenta acrescentar o sobrenome ao <code>nome</code> usando o próprio <code>nome</code> como argumento do <code>snprintf</code>, e o "Ana" some. Crie um segundo array, <code>char completo[64];</code>, monte o nome completo nele e mostre <code>Cliente: Ana Souza</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[64] = "Ana";
+    snprintf(nome, sizeof nome, "%s Souza", nome);
+    printf("Cliente: %s\n", nome);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char nome[64] = "Ana";
+    char completo[64];
+    snprintf(completo, sizeof completo, "%s Souza", nome);
+    printf("Cliente: %s\n", completo);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Com <code>-O2</code>, o compilador guarda valores em registradores, apaga laços sem efeito e evita releituras. Ele só garante o que dá para observar.</li>
+  <li><code>volatile</code> torna cada leitura e escrita observável: o compilador tem de fazer todas, na ordem. Dá para ver no <code>gcc -O2 -S</code>: duas leituras em vez de uma, um laço que relê em vez de um <code>jmp</code> para si mesmo.</li>
+  <li>Use <code>volatile</code> para hardware, para <code>volatile sig_atomic_t</code> em sinais e para locais que mudam entre <code>setjmp</code> e <code>longjmp</code>. Para threads, use <code>_Atomic</code>.</li>
+  <li><code>restrict</code> (<span class="versao">C99</span>) é uma promessa de que um ponteiro é o único caminho até aquela memória. Quebrar a promessa é comportamento indefinido: a <code>com_restrict(&amp;x, &amp;x)</code> deu 1 em vez de 2 com <code>-O2</code>.</li>
+  <li><code>memcpy</code> tem <code>restrict</code> e não aceita áreas sobrepostas; <code>memmove</code> aceita. O mesmo vale para <code>snprintf</code>, <code>strcpy</code> e outras: nunca passe a mesma memória como destino e origem.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

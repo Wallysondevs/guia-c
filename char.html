@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Caracteres (char) — letras, números e a tabela ASCII | Guia C</title>
+<meta name="description" content="O tipo char em C para quem nunca programou: um caractere é um número pequeno, a tabela ASCII, contas como 'A' + 1, %c × %d, aspas simples × duplas, algarismo para número com - '0', por que 'ç' não cabe num char e uma prévia de getchar e putchar, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Caracteres (char)</span></h1>
+
+<p class="intro">Uma opção de menu (<code>'s'</code> ou <code>'n'</code>), a inicial de um nome, uma tecla apertada, um algarismo lido do teclado: tudo isso é um <strong>caractere</strong>. Em C, um caractere mora no tipo <code>char</code>. E aqui vem a grande revelação desta aula: para o computador, um <code>char</code> é só um <strong>número pequeno</strong>. Entender isso explica por que dá para somar letras, transformar <code>'7'</code> em <code>7</code> e por que o <code>ç</code> dá trabalho.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como criar um <code>char</code> e mostrar com <code>%c</code> (a letra) ou <code>%d</code> (o número).</li>
+  <li>A <strong>tabela ASCII</strong>: o número de cada letra, algarismo e símbolo.</li>
+  <li>Contas com caracteres: <code>'A' + 1</code>, <code>'z' - 'a'</code>, maiúscula e minúscula.</li>
+  <li>A diferença entre aspas simples (<code>'A'</code>) e duplas (<code>"A"</code>).</li>
+  <li>Como transformar o algarismo <code>'7'</code> no número <code>7</code>.</li>
+  <li>Por que <code>'ç'</code> não cabe num <code>char</code>.</li>
+  <li>Uma prévia de <code>getchar</code> e <code>putchar</code>, que leem e escrevem um caractere.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o código secreto combinado</h2>
+<p>Quando crianças, muita gente brincou de código secreto: A = 1, B = 2, C = 3… Para mandar "OI", você escrevia "15 9", e o amigo, que conhecia a tabela, traduzia de volta.</p>
+<p>O computador só guarda números. Para guardar letras, os computadores combinaram uma tabela parecida, a <strong>ASCII</strong> (<em>American Standard Code for Information Interchange</em>, "Código Padrão Americano para Troca de Informações", de 1963). Nela, <code>'A'</code> é 65, <code>'B'</code> é 66, <code>'a'</code> é 97, o algarismo <code>'0'</code> é 48 e o espaço é 32. Um <code>char</code> guarda o <strong>número</strong>; quem decide mostrar como letra é o <code>printf</code>, quando você pede <code>%c</code>.</p>
+
+<hr>
+
+<h2>1. Criar um <code>char</code></h2>
+
+<pre class="file" data-file="letra.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'A';
+    printf("Como letra:  %c\n", letra);
+    printf("Como número: %d\n", letra);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra letra.c -o letra
+$ ./letra
+Como letra:  A
+Como número: 65</pre>
+
+<dl class="anatomy">
+  <dt>char</dt><dd>De <em>character</em>, "caractere". Ocupa <strong>1 byte</strong>: guarda números de -128 a 127 no gcc do laboratório e no editor.</dd>
+  <dt>'A'</dt><dd>Um caractere vai entre <strong>aspas simples</strong>, e só cabe <strong>um</strong>. O compilador troca <code>'A'</code> pelo número 65.</dd>
+  <dt>%c</dt><dd>"Mostre este número como caractere": procura o 65 na tabela e desenha um <code>A</code>.</dd>
+  <dt>%d</dt><dd>"Mostre este número como número": <code>65</code>. É a mesma caixa, com o mesmo conteúdo; só muda o jeito de mostrar.</dd>
+</dl>
+
+<div class="tryc" data-goal="out:a = 97">
+<p class="try-task"><strong>Missão:</strong> o programa mostra <code>A = A</code>. Faça ele mostrar a letra <strong>minúscula</strong> <code>a</code> e o seu número na tabela: <code>a = 97</code>. Você precisa mudar o valor de <code>letra</code> e uma das letras do <code>printf</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'A';
+    printf("%c = %c\n", letra, letra);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'a';
+    printf("%c = %d\n", letra, letra);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Aspas simples × aspas duplas</h2>
+<p>Em C, as aspas não são enfeite: cada tipo faz uma coisa diferente.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que é</th><th>Tipo</th><th>Mostra com</th></tr>
+<tr><td><code>'A'</code></td><td>Um caractere: o número 65</td><td><code>int</code> (cabe num <code>char</code>)</td><td><code>%c</code></td></tr>
+<tr><td><code>"A"</code></td><td>Um <strong>texto</strong> de uma letra: o <code>A</code> e um <code>'\0'</code> invisível que marca o fim</td><td>array de <code>char</code></td><td><code>%s</code></td></tr>
+</table>
+</div>
+
+<p>(Sim: em C, o literal <code>'A'</code> é do tipo <code>int</code>, e <code>sizeof('A')</code> dá 4, como você viu em <a href="tipos-dados.html">Tipos de Dados</a>. Na prática, não faz diferença: ele cabe num <code>char</code> sem nenhum aviso.)</p>
+
+<p>Trocar uma pela outra é erro:</p>
+
+<pre class="file" data-file="aspas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char a = 'A';
+    char b = "A";
+    printf("%c %c\n", a, b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aspas.c -o aspas
+aspas.c: In function ‘main’:
+aspas.c:5:14: error: initialization of ‘char’ from ‘char *’ makes integer from pointer without a cast [-Wint-conversion]
+    5 |     char b = "A";
+      |              ^~~</pre>
+
+<p>"Inicialização de <code>char</code> a partir de <code>char *</code>". O <code>"A"</code> é um texto, e o C o entrega como o <strong>endereço</strong> onde as letras estão guardadas (um <code>char *</code>, aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>). Endereço não cabe numa caixa de caractere. No editor, o Clang diz <code>incompatible pointer to integer conversion initializing 'char' with an expression of type 'char[2]'</code>: o <code>char[2]</code> são as duas posições, <code>'A'</code> e <code>'\0'</code>.</p>
+
+<h3>Duas letras em aspas simples</h3>
+<p>E o contrário, duas letras entre aspas simples? O gcc avisa, mas compila:</p>
+
+<pre class="term" data-cwd="~/c">$ cat duas.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char iniciais = 'AN';
+    printf("%c\n", iniciais);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra duas.c -o duas
+duas.c: In function ‘main’:
+duas.c:4:21: warning: multi-character character constant [-Wmultichar]
+    4 |     char iniciais = 'AN';
+      |                     ^~~~
+duas.c:4:21: warning: overflow in conversion from ‘int’ to ‘char’ changes value from ‘16718’ to ‘78’ [-Woverflow]
+$ ./duas
+N                        « o A sumiu</pre>
+
+<p><em>Multi-character character constant</em> = "constante de caractere com vários caracteres". O gcc juntou os dois números num só (65 × 256 + 78 = 16718), que não cabe num <code>char</code>; sobrou o 78, o <code>N</code>. Para guardar "AN", use um texto: <code>char iniciais[] = "AN";</code> (aula <a href="strings.html">Strings</a>).</p>
+
+<hr>
+
+<h2>3. Um pedaço da tabela ASCII</h2>
+<p>Este programa mostra os caracteres visíveis da tabela, do 32 (o espaço) ao 126. (Ele usa um <a href="for.html">for</a> e um <a href="if-else.html">if</a> para montar as colunas; por enquanto, olhe só a saída.)</p>
+
+<pre class="file" data-file="tabela.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int codigo = 32; codigo &lt; 127; codigo++) {
+        printf("%3d %c   ", codigo, codigo);
+        if ((codigo - 31) % 6 == 0) {
+            printf("\n");
+        }
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tabela.c -o tabela
+$ ./tabela
+ 32      33 !    34 "    35 #    36 $    37 %
+ 38 &amp;    39 '    40 (    41 )    42 *    43 +
+ 44 ,    45 -    46 .    47 /    48 0    49 1
+ 50 2    51 3    52 4    53 5    54 6    55 7
+ 56 8    57 9    58 :    59 ;    60 &lt;    61 =
+ 62 &gt;    63 ?    64 @    65 A    66 B    67 C
+ 68 D    69 E    70 F    71 G    72 H    73 I
+ 74 J    75 K    76 L    77 M    78 N    79 O
+ 80 P    81 Q    82 R    83 S    84 T    85 U
+ 86 V    87 W    88 X    89 Y    90 Z    91 [
+ 92 \    93 ]    94 ^    95 _    96 `    97 a
+ 98 b    99 c   100 d   101 e   102 f   103 g
+104 h   105 i   106 j   107 k   108 l   109 m
+110 n   111 o   112 p   113 q   114 r   115 s
+116 t   117 u   118 v   119 w   120 x   121 y
+122 z   123 {   124 |   125 }   126 ~   </pre>
+
+<p>Três coisas para guardar:</p>
+<ul>
+  <li>Os algarismos vêm em ordem e juntos: <code>'0'</code> = 48, <code>'1'</code> = 49 … <code>'9'</code> = 57.</li>
+  <li>As maiúsculas também: <code>'A'</code> = 65 … <code>'Z'</code> = 90.</li>
+  <li>E as minúsculas: <code>'a'</code> = 97 … <code>'z'</code> = 122. Cada minúscula fica exatamente <strong>32</strong> depois da sua maiúscula.</li>
+</ul>
+<p>Ninguém decora a tabela inteira. O importante é saber que ela existe, que é ordenada e que você pode consultá-la (ou rodar este programa) quando precisar.</p>
+
+<h3>Os caracteres invisíveis</h3>
+<p>Os códigos de 0 a 31 (e o 127) não desenham nada: são comandos, como "pule uma linha". Você já conhece alguns, escritos com a barra invertida (aula <a href="escapes.html">Novas Linhas e Escapes</a>):</p>
+
+<pre class="term" data-cwd="~/c">$ ./invisiveis
+'\n' = 10                « nova linha
+'\t' = 9                 « tabulação
+'\0' = 0                 « o caractere nulo, que marca o fim dos textos
+' '  = 32                « o espaço é visível? ele ocupa lugar, mas não tem desenho
+'\'' = '                 « aspas simples dentro de aspas simples: com barra</pre>
+
+<hr>
+
+<h2>4. Contas com <code>char</code></h2>
+<p>Se um <code>char</code> é um número, dá para fazer contas com ele:</p>
+
+<pre class="file" data-file="soma.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'A';
+    char proxima = letra + 1;
+    printf("%c %c\n", letra, proxima);
+    printf("%c\n", 'a' + 2);
+    printf("%c\n", 66);
+    printf("%d\n", 'z' - 'a');
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra soma.c -o soma
+$ ./soma
+A B
+c
+B
+25</pre>
+
+<dl class="anatomy">
+  <dt>letra + 1</dt><dd>65 + 1 = 66, que na tabela é o <code>B</code>. A letra seguinte.</dd>
+  <dt>'a' + 2</dt><dd>97 + 2 = 99, o <code>c</code>.</dd>
+  <dt>printf("%c", 66)</dt><dd>O <code>%c</code> aceita qualquer número da tabela, mesmo sem variável <code>char</code>: 66 é <code>B</code>.</dd>
+  <dt>'z' - 'a'</dt><dd>122 - 97 = 25: a distância entre as letras. O <code>z</code> é a 26ª letra, 25 posições depois do <code>a</code>.</dd>
+</dl>
+
+<h3>Maiúscula e minúscula</h3>
+<p>Como cada minúscula está 32 posições depois da maiúscula, subtrair 32 transforma <code>'g'</code> em <code>'G'</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ cat maiuscula.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char minuscula = 'g';
+    char maiuscula = minuscula - 32;
+    printf("%c -&gt; %c\n", minuscula, maiuscula);
+    printf("%d %d\n", 'a' - 'A', 'g' - 'G');
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra maiuscula.c -o maiuscula
+$ ./maiuscula
+g -&gt; G
+32 32</pre>
+
+<p>Funciona, mas só para letras de <code>a</code> a <code>z</code> (tente com <code>'!'</code> e veja o que sai). Na vida real, use as funções prontas <code>toupper</code> e <code>tolower</code> ("para maiúscula", "para minúscula"), que conferem se o caractere é mesmo uma letra. Elas e as perguntas do tipo "é algarismo?", "é letra?" estão em <a href="ctype.html">Classificar Caracteres (ctype.h)</a>. Escrever <code>'a' - 'A'</code> no lugar do 32 também deixa o código mais claro do que o número solto.</p>
+
+<div class="tryc" data-goal="out:D E F G,src:letra\s*\+\s*3">
+<p class="try-task"><strong>Missão:</strong> complete o <code>printf</code> para mostrar a letra guardada em <code>letra</code> e as três seguintes, separadas por espaço, usando <code>letra + 1</code>, <code>letra + 2</code> e <code>letra + 3</code>. Com <code>'D'</code>, a saída deve ser <code>D E F G</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'D';
+    printf("%c\n", letra);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'D';
+    printf("%c %c %c %c\n", letra, letra + 1, letra + 2, letra + 3);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Troque <code>'D'</code> por <code>'X'</code> e rode de novo: depois do <code>Z</code> vêm <code>[</code> e <code>\</code>, porque a tabela continua. Fazer a conta "dar a volta" para o <code>A</code> é o segredo da <strong>cifra de César</strong>, um código secreto de verdade, que você vai conseguir escrever depois de <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>.</p>
+
+<h3>O algarismo <code>'7'</code> não é o número 7</h3>
+<p>Quando o programa lê o que a pessoa digitou, os algarismos chegam como <strong>caracteres</strong>. E o caractere <code>'7'</code> vale 55 na tabela, não 7:</p>
+
+<pre class="file" data-file="digito.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char c = '7';
+    printf("%c vale %d na tabela\n", c, c);
+    int numero = c - '0';
+    printf("como número: %d\n", numero);
+    printf("dobro: %d\n", numero * 2);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra digito.c -o digito
+$ ./digito
+7 vale 55 na tabela
+como número: 7
+dobro: 14</pre>
+
+<p>O truque é <code>c - '0'</code>: como os algarismos estão em ordem a partir do 48, subtrair <code>'0'</code> (48) dá a posição do algarismo: 55 - 48 = 7. Esse truque é garantido pela norma do C para os algarismos de <code>'0'</code> a <code>'9'</code>, em qualquer computador. Para textos inteiros, como <code>"2024"</code>, existe <code>strtol</code> (aula <a href="string-numero.html">Texto ↔ Número</a>).</p>
+
+<hr>
+
+<h2>5. Por que <code>'ç'</code> não cabe num <code>char</code></h2>
+<p>A tabela ASCII tem só 128 posições, e nenhuma delas é <code>ç</code>, <code>ã</code> ou <code>é</code>. Os arquivos de hoje usam a codificação <strong>UTF-8</strong>, em que cada letra acentuada ocupa <strong>2 bytes</strong> (aula <a href="acentos-utf8.html">Acentos e UTF-8</a>). Dois bytes não cabem numa caixa de um:</p>
+
+<pre class="file" data-file="acento.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char c = 'ç';
+    printf("%c\n", c);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra acento.c -o acento
+acento.c: In function ‘main’:
+acento.c:4:14: warning: multi-character character constant [-Wmultichar]
+    4 |     char c = 'ç';
+      |              ^~~
+acento.c:4:14: warning: overflow in conversion from ‘int’ to ‘char’ changes value from ‘50087’ to ‘-89’ [-Woverflow]
+$ ./acento
+�                        « meio ç: um byte sozinho, que o terminal não sabe desenhar</pre>
+
+<p>O gcc viu dois bytes entre as aspas (é o mesmo aviso de <code>'AN'</code>), guardou só o segundo e o terminal mostrou um losango com interrogação. No editor, o Clang é mais rígido e nem compila: <code>error: character too large for enclosing character literal type</code> ("caractere grande demais para o tipo do literal").</p>
+
+<p>Dentro de <strong>textos</strong> entre aspas duplas, acentos funcionam normalmente: <code>printf("Atenção!\n");</code> mostra <code>Atenção!</code>, porque os bytes do <code>ç</code> passam juntos até o terminal. O problema é só guardar uma letra acentuada <strong>sozinha</strong> num <code>char</code>.</p>
+
+<hr>
+
+<h2>6. Prévia: ler e escrever um caractere</h2>
+<p>A biblioteca tem duas funções pequenas para um caractere de cada vez: <code>getchar</code> ("pegue um caractere", do teclado) e <code>putchar</code> ("ponha um caractere", na tela).</p>
+
+<pre class="file" data-file="eco.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int c = getchar();
+    printf("Você digitou '%c', código %d\n", c, c);
+    putchar(c);
+    putchar('\n');
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra eco.c -o eco
+$ echo Ana | ./eco
+Você digitou 'A', código 65
+A</pre>
+
+<dl class="anatomy">
+  <dt>int c = getchar();</dt><dd>Lê <strong>um</strong> caractere da entrada. Repare que a caixa é <code>int</code>, e não <code>char</code>: quando a entrada acaba, o <code>getchar</code> devolve um valor especial, <code>EOF</code> (<em>end of file</em>, "fim do arquivo", que vale -1), que precisa caber junto com todos os 256 bytes possíveis. As aulas <a href="while.html">while</a> e <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a> usam isso.</dd>
+  <dt>echo Ana | ./eco</dt><dd>O <code>echo Ana |</code> manda o texto "Ana" para o programa como se alguém tivesse digitado. O <code>getchar</code> pegou só o <code>A</code>; o "na" ficou esperando e foi ignorado.</dd>
+  <dt>putchar(c)</dt><dd>Escreve o caractere na tela, sem pular linha. Por isso o segundo <code>putchar('\n')</code>.</dd>
+</dl>
+
+<div class="tryc" data-stdin="s" data-goal="out:Você respondeu: s (código 115)">
+<p class="try-task"><strong>Missão:</strong> o programa pergunta se a Ana quer sacola e lê a resposta com <code>getchar</code> (a caixa já vem com a resposta <code>s</code> digitada). Mas mostra <code>Você respondeu: 115 (código 115)</code>. Troque uma letra do <code>printf</code> para mostrar o <strong>caractere</strong> na primeira posição: <code>Você respondeu: s (código 115)</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Quer sacola? (s/n) ");
+    int resposta = getchar();
+    printf("Você respondeu: %d (código %d)\n", resposta, resposta);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Quer sacola? (s/n) ");
+    int resposta = getchar();
+    printf("Você respondeu: %c (código %d)\n", resposta, resposta);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: initialization of ‘char’ from ‘char *’ makes integer from pointer without a cast</code></strong>
+<p><strong>O que significa:</strong> você usou aspas duplas (<code>"A"</code>) para um <code>char</code>. Aspas duplas fazem um texto.</p>
+<p><strong>Como consertar:</strong> <code>char letra = 'A';</code>, com aspas simples. Se você quer mesmo um texto, use <code>char nome[] = "Ana";</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: multi-character character constant [-Wmultichar]</code></strong>
+<p><strong>O que significa:</strong> há mais de um caractere entre aspas simples: <code>'AN'</code>, ou uma letra acentuada como <code>'ç'</code>, que em UTF-8 são dois bytes. Só um deles fica na caixa. No editor, o caso do <code>'ç'</code> é erro: <code>character too large for enclosing character literal type</code>.</p>
+<p><strong>Como consertar:</strong> um caractere por <code>char</code>; para mais de um, ou para acentos, use um texto entre aspas duplas.</p>
+</div>
+
+<div class="cenario">
+<strong>A saída mostra <code>65</code> em vez de <code>A</code> (ou <code>A</code> em vez de <code>65</code>)</strong>
+<p><strong>O que significa:</strong> a letra do <code>printf</code> decide: <code>%c</code> mostra o caractere, <code>%d</code> mostra o número. O <code>-Wall</code> não avisa, porque as duas formas são válidas.</p>
+<p><strong>Como consertar:</strong> escolha a letra pelo que você quer <strong>ver</strong>.</p>
+</div>
+
+<div class="cenario">
+<strong>A conta com algarismos dá um número enorme (<code>'7' + '5'</code> = 108)</strong>
+<p><strong>O que significa:</strong> você somou os códigos da tabela (55 + 53), e não os algarismos.</p>
+<p><strong>Como consertar:</strong> converta cada um com <code>- '0'</code>: <code>('7' - '0') + ('5' - '0')</code> = 12.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>char c = 'A';</code></td><td>Guarda o caractere <code>A</code> (o número 65)</td></tr>
+<tr><td><code>printf("%c", c)</code></td><td>Mostra como caractere: <code>A</code></td></tr>
+<tr><td><code>printf("%d", c)</code></td><td>Mostra o código: <code>65</code></td></tr>
+<tr><td><code>c + 1</code></td><td>O caractere seguinte na tabela</td></tr>
+<tr><td><code>c - '0'</code></td><td>Algarismo para número: <code>'7' - '0'</code> = 7</td></tr>
+<tr><td><code>c - 'a' + 'A'</code></td><td>Minúscula para maiúscula (só de <code>a</code> a <code>z</code>; prefira <code>toupper</code>)</td></tr>
+<tr><td><code>'\n'</code>, <code>'\t'</code>, <code>'\0'</code>, <code>'\''</code></td><td>Nova linha (10), tabulação (9), nulo (0), aspas simples</td></tr>
+<tr><td><code>int c = getchar();</code></td><td>Lê um caractere (ou <code>EOF</code>, no fim da entrada)</td></tr>
+<tr><td><code>putchar(c);</code></td><td>Escreve um caractere</td></tr>
+<tr><td colspan="2">Códigos: <code>'0'</code> = 48, <code>'A'</code> = 65, <code>'a'</code> = 97, espaço = 32, <code>'\n'</code> = 10</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Código da letra</h3>
+<p>Na tabela ASCII, <code>'A'</code> é 65. Qual é o código de <code>'C'</code>?</p>
+<div class="ex-code"><input data-answer="67" aria-label="código"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Algarismo para número</h3>
+<p>Complete para transformar o caractere <code>c</code> (um algarismo) no número correspondente:</p>
+<div class="ex-code">int numero = c - <input data-answer="'0'|48" aria-label="valor">;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. O que <code>printf("%c", 'a' + 1);</code> mostra?</p>
+<label><input type="radio" name="q3"> <code>a1</code></label>
+<label><input type="radio" name="q3"> <code>b</code></label>
+<label><input type="radio" name="q3"> <code>98</code></label>
+<label><input type="radio" name="q3"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Qual é a diferença entre <code>'A'</code> e <code>"A"</code>?</p>
+<label><input type="radio" name="q4"> Nenhuma</label>
+<label><input type="radio" name="q4"> <code>"A"</code> é maiúsculo e <code>'A'</code> é minúsculo</label>
+<label><input type="radio" name="q4"> <code>'A'</code> é um texto e <code>"A"</code> é um caractere</label>
+<label><input type="radio" name="q4"> <code>'A'</code> é um caractere (o número 65); <code>"A"</code> é um texto, com o <code>'\0'</code> no fim</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que <code>char c = 'ç';</code> dá problema?</p>
+<label><input type="radio" name="q5"> Porque <code>char</code> só guarda maiúsculas</label>
+<label><input type="radio" name="q5"> Porque falta <code>#include &lt;locale.h&gt;</code></label>
+<label><input type="radio" name="q5"> Porque em UTF-8 o <code>ç</code> ocupa 2 bytes, e um <code>char</code> tem 1</label>
+<label><input type="radio" name="q5"> Não dá problema nenhum</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que a variável que recebe <code>getchar()</code> deve ser <code>int</code>?</p>
+<label><input type="radio" name="q6"> Para caber também o <code>EOF</code>, o aviso de "fim da entrada"</label>
+<label><input type="radio" name="q6"> Porque <code>char</code> não guarda letras</label>
+<label><input type="radio" name="q6"> Porque o <code>getchar</code> lê números, não letras</label>
+<label><input type="radio" name="q6"> Por nenhum motivo: tanto faz</label>
+</div>
+
+<h3>Missão final: somar algarismos</h3>
+
+<div class="tryc" data-goal="out:Soma: 12,semaviso,src:'0'">
+<p class="try-task"><strong>Missão:</strong> a Ana digitou os algarismos <code>7</code> e <code>5</code>, que chegaram ao programa como caracteres. O programa soma os dois e mostra <code>Soma: 108</code>, porque somou os códigos da tabela (55 + 53). Use o truque do <code>- '0'</code> em cada um para mostrar <code>Soma: 12</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char a = '7';
+    char b = '5';
+    int soma = a + b;
+    printf("Soma: %d\n", soma);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char a = '7';
+    char b = '5';
+    int soma = (a - '0') + (b - '0');
+    printf("Soma: %d\n", soma);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <code>char</code> tem 1 byte e guarda um <strong>número pequeno</strong>; a tabela ASCII diz qual caractere cada número representa (<code>'A'</code> = 65, <code>'a'</code> = 97, <code>'0'</code> = 48).</li>
+  <li><code>%c</code> mostra o caractere; <code>%d</code> mostra o número. É a mesma caixa.</li>
+  <li>Aspas simples: um caractere (<code>'A'</code>). Aspas duplas: um texto (<code>"A"</code>, com <code>'\0'</code> no fim). Trocar dá erro ou aviso.</li>
+  <li>Dá para fazer contas: <code>'A' + 1</code> é <code>'B'</code>; minúscula = maiúscula + 32; <code>c - '0'</code> transforma um algarismo em número.</li>
+  <li>Letras acentuadas ocupam 2 bytes em UTF-8 e não cabem num <code>char</code>; em textos entre aspas duplas, funcionam.</li>
+  <li><code>getchar</code> lê um caractere (guarde num <code>int</code>, por causa do <code>EOF</code>); <code>putchar</code> escreve um.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

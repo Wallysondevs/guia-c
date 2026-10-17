@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Testes — assert, NDEBUG e uma macro TESTE | Guia C</title>
+<meta name="description" content="Testes em C para quem nunca programou: assert da assert.h e a mensagem real de Assertion failed (código 134), NDEBUG e por que nunca colocar efeitos dentro do assert, escrever testes automáticos com uma macro TESTE que conta acertos, testar funções puras, CTest e os frameworks Unity, CMocka e Criterion, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Testes (assert)</span></h1>
+
+<p class="intro">Como você sabe que o seu programa funciona? Até agora, rodando e olhando a saída. Isso funciona uma vez; mas, a cada mudança no código, você precisaria rodar e conferir tudo de novo, à mão, e um dia vai esquecer de conferir justo a parte que quebrou. Nesta aula você vai aprender duas ferramentas: o <strong><code>assert</code></strong>, que faz o programa conferir sozinho as coisas que "têm de ser verdade", e os <strong>testes automáticos</strong>: um programa que chama as suas funções com valores conhecidos e confere as respostas, sempre que você quiser, em um segundo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que faz o <code>assert</code> (da <code>assert.h</code>) e como ler a mensagem <code>Assertion … failed</code>.</li>
+  <li>O que é <code>NDEBUG</code> e por que nunca colocar algo "que precisa acontecer" dentro do <code>assert</code>.</li>
+  <li>A escrever testes automáticos com uma macro <code>TESTE(condição)</code> que conta acertos e falhas.</li>
+  <li>Por que funções <strong>puras</strong> são fáceis de testar.</li>
+  <li>A rodar os testes com o CTest (do <a href="cmake.html">CMake</a>) e os nomes dos frameworks de teste para C: Unity, CMocka e Criterion.</li>
+</ul>
+</div>
+
+<p>As saídas de terminal desta aula são reais, do <strong>gcc 15</strong> na máquina fictícia da Ana (pasta <code>~/c/testes</code>). O <code>assert</code> também funciona no editor do guia, mas a mensagem tem outras palavras (seção 1).</p>
+
+<hr>
+
+<h2>A ideia: o fiscal de qualidade</h2>
+<p>Numa fábrica de bolos, há duas conferências diferentes:</p>
+<ul>
+  <li>Durante o preparo, o confeiteiro tem regras que <strong>nunca</strong> podem ser quebradas: "o forno tem de estar ligado antes de pôr a massa". Se estiver desligado, algo está muito errado: ele para tudo e chama alguém. Isso é o <code>assert</code>: uma <strong>certeza</strong> escrita no código, conferida enquanto o programa roda.</li>
+  <li>Antes de vender um bolo novo, o fiscal prova amostras com uma lista: "o de chocolate tem gosto de chocolate? o de 1 kg pesa 1 kg?". Isso é o <strong>teste</strong>: um programa separado, com exemplos cuja resposta você já sabe.</li>
+</ul>
+
+<hr>
+
+<h2>1. <code>assert</code>: "isto tem de ser verdade"</h2>
+<p>A lojinha da Ana tem uma função que retira produtos do estoque. Ela só faz sentido com uma quantidade positiva e que exista no estoque:</p>
+
+<pre class="file" data-file="estoque.c">#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+
+int retirar(int estoque, int quantidade) {
+    assert(quantidade &gt; 0);
+    assert(quantidade &lt;= estoque);
+    return estoque - quantidade;
+}
+
+int main(void) {
+    int estoque = 10;
+    estoque = retirar(estoque, 3);
+    printf("Sobrou: %d\n", estoque);
+    estoque = retirar(estoque, 9);
+    printf("Sobrou: %d\n", estoque);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;assert.h&gt;</dt><dd>O <code>assert</code> mora no cabeçalho <code>assert.h</code>. <em>Assert</em> quer dizer "afirmar": você afirma que algo é verdade.</dd>
+  <dt>assert(quantidade &gt; 0);</dt><dd>Se a condição for <strong>verdadeira</strong>, não acontece nada e o programa segue. Se for <strong>falsa</strong>, o programa mostra uma mensagem com a condição, o arquivo e a linha, e é encerrado na hora com <code>abort()</code>.</dd>
+  <dt>assert(quantidade &lt;= estoque);</dt><dd>A segunda certeza: não dá para retirar mais do que existe.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/testes">$ gcc -std=c23 -Wall -Wextra estoque.c -o estoque
+$ ./estoque
+Sobrou: 7
+estoque: estoque.c:6: retirar: Assertion `quantidade &lt;= estoque' failed.
+Abortado                   (imagem do núcleo gravada) ./estoque
+$ echo $?
+134</pre>
+
+<dl class="anatomy">
+  <dt>Sobrou: 7</dt><dd>A primeira retirada (3 de 10) passou nos dois <code>assert</code>.</dd>
+  <dt>estoque: estoque.c:6: retirar:</dt><dd>O nome do programa, o <strong>arquivo e a linha</strong> do <code>assert</code> que falhou e a <strong>função</strong> onde ele está.</dd>
+  <dt>Assertion `quantidade &lt;= estoque' failed.</dt><dd>"A afirmação <code>quantidade &lt;= estoque</code> falhou": a condição, copiada do código, entre uma crase e um apóstrofo. Tentaram retirar 9 de um estoque de 7.</dd>
+  <dt>Abortado (imagem do núcleo gravada)</dt><dd>O <code>assert</code> chamou <code>abort()</code>, que mata o programa (veja <a href="exit.html">Encerrar o Programa</a>). O segundo "Sobrou" nunca apareceu.</dd>
+  <dt>134</dt><dd>O código de saída de um programa abortado (128 + 6, o número do sinal <code>SIGABRT</code>; veja <a href="sinais.html">Sinais</a>).</dd>
+</dl>
+
+<p>No editor do guia, a biblioteca do C é outra (a musl, não a glibc), e a mensagem tem outro formato, com as mesmas informações:</p>
+<pre class="term" data-title="Editor do guia">Sobrou: 7
+Assertion failed: quantidade &lt;= estoque (estoque.c: retirar: 6)
+Abortado (imagem do núcleo gravada)
+[código de saída: 134]</pre>
+
+<div class="tryc" data-goal="out:quantidade &gt; 0,exit:134">
+<p class="try-task"><strong>Missão:</strong> este programa roda sem erro. Acrescente, antes do <code>return 0;</code>, uma chamada a <code>retirar</code> que faça falhar o <strong>primeiro</strong> <code>assert</code> (o <code>quantidade &gt; 0</code>). Leia a mensagem e repare no código de saída 134.</p>
+<pre class="script">#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+
+int retirar(int estoque, int quantidade) {
+    assert(quantidade &gt; 0);
+    assert(quantidade &lt;= estoque);
+    return estoque - quantidade;
+}
+
+int main(void) {
+    int estoque = 10;
+    estoque = retirar(estoque, 3);
+    printf("Sobrou: %d\n", estoque);
+    estoque = retirar(estoque, 5);
+    printf("Sobrou: %d\n", estoque);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+
+int retirar(int estoque, int quantidade) {
+    assert(quantidade &gt; 0);
+    assert(quantidade &lt;= estoque);
+    return estoque - quantidade;
+}
+
+int main(void) {
+    int estoque = 10;
+    estoque = retirar(estoque, 3);
+    printf("Sobrou: %d\n", estoque);
+    estoque = retirar(estoque, 5);
+    printf("Sobrou: %d\n", estoque);
+    estoque = retirar(estoque, 0);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Uma mensagem junto: <code>&amp;&amp; "texto"</code></h3>
+<p>O <code>assert</code> mostra a condição como ela está escrita. Um truque comum para deixar a mensagem mais clara: acrescentar <code>&amp;&amp; "explicação"</code>. Uma string literal é sempre "verdadeira" (é um ponteiro que não é nulo), então ela não muda o resultado, mas aparece na mensagem:</p>
+
+<pre class="file" data-file="msg.c">#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int alunos = 0;
+    assert(alunos &gt; 0 &amp;&amp; "a turma não pode estar vazia");
+    printf("Média por aluno: %d\n", 30 / alunos);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/testes">$ gcc -std=c23 -Wall -Wextra msg.c -o msg
+$ ./msg
+msg: msg.c:6: main: Assertion `alunos &gt; 0 &amp;&amp; "a turma não pode estar vazia"' failed.
+Abortado                   (imagem do núcleo gravada) ./msg</pre>
+
+<p>Sem o <code>assert</code>, o programa chegaria à divisão por zero (veja <a href="comportamento-indefinido.html">Comportamento Indefinido</a>). Com ele, para antes, explicando o porquê.</p>
+
+<hr>
+
+<h2>2. Para que serve (e para que não serve) o <code>assert</code></h2>
+<p>O <code>assert</code> é para <strong>erros do programador</strong>: coisas que, se o código estiver certo, nunca acontecem. Exemplos:</p>
+<ul>
+  <li>Um parâmetro que tem de vir num certo intervalo: <code>assert(mes &gt;= 1 &amp;&amp; mes &lt;= 12);</code></li>
+  <li>Um ponteiro que nunca pode ser nulo: <code>assert(lista != NULL);</code> (veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>).</li>
+  <li>Um resultado que tem de fazer sentido: <code>assert(total &gt;= 0);</code></li>
+</ul>
+
+<p>Ele <strong>não</strong> é para erros que podem acontecer de verdade, com o programa certo: o usuário digitar letras em vez de número, um arquivo que não existe, o <code>malloc</code> devolver <code>NULL</code>. Esses casos você trata com <code>if</code>, mostrando uma mensagem e seguindo (ou saindo com um código de erro); veja <a href="validar-entrada.html">Validar a Entrada</a> e <a href="errno.html">errno</a>. Um motivo forte é o da próxima seção: o <code>assert</code> pode ser <strong>desligado</strong>.</p>
+
+<hr>
+
+<h2>3. <code>NDEBUG</code>: desligando os <code>assert</code></h2>
+<p>Se o nome <code>NDEBUG</code> (<em>no debug</em>, "sem depuração") estiver definido quando o <code>assert.h</code> é incluído, todo <code>assert</code> vira <strong>nada</strong>: o compilador nem gera o teste. A opção <code>-D</code> do gcc define um nome (veja <a href="compilacao-condicional.html">Compilação Condicional</a>):</p>
+
+<pre class="term" data-cwd="~/c/testes">$ gcc -std=c23 -Wall -Wextra -DNDEBUG estoque.c -o estoque
+$ ./estoque
+Sobrou: 7
+Sobrou: -2
+$ echo $?
+0</pre>
+
+<p>Sem os <code>assert</code>, o erro passou: o estoque ficou negativo e o programa terminou "com sucesso". É por isso que o <code>assert</code> não serve para validar dados do mundo real. O <code>NDEBUG</code> existe para versões finais em que cada nanossegundo conta: o modo <code>Release</code> do CMake, por exemplo, acrescenta <code>-DNDEBUG</code> sozinho (veja <a href="cmake.html">CMake</a>). Também dá para definir no próprio código, <strong>antes</strong> do include:</p>
+
+<pre class="file" data-file="exemplo.c">#define NDEBUG
+#include &lt;assert.h&gt;
+</pre>
+
+<div class="warning">
+<strong>Nunca coloque dentro do <code>assert</code> algo que precisa acontecer</strong>
+<p>Com <code>NDEBUG</code>, a linha inteira some, inclusive o que estava dentro dos parênteses. Este programa lê a idade dentro do <code>assert</code>:</p>
+<pre class="file" data-file="idade.c">#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 0;
+    printf("Idade: ");
+    assert(scanf("%d", &amp;idade) == 1);
+    printf("Ano que vem: %d\n", idade + 1);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/testes">$ gcc -std=c23 -Wall -Wextra idade.c -o idade
+$ echo 29 | ./idade
+Idade: Ano que vem: 30
+$ gcc -std=c23 -Wall -Wextra -O2 -DNDEBUG idade.c -o idade
+$ echo 29 | ./idade
+Idade: Ano que vem: 1</pre>
+<p>Na versão com <code>-DNDEBUG</code>, o <code>scanf</code> sumiu junto com o <code>assert</code>: a idade nunca foi lida e ficou 0. O certo é ler fora e conferir com <code>if</code>: <code>if (scanf("%d", &amp;idade) != 1) { … }</code>.</p>
+</div>
+
+<p>Para conferências que podem ser feitas <strong>na compilação</strong> (por exemplo, "um <code>int</code> tem pelo menos 4 bytes"), existe o <code>static_assert</code>, que não custa nada quando o programa roda e não é desligado pelo <code>NDEBUG</code> (veja <a href="static-assert.html">static_assert</a>).</p>
+
+<hr>
+
+<h2>4. Testes automáticos</h2>
+<p>A Ana escreveu duas funções de datas, num arquivo separado do resto do programa:</p>
+
+<pre class="file" data-file="datas.h">#ifndef DATAS_H
+#define DATAS_H
+
+bool eh_bissexto(int ano);
+int dias_no_mes(int mes, int ano);
+
+#endif
+</pre>
+
+<pre class="file" data-file="datas.c">#include "datas.h"
+
+bool eh_bissexto(int ano) {
+    return ano % 4 == 0;
+}
+
+int dias_no_mes(int mes, int ano) {
+    switch (mes) {
+    case 2:
+        return eh_bissexto(ano) ? 29 : 28;
+    case 4: case 6: case 9: case 11:
+        return 30;
+    default:
+        return 31;
+    }
+}
+</pre>
+
+<p>(O <code>bool</code> não precisa de include porque, no C23, ele é palavra-chave; veja <a href="bool.html">Booleanos</a>.) Um <strong>teste</strong> é um outro programa, com um <code>main</code> próprio, que chama essas funções com exemplos cuja resposta a gente sabe de cor. A regra do ano bissexto: divisível por 4, <strong>exceto</strong> os divisíveis por 100, <strong>a não ser</strong> que sejam divisíveis por 400. Então 2024 é, 2023 não é, 1900 não é e 2000 é.</p>
+
+<h3>Primeira tentativa: uma lista de <code>assert</code></h3>
+<pre class="file" data-file="teste_assert.c">#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+#include "datas.h"
+
+int main(void) {
+    assert(eh_bissexto(2024));
+    assert(!eh_bissexto(2023));
+    assert(!eh_bissexto(1900));
+    assert(eh_bissexto(2000));
+    printf("Todos os testes passaram.\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/testes">$ gcc -std=c23 -Wall -Wextra datas.c teste_assert.c -o teste_assert
+$ ./teste_assert
+teste_assert: teste_assert.c:8: main: Assertion `!eh_bissexto(1900)' failed.
+Abortado                   (imagem do núcleo gravada) ./teste_assert
+$ echo $?
+134</pre>
+
+<p>Achou um erro: 1900 não deveria ser bissexto. Mas o primeiro <code>assert</code> que falha <strong>para tudo</strong>: você não sabe se o 2000 passaria, nem quantos testes falham ao todo. Para testes, é melhor algo que confira todos e conte no fim.</p>
+
+<h3>Uma macro <code>TESTE</code> que conta</h3>
+<pre class="file" data-file="teste_datas.c">#include &lt;stdio.h&gt;
+#include "datas.h"
+
+static int testes = 0;
+static int falhas = 0;
+
+#define TESTE(cond) do {                                          \
+        testes++;                                                 \
+        if (cond) {                                               \
+            printf("ok     %s\n", #cond);                         \
+        } else {                                                  \
+            falhas++;                                             \
+            printf("FALHOU %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
+        }                                                         \
+    } while (0)
+
+int main(void) {
+    TESTE(eh_bissexto(2024));
+    TESTE(!eh_bissexto(2023));
+    TESTE(!eh_bissexto(1900));
+    TESTE(eh_bissexto(2000));
+    TESTE(dias_no_mes(1, 2025) == 31);
+    TESTE(dias_no_mes(4, 2025) == 30);
+    TESTE(dias_no_mes(2, 2024) == 29);
+    TESTE(dias_no_mes(2, 1900) == 28);
+
+    printf("%d de %d testes passaram\n", testes - falhas, testes);
+    return falhas == 0 ? 0 : 1;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>static int testes = 0; static int falhas = 0;</dt><dd>Dois contadores, visíveis só neste arquivo (veja <a href="static-extern.html">static e extern</a>).</dd>
+  <dt>#define TESTE(cond) …</dt><dd>Uma <a href="macros.html">macro com parâmetro</a>: cada <code>TESTE(x)</code> no código é trocado pelo bloco inteiro, com <code>x</code> no lugar de <code>cond</code>. A <code>\</code> no fim de cada linha continua a macro na linha seguinte.</dd>
+  <dt>do { … } while (0)</dt><dd>Um laço que roda uma vez só. É o jeito tradicional de fazer uma macro de várias linhas se comportar como um comando único, que pede <code>;</code> no fim e funciona dentro de um <code>if</code> sem chaves.</dd>
+  <dt>#cond</dt><dd>O <code>#</code> antes do parâmetro transforma o <strong>texto</strong> do argumento numa string: <code>TESTE(eh_bissexto(2024))</code> imprime <code>"eh_bissexto(2024)"</code>. É assim que o <code>assert</code> mostra a condição.</dd>
+  <dt>__FILE__ e __LINE__</dt><dd>Nomes que o pré-processador troca pelo nome do arquivo e pelo número da linha onde aparecem (veja <a href="preprocessador.html">Pré-processador</a>). Como a macro é expandida na linha do <code>TESTE</code>, a linha é a do teste.</dd>
+  <dt>return falhas == 0 ? 0 : 1;</dt><dd>O código de saída diz se tudo passou: 0 = sucesso, 1 = alguma falha. Ferramentas como o <code>make</code>, o CTest e os servidores de integração contínua olham esse código.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/testes">$ gcc -std=c23 -Wall -Wextra datas.c teste_datas.c -o teste_datas
+$ ./teste_datas
+ok     eh_bissexto(2024)
+ok     !eh_bissexto(2023)
+FALHOU !eh_bissexto(1900) (teste_datas.c:20)
+ok     eh_bissexto(2000)
+ok     dias_no_mes(1, 2025) == 31
+ok     dias_no_mes(4, 2025) == 30
+ok     dias_no_mes(2, 2024) == 29
+FALHOU dias_no_mes(2, 1900) == 28 (teste_datas.c:25)
+6 de 8 testes passaram
+$ echo $?
+1</pre>
+
+<p>Agora o relatório é completo: duas falhas, e as duas apontam para a mesma causa (1900). O <code>eh_bissexto(2000)</code> passou por acaso: a regra "divisível por 4" acerta 2000, mas pelo motivo errado. Depois de consertar <code>eh_bissexto</code> com a regra inteira, a Ana roda os mesmos testes:</p>
+
+<pre class="term" data-cwd="~/c/testes/ok">$ gcc -std=c23 -Wall -Wextra datas.c teste_datas.c -o teste_datas
+$ ./teste_datas
+ok     eh_bissexto(2024)
+ok     !eh_bissexto(2023)
+ok     !eh_bissexto(1900)
+ok     eh_bissexto(2000)
+ok     dias_no_mes(1, 2025) == 31
+ok     dias_no_mes(4, 2025) == 30
+ok     dias_no_mes(2, 2024) == 29
+ok     dias_no_mes(2, 1900) == 28
+8 de 8 testes passaram
+$ echo $?
+0</pre>
+
+<p>Daqui em diante, toda vez que mexer em <code>datas.c</code>, ela roda <code>./teste_datas</code> e sabe em um segundo se quebrou alguma coisa. Teste que já pegou um erro fica para sempre: ele garante que o erro não volta.</p>
+
+<div class="tryc" data-goal="out:8 de 8 testes passaram,exit:0">
+<p class="try-task"><strong>Missão:</strong> conserte <code>eh_bissexto</code> (aba <code>datas.c</code>) com a regra completa: divisível por 4 <strong>e não</strong> por 100, <strong>ou</strong> divisível por 400 (veja <a href="operadores-logicos.html">Operadores Lógicos</a>). Não mexa nos testes: a missão termina quando aparecer <code>8 de 8 testes passaram</code>.</p>
+<pre class="script" data-file="teste_datas.c">#include &lt;stdio.h&gt;
+#include "datas.h"
+
+static int testes = 0;
+static int falhas = 0;
+
+#define TESTE(cond) do {                                          \
+        testes++;                                                 \
+        if (cond) {                                               \
+            printf("ok     %s\n", #cond);                         \
+        } else {                                                  \
+            falhas++;                                             \
+            printf("FALHOU %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
+        }                                                         \
+    } while (0)
+
+int main(void) {
+    TESTE(eh_bissexto(2024));
+    TESTE(!eh_bissexto(2023));
+    TESTE(!eh_bissexto(1900));
+    TESTE(eh_bissexto(2000));
+    TESTE(dias_no_mes(1, 2025) == 31);
+    TESTE(dias_no_mes(4, 2025) == 30);
+    TESTE(dias_no_mes(2, 2024) == 29);
+    TESTE(dias_no_mes(2, 1900) == 28);
+
+    printf("%d de %d testes passaram\n", testes - falhas, testes);
+    return falhas == 0 ? 0 : 1;
+}
+</pre>
+<pre class="script" data-file="datas.c">#include "datas.h"
+
+bool eh_bissexto(int ano) {
+    return ano % 4 == 0;
+}
+
+int dias_no_mes(int mes, int ano) {
+    switch (mes) {
+    case 2:
+        return eh_bissexto(ano) ? 29 : 28;
+    case 4: case 6: case 9: case 11:
+        return 30;
+    default:
+        return 31;
+    }
+}
+</pre>
+<pre class="script" data-file="datas.h">#ifndef DATAS_H
+#define DATAS_H
+
+bool eh_bissexto(int ano);
+int dias_no_mes(int mes, int ano);
+
+#endif
+</pre>
+<pre class="solucao" data-file="datas.c">#include "datas.h"
+
+bool eh_bissexto(int ano) {
+    return (ano % 4 == 0 &amp;&amp; ano % 100 != 0) || ano % 400 == 0;
+}
+
+int dias_no_mes(int mes, int ano) {
+    switch (mes) {
+    case 2:
+        return eh_bissexto(ano) ? 29 : 28;
+    case 4: case 6: case 9: case 11:
+        return 30;
+    default:
+        return 31;
+    }
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Funções puras são fáceis de testar</h2>
+<p>Repare que <code>eh_bissexto</code> e <code>dias_no_mes</code> são fáceis de testar porque são <strong>funções puras</strong>: recebem tudo pelos parâmetros, devolvem o resultado com <code>return</code> e não fazem mais nada (não leem o teclado, não imprimem, não mexem em variáveis globais). A mesma entrada dá sempre a mesma saída.</p>
+
+<p>Compare com esta função, que mistura conta e conversa com o usuário:</p>
+<pre class="file" data-file="ruim.c">void mostrar_media(void) {
+    double a, b;
+    scanf("%lf %lf", &amp;a, &amp;b);
+    printf("Média: %.1f\n", (a + b) / 2);
+}
+</pre>
+<p>Para testá-la, seria preciso digitar números e ler a tela. Separe a <strong>conta</strong> (pura, testável) da <strong>entrada e saída</strong>:</p>
+<pre class="file" data-file="bom.c">double media(double a, double b) {
+    return (a + b) / 2;
+}
+
+/* no main: lê com scanf, chama media(a, b), mostra com printf */
+</pre>
+<p>Agora <code>TESTE(media(8, 10) == 9)</code> confere a conta sem teclado nenhum. (Cuidado ao comparar <code>double</code> com <code>==</code>: contas como <code>0.1 + 0.2</code> não dão exatamente <code>0.3</code>. Compare com uma tolerância, <code>fabs(x - esperado) &lt; 1e-9</code>; veja <a href="ponto-flutuante.html">float e double</a>.)</p>
+
+<h3>O que testar</h3>
+<ul>
+  <li><strong>Um caso comum</strong>: <code>contar_vogais("banana")</code> dá 3.</li>
+  <li><strong>As bordas</strong>: a string vazia, o primeiro e o último mês, o zero, o maior valor.</li>
+  <li><strong>Os casos especiais da regra</strong>: 1900 e 2000 no bissexto.</li>
+  <li><strong>Todo erro que você já encontrou</strong>: escreva o teste que o pega antes de consertar.</li>
+</ul>
+
+<div class="tryc" data-goal="src:(TESTE\(\s*contar_vogais[\s\S]*){3},outre:(\d+) de \1 testes passaram,exit:0">
+<p class="try-task"><strong>Missão:</strong> agora é você quem escreve os testes. A função <code>contar_vogais</code> conta as vogais minúsculas sem acento de uma string. Já há um teste; acrescente pelo menos mais <strong>dois</strong> <code>TESTE(contar_vogais(…) == …)</code>: por exemplo, a string vazia <code>""</code> e uma palavra sem vogais, como <code>"psst"</code>. Todos têm de passar.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+static int testes = 0;
+static int falhas = 0;
+
+#define TESTE(cond) do {                                          \
+        testes++;                                                 \
+        if (cond) {                                               \
+            printf("ok     %s\n", #cond);                         \
+        } else {                                                  \
+            falhas++;                                             \
+            printf("FALHOU %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
+        }                                                         \
+    } while (0)
+
+int contar_vogais(const char *s) {
+    int n = 0;
+    for (int i = 0; s[i] != '\0'; i++) {
+        char c = s[i];
+        if (c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u') {
+            n++;
+        }
+    }
+    return n;
+}
+
+int main(void) {
+    TESTE(contar_vogais("banana") == 3);
+
+    printf("%d de %d testes passaram\n", testes - falhas, testes);
+    return falhas == 0 ? 0 : 1;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+static int testes = 0;
+static int falhas = 0;
+
+#define TESTE(cond) do {                                          \
+        testes++;                                                 \
+        if (cond) {                                               \
+            printf("ok     %s\n", #cond);                         \
+        } else {                                                  \
+            falhas++;                                             \
+            printf("FALHOU %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
+        }                                                         \
+    } while (0)
+
+int contar_vogais(const char *s) {
+    int n = 0;
+    for (int i = 0; s[i] != '\0'; i++) {
+        char c = s[i];
+        if (c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u') {
+            n++;
+        }
+    }
+    return n;
+}
+
+int main(void) {
+    TESTE(contar_vogais("banana") == 3);
+    TESTE(contar_vogais("") == 0);
+    TESTE(contar_vogais("psst") == 0);
+
+    printf("%d de %d testes passaram\n", testes - falhas, testes);
+    return falhas == 0 ? 0 : 1;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>6. Rodar os testes com o CTest</h2>
+<p>Num projeto com <a href="cmake.html">CMake</a>, o programa de teste vira mais um alvo, e o <strong>CTest</strong> (que vem junto com o CMake) roda todos os testes e resume o resultado. Bastam duas linhas no fim do <code>CMakeLists.txt</code>:</p>
+
+<pre class="file" data-file="CMakeLists.txt">cmake_minimum_required(VERSION 3.20)
+project(datas C)
+
+set(CMAKE_C_STANDARD 23)
+
+add_executable(teste_datas teste_datas.c datas.c)
+target_compile_options(teste_datas PRIVATE -Wall -Wextra)
+
+enable_testing()
+add_test(NAME datas COMMAND teste_datas)
+</pre>
+
+<dl class="anatomy">
+  <dt>enable_testing()</dt><dd>"Ligue os testes" neste projeto.</dd>
+  <dt>add_test(NAME datas COMMAND teste_datas)</dt><dd>Um teste chamado <code>datas</code>, que roda o programa <code>teste_datas</code>. O CTest considera que passou se o código de saída for 0. Por isso o <code>return falhas == 0 ? 0 : 1;</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/testes">$ cmake -B build &gt; /dev/null
+$ cmake --build build &gt; /dev/null
+$ ctest --test-dir build --output-on-failure
+Test project /home/ana/c/testes/build
+    Start 1: datas
+1/1 Test #1: datas ............................***Failed    0.00 sec
+ok     eh_bissexto(2024)
+ok     !eh_bissexto(2023)
+FALHOU !eh_bissexto(1900) (/home/ana/c/testes/teste_datas.c:20)
+ok     eh_bissexto(2000)
+ok     dias_no_mes(1, 2025) == 31
+ok     dias_no_mes(4, 2025) == 30
+ok     dias_no_mes(2, 2024) == 29
+FALHOU dias_no_mes(2, 1900) == 28 (/home/ana/c/testes/teste_datas.c:25)
+6 de 8 testes passaram
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) =   0.00 sec
+
+The following tests FAILED:
+	  1 - datas (Failed)
+Errors while running CTest</pre>
+
+<p>Com a versão errada de <code>datas.c</code>, o CTest marca <code>***Failed</code> ("falhou") e, por causa do <code>--output-on-failure</code> ("mostre a saída quando falhar"), mostra o que o teste imprimiu. Repare que o <code>__FILE__</code> agora tem o caminho completo: o CMake passa ao gcc os arquivos com o caminho inteiro. Com a versão consertada:</p>
+
+<pre class="term" data-cwd="~/c/testes/ok">$ ctest --test-dir build
+Test project /home/ana/c/testes/ok/build
+    Start 1: datas
+1/1 Test #1: datas ............................   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec</pre>
+
+<hr>
+
+<h2>7. Frameworks de teste para C</h2>
+<p>A macro <code>TESTE</code> é um framework de teste em miniatura. Em projetos maiores, use um pronto: eles separam os testes em grupos, mostram o valor esperado e o obtido (<code>esperava 28, veio 29</code>), rodam cada teste isolado e geram relatórios para servidores de integração contínua.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Framework</th><th>Como é</th><th>Bom para</th></tr>
+<tr><td><strong>Unity</strong></td><td>Um <code>.c</code> e dois <code>.h</code> que você copia para o projeto; macros como <code>TEST_ASSERT_EQUAL_INT(28, dias_no_mes(2, 1900))</code>.</td><td>Começar; sistemas embarcados (microcontroladores), onde é muito usado.</td></tr>
+<tr><td><strong>CMocka</strong></td><td>Uma biblioteca (<code>sudo apt install libcmocka-dev</code>); tem também "dublês" (<em>mocks</em>) para fingir funções que você não quer chamar de verdade no teste.</td><td>Testar código que fala com arquivos, rede ou hardware.</td></tr>
+<tr><td><strong>Criterion</strong></td><td>Uma biblioteca moderna; cada teste é um bloco <code>Test(grupo, nome) { … }</code>, sem precisar de <code>main</code>; roda cada teste num processo separado, então um crash não derruba os outros.</td><td>Projetos para Linux e macOS.</td></tr>
+<tr><td><strong>CTest</strong></td><td>Não é um framework, é um <strong>executor</strong>: roda os seus programas de teste (feitos com qualquer um dos acima, ou com a macro <code>TESTE</code>).</td><td>Juntar todos os testes de um projeto CMake.</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar:</strong> para aprender e para projetos pequenos, a macro <code>TESTE</code> desta aula basta. Quando o projeto crescer, Unity é o mais simples de adotar (é só copiar arquivos); Criterion é o mais confortável no Linux. Rode os testes também com os <a href="sanitizers.html">sanitizers</a> ligados: um teste que passa mas lê memória proibida ainda é um erro.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu o <code>#include &lt;assert.h&gt;</code></strong>
+<pre class="term" data-cwd="~/c/testes">$ gcc -std=c23 -Wall -Wextra semassert.c -o semassert
+semassert.c: In function ‘main’:
+semassert.c:5:5: error: implicit declaration of function ‘assert’ [-Wimplicit-function-declaration]
+    5 |     assert(estoque &gt; 0);
+      |     ^~~~~~
+semassert.c:2:1: note: ‘assert’ is defined in header ‘&lt;assert.h&gt;’; this is probably fixable by adding ‘#include &lt;assert.h&gt;’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;assert.h&gt;
+    2 | </pre>
+<p><strong>O que aconteceu:</strong> "declaração implícita da função <code>assert</code>": o gcc não sabe o que é <code>assert</code>. A nota até diz a solução: "<code>assert</code> está definido em <code>&lt;assert.h&gt;</code>; provavelmente resolve acrescentar <code>#include &lt;assert.h&gt;</code>". No editor (Clang), a mensagem é <code>error: use of undeclared identifier 'assert'</code>.</p>
+<p><strong>Como resolver:</strong> <code>#include &lt;assert.h&gt;</code> no começo do arquivo.</p>
+</div>
+
+<div class="cenario">
+<strong>Com <code>-DNDEBUG</code> (ou no modo Release), o programa passou a se comportar diferente</strong>
+<p><strong>O que aconteceu:</strong> havia algo que precisava acontecer <strong>dentro</strong> de um <code>assert</code> (um <code>scanf</code>, um <code>i++</code>, uma chamada que muda algo), e ele sumiu junto com o <code>assert</code> (seção 3).</p>
+<p><strong>Como resolver:</strong> faça a ação fora e confira só o resultado: <code>int lidos = scanf(…); assert(lidos == 1);</code>, ou, melhor ainda para entrada do usuário, um <code>if</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O teste nunca falha, nem quando o código está errado</strong>
+<p><strong>O que aconteceu:</strong> o teste confere a coisa errada, por exemplo <code>TESTE(dias_no_mes(2, 1900))</code> (qualquer número diferente de zero é "verdadeiro") em vez de <code>TESTE(dias_no_mes(2, 1900) == 28)</code>.</p>
+<p><strong>Como resolver:</strong> veja cada teste falhar pelo menos uma vez: estrague a função de propósito (ou escreva o teste antes de consertar o erro) e confira que aparece <code>FALHOU</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Dois <code>main</code>: <code>definição múltipla de "main"</code></strong>
+<p><strong>O que aconteceu:</strong> você compilou o programa principal (<code>main.c</code>) junto com o de teste (<code>teste_datas.c</code>), e cada um tem o seu <code>main</code>. O ligador reclama (em inglês, <code>multiple definition of 'main'</code>).</p>
+<p><strong>Como resolver:</strong> deixe as funções testáveis num arquivo sem <code>main</code> (<code>datas.c</code>) e faça dois executáveis: <code>gcc main.c datas.c -o programa</code> e <code>gcc teste_datas.c datas.c -o teste_datas</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>O que é</th></tr>
+<tr><td><code>#include &lt;assert.h&gt;</code></td><td>Traz o <code>assert</code>.</td></tr>
+<tr><td><code>assert(condição);</code></td><td>Se a condição for falsa: mensagem com arquivo, linha, função e condição, e <code>abort()</code> (código 134).</td></tr>
+<tr><td><code>assert(cond &amp;&amp; "texto");</code></td><td>O texto aparece na mensagem.</td></tr>
+<tr><td><code>-DNDEBUG</code> ou <code>#define NDEBUG</code> antes do include</td><td>Desliga todos os <code>assert</code>.</td></tr>
+<tr><td><code>static_assert(cond, "texto");</code></td><td>Confere na compilação (veja <a href="static-assert.html">static_assert</a>).</td></tr>
+<tr><td><code>#cond</code> numa macro</td><td>Transforma o argumento em string.</td></tr>
+<tr><td><code>__FILE__</code>, <code>__LINE__</code>, <code>__func__</code></td><td>Arquivo, linha e nome da função atuais.</td></tr>
+<tr><td><code>enable_testing()</code> / <code>add_test(NAME n COMMAND prog)</code></td><td>Testes no CMake.</td></tr>
+<tr><td><code>ctest --test-dir build --output-on-failure</code></td><td>Roda os testes e mostra a saída dos que falharam.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O cabeçalho</h3>
+<p>Complete o include necessário para usar <code>assert</code>:</p>
+<div class="ex-code">#include &lt;<input data-answer="assert.h" aria-label="cabeçalho">&gt;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Desligar</h3>
+<p>Complete a opção do gcc que desliga todos os <code>assert</code>:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra <input data-answer="-DNDEBUG" aria-label="opção"> prog.c -o prog</div>
+</div>
+
+<div class="exercise">
+<h3>3. Código de saída</h3>
+<p>Um programa terminou com <code>Assertion `x &gt; 0' failed.</code> e <code>Abortado</code>. Qual o código de saída (<code>echo $?</code>)?</p>
+<div class="ex-code"><input data-answer="134" aria-label="código"></div>
+</div>
+
+<div class="exercise">
+<h3>4. Um teste</h3>
+<p>Complete o teste que confere que fevereiro de 2023 tem 28 dias:</p>
+<div class="ex-code">TESTE(dias_no_mes(2, 2023) <input data-answer="== 28|==28" aria-label="comparação">);</div>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Qual destes é um bom uso de <code>assert</code>?</p>
+<label><input type="radio" name="q5"> <code>assert(scanf("%d", &amp;n) == 1);</code></label>
+<label><input type="radio" name="q5"> <code>assert(fopen("dados.txt", "r") != NULL);</code></label>
+<label><input type="radio" name="q5"> <code>assert(idade_digitada &gt;= 0);</code> para recusar uma idade negativa digitada pelo usuário.</label>
+<label><input type="radio" name="q5"> <code>assert(mes &gt;= 1 &amp;&amp; mes &lt;= 12);</code> no começo de uma função que o próprio programa sempre chama com um mês válido.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Por que a macro <code>TESTE</code> é melhor que uma lista de <code>assert</code> para testes?</p>
+<label><input type="radio" name="q6"> Porque é mais rápida.</label>
+<label><input type="radio" name="q6"> Porque confere todos os testes e conta as falhas, em vez de parar no primeiro erro.</label>
+<label><input type="radio" name="q6"> Porque não é desligada pelo <code>-Wall</code>.</label>
+<label><input type="radio" name="q6"> Porque funciona sem <code>#include &lt;stdio.h&gt;</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. Qual destas funções é mais fácil de testar?</p>
+<label><input type="radio" name="q7"> <code>int dobro(int x) { return 2 * x; }</code></label>
+<label><input type="radio" name="q7"> <code>void dobro(void) { int x; scanf("%d", &amp;x); printf("%d\n", 2 * x); }</code></label>
+<label><input type="radio" name="q7"> <code>void dobro(void) { total = 2 * total; }</code>, com <code>total</code> global.</label>
+<label><input type="radio" name="q7"> Todas são igualmente fáceis.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>assert(cond)</code> (da <code>assert.h</code>) confere uma certeza do programador: se for falsa, mostra arquivo, linha, função e condição, e aborta (código 134).</li>
+  <li><code>-DNDEBUG</code> desliga os <code>assert</code> (o modo Release do CMake faz isso). Por isso: nada que precise acontecer dentro deles, e nada de usá-los para validar a entrada do usuário.</li>
+  <li>Teste automático = um programa separado que chama as funções com exemplos de resposta conhecida. Uma macro <code>TESTE(cond)</code> com <code>#cond</code>, <code>__FILE__</code> e <code>__LINE__</code> confere todos, conta as falhas e devolve 0 ou 1.</li>
+  <li>Funções puras (só parâmetros e <code>return</code>) são as mais fáceis de testar: separe a conta da entrada e saída.</li>
+  <li>Teste os casos comuns, as bordas e cada erro já encontrado. Veja cada teste falhar uma vez.</li>
+  <li>CTest (<code>enable_testing</code>, <code>add_test</code>, <code>ctest</code>) roda tudo; Unity, CMocka e Criterion são frameworks prontos.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

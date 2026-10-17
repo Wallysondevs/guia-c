@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C printf e scanf — tabela de formatos, flags, largura e precisão | Guia C</title>
+<meta name="description" content="Referência do printf e do scanf em C: todos os especificadores (%d %u %x %f %e %g %a %c %s %p %n %b), modificadores de tamanho (hh h l ll j z t L), flags (- + espaço # 0), largura, precisão e *, a tabela do scanf (%lf, %[^\n], espaço no formato, %*d), valores de retorno e os erros mais comuns, com saídas reais do gcc 15 e do editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">printf e scanf</span></h1>
+
+<p class="intro">Esta é a página de consulta rápida do <code>printf</code> ("print formatted", imprimir formatado) e do <code>scanf</code> ("scan formatted", ler formatado). Aqui estão, em tabelas, <strong>todos</strong> os formatos, ajustes e armadilhas. Para aprender com calma, passo a passo, veja as aulas <a href="printf.html">Saída com printf</a>, <a href="formatos-printf.html">Formatos do printf</a> e <a href="scanf.html">Entrada com scanf</a>.</p>
+
+<p>Todas as saídas foram produzidas de verdade: no <strong>gcc 15.2</strong> da máquina da Ana (Linux de 64 bits, pasta <code>~/c/ref</code>, comando <code>gcc -std=c23 -Wall -Wextra</code>) e no editor do guia (Clang em WebAssembly). Quando os dois diferem, a tabela diz.</p>
+
+<p>Atalhos: <a href="#anatomia">Anatomia de um formato</a> · <a href="#tipos">Especificadores</a> · <a href="#tamanho">Modificadores de tamanho</a> · <a href="#flags">Flags</a> · <a href="#largura">Largura e precisão</a> · <a href="#asterisco">O <code>*</code></a> · <a href="#familia">A família printf</a> · <a href="#scanf">scanf</a> · <a href="#diferencas">printf × scanf</a> · <a href="#erros">Erros comuns</a> · <a href="#experimente">Experimente</a></p>
+
+<hr>
+
+<h2 id="anatomia">Anatomia de um formato</h2>
+<p>Cada lacuna do <code>printf</code> começa com <code>%</code> e termina com uma letra (o <strong>especificador</strong>). Entre os dois podem vir, <strong>nesta ordem</strong>, quatro ajustes opcionais:</p>
+
+<pre class="file">%  [flags]  [largura]  [.precisão]  [tamanho]  especificador
+%     -        10          .2           l            f        →  %-10.2lf</pre>
+
+<dl class="anatomy">
+  <dt>flags</dt><dd>Zero ou mais destes: <code>-</code> (alinhar à esquerda), <code>+</code> (sempre mostrar o sinal), espaço, <code>#</code> (forma alternativa), <code>0</code> (completar com zeros). <a href="#flags">Tabela</a>.</dd>
+  <dt>largura</dt><dd>Número mínimo de caracteres que a lacuna ocupa. Se o valor é maior, ela cresce: <strong>a largura nunca corta</strong>. <code>*</code> = "a largura vem do próximo argumento".</dd>
+  <dt>.precisão</dt><dd>Um ponto seguido de um número. O sentido muda com o tipo: casas decimais no <code>%f</code>, algarismos significativos no <code>%g</code>, dígitos mínimos no <code>%d</code>, caracteres máximos no <code>%s</code>. <code>.*</code> = vem do próximo argumento.</dd>
+  <dt>tamanho</dt><dd>Diz o tamanho do valor: <code>hh h l ll j z t L</code> (e <code>wN</code> no C23). <a href="#tamanho">Tabela</a>.</dd>
+  <dt>especificador</dt><dd>A letra que diz o tipo e a forma de mostrar: <code>d</code>, <code>f</code>, <code>s</code>… <a href="#tipos">Tabela</a>.</dd>
+</dl>
+
+<h2 id="tipos">Especificadores do printf</h2>
+<p>Medidos com este programa (os colchetes mostram onde cada lacuna começa e termina):</p>
+
+<pre class="file" data-file="esp.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 255;
+    double x = 3.14159;
+    printf("[%d] [%i] [%u]\n", -42, -42, 42u);
+    printf("[%o] [%x] [%X] [%#o] [%#x] [%#X]\n", n, n, n, n, n, n);
+    printf("[%f] [%F] [%e] [%E]\n", x, x, x, x);
+    printf("[%g] [%G] [%g] [%g]\n", x, 0.00001234, 1e20, 100000.0);
+    printf("[%a] [%A]\n", 1.0, 0.5);
+    printf("[%c] [%s] [%%]\n", 'A', "Ana");
+    printf("[%b] [%#b] [%B]\n", 10u, 10u, 5u);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra esp.c -o esp
+$ ./esp
+[-42] [-42] [42]
+[377] [ff] [FF] [0377] [0xff] [0XFF]
+[3.141590] [3.141590] [3.141590e+00] [3.141590E+00]
+[3.14159] [1.234E-05] [1e+20] [100000]
+[0x1p+0] [0X1P-1]
+[A] [Ana] [%]
+[1010] [0b1010] [101]</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Especificador</th><th>Tipo do argumento</th><th>Mostra</th><th>Exemplo → saída</th><th>Aula</th></tr>
+<tr><td><code>%d</code>, <code>%i</code></td><td><code>int</code> (e <code>char</code>, <code>short</code>, que viram <code>int</code>)</td><td>inteiro com sinal, base 10</td><td><code>printf("%d", -42)</code> → <code>-42</code></td><td><a href="formatos-printf.html">Formatos</a></td></tr>
+<tr><td><code>%u</code></td><td><code>unsigned int</code></td><td>inteiro sem sinal, base 10</td><td><code>printf("%u", 42u)</code> → <code>42</code></td><td><a href="inteiros.html">Inteiros</a></td></tr>
+<tr><td><code>%o</code></td><td><code>unsigned int</code></td><td>octal (base 8)</td><td><code>printf("%o", 255)</code> → <code>377</code></td><td><a href="formatos-printf.html">Formatos</a></td></tr>
+<tr><td><code>%x</code>, <code>%X</code></td><td><code>unsigned int</code></td><td>hexadecimal (base 16), letras minúsculas ou maiúsculas</td><td><code>printf("%x %X", 255, 255)</code> → <code>ff FF</code></td><td><a href="operadores-bits.html">Bits</a></td></tr>
+<tr><td><code>%b</code>, <code>%B</code> <span class="versao">C23</span></td><td><code>unsigned int</code></td><td>binário (base 2)</td><td><code>printf("%b", 10u)</code> → <code>1010</code> (só no gcc; veja o aviso abaixo)</td><td><a href="operadores-bits.html">Bits</a></td></tr>
+<tr><td><code>%f</code>, <code>%F</code></td><td><code>double</code> (e <code>float</code>, que vira <code>double</code>)</td><td>número com vírgula, 6 casas</td><td><code>printf("%f", 3.14159)</code> → <code>3.141590</code></td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+<tr><td><code>%e</code>, <code>%E</code></td><td><code>double</code></td><td>notação científica (<code>e+00</code> = × 10<sup>0</sup>)</td><td><code>printf("%e", 3.14159)</code> → <code>3.141590e+00</code></td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+<tr><td><code>%g</code>, <code>%G</code></td><td><code>double</code></td><td>o mais curto entre <code>%f</code> e <code>%e</code>, sem zeros inúteis no fim</td><td><code>printf("%g", 0.00001234)</code> → <code>1.234e-05</code></td><td><a href="formatos-printf.html">Formatos</a></td></tr>
+<tr><td><code>%a</code>, <code>%A</code> <span class="versao">C99</span></td><td><code>double</code></td><td>ponto flutuante em hexadecimal (o valor exato dos bits)</td><td><code>printf("%a", 1.0)</code> → <code>0x1p+0</code></td><td><a href="ponto-flutuante.html">float e double</a></td></tr>
+<tr><td><code>%c</code></td><td><code>int</code> (um <code>char</code>)</td><td>um caractere</td><td><code>printf("%c", 'A')</code> → <code>A</code></td><td><a href="char.html">char</a></td></tr>
+<tr><td><code>%s</code></td><td><code>char *</code> (uma string terminada em <code>'\0'</code>)</td><td>o texto</td><td><code>printf("%s", "Ana")</code> → <code>Ana</code></td><td><a href="strings.html">Strings</a></td></tr>
+<tr><td><code>%p</code></td><td><code>void *</code> (um endereço)</td><td>o endereço, em hexadecimal</td><td>gcc: <code>0x7ffd012f7710</code> (muda a cada execução), <code>NULL</code> sai <code>(nil)</code>; editor: <code>0x7fffec</code>, <code>NULL</code> sai <code>0</code></td><td><a href="memoria.html">Memória e Endereços</a></td></tr>
+<tr><td><code>%n</code></td><td><code>int *</code></td><td>não mostra nada: guarda no <code>int</code> quantos caracteres já saíram</td><td><code>printf("Ana%n", &amp;k)</code> → <code>k</code> vale 3</td><td><a href="seguranca.html">Segurança</a></td></tr>
+<tr><td><code>%%</code></td><td>(nenhum)</td><td>o próprio <code>%</code></td><td><code>printf("10%%")</code> → <code>10%</code></td><td><a href="formatos-printf.html">Formatos</a></td></tr>
+</table>
+</div>
+
+<ul>
+  <li><strong><code>%d</code> e <code>%i</code></strong> são iguais no <code>printf</code>. No <code>scanf</code> não: <code>%i</code> entende <code>0x1F</code> como hexadecimal e <code>017</code> como octal (veja <a href="#scanf">a tabela do scanf</a>).</li>
+  <li><strong><code>%g</code></strong> troca para a notação científica quando o expoente é menor que −4 ou maior ou igual à precisão (6, sem precisão): <code>100000.0</code> sai <code>100000</code>, mas <code>1e20</code> sai <code>1e+20</code>.</li>
+  <li><strong><code>%f</code> serve para <code>float</code> e <code>double</code></strong>: ao passar por <code>printf</code>, todo <code>float</code> é convertido em <code>double</code>. Por isso, no <code>printf</code>, <code>%lf</code> é igual a <code>%f</code>. No <code>scanf</code> é diferente (<a href="#diferencas">veja por quê</a>).</li>
+  <li><strong><code>%p</code></strong> espera um <code>void *</code>: o jeito certo é <code>printf("%p\n", (void *)&amp;idade)</code>.</li>
+  <li><strong><code>%n</code></strong> é perigoso: um texto vindo do usuário usado como formato pode escrever na memória com ele. É por isso que nunca se escreve <code>printf(texto)</code> (veja <a href="#erros">Erros comuns</a>).</li>
+</ul>
+
+<div class="warning">
+<strong><code>%b</code> não funciona no editor do guia</strong>
+<p>O <code>%b</code> é novo (C23). A glibc do Linux já o conhece, mas a biblioteca C do editor (wasi-libc), não: ali, a linha <code>printf("[%b] [%#b] [%B]\n", …)</code> <strong>não mostra nada</strong> (o <code>printf</code> desiste da linha inteira) e o Clang não avisa. Para mostrar binário no editor, use o laço da aula <a href="operadores-bits.html">Operadores de Bits</a>.</p>
+</div>
+
+<h2 id="tamanho">Modificadores de tamanho</h2>
+<p>O modificador vem logo antes da letra e diz <strong>o tamanho</strong> do valor. Sem ele, <code>%d</code> espera um <code>int</code>. Com <code>l</code>, um <code>long</code>; com <code>ll</code>, um <code>long long</code>; e assim por diante.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tamanho</th><th>Com <code>d i</code></th><th>Com <code>u o x X</code></th><th>Com <code>f e g a</code></th><th>Exemplo → saída</th></tr>
+<tr><td>(nenhum)</td><td><code>int</code></td><td><code>unsigned int</code></td><td><code>double</code></td><td><code>printf("%d", 42)</code> → <code>42</code></td></tr>
+<tr><td><code>hh</code> <span class="versao">C99</span></td><td><code>signed char</code></td><td><code>unsigned char</code></td><td>(não existe)</td><td><code>printf("%hhu", uc)</code> com <code>uc = 200</code> → <code>200</code></td></tr>
+<tr><td><code>h</code></td><td><code>short</code></td><td><code>unsigned short</code></td><td>(não existe)</td><td><code>printf("%hd", s)</code> com <code>s = -300</code> → <code>-300</code></td></tr>
+<tr><td><code>l</code> (L minúsculo)</td><td><code>long</code></td><td><code>unsigned long</code></td><td><code>double</code> (o <code>l</code> não muda nada)</td><td><code>printf("%ld", 2000000000L)</code> → <code>2000000000</code></td></tr>
+<tr><td><code>ll</code> <span class="versao">C99</span></td><td><code>long long</code></td><td><code>unsigned long long</code></td><td>(não existe)</td><td><code>printf("%lld", 9000000000000000000LL)</code> → <code>9000000000000000000</code></td></tr>
+<tr><td><code>j</code> <span class="versao">C99</span></td><td><code>intmax_t</code></td><td><code>uintmax_t</code></td><td>(não existe)</td><td><code>printf("%jd", INTMAX_MAX)</code> → <code>9223372036854775807</code></td></tr>
+<tr><td><code>z</code> <span class="versao">C99</span></td><td>o <code>size_t</code> com sinal</td><td><code>size_t</code></td><td>(não existe)</td><td><code>printf("%zu", sizeof(double))</code> → <code>8</code></td></tr>
+<tr><td><code>t</code> <span class="versao">C99</span></td><td><code>ptrdiff_t</code></td><td>o <code>ptrdiff_t</code> sem sinal</td><td>(não existe)</td><td><code>printf("%td", &amp;v[7] - &amp;v[2])</code> → <code>5</code></td></tr>
+<tr><td><code>L</code></td><td>(não existe)</td><td>(não existe)</td><td><code>long double</code></td><td><code>printf("%Lf", 2.5L)</code> → <code>2.500000</code> (no editor, veja abaixo)</td></tr>
+<tr><td><code>wN</code> <span class="versao">C23</span></td><td><code>intN_t</code> (<code>%w32d</code>)</td><td><code>uintN_t</code></td><td>(não existe)</td><td><code>printf("%w32d", (int32_t)7)</code> → <code>7</code> no gcc; o Clang do editor não conhece</td></tr>
+</table>
+</div>
+
+<p>O modificador também vale para o <code>%n</code>: <code>%hhn</code> guarda num <code>signed char</code>, <code>%ln</code> num <code>long</code>, e assim por diante.</p>
+
+<div class="warning">
+<strong><code>%Lf</code> (long double) no editor</strong>
+<p>No editor, um <code>printf("%Lf", …)</code> encerra o programa com esta mensagem (é o padrão da biblioteca C do WebAssembly, para deixar o programa menor):</p>
+<pre class="term">Support for formatting long double values is currently disabled.
+To enable it, add -lc-printscan-long-double to the link command.
+Abortado (imagem do núcleo gravada)</pre>
+<p>Para usar <code>long double</code> no editor, acrescente a opção que a mensagem pede: <code>data-flags="-std=c23 -Wall -Wextra -lc-printscan-long-double"</code>. No gcc, <code>%Lf</code> funciona sem nada.</p>
+</div>
+
+<h3>Tipos de tamanho fixo: <code>inttypes.h</code></h3>
+<p>Para <code>int64_t</code>, <code>uint8_t</code> etc. (aula <a href="stdint.html">stdint.h</a>), o formato certo muda de sistema para sistema (<code>int64_t</code> é <code>long</code> no Linux de 64 bits e <code>long long</code> no editor). A solução portátil são as macros do <code>&lt;inttypes.h&gt;</code>, que viram o texto certo e se "colam" ao resto do formato:</p>
+<pre class="file">#include &lt;inttypes.h&gt;
+int64_t populacao = 123456789012;
+printf("População: %" PRId64 "\n", populacao);   // vira "%ld" no gcc e "%lld" no editor</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Macro</th><th>Para</th><th>Macro</th><th>Para</th></tr>
+<tr><td><code>PRId8 PRId16 PRId32 PRId64</code></td><td><code>int8_t</code> … <code>int64_t</code> em decimal</td><td><code>PRIu8</code> … <code>PRIu64</code></td><td><code>uint8_t</code> … <code>uint64_t</code></td></tr>
+<tr><td><code>PRIx8</code> … <code>PRIx64</code>, <code>PRIX64</code></td><td>em hexadecimal</td><td><code>PRIdMAX</code>, <code>PRIuMAX</code></td><td><code>intmax_t</code>, <code>uintmax_t</code></td></tr>
+<tr><td><code>SCNd32</code>, <code>SCNd64</code>, <code>SCNu8</code>…</td><td>as mesmas, para o <code>scanf</code></td><td><code>PRIdPTR</code>, <code>PRIuPTR</code></td><td><code>intptr_t</code>, <code>uintptr_t</code></td></tr>
+</table>
+</div>
+
+<h2 id="flags">Flags</h2>
+<pre class="file" data-file="flags.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("[%5d] [%-5d] [%05d] [%+d] [% d] [%+d]\n", 42, 42, 42, 42, 42, -42);
+    printf("[%8.3f] [%-8.2f] [%08.2f] [%+.1f] [%.0f] [%#.0f]\n", 3.14159, 3.14159, 3.14159, 3.14159, 2.5, 2.0);
+    printf("[%.5d] [%8.5d] [%.0d] [%.3s] [%10.3s] [%-10s]\n", 42, 42, 0, "Banana", "Banana", "Ana");
+    printf("[%.3e] [%.3g] [%#g] [%g]\n", 1234.5678, 1234.5678, 1.5, 1.5);
+    int larg = 6, prec = 2;
+    printf("[%*d] [%-*d] [%.*f] [%*.*f]\n", larg, 7, larg, 7, prec, 3.14159, larg, prec, 3.14159);
+    printf("[%*d]\n", -6, 7);
+    printf("[%#x] [%#o] [%#x]\n", 0, 0, 255);
+    printf("[%-+6d] [%+05d]\n", 7, 7);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra flags.c -o flags
+$ ./flags
+[   42] [42   ] [00042] [+42] [ 42] [-42]
+[   3.142] [3.14    ] [00003.14] [+3.1] [2] [2.]
+[00042] [   00042] [] [Ban] [       Ban] [Ana       ]
+[1.235e+03] [1.23e+03] [1.50000] [1.5]
+[     7] [7     ] [3.14] [  3.14]
+[7     ]
+[0] [0] [0xff]
+[+7    ] [+0007]</pre>
+<p>A saída do editor é idêntica, caractere por caractere.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Flag</th><th>O que faz</th><th>Exemplo → saída</th></tr>
+<tr><td><code>-</code></td><td>Alinha à <strong>esquerda</strong> dentro da largura (o padrão é à direita).</td><td><code>[%-5d]</code> com 42 → <code>[42   ]</code></td></tr>
+<tr><td><code>+</code></td><td>Mostra o sinal sempre, também o <code>+</code> dos positivos.</td><td><code>[%+d]</code> com 42 → <code>[+42]</code></td></tr>
+<tr><td>(espaço)</td><td>Põe um espaço no lugar do sinal dos positivos (alinha com os negativos). Se houver <code>+</code>, o espaço é ignorado.</td><td><code>[% d]</code> com 42 → <code>[ 42]</code></td></tr>
+<tr><td><code>0</code></td><td>Completa a largura com zeros à esquerda (em vez de espaços). Ignorado com <code>-</code>, e nos inteiros quando há precisão.</td><td><code>[%05d]</code> com 42 → <code>[00042]</code></td></tr>
+<tr><td><code>#</code></td><td>Forma alternativa: <code>0</code> antes do octal, <code>0x</code>/<code>0X</code> antes do hexadecimal (mas não no zero), <code>0b</code> no binário; no <code>%f</code>/<code>%e</code>, ponto mesmo sem casas; no <code>%g</code>, mantém os zeros do fim.</td><td><code>[%#x]</code> com 255 → <code>[0xff]</code>; <code>[%#.0f]</code> com 2.0 → <code>[2.]</code>; <code>[%#g]</code> com 1.5 → <code>[1.50000]</code></td></tr>
+</table>
+</div>
+<p>As flags podem ser combinadas, em qualquer ordem: <code>%-+6d</code> → <code>[+7    ]</code>, <code>%+05d</code> → <code>[+0007]</code>.</p>
+
+<h2 id="largura">Largura e precisão</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Com</th><th>A largura (<code>%8…</code>)</th><th>A precisão (<code>%.3…</code>) significa</th><th>Exemplo → saída</th></tr>
+<tr><td><code>d i u o x X</code></td><td>mínimo de caracteres</td><td>mínimo de <strong>dígitos</strong> (completa com zeros). Com <code>.0</code>, o valor 0 não mostra nada.</td><td><code>[%8.5d]</code> com 42 → <code>[   00042]</code>; <code>[%.0d]</code> com 0 → <code>[]</code></td></tr>
+<tr><td><code>f F e E</code></td><td>mínimo de caracteres (contando o ponto e o sinal)</td><td><strong>casas decimais</strong> (padrão 6). Arredonda.</td><td><code>[%8.3f]</code> com 3.14159 → <code>[   3.142]</code>; <code>[%.3e]</code> com 1234.5678 → <code>[1.235e+03]</code></td></tr>
+<tr><td><code>g G</code></td><td>mínimo de caracteres</td><td><strong>algarismos significativos</strong> (padrão 6)</td><td><code>[%.3g]</code> com 1234.5678 → <code>[1.23e+03]</code></td></tr>
+<tr><td><code>s</code></td><td>mínimo de caracteres (na verdade, bytes)</td><td><strong>máximo</strong> de caracteres: corta o texto</td><td><code>[%.3s]</code> com "Banana" → <code>[Ban]</code>; <code>[%10.3s]</code> → <code>[       Ban]</code></td></tr>
+<tr><td><code>c p</code></td><td>mínimo de caracteres</td><td>(não use)</td><td><code>[%3c]</code> com 'A' → <code>[  A]</code></td></tr>
+</table>
+</div>
+
+<ul>
+  <li><strong>O arredondamento é "para o par" no empate exato:</strong> <code>printf("%.0f", 2.5)</code> mostra <code>2</code>, não <code>3</code> (e <code>3.5</code> mostra <code>4</code>). Nos outros casos, arredonda para o mais próximo.</li>
+  <li><strong>A largura conta bytes</strong>, não letras: em UTF-8, <code>ã</code> e <code>ç</code> ocupam 2 bytes, e uma coluna com <code>%-10s</code> sai torta. Veja <a href="acentos-utf8.html">Acentos e UTF-8</a>.</li>
+</ul>
+
+<h2 id="asterisco">O <code>*</code>: largura e precisão em variáveis</h2>
+<p>Um <code>*</code> no lugar do número diz "pegue a largura (ou a precisão) do próximo argumento, que é um <code>int</code>". Os argumentos vêm na ordem em que aparecem: largura, precisão, valor.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>Argumentos</th><th>Saída</th><th>Equivale a</th></tr>
+<tr><td><code>[%*d]</code></td><td><code>6, 7</code></td><td><code>[     7]</code></td><td><code>%6d</code></td></tr>
+<tr><td><code>[%-*d]</code></td><td><code>6, 7</code></td><td><code>[7     ]</code></td><td><code>%-6d</code></td></tr>
+<tr><td><code>[%*d]</code></td><td><code>-6, 7</code></td><td><code>[7     ]</code></td><td>largura negativa = flag <code>-</code></td></tr>
+<tr><td><code>[%.*f]</code></td><td><code>2, 3.14159</code></td><td><code>[3.14]</code></td><td><code>%.2f</code></td></tr>
+<tr><td><code>[%*.*f]</code></td><td><code>6, 2, 3.14159</code></td><td><code>[  3.14]</code></td><td><code>%6.2f</code></td></tr>
+<tr><td><code>%.*s</code></td><td><code>3, "Banana"</code></td><td><code>Ban</code></td><td><code>%.3s</code> (útil para imprimir só um pedaço de uma string)</td></tr>
+</table>
+</div>
+<p>Atenção: o argumento do <code>*</code> tem de ser <code>int</code>. Um <code>sizeof</code> ou <code>strlen</code> (que são <code>size_t</code>) precisa de conversão: <code>printf("%.*s", (int)strlen(t), t)</code>.</p>
+
+<h2 id="familia">A família printf e o valor de retorno</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Escreve em</th><th>Observação</th><th>Aula</th></tr>
+<tr><td><code>printf(fmt, …)</code></td><td>a tela (<code>stdout</code>)</td><td>Devolve quantos bytes escreveu, ou um número negativo se deu erro.</td><td><a href="printf.html">printf</a></td></tr>
+<tr><td><code>fprintf(arq, fmt, …)</code></td><td>um arquivo (<code>FILE *</code>), ou <code>stderr</code></td><td><code>fprintf(stderr, "Erro: …\n")</code> é o jeito de mostrar erros.</td><td><a href="escrever-arquivos.html">Escrever Arquivos</a></td></tr>
+<tr><td><code>snprintf(buf, tam, fmt, …)</code> <span class="versao">C99</span></td><td>uma string</td><td>Nunca passa de <code>tam</code> bytes (contando o <code>'\0'</code>). Devolve quantos bytes <strong>precisaria</strong>: se for <code>&gt;= tam</code>, o texto foi cortado.</td><td><a href="string-numero.html">Texto ↔ Número</a></td></tr>
+<tr><td><code>sprintf(buf, fmt, …)</code></td><td>uma string</td><td><strong>Evite</strong>: não sabe o tamanho do <code>buf</code> e pode estourá-lo.</td><td><a href="seguranca.html">Segurança</a></td></tr>
+<tr><td><code>vprintf</code>, <code>vfprintf</code>, <code>vsnprintf</code></td><td>como as de cima</td><td>Recebem um <code>va_list</code> em vez dos <code>…</code>: para escrever a sua própria função do tipo <code>printf</code>.</td><td><a href="variadicas.html">Funções Variádicas</a></td></tr>
+<tr><td><code>puts(s)</code></td><td>a tela</td><td>Mostra o texto e pula linha. Não interpreta <code>%</code>.</td><td><a href="printf.html">printf</a></td></tr>
+<tr><td><code>putchar(c)</code></td><td>a tela</td><td>Um caractere.</td><td><a href="char.html">char</a></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="retorno.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = printf("Olá, Ana!\n");
+    printf("printf devolveu %d\n", n);
+    char curto[8];
+    int precisa = snprintf(curto, sizeof curto, "Total: R$ %.2f", 1234.5);
+    printf("[%s] precisava de %d caracteres\n", curto, precisa);
+    int x;
+    int r = scanf("%d", &amp;x);
+    printf("scanf devolveu %d (EOF = %d)\n", r, EOF);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra retorno.c -o retorno
+retorno.c: In function ‘main’:
+retorno.c:7:58: warning: ‘Total: R$ ’ directive output truncated writing 10 bytes into a region of size 8 [-Wformat-truncation=]
+    7 |     int precisa = snprintf(curto, sizeof curto, "Total: R$ %.2f", 1234.5);
+      |                                                  ~~~~~~~~^~
+retorno.c:7:19: note: ‘snprintf’ output 18 bytes into a destination of size 8
+    7 |     int precisa = snprintf(curto, sizeof curto, "Total: R$ %.2f", 1234.5);
+      |                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+$ ./retorno &lt; /dev/null                       « entrada vazia: o scanf encontra o fim do arquivo
+Olá, Ana!
+printf devolveu 11
+[Total: ] precisava de 17 caracteres
+scanf devolveu -1 (EOF = -1)</pre>
+<ul>
+  <li><code>"Olá, Ana!\n"</code> tem 10 letras, mas o <code>printf</code> devolveu <strong>11</strong>: ele conta bytes, e o <code>á</code> ocupa 2.</li>
+  <li>O <code>snprintf</code> cortou o texto em 7 caracteres + <code>'\0'</code> e avisou, pelo retorno, que precisava de 17. O gcc percebeu já na compilação (<code>-Wformat-truncation</code>, que vem com o <code>-Wall</code>); o Clang do editor não avisa.</li>
+</ul>
+
+<hr>
+
+<h2 id="scanf">scanf: a tabela</h2>
+<p>O <code>scanf</code> usa quase as mesmas letras, mas ao contrário: em vez de receber valores, recebe <strong>endereços</strong> de variáveis (por isso o <code>&amp;</code>) e as preenche com o que o usuário digitou. Aula: <a href="scanf.html">Entrada com scanf</a>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>Argumento</th><th>Lê</th><th>Pula espaços antes?</th></tr>
+<tr><td><code>%d</code></td><td><code>int *</code></td><td>inteiro em base 10, com sinal opcional</td><td>sim</td></tr>
+<tr><td><code>%i</code></td><td><code>int *</code></td><td>inteiro em qualquer base: <code>0x1F</code> = 31 (hexadecimal), <code>017</code> = 15 (octal), <code>17</code> = 17</td><td>sim</td></tr>
+<tr><td><code>%u</code></td><td><code>unsigned *</code></td><td>inteiro sem sinal</td><td>sim</td></tr>
+<tr><td><code>%o</code>, <code>%x</code></td><td><code>unsigned *</code></td><td>octal; hexadecimal (com ou sem <code>0x</code>)</td><td>sim</td></tr>
+<tr><td><code>%f</code>, <code>%e</code>, <code>%g</code>, <code>%a</code></td><td><strong><code>float *</code></strong></td><td>número com ponto (os quatro são iguais no <code>scanf</code>)</td><td>sim</td></tr>
+<tr><td><code>%lf</code></td><td><strong><code>double *</code></strong></td><td>número com ponto, para <code>double</code></td><td>sim</td></tr>
+<tr><td><code>%Lf</code></td><td><code>long double *</code></td><td>número com ponto, para <code>long double</code></td><td>sim</td></tr>
+<tr><td><code>%hhd</code>, <code>%hd</code>, <code>%ld</code>, <code>%lld</code>, <code>%zu</code></td><td><code>signed char *</code>, <code>short *</code>, <code>long *</code>, <code>long long *</code>, <code>size_t *</code></td><td>os mesmos modificadores de tamanho do <code>printf</code></td><td>sim</td></tr>
+<tr><td><code>%c</code></td><td><code>char *</code></td><td><strong>um caractere qualquer</strong>, inclusive espaço e Enter</td><td><strong>não</strong> (use <code>" %c"</code>)</td></tr>
+<tr><td><code>%s</code></td><td><code>char *</code> (um array)</td><td>uma <strong>palavra</strong>: para no primeiro espaço ou Enter. Sempre com largura: <code>%19s</code> num <code>char nome[20]</code></td><td>sim</td></tr>
+<tr><td><code>%[abc]</code></td><td><code>char *</code></td><td>só os caracteres da lista (um "conjunto"): <code>%[0-9]</code> lê só dígitos</td><td>não</td></tr>
+<tr><td><code>%[^\n]</code></td><td><code>char *</code></td><td>tudo <strong>até o Enter</strong> (o <code>^</code> = "menos estes"): uma linha com espaços. Use com largura: <code>%39[^\n]</code></td><td>não (use <code>" %39[^\n]"</code>)</td></tr>
+<tr><td><code>%n</code></td><td><code>int *</code></td><td>não lê nada: guarda quantos caracteres foram consumidos até ali. Não conta no retorno.</td><td>não</td></tr>
+<tr><td><code>%*d</code>, <code>%*s</code>…</td><td>(nenhum)</td><td>lê e <strong>descarta</strong> (o <code>*</code> no <code>scanf</code> = "pule este campo"). Não conta no retorno.</td><td>sim</td></tr>
+<tr><td><code>%%</code></td><td>(nenhum)</td><td>espera um <code>%</code> na entrada</td><td>sim</td></tr>
+</table>
+</div>
+
+<h3>O que mais pode ir no formato</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No formato</th><th>Efeito</th><th>Exemplo</th></tr>
+<tr><td>um espaço (ou <code>\n</code>, <code>\t</code>)</td><td>pula <strong>todos</strong> os espaços, Enters e tabs que houver na entrada (também nenhum)</td><td><code>scanf(" %c", &amp;letra)</code> pula o Enter que sobrou da leitura anterior</td></tr>
+<tr><td>outro caractere</td><td>tem de aparecer igualzinho na entrada; senão o <code>scanf</code> para ali</td><td><code>scanf("%d/%d/%d", &amp;d, &amp;m, &amp;a)</code> lê <code>17/10/2026</code></td></tr>
+<tr><td>um número (largura)</td><td>máximo de caracteres lidos naquele campo</td><td><code>%19s</code>, <code>%39[^\n]</code>, <code>%2d</code></td></tr>
+</table>
+</div>
+
+<h3>O valor de retorno</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th><code>scanf</code> devolve</th><th>Quando</th></tr>
+<tr><td>o número de campos preenchidos (<code>1</code>, <code>2</code>…)</td><td>leu tudo, ou parte (se devolveu menos que o esperado, parou num campo que não combinou)</td></tr>
+<tr><td><code>0</code></td><td>o primeiro campo não combinou (por exemplo, <code>abc</code> para um <code>%d</code>). O texto que não combinou <strong>continua na entrada</strong>.</td></tr>
+<tr><td><code>EOF</code> (−1)</td><td>a entrada acabou antes do primeiro campo (Ctrl+D no terminal, arquivo vazio)</td></tr>
+</table>
+</div>
+
+<p>Todos esses casos num programa só:</p>
+<pre class="file" data-file="leitura.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 0;
+    double altura = 0.0;
+    char nome[20] = "";
+    char cidade[40] = "";
+    char letra = '?';
+    int lidos = scanf("%d %lf", &amp;idade, &amp;altura);
+    printf("lidos=%d idade=%d altura=%.2f\n", lidos, idade, altura);
+    lidos = scanf(" %c", &amp;letra);
+    printf("lidos=%d letra=%c\n", lidos, letra);
+    lidos = scanf("%19s", nome);
+    printf("lidos=%d nome=%s\n", lidos, nome);
+    lidos = scanf(" %39[^\n]", cidade);
+    printf("lidos=%d cidade=%s\n", lidos, cidade);
+    int d, m, a;
+    lidos = scanf("%d/%d/%d", &amp;d, &amp;m, &amp;a);
+    printf("lidos=%d data=%02d/%02d/%d\n", lidos, d, m, a);
+    int h = 0, n = 0;
+    lidos = scanf("%i %*d %x%n", &amp;h, &amp;d, &amp;n);
+    printf("lidos=%d h=%d d=%d n=%d\n", lidos, h, d, n);
+    lidos = scanf("%d", &amp;idade);
+    printf("lidos=%d\n", lidos);
+    lidos = scanf("%d", &amp;idade);
+    printf("lidos=%d\n", lidos);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra leitura.c -o leitura
+$ printf '29 1.65\nA\nAna\nSão Paulo - SP\n17/10/2026\n0x1F 99 ff\nabc\n' | ./leitura
+lidos=2 idade=29 altura=1.65
+lidos=1 letra=A
+lidos=1 nome=Ana
+lidos=1 cidade=São Paulo - SP
+lidos=3 data=17/10/2026
+lidos=2 h=31 d=255 n=11
+lidos=0
+lidos=0</pre>
+<ul>
+  <li><code>%i</code> leu <code>0x1F</code> como 31; o <code>%*d</code> leu o 99 e jogou fora (por isso <code>lidos=2</code>, e não 3); o <code>%x</code> leu <code>ff</code> = 255.</li>
+  <li><code>n=11</code>: o Enter que sobrou da linha anterior (1) mais <code>0x1F 99 ff</code> (10).</li>
+  <li>As duas últimas leituras devolvem <strong>0</strong>: o <code>abc</code> não é um número e <strong>fica na entrada</strong>, travando todas as leituras de <code>%d</code> seguintes. É por isso que um laço com <code>scanf</code> que não confere o retorno pode rodar para sempre. Solução: <a href="validar-entrada.html">Validar a Entrada</a>.</li>
+</ul>
+
+<h2 id="diferencas">printf × scanf: as diferenças que confundem</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Assunto</th><th>printf</th><th>scanf</th></tr>
+<tr><td>Argumentos</td><td>os <strong>valores</strong>: <code>printf("%d", idade)</code></td><td>os <strong>endereços</strong>: <code>scanf("%d", &amp;idade)</code>. Num array de <code>char</code>, sem <code>&amp;</code>: <code>scanf("%19s", nome)</code></td></tr>
+<tr><td><code>double</code></td><td><code>%f</code> (ou <code>%lf</code>, que é igual)</td><td><strong><code>%lf</code></strong>. <code>%f</code> é para <code>float</code>: com um <code>double</code>, guarda lixo</td></tr>
+<tr><td>Por quê?</td><td>todo <code>float</code> vira <code>double</code> ao ser passado: o <code>printf</code> só recebe <code>double</code></td><td>recebe um endereço e precisa saber se ali cabem 4 bytes (<code>float</code>) ou 8 (<code>double</code>)</td></tr>
+<tr><td><code>%i</code></td><td>igual a <code>%d</code></td><td>entende <code>0x</code> (hexadecimal) e <code>0</code> na frente (octal): <code>010</code> vira 8!</td></tr>
+<tr><td><code>*</code></td><td>largura ou precisão vem de um argumento</td><td>lê o campo e descarta</td></tr>
+<tr><td>Largura</td><td>mínima, para alinhar</td><td>máxima, para não estourar o array (<code>%19s</code>)</td></tr>
+<tr><td>Precisão (<code>.2</code>)</td><td>casas, dígitos ou caracteres</td><td><strong>não existe</strong>: <code>scanf("%.2f", …)</code> é inválido</td></tr>
+<tr><td>Espaço no formato</td><td>sai um espaço</td><td>pula qualquer quantidade de espaços e Enters</td></tr>
+<tr><td><code>%s</code></td><td>mostra até o <code>'\0'</code></td><td>lê só uma palavra (para no espaço); para a linha toda, <code>%[^\n]</code> ou, melhor, <a href="fgets.html"><code>fgets</code></a></td></tr>
+<tr><td><code>%c</code></td><td>mostra um caractere</td><td>lê qualquer caractere, até o Enter que sobrou (use <code>" %c"</code>)</td></tr>
+<tr><td>Retorno</td><td>bytes escritos</td><td>campos preenchidos, 0, ou <code>EOF</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="erros">Erros comuns</h2>
+<p>Este programa reúne os enganos mais frequentes. O <code>-Wall</code> pega quase todos:</p>
+<pre class="file" data-file="errado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double preco = 4.5;
+    char texto[20] = "100% certo";
+    printf("%d\n", preco);
+    printf("%f\n", idade);
+    printf("%d %d\n", idade);
+    printf("%lu\n", sizeof(int));
+    printf("%s\n", 'A');
+    printf(texto);
+    printf("\n50%\n");
+    scanf("%d", idade);
+    scanf("%f", &amp;preco);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra errado.c -o errado
+errado.c: In function ‘main’:
+errado.c:7:14: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’ [-Wformat=]
+    7 |     printf("%d\n", preco);
+      |             ~^     ~~~~~
+      |              |     |
+      |              int   double
+      |             %f
+errado.c:8:14: warning: format ‘%f’ expects argument of type ‘double’, but argument 2 has type ‘int’ [-Wformat=]
+    8 |     printf("%f\n", idade);
+      |             ~^     ~~~~~
+      |              |     |
+      |              |     int
+      |              double
+      |             %d
+errado.c:9:17: warning: format ‘%d’ expects a matching ‘int’ argument [-Wformat=]
+    9 |     printf("%d %d\n", idade);
+      |                ~^
+      |                 |
+      |                 int
+errado.c:11:14: warning: format ‘%s’ expects argument of type ‘char *’, but argument 2 has type ‘int’ [-Wformat=]
+   11 |     printf("%s\n", 'A');
+      |             ~^     ~~~
+      |              |     |
+      |              |     int
+      |              char *
+      |             %d
+errado.c:12:12: warning: format not a string literal and no format arguments [-Wformat-security]
+   12 |     printf(texto);
+      |            ^~~~~
+errado.c:13:18: warning: unknown conversion type character ‘\x0a’ in format [-Wformat=]
+   13 |     printf("\n50%\n");
+      |                  ^~
+errado.c:14:13: warning: format ‘%d’ expects argument of type ‘int *’, but argument 2 has type ‘int’ [-Wformat=]
+   14 |     scanf("%d", idade);
+      |            ~^   ~~~~~
+      |             |   |
+      |             |   int
+      |             int *
+errado.c:15:13: warning: format ‘%f’ expects argument of type ‘float *’, but argument 2 has type ‘double *’ [-Wformat=]
+   15 |     scanf("%f", &amp;preco);
+      |            ~^   ~~~~~~
+      |             |   |
+      |             |   double *
+      |             float *
+      |            %lf</pre>
+
+<p>A mesma coisa, aviso por aviso, com a versão do Clang (o compilador do editor):</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>gcc 15</th><th>Clang (editor)</th><th>O que acontece e como consertar</th></tr>
+<tr><td><code>printf("%d\n", preco);</code></td><td><code>format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’</code></td><td><code>format specifies type 'int' but the argument has type 'double'</code></td><td>Mostra lixo (no gcc, um número diferente a cada execução: <code>-1387403448</code>, <code>-710790344</code>…; no editor, <code>0</code>). Use <code>%f</code>, ou converta: <code>(int)preco</code>.</td></tr>
+<tr><td><code>printf("%f\n", idade);</code></td><td><code>format ‘%f’ expects argument of type ‘double’, but argument 2 has type ‘int’</code></td><td><code>format specifies type 'double' but the argument has type 'int'</code></td><td>No gcc mostrou <code>4.500000</code> (o valor de <code>preco</code>, que estava "à mão"!); no editor, <code>0.000000</code>. O <code>printf</code> não converte: use <code>%d</code> ou <code>(double)idade</code>.</td></tr>
+<tr><td><code>printf("%d %d\n", idade);</code></td><td><code>format ‘%d’ expects a matching ‘int’ argument</code></td><td><code>more '%' conversions than data arguments</code></td><td>A segunda lacuna mostra lixo (<code>29 -67866608</code>). Uma lacuna para cada valor.</td></tr>
+<tr><td><code>printf("%lu\n", sizeof(int));</code></td><td>(nenhum aviso)</td><td>(nenhum aviso)</td><td>Funciona nos dois, mas por sorte: <code>size_t</code> é <code>unsigned long</code> no Linux e no editor; no Windows de 64 bits, não. O certo é <code>%zu</code>.</td></tr>
+<tr><td><code>printf("%s\n", 'A');</code></td><td><code>format ‘%s’ expects argument of type ‘char *’, but argument 2 has type ‘int’</code></td><td><code>format specifies type 'char *' but the argument has type 'char'</code></td><td>No gcc, <code>Falha de segmentação</code> (o 65 vira um endereço inválido); no editor, uma linha vazia. Para um caractere, <code>%c</code>.</td></tr>
+<tr><td><code>printf(texto);</code></td><td><code>format not a string literal and no format arguments [-Wformat-security]</code></td><td><code>format string is not a string literal (potentially insecure) [-Wformat-security]</code></td><td>O <code>%</code> de "100% certo" vira formato: o editor mostrou <code>100 erto</code> (o <code>% c</code> engoliu o <code>c</code>). Com texto do usuário, é uma falha de segurança. Use <code>printf("%s", texto)</code> ou <code>fputs(texto, stdout)</code>.</td></tr>
+<tr><td><code>printf("\n50%\n");</code></td><td><code>unknown conversion type character ‘\x0a’ in format</code></td><td><code>invalid conversion specifier '\x0a'</code></td><td>Um <code>%</code> sozinho abre uma lacuna (aqui, com o Enter, <code>\x0a</code>, como "letra"). Para mostrar o <code>%</code>, escreva <code>%%</code>.</td></tr>
+<tr><td><code>scanf("%d", idade);</code></td><td><code>format ‘%d’ expects argument of type ‘int *’, but argument 2 has type ‘int’</code></td><td><code>format specifies type 'int *' but the argument has type 'int'</code></td><td>Faltou o <code>&amp;</code>: o <code>scanf</code> escreve no "endereço" 29 e o programa cai com <code>Falha de segmentação</code>. Escreva <code>&amp;idade</code>.</td></tr>
+<tr><td><code>scanf("%f", &amp;preco);</code></td><td><code>format ‘%f’ expects argument of type ‘float *’, but argument 2 has type ‘double *’</code></td><td><code>format specifies type 'float *' but the argument has type 'double *'</code></td><td>O <code>scanf</code> guarda um <code>float</code> (4 bytes) num <code>double</code> (8): o valor sai errado. Para <code>double</code>, <code>%lf</code>.</td></tr>
+</table>
+</div>
+
+<h3>Erros que o compilador não pega</h3>
+<div class="cenario">
+<strong>O <code>%c</code> "pulou" a pergunta</strong>
+<pre class="file" data-file="enter.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int qtd = 0;
+    char tam = '?';
+    char nome[20] = "";
+    printf("Quantidade: ");
+    scanf("%d", &amp;qtd);
+    printf("Tamanho (P/M/G): ");
+    scanf("%c", &amp;tam);
+    printf("\nqtd=%d tam=%d\n", qtd, tam);
+    printf("Nome completo: ");
+    scanf("%19s", nome);
+    printf("nome=[%s]\n", nome);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ ./enter
+Quantidade: 3                                 « a Ana digita 3 e Enter
+Tamanho (P/M/G):
+qtd=3 tam=10                                  « nem esperou: o %c leu o Enter (código 10)
+Nome completo: M                              « a Ana digita M, achando que é o tamanho
+nome=[M]</pre>
+<p><strong>O que significa:</strong> o <code>%d</code> leu o <code>3</code> e deixou o Enter na entrada. O <code>%c</code> lê <strong>qualquer</strong> caractere, inclusive esse Enter.</p>
+<p><strong>Como consertar:</strong> um espaço antes: <code>scanf(" %c", &amp;tam)</code>. O espaço pula os Enters e espaços que sobraram.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>%s</code> só leu o primeiro nome</strong>
+<p>Com a entrada <code>Ana Souza</code>, <code>scanf("%19s", nome)</code> guarda só <code>Ana</code>; o <code>Souza</code> fica para a próxima leitura.</p>
+<p><strong>Como consertar:</strong> para uma linha inteira, <code>scanf(" %19[^\n]", nome)</code> ou, melhor, <code>fgets(nome, sizeof nome, stdin)</code> (aula <a href="fgets.html">fgets</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>%s</code> sem largura: estouro do array</strong>
+<p><code>scanf("%s", nome)</code> num <code>char nome[20]</code> aceita uma palavra de 100 letras e escreve além do fim do array, sem nenhum aviso do compilador. No gcc, o programa costuma morrer no fim com <code>*** stack smashing detected ***: terminated</code> (veja <a href="ref-erros.html">Erros Comuns</a>).</p>
+<p><strong>Como consertar:</strong> sempre <code>%19s</code> (o tamanho do array menos 1, para o <code>'\0'</code>). Aula: <a href="seguranca.html">Segurança</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>O laço com <code>scanf</code> não para nunca</strong>
+<p>Se o usuário digita <code>abc</code> num <code>%d</code>, o <code>scanf</code> devolve 0 e deixa o <code>abc</code> na entrada. A próxima volta do laço tenta ler o mesmo <code>abc</code>… para sempre.</p>
+<p><strong>Como consertar:</strong> confira o retorno (<code>if (scanf("%d", &amp;n) != 1)</code>) e descarte a linha ruim (<code>while ((c = getchar()) != '\n' &amp;&amp; c != EOF) {}</code>). Aula: <a href="validar-entrada.html">Validar a Entrada</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Vírgula ou ponto?</strong>
+<p>O <code>scanf("%lf")</code> espera <strong>ponto</strong>: <code>1.65</code>. Com <code>1,65</code>, ele lê só o <code>1</code> e para na vírgula. O mesmo vale para a saída: <code>%.2f</code> mostra <code>1.65</code>. Só se o programa chamar <code>setlocale(LC_ALL, "")</code> num sistema em português é que o gcc passa a usar vírgula (<code>3,14</code>); no editor, o <code>setlocale</code> não muda nada.</p>
+</div>
+
+<hr>
+
+<h2 id="experimente">Experimente</h2>
+<p>Um laboratório de formatos: troque os formatos e os valores e veja o resultado. Os colchetes mostram onde cada lacuna começa e termina, assim dá para ver os espaços.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> mude as larguras, as precisões e as flags (<code>-</code>, <code>+</code>, <code>0</code>, <code>#</code>) e clique em Rodar. Tente prever a saída antes.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int qtd = 7;
+    double preco = 12.9;
+    const char *item = "Caderno";
+
+    printf("[%d] [%5d] [%-5d] [%05d] [%+d]\n", qtd, qtd, qtd, qtd, qtd);
+    printf("[%f] [%.2f] [%8.2f] [%-8.1f] [%e] [%g]\n", preco, preco, preco, preco, preco, preco);
+    printf("[%s] [%10s] [%-10s] [%.3s]\n", item, item, item, item);
+    printf("[%x] [%X] [%#x] [%o] [%c]\n", 255, 255, 255, 8, 'A');
+
+    int largura = 12;
+    printf("[%*s] [%-*s]\n", largura, item, largura, item);
+    printf("%zu bytes num double; 100%% pronto\n", sizeof preco);
+    return 0;
+}
+</pre>
+</div>
+
+<div class="tryc" data-stdin="1.65" data-goal="out:Altura: 1.65 m,semaviso">
+<p class="try-task"><strong>Missão:</strong> o programa lê a altura da Ana (a entrada já vem preenchida com <code>1.65</code>), mas mostra um valor errado, e o compilador avisa. Conserte o formato do <code>scanf</code> para que a saída seja <code>Altura: 1.65 m</code>, sem nenhum aviso.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double altura = 0.0;
+    printf("Sua altura: ");
+    if (scanf("%f", &amp;altura) != 1) {
+        printf("Isso não é um número.\n");
+        return 1;
+    }
+    printf("Altura: %.2f m\n", altura);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double altura = 0.0;
+    printf("Sua altura: ");
+    if (scanf("%lf", &amp;altura) != 1) {
+        printf("Isso não é um número.\n");
+        return 1;
+    }
+    printf("Altura: %.2f m\n", altura);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Formato: <code>%[flags][largura][.precisão][tamanho]letra</code>, nesta ordem. Exemplo: <code>%-10.2lf</code>.</li>
+  <li>Letras: <code>d i u o x X</code> (inteiros), <code>f e g a</code> (ponto flutuante), <code>c</code>, <code>s</code>, <code>p</code>, <code>%%</code>. <code>%b</code> (binário, C23) só funciona no gcc.</li>
+  <li>Tamanhos: <code>hh</code> (char), <code>h</code> (short), <code>l</code> (long), <code>ll</code> (long long), <code>z</code> (<code>size_t</code>), <code>t</code> (<code>ptrdiff_t</code>), <code>j</code> (<code>intmax_t</code>), <code>L</code> (long double). Para <code>int64_t</code>, <code>PRId64</code>.</li>
+  <li>Flags: <code>-</code> esquerda, <code>+</code> sinal, espaço, <code>0</code> zeros, <code>#</code> forma alternativa. <code>*</code> tira largura ou precisão de um argumento <code>int</code>.</li>
+  <li>No <code>scanf</code>: endereços (<code>&amp;</code>), <code>%lf</code> para <code>double</code>, <code>" %c"</code> para pular o Enter, <code>%19s</code> com largura, <code>%[^\n]</code> para a linha; confira o retorno (campos lidos, 0 ou <code>EOF</code>).</li>
+  <li>Compile com <code>-Wall</code>: ele pega formato errado, <code>&amp;</code> esquecido e <code>printf(texto)</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

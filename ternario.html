@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Operador Ternário — condição ? valor1 : valor2 | Guia C</title>
+<meta name="description" content="O operador ternário (? :) em C para quem nunca programou: escolher um entre dois valores numa linha, dentro do printf (ano/anos), ternário × if, precedência (preco + frete ? 15 : 0), os dois lados precisam combinar (-Wformat, pointer/integer type mismatch), não aninhar demais e o ?: do gcc, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Operador Ternário (? :)</span></h1>
+
+<p class="intro">Muitas decisões servem só para escolher <strong>um valor</strong>: "ano" ou "anos"? O maior de dois números? "Aprovada" ou "Reprovada"? Escrever um <code>if</code>/<code>else</code> de cinco linhas para isso é trabalhoso. O C tem um atalho: o <strong>operador ternário</strong>, <code>condição ? valor1 : valor2</code>. Nesta aula você vai usá-lo no lugar certo, dentro do <code>printf</code> e de atribuições, e aprender quando ele atrapalha mais do que ajuda.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A forma <code>condição ? se_sim : se_não</code> e como ler em voz alta.</li>
+  <li>A diferença entre o ternário (escolhe um <strong>valor</strong>) e o <code>if</code> (escolhe <strong>ações</strong>).</li>
+  <li>Como usar o ternário dentro do <code>printf</code>, por exemplo para "ano" / "anos".</li>
+  <li>Por que <code>preco + frete ? 15 : 0</code> não faz o que parece, e quando os parênteses são obrigatórios.</li>
+  <li>Por que os dois valores precisam combinar, e o que acontece quando não combinam.</li>
+  <li>Por que não aninhar ternários demais.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: a pergunta com duas respostas prontas</h2>
+<p>Pense na pergunta do garçom: "Está chovendo? Então leve o guarda-chuva; senão, o boné". Antes de ouvir a resposta, as duas opções já estão prontas, e a pergunta só escolhe <strong>uma</strong>.</p>
+<p>O ternário é isso, numa linha:</p>
+
+<pre class="file">condição ? valor_se_sim : valor_se_não</pre>
+
+<p>Leia em voz alta: "a condição é verdadeira? <strong>então</strong> este valor, <strong>senão</strong> aquele". O <code>?</code> é a pergunta; o <code>:</code> separa as duas respostas. O nome "ternário" quer dizer "de três partes": é o único operador do C com <strong>três</strong> operandos (o <code>+</code> tem dois, o <code>!</code> tem um).</p>
+
+<hr>
+
+<h2>1. A forma básica</h2>
+
+<pre class="file" data-file="maior.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 7;
+    int b = 12;
+    int maior = a &gt; b ? a : b;
+    printf("O maior é %d\n", maior);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra maior.c -o maior
+$ ./maior
+O maior é 12</pre>
+
+<dl class="anatomy">
+  <dt>a &gt; b</dt><dd>A <strong>condição</strong>, igual à de um <code>if</code>: 0 é falso, o resto é verdadeiro. Aqui, <code>7 &gt; 12</code> dá 0.</dd>
+  <dt>?</dt><dd>"Então…". Separa a condição das respostas.</dd>
+  <dt>a</dt><dd>O valor escolhido se a condição for verdadeira.</dd>
+  <dt>:</dt><dd>"Senão…".</dd>
+  <dt>b</dt><dd>O valor escolhido se a condição for falsa. Como 7 &gt; 12 é falso, o ternário inteiro vale <code>b</code>, 12.</dd>
+  <dt>int maior = …;</dt><dd>O resultado do ternário é um valor como outro qualquer: pode ser guardado numa variável, mostrado, usado numa conta.</dd>
+</dl>
+
+<p>Só um dos dois valores é calculado: o C calcula a condição primeiro e depois <strong>apenas</strong> o lado escolhido, como no curto-circuito do <code>&amp;&amp;</code> (aula <a href="operadores-logicos.html">Operadores Lógicos</a>). Então <code>b != 0 ? a / b : 0</code> nunca divide por zero.</p>
+
+<h3>Ternário × <code>if</code>: valor × ação</h3>
+<p>A mesma escolha com <code>if</code>/<code>else</code> ocupa cinco linhas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Com <code>if</code></th><th>Com ternário</th></tr>
+<tr><td><pre class="file">int maior;
+if (a &gt; b) {
+    maior = a;
+} else {
+    maior = b;
+}</pre></td><td><pre class="file">int maior = a &gt; b ? a : b;</pre></td></tr>
+</table>
+</div>
+
+<p>A diferença de fundo: o <code>if</code> escolhe <strong>o que fazer</strong> (pode ter várias linhas em cada caminho); o ternário escolhe <strong>um valor</strong>. Quando cada caminho é "guardar um valor na mesma variável" ou "mostrar um texto ou outro", o ternário é mais curto e claro. Quando os caminhos fazem coisas diferentes, use <code>if</code>.</p>
+
+<hr>
+
+<h2>2. Dentro do <code>printf</code></h2>
+<p>Lembra do "Faltam 1 anos" da aula <a href="if-else.html">if e else</a>? Com o ternário, o plural cabe dentro do <code>printf</code>:</p>
+
+<pre class="file" data-file="anos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int faltam = 1;
+    printf("Faltam %d ano%s.\n", faltam, faltam == 1 ? "" : "s");
+    faltam = 3;
+    printf("Faltam %d ano%s.\n", faltam, faltam == 1 ? "" : "s");
+    int vidas = 0;
+    printf("%s\n", vidas &gt; 0 ? "Continue jogando" : "Fim de jogo");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra anos.c -o anos
+$ ./anos
+Faltam 1 ano.        « faltam == 1: o %s recebeu "" (texto vazio)
+Faltam 3 anos.       « senão: o %s recebeu "s"
+Fim de jogo</pre>
+
+<dl class="anatomy">
+  <dt>ano%s</dt><dd>O <code>%s</code> (aula <a href="formatos-printf.html">Formatos do printf</a>) é um buraco para um texto, colado logo depois de "ano".</dd>
+  <dt>faltam == 1 ? "" : "s"</dt><dd>O ternário escolhe o texto que vai no buraco: nada (<code>""</code>) ou um <code>"s"</code>. As duas respostas são textos, e é isso que o <code>%s</code> espera.</dd>
+  <dt>a vírgula</dt><dd>O ternário inteiro é <strong>um</strong> argumento do <code>printf</code>. Não precisa de parênteses em volta, porque a vírgula que separa os argumentos não faz parte de nenhuma conta.</dd>
+</dl>
+
+<div class="tryc" data-stdin="1" data-goal="outre:^Carrinho: 1 item\n$,src:\?">
+<p class="try-task"><strong>Missão:</strong> o carrinho da lojinha mostra "1 itens". Use o ternário dentro do <code>printf</code> para escrever "item" quando houver 1 e "itens" nos outros casos. A entrada preparada é <code>1</code>:</p>
+<pre class="out">Carrinho: 1 item</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int itens = 0;
+    if (scanf("%d", &amp;itens) != 1) {
+        return 1;
+    }
+    printf("Carrinho: %d itens\n", itens);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int itens = 0;
+    if (scanf("%d", &amp;itens) != 1) {
+        return 1;
+    }
+    printf("Carrinho: %d %s\n", itens, itens == 1 ? "item" : "itens");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Depois de cumprir a missão, troque a entrada para 0, 2 e 5 e confira o plural.</p>
+
+<hr>
+
+<h2>3. Precedência: o ternário vem quase por último</h2>
+<p>Na tabela de <a href="precedencia.html">Precedência</a>, o <code>?:</code> fica lá embaixo: abaixo de todas as contas, comparações e lógicos, e acima só das atribuições e da vírgula. Isso é bom em <code>maior = a &gt; b ? a : b</code> (a comparação é feita antes, a atribuição depois), mas engana quando o ternário está no meio de uma conta:</p>
+
+<pre class="file" data-file="prec.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int preco = 100;
+    int tem_frete = 1;
+    int total = preco + tem_frete ? 15 : 0;
+    printf("Total: %d\n", total);
+    int certo = preco + (tem_frete ? 15 : 0);
+    printf("Total: %d\n", certo);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra prec.c -o prec
+$ ./prec
+Total: 15        « o preço sumiu!
+Total: 115</pre>
+
+<ol class="passo">
+  <li>O <code>+</code> tem precedência maior que o <code>?:</code>. Então o C leu <code>(preco + tem_frete) ? 15 : 0</code>.</li>
+  <li><code>preco + tem_frete</code> é 101, diferente de zero, então "verdadeiro".</li>
+  <li>O ternário inteiro vale 15, e o <code>total</code> ficou 15.</li>
+</ol>
+<p>Nem o gcc nem o Clang do editor avisaram nada. A regra: <strong>quando o ternário é só uma parte de uma conta, ponha-o entre parênteses</strong>: <code>preco + (tem_frete ? 15 : 0)</code>.</p>
+
+<hr>
+
+<h2>4. Os dois lados precisam combinar</h2>
+<p>O ternário inteiro tem <strong>um tipo só</strong>, decidido na hora de compilar, antes de saber qual lado vai ser escolhido. Por isso as duas respostas precisam ser do mesmo "jeito".</p>
+
+<h3>Números de tipos diferentes: o C escolhe o "maior", sem avisar</h3>
+<pre class="file" data-file="tiposter.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 3;
+    printf("%d\n", n &gt; 0 ? 5 : 2.5);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tiposter.c -o tiposter
+tiposter.c: In function ‘main’:
+tiposter.c:5:14: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’ [-Wformat=]
+    5 |     printf("%d\n", n &gt; 0 ? 5 : 2.5);
+      |             ~^     ~~~~~~~~~~~~~~~
+      |              |               |
+      |              int             double
+      |             %f
+$ ./tiposter
+-869692968       « lixo (muda a cada execução)
+$ ./tiposter
+-617049208</pre>
+
+<p>Um lado é <code>int</code> (5) e o outro é <code>double</code> (2.5). O C converte os dois para o tipo mais "largo", <code>double</code>, e o ternário vale <code>5.0</code>, mesmo escolhendo o lado do 5. Aí o <code>%d</code>, que espera um <code>int</code>, lê lixo. O aviso explica: "o formato <code>%d</code> espera um <code>int</code>, mas o argumento 2 é <code>double</code>", e até sugere <code>%f</code>. No editor do guia, o mesmo erro mostra <code>0</code> em vez de lixo: com o formato errado, cada sistema mostra uma coisa.</p>
+<p>Conserto: deixe os dois lados do mesmo tipo (<code>5.0 : 2.5</code>) e use o formato certo (<code>%.1f</code>).</p>
+
+<h3>Texto de um lado, número do outro: erro</h3>
+<pre class="term" data-cwd="~/c">$ cat tiposter2.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 3;
+    printf("%s\n", n &gt; 0 ? "positivo" : 0);
+    printf("%s\n", n &gt; 0 ? "positivo" : 1);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra tiposter2.c -o tiposter2
+tiposter2.c: In function ‘main’:
+tiposter2.c:6:39: error: pointer/integer type mismatch in conditional expression [-Wint-conversion]
+    6 |     printf("%s\n", n &gt; 0 ? "positivo" : 1);
+      |                                       ^</pre>
+
+<p>"Tipos ponteiro e inteiro não combinam na expressão condicional." Um texto entre aspas é, por baixo, um <strong>ponteiro</strong> (a posição do texto na memória; aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>), e <code>1</code> é um inteiro. Desde o gcc 14, isso é <strong>erro</strong>; no Clang do editor é só um aviso (<code>[-Wconditional-type-mismatch]</code>), mas o programa está errado do mesmo jeito. Já a linha 5 passou: o <code>0</code> escrito assim é um caso especial, o ponteiro nulo (aula <a href="ponteiro-nulo.html">Ponteiro Nulo</a>), e mandar um ponteiro nulo para o <code>%s</code> também é um erro, só que o compilador não percebe. Regra simples: <strong>texto com texto, número com número</strong>.</p>
+
+<hr>
+
+<h2>5. Ternário aninhado: evite</h2>
+<p>Como o "senão" de um ternário pode ser outro ternário, dá para escolher entre mais de duas opções:</p>
+
+<pre class="file" data-file="aninhado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double nota = 7.5;
+    char conceito = nota &gt;= 9 ? 'A' : nota &gt;= 7 ? 'B' : nota &gt;= 5 ? 'C' : 'D';
+    printf("Conceito %c\n", conceito);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aninhado.c -o aninhado
+$ ./aninhado
+Conceito B</pre>
+
+<p>Funciona: o <code>?:</code> se agrupa da direita para a esquerda, então a linha é lida como <code>nota &gt;= 9 ? 'A' : (nota &gt;= 7 ? 'B' : (nota &gt;= 5 ? 'C' : 'D'))</code>, que é exatamente a cadeia de <a href="else-if.html">else if</a>. Mas é difícil de ler, de conferir e de mudar. Muitos guias de estilo proíbem ternários aninhados. Para mais de duas opções, prefira <code>else if</code> ou <a href="switch.html">switch</a>. Se for mesmo usar, quebre em linhas:</p>
+
+<pre class="file">char conceito = nota &gt;= 9 ? 'A'
+              : nota &gt;= 7 ? 'B'
+              : nota &gt;= 5 ? 'C'
+              :              'D';</pre>
+
+<hr>
+
+<h2>6. Duas diferenças do C</h2>
+
+<h3>O resultado não pode receber valor</h3>
+<p>Em C, o ternário entrega um <strong>valor</strong>, não uma variável. Então não dá para guardar nada "nele":</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lvalter.c -o lvalter
+lvalter.c: In function ‘main’:
+lvalter.c:6:21: error: lvalue required as left operand of assignment
+    6 |     (a &gt; b ? a : b) = 0;
+      |                     ^</pre>
+
+<p>"É preciso um <em>lvalue</em> (algo que possa receber valor) do lado esquerdo do <code>=</code>." (Em C++ essa linha compila e zera o maior dos dois; em C, não.) Use um <code>if</code>: <code>if (a &gt; b) { a = 0; } else { b = 0; }</code>.</p>
+
+<h3>O <code>?:</code> do gcc (não é C padrão)</h3>
+<p>Você pode encontrar <code>x ?: y</code>, sem o valor do meio, em código feito para o gcc. Quer dizer "<code>x</code>, se <code>x</code> não for zero; senão <code>y</code>". É uma <strong>extensão do gcc</strong> (o Clang também aceita), não faz parte do padrão C. O gcc só reclama se você pedir o modo estrito, com <code>-pedantic</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -pedantic elvis.c -o elvis
+elvis.c: In function ‘main’:
+elvis.c:5:29: warning: ISO C forbids omitting the middle term of a ‘?:’ expression [-Wpedantic]
+    5 |     printf("%d\n", pedidos ?: 1);
+      |                             ^</pre>
+
+<p>"O C da ISO proíbe omitir o termo do meio de uma expressão <code>?:</code>." Em código que deve compilar em qualquer compilador, escreva por inteiro: <code>pedidos ? pedidos : 1</code>.</p>
+
+<hr>
+
+<h2>Formas diferentes + qual usar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Melhor forma</th><th>Exemplo</th></tr>
+<tr><td>Escolher um entre dois valores para guardar</td><td>Ternário</td><td><code>int maior = a &gt; b ? a : b;</code></td></tr>
+<tr><td>Escolher um texto para mostrar</td><td>Ternário dentro do <code>printf</code></td><td><code>printf("%s\n", ok ? "Sim" : "Não");</code></td></tr>
+<tr><td>Ternário no meio de uma conta</td><td>Ternário <strong>entre parênteses</strong></td><td><code>total = preco + (frete ? 15 : 0);</code></td></tr>
+<tr><td>Cada caminho faz coisas diferentes, ou mais de uma coisa</td><td><code>if</code> / <code>else</code></td><td><code>if (ok) { salvar(); avisar(); } else { … }</code></td></tr>
+<tr><td>Três ou mais opções</td><td><code>else if</code> ou <code>switch</code></td><td>Conceitos A, B, C, D.</td></tr>
+<tr><td>Ternário só para "fazer coisas"</td><td>Evite</td><td><code>ok ? printf("sim") : printf("não");</code> compila, mas é um <code>if</code> disfarçado.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O resultado da conta ignora parte dela (sem aviso)</strong>
+<p><strong>O que significa:</strong> você escreveu o ternário no meio de uma conta, como <code>preco + frete ? 15 : 0</code>. Tudo à esquerda do <code>?</code> virou a condição.</p>
+<p><strong>Como consertar:</strong> parênteses em volta do ternário: <code>preco + (frete ? 15 : 0)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’</code></strong>
+<p><strong>O que significa:</strong> um lado do ternário é <code>double</code>, então o ternário inteiro é <code>double</code>, mesmo quando escolhe o lado inteiro.</p>
+<p><strong>Como consertar:</strong> deixe os dois lados do mesmo tipo e use o formato certo.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: pointer/integer type mismatch in conditional expression</code></strong>
+<p><strong>O que significa:</strong> um lado é texto e o outro é número. No Clang: <code>warning: pointer/integer type mismatch in conditional expression ('char *' and 'int')</code>.</p>
+<p><strong>Como consertar:</strong> texto com texto (<code>ok ? "1" : "0"</code>) ou número com número (<code>ok ? 1 : 0</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: lvalue required as left operand of assignment</code></strong>
+<p><strong>O que significa:</strong> você tentou guardar um valor no resultado de um ternário. Em C isso não existe. No Clang: <code>expression is not assignable</code>.</p>
+<p><strong>Como consertar:</strong> use <code>if</code>/<code>else</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expected ‘:’ before …</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semdois.c -o semdois
+semdois.c: In function ‘main’:
+semdois.c:5:27: error: expected ‘:’ before ‘;’ token
+    5 |     int maior = a &gt; b ? a;
+      |                           ^
+      |                           :</pre>
+<p><strong>O que significa:</strong> o ternário precisa das <strong>duas</strong> respostas. Faltou o <code>: valor_se_não</code>.</p>
+<p><strong>Como consertar:</strong> complete: <code>a &gt; b ? a : b</code>. Se não existe "senão", você quer um <code>if</code>, não um ternário.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Expressão</th><th>Vale</th></tr>
+<tr><td><code>c ? x : y</code></td><td><code>x</code> se <code>c</code> for diferente de 0; senão <code>y</code>. Só o lado escolhido é calculado.</td></tr>
+<tr><td><code>a &gt; b ? a : b</code></td><td>O maior dos dois.</td></tr>
+<tr><td><code>n == 1 ? "" : "s"</code></td><td>Plural num <code>%s</code>.</td></tr>
+<tr><td><code>b != 0 ? a / b : 0</code></td><td>Divisão protegida.</td></tr>
+<tr><td><code>p + (c ? 15 : 0)</code></td><td>Ternário dentro de conta: com parênteses.</td></tr>
+<tr><td><code>c ? 5 : 2.5</code></td><td>Tipo <code>double</code> (5.0 ou 2.5).</td></tr>
+<tr><td><code>x ?: y</code></td><td>Extensão do gcc; no C padrão: <code>x ? x : y</code>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o ternário</h3>
+<p>Complete para <code>menor</code> receber o menor dos dois números:</p>
+<div class="ex-code">int menor = a &lt; b <input data-answer="?" aria-label="símbolo"> a <input data-answer=":" aria-label="símbolo"> b;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Aprovada ou não</h3>
+<p>Complete a condição para mostrar "Aprovada" quando a nota for 6 ou mais:</p>
+<div class="ex-code">printf("%s\n", <input data-answer="nota &gt;= 6|nota&gt;=6|6 &lt;= nota|6&lt;=nota" aria-label="condição"> ? "Aprovada" : "Reprovada");</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Quanto vale <code>x</code> depois de <code>int n = 0; int x = n ? 10 : 20;</code>?</p>
+<label><input type="radio" name="q3"> 10</label>
+<label><input type="radio" name="q3"> 20</label>
+<label><input type="radio" name="q3"> 0</label>
+<label><input type="radio" name="q3"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Com <code>int preco = 50, frete = 1;</code>, quanto vale <code>preco + frete ? 10 : 0</code>?</p>
+<label><input type="radio" name="q4"> 60</label>
+<label><input type="radio" name="q4"> 51</label>
+<label><input type="radio" name="q4"> 10</label>
+<label><input type="radio" name="q4"> 0</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Quando é melhor usar <code>if</code>/<code>else</code> em vez do ternário?</p>
+<label><input type="radio" name="q5"> Quando cada caminho faz ações diferentes, ou mais de uma coisa</label>
+<label><input type="radio" name="q5"> Quando os dois lados são números</label>
+<label><input type="radio" name="q5"> Sempre: o ternário é mais lento</label>
+<label><input type="radio" name="q5"> Nunca: o ternário faz tudo o que o <code>if</code> faz</label>
+</div>
+
+<h3>Missão final: o maior de três</h3>
+
+<div class="tryc" data-stdin="4 9 2" data-goal="out:Maior: 9,src:\?[^:\n]*:,semaviso">
+<p class="try-task"><strong>Missão:</strong> o programa lê três números (a entrada preparada é <code>4 9 2</code>) e deve mostrar o maior. Use o operador ternário (dica: primeiro o maior entre <code>a</code> e <code>b</code>; depois compare esse resultado com <code>c</code>). Sem avisos:</p>
+<pre class="out">Maior: 9</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 0, b = 0, c = 0;
+    if (scanf("%d %d %d", &amp;a, &amp;b, &amp;c) != 3) {
+        return 1;
+    }
+    int maior = a;    // use o ternário
+
+    printf("Maior: %d\n", maior);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 0, b = 0, c = 0;
+    if (scanf("%d %d %d", &amp;a, &amp;b, &amp;c) != 3) {
+        return 1;
+    }
+    int maior = a &gt; b ? a : b;
+    maior = maior &gt; c ? maior : c;
+
+    printf("Maior: %d\n", maior);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Teste com <code>9 4 2</code>, <code>2 4 9</code> e <code>5 5 5</code>: o maior tem de aparecer em qualquer posição.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>condição ? x : y</code> vale <code>x</code> se a condição for verdadeira, senão <code>y</code>. Só o lado escolhido é calculado.</li>
+  <li>Use para escolher um <strong>valor</strong> (guardar, mostrar). Para escolher <strong>ações</strong>, use <code>if</code>.</li>
+  <li>Dentro do <code>printf</code>, resolve plurais e textos alternativos: <code>n == 1 ? "" : "s"</code>.</li>
+  <li>O <code>?:</code> tem precedência baixa: dentro de uma conta, ponha parênteses (<code>preco + (frete ? 15 : 0)</code>). Nenhum compilador avisa.</li>
+  <li>Os dois lados precisam combinar: <code>int</code> com <code>double</code> vira <code>double</code>; texto com número é erro no gcc.</li>
+  <li>Evite ternários aninhados; para três ou mais opções, <code>else if</code> ou <code>switch</code>.</li>
+  <li>Em C, o resultado não recebe valor (<code>lvalue required</code>). <code>x ?: y</code> é extensão do gcc.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
