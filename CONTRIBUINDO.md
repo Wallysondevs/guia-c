@@ -186,6 +186,11 @@ Conferido com `tools/sim.js --nativo`. **Nas metas, use o que é igual nos dois*
 | Fuso horário | UTC (`localtime(0)` = `1970-01-01 00:00 UTC`) | `-03` (`1969-12-31 21:00 -03`) |
 | `malloc` de 300 MB | `NULL` (limite de 256 MB) | funciona |
 | `system("ls")` | `sh: 1: ls: not found`, 32512 | roda o `ls` |
+| Sem `main` (ex.: `int Main(void)`) | compila e cai com `Falha de segmentação`, 139 | `referência não definida para "main"` (ligador) |
+| `printf("%b", 5)` (C23) | linha vazia, sem aviso | `101` |
+| `%` solto (`printf("Juros: 2%\n")`) | a linha some | `Juros: 2%` (e `"50% hoje"` imprime lixo) |
+| Função da biblioteca sem `#include` | `error: call to undeclared library function 'printf' with type …` | `error: implicit declaration of function ‘printf’` + `note: include ‘<stdio.h>’` |
+| `scanf("%d", &b)` com `bool b` | roda sem erro | `*** stack smashing detected ***`, 134 |
 | Ordem de avaliação dos argumentos (não especificada pelo C) | `printf("%d %d\n", remove("b.txt"), remove("b.txt"))` dá `0 -1` (da esquerda para a direita) | dá `-1 0` (da direita para a esquerda) |
 
 Iguais nos dois: `int` com 4 bytes, `long long` com 8, `0.1 + 0.2` (`0.30000000000000004` com `%.17g`), a formatação do `printf` (`%5.2f`, `%-5d`, `%05d`, `%x`, `%o`, `%e`), `strtol`, `qsort`, as mensagens do `perror`, os códigos de saída (134, 136, 139), o estouro de `int` (`2147483647 + 1` = `-2147483648`) e a saída perdida do `printf` sem `\n` antes de um segfault.
