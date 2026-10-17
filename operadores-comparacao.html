@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Operadores de Comparação — ==, !=, &lt;, &gt;, &lt;=, &gt;= | Guia C</title>
+<meta name="description" content="Operadores de comparação em C para quem nunca programou: == != &lt; &gt; &lt;= &gt;=, o resultado int 0 ou 1 (também no C23), = × == e o aviso -Wparentheses, comparar double com tolerância, char, int × unsigned, 0 &lt;= nota &lt;= 10 e por que strings não se comparam com ==, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Operadores de Comparação</span></h1>
+
+<p class="intro">Um programa vive fazendo perguntas: "a nota é maior que 6?", "o estoque acabou?", "a senha está certa?". Para perguntar, o C tem seis <strong>operadores de comparação</strong>. Nesta aula você vai conhecer cada um, descobrir que a resposta do C é um <strong>número</strong> (1 para sim, 0 para não) e aprender as armadilhas clássicas: trocar <code>==</code> por <code>=</code>, comparar números com vírgula, escrever <code>0 &lt;= nota &lt;= 10</code> como na matemática e tentar comparar textos com <code>==</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Os seis operadores: <code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code> e <code>&gt;=</code>.</li>
+  <li>Por que a resposta é um <code>int</code> que vale <code>1</code> ou <code>0</code> (inclusive no C23, que já tem <code>bool</code>).</li>
+  <li>A diferença entre <code>=</code> (guardar) e <code>==</code> (comparar), e o aviso que o gcc dá quando você troca um pelo outro.</li>
+  <li>Como comparar caracteres e por que <code>'Z' &lt; 'a'</code> é verdade.</li>
+  <li>Por que <code>0.1 + 0.2 == 0.3</code> dá "não" e como comparar <code>double</code> com uma tolerância.</li>
+  <li>A armadilha de comparar <code>int</code> com <code>unsigned</code>, e por que <code>0 &lt;= nota &lt;= 10</code> não faz o que parece.</li>
+  <li>Por que textos (strings) <strong>não</strong> se comparam com <code>==</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> (cada opção é explicada em <a href="compilar.html">Compilar com gcc</a>). Você pode repetir cada um no editor do guia, que compila C de verdade no navegador.</p>
+
+<hr>
+
+<h2>A ideia: a balança de dois pratos</h2>
+<p>Uma comparação é como uma balança antiga, de dois pratos. Você coloca um valor em cada prato e faz <strong>uma pergunta</strong>: "estão iguais?", "o da esquerda é mais leve?". A balança não muda os pesos; ela só <strong>responde</strong>, e a resposta é sempre <strong>sim ou não</strong>.</p>
+<p>Em C, "sim" é o número <code>1</code> e "não" é o número <code>0</code>. Toda comparação produz um desses dois números.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Pergunta</th><th>Exemplo</th><th>Resposta</th></tr>
+<tr><td><code>==</code></td><td>É igual a?</td><td><code>5 == 5</code></td><td><code>1</code> (sim)</td></tr>
+<tr><td><code>!=</code></td><td>É diferente de?</td><td><code>5 != 5</code></td><td><code>0</code> (não)</td></tr>
+<tr><td><code>&lt;</code></td><td>É menor que?</td><td><code>3 &lt; 5</code></td><td><code>1</code></td></tr>
+<tr><td><code>&gt;</code></td><td>É maior que?</td><td><code>3 &gt; 5</code></td><td><code>0</code></td></tr>
+<tr><td><code>&lt;=</code></td><td>É menor ou igual a?</td><td><code>5 &lt;= 5</code></td><td><code>1</code></td></tr>
+<tr><td><code>&gt;=</code></td><td>É maior ou igual a?</td><td><code>3 &gt;= 5</code></td><td><code>0</code></td></tr>
+</table>
+</div>
+
+<p>Os sinais de dois caracteres são escritos <strong>grudados</strong> e nesta ordem: <code>&lt;=</code> e <code>&gt;=</code> (o <code>=</code> por último, como se fala: "menor ou igual"); <code>!=</code> (o <code>!</code> quer dizer "não": "não igual"). Com espaço no meio (<code>&lt; =</code>) o gcc não entende. E a igualdade tem <strong>dois</strong> sinais de igual: um só, <code>=</code>, é atribuição, que <strong>muda</strong> a variável (veja <a href="operadores-atribuicao.html">Operadores de Atribuição</a> e a seção 3 desta aula).</p>
+
+<hr>
+
+<h2>1. Comparar números e ver a resposta</h2>
+
+<pre class="file" data-file="compara.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 17;
+    printf("%d\n", idade == 18);
+    printf("%d\n", idade != 18);
+    printf("%d\n", idade &lt; 18);
+    printf("%d\n", idade &gt; 18);
+    printf("%d\n", idade &lt;= 17);
+    printf("%d\n", idade &gt;= 18);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra compara.c -o compara
+$ ./compara
+0        « 17 == 18? não
+1        « 17 != 18? sim
+1        « 17 &lt; 18? sim
+0        « 17 &gt; 18? não
+1        « 17 &lt;= 17? sim (é igual, e "menor ou igual" aceita igual)
+0        « 17 &gt;= 18? não</pre>
+
+<dl class="anatomy">
+  <dt>idade == 18</dt><dd>A comparação. O C olha o valor guardado em <code>idade</code> (17), compara com 18 e produz a resposta: <code>0</code>.</dd>
+  <dt>printf("%d\n", …)</dt><dd>Como a resposta é um número inteiro, ela é mostrada com <code>%d</code>, igual a qualquer <code>int</code> (veja <a href="formatos-printf.html">Formatos do printf</a>). Não precisa de parênteses em volta da comparação: a vírgula do <code>printf</code> separa os argumentos.</dd>
+  <dt>idade &lt;= 17</dt><dd>"Menor <strong>ou</strong> igual": basta uma das duas coisas ser verdade. Como 17 é igual a 17, a resposta é <code>1</code>.</dd>
+  <dt>nenhuma variável mudou</dt><dd>Depois das seis perguntas, <code>idade</code> continua valendo 17. Comparar só <strong>lê</strong> os valores.</dd>
+</dl>
+
+<p>Na prática, o lugar mais comum de uma comparação é dentro de um <code>if</code> ("se") ou de um <code>while</code> ("enquanto"): <code>if (idade &gt;= 18) { … }</code>. Você vai usar isso em <a href="if-else.html">if e else</a> e <a href="while.html">while</a>. Aqui o foco é a pergunta em si.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> mude o valor de <code>estoque</code> (tente 0, 3 e 10) e veja as respostas mudarem. Depois acrescente a pergunta "o estoque é maior que 5?".</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int estoque = 3;
+    printf("Acabou? %d\n", estoque == 0);
+    printf("Tem algum? %d\n", estoque != 0);
+    printf("Está baixo (até 3)? %d\n", estoque &lt;= 3);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. A resposta é um <code>int</code> (até no C23)</h2>
+<p>Muitas linguagens têm um tipo só para "sim ou não", com os valores <code>true</code> (verdadeiro) e <code>false</code> (falso). O C ganhou esse tipo em 1999, com o nome <code>_Bool</code>, e no C23 ele virou <code>bool</code>, sem precisar de <code>#include</code> (aula <a href="bool.html">Booleanos</a>). Mesmo assim, por compatibilidade com programas antigos, <strong>as comparações continuam produzindo um <code>int</code></strong>: o padrão C23 ainda diz que o resultado de <code>==</code>, <code>&lt;</code> e companhia "tem tipo <code>int</code>" e vale 1 ou 0. Dá para conferir com o <code>sizeof</code>, que mede o tamanho de um valor em bytes (aula <a href="sizeof.html">Tamanho dos Tipos</a>):</p>
+
+<pre class="file" data-file="tipo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 20;
+    int maior = idade &gt;= 18;
+    bool pode_votar = idade &gt;= 16;
+    printf("maior = %d\n", maior);
+    printf("pode_votar = %d\n", pode_votar);
+    printf("sizeof(idade &gt;= 18) = %zu\n", sizeof(idade &gt;= 18));
+    printf("sizeof(int) = %zu\n", sizeof(int));
+    printf("sizeof(bool) = %zu\n", sizeof(bool));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipo.c -o tipo
+$ ./tipo
+maior = 1
+pode_votar = 1
+sizeof(idade &gt;= 18) = 4     « a resposta ocupa 4 bytes…
+sizeof(int) = 4              « …o tamanho de um int
+sizeof(bool) = 1             « um bool teria 1 byte</pre>
+
+<dl class="anatomy">
+  <dt>int maior = idade &gt;= 18;</dt><dd>A resposta pode ser guardada numa variável, para usar depois. Primeiro o C calcula a comparação (lado direito), depois guarda o 1 ou o 0 em <code>maior</code>.</dd>
+  <dt>bool pode_votar = …</dt><dd>Também pode ir para um <code>bool</code> <span class="versao">C23</span>. O 1 vira <code>true</code>, que o <code>printf</code> mostra como <code>1</code> (o <code>printf</code> não tem formato que escreva "true").</dd>
+  <dt>%zu</dt><dd>O formato do resultado de <code>sizeof</code> (um <code>size_t</code>, um inteiro sem sinal).</dd>
+</dl>
+
+<div class="tip">
+<strong>Qual tipo usar para guardar a resposta?</strong>
+<p>No C23 (e no C99 com <code>#include &lt;stdbool.h&gt;</code>), prefira <code>bool</code>: o nome deixa claro que a variável é um "sim ou não". Em código antigo você vai ver muito <code>int</code> no lugar, e funciona do mesmo jeito.</p>
+</div>
+
+<hr>
+
+<h2>3. <code>=</code> × <code>==</code>: o erro mais famoso do C</h2>
+<p><code>=</code> e <code>==</code> se parecem, mas fazem coisas opostas:</p>
+<ul>
+  <li><code>estoque = 5</code> <strong>guarda</strong> 5 em <code>estoque</code> (atribuição). Leia "estoque <strong>recebe</strong> 5".</li>
+  <li><code>estoque == 5</code> <strong>pergunta</strong> se <code>estoque</code> vale 5 (comparação). Leia "estoque <strong>é igual a</strong> 5?".</li>
+</ul>
+<p>O problema é que, em C, <strong>os dois compilam</strong> no mesmo lugar. Veja o que acontece quando a Ana erra a tecla dentro de um <code>if</code> (o <code>if</code> roda o bloco entre chaves quando a pergunta dá "sim"; ele é o assunto de <a href="if-else.html">if e else</a>):</p>
+
+<pre class="file" data-file="atrib.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int estoque = 0;
+    if (estoque = 5) {
+        printf("O estoque é 5\n");
+    }
+    printf("estoque agora vale %d\n", estoque);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra atrib.c -o atrib
+atrib.c: In function ‘main’:
+atrib.c:5:9: warning: suggest parentheses around assignment used as truth value [-Wparentheses]
+    5 |     if (estoque = 5) {
+      |         ^~~~~~~
+$ ./atrib
+O estoque é 5            « mas o estoque era 0!
+estoque agora vale 5     « e agora ele mudou</pre>
+
+<ol class="passo">
+  <li><code>estoque = 5</code> não pergunta nada: <strong>guarda</strong> 5 em <code>estoque</code>, apagando o 0.</li>
+  <li>Em C, uma atribuição também tem um valor: o valor que foi guardado, 5.</li>
+  <li>O <code>if</code> considera "sim" qualquer número diferente de zero. 5 é "sim", e o bloco roda.</li>
+  <li>Resultado: a pergunta sempre dá "sim" e ainda estraga a variável.</li>
+</ol>
+
+<p>O aviso diz: "sugiro parênteses em volta de uma atribuição usada como valor de verdade". Em outras palavras: "você usou <code>=</code> onde se espera uma pergunta; se foi de propósito, ponha parênteses extras; se não foi, você queria <code>==</code>". O aviso vem com o <code>-Wall</code>, um dos motivos para nunca compilar sem ele. No editor do guia, o Clang é ainda mais direto e sugere o conserto:</p>
+
+<pre class="term">$ clang -std=c23 -Wall -Wextra atrib.c -o atrib
+atrib.c:5:17: warning: using the result of an assignment as a condition without parentheses [-Wparentheses]
+    5 |     if (estoque = 5) {
+      |         ~~~~~~~~^~~
+atrib.c:5:17: note: place parentheses around the assignment to silence this warning
+    5 |     if (estoque = 5) {
+      |                 ^
+      |         (          )
+atrib.c:5:17: note: use '==' to turn this assignment into an equality comparison
+    5 |     if (estoque = 5) {
+      |                 ^
+      |                 ==</pre>
+
+<p>A última nota diz: "use <code>==</code> para transformar esta atribuição numa comparação de igualdade".</p>
+
+<div class="tryc" data-goal="semaviso,src:vidas\s*==\s*0,outre:^Vidas: 3\n$">
+<p class="try-task"><strong>Missão:</strong> no jogo da Ana, o jogador ainda tem 3 vidas, mas o programa diz "Fim de jogo!" e zera as vidas. Rode, leia o aviso e conserte a comparação. A saída correta é só:</p>
+<pre class="out">Vidas: 3</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int vidas = 3;
+    if (vidas = 0) {
+        printf("Fim de jogo!\n");
+    }
+    printf("Vidas: %d\n", vidas);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int vidas = 3;
+    if (vidas == 0) {
+        printf("Fim de jogo!\n");
+    }
+    printf("Vidas: %d\n", vidas);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare num detalhe: com <code>vidas = 0</code>, o valor da atribuição é 0, que é "não". O "Fim de jogo!" nem aparece, mas a variável é zerada mesmo assim. O erro pode estragar o programa nas duas direções.</p>
+
+<hr>
+
+<h2>4. Comparar caracteres</h2>
+<p>Um <code>char</code> é guardado como um número: o código do caractere na tabela ASCII (aula <a href="char.html">Caracteres</a>). Por isso os seis operadores funcionam com caracteres entre aspas simples:</p>
+
+<pre class="file" data-file="letras.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'B';
+    printf("%d\n", letra == 'B');
+    printf("%d\n", letra == 'b');
+    printf("%d\n", 'A' &lt; 'B');
+    printf("%d\n", 'Z' &lt; 'a');
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra letras.c -o letras
+$ ./letras
+1        « 'B' == 'B'
+0        « 'B' e 'b' são caracteres diferentes
+1        « 'A' (65) vem antes de 'B' (66)
+1        « 'Z' (90) vem antes de 'a' (97)!</pre>
+
+<p>A última linha surpreende: na tabela ASCII, <strong>todas as maiúsculas vêm antes de todas as minúsculas</strong>. <code>'A'</code> a <code>'Z'</code> são 65 a 90; <code>'a'</code> a <code>'z'</code> são 97 a 122. Os algarismos <code>'0'</code> a <code>'9'</code> são 48 a 57. Para perguntar "é uma letra?" ou "é maiúscula?" sem decorar números, o C tem funções prontas (<a href="ctype.html">Classificar Caracteres</a>).</p>
+
+<hr>
+
+<h2>5. Comparar <code>double</code>: use uma tolerância</h2>
+<p>Com números inteiros, <code>==</code> é exato. Com <code>double</code> (números com vírgula), não dá para confiar nele. Veja uma conta que qualquer criança acerta:</p>
+
+<pre class="file" data-file="real.c">#include &lt;math.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    double a = 0.1 + 0.2;
+    double b = 0.3;
+    printf("%d\n", a == b);
+    printf("%.17f\n%.17f\n", a, b);
+    printf("%d\n", fabs(a - b) &lt; 1e-9);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra real.c -o real
+$ ./real
+0                        « 0.1 + 0.2 == 0.3? NÃO!
+0.30000000000000004      « o que o 0.1 + 0.2 realmente guardou
+0.29999999999999999      « o que o 0.3 realmente guardou
+1                        « "estão a menos de 0.000000001 de distância?" sim</pre>
+
+<p>O <code>double</code> guarda os números em <strong>binário</strong> (base 2), e números como 0.1 e 0.3 não têm representação exata em binário, assim como 1/3 não tem em decimal (0,3333…). Cada um é guardado como o valor mais próximo possível, e os pequenos erros não se cancelam. O <code>%.17f</code> pediu 17 casas depois do ponto para mostrar essa diferença, que normalmente fica escondida. A aula <a href="ponto-flutuante.html">float e double</a> explica em detalhe.</p>
+
+<p>A solução é comparar com uma <strong>tolerância</strong>: em vez de "são iguais?", pergunte "a distância entre eles é menor que um número bem pequeno?".</p>
+
+<dl class="anatomy">
+  <dt>#include &lt;math.h&gt;</dt><dd>Traz as funções de matemática, entre elas a <code>fabs</code> (aula <a href="matematica.html">Matemática</a>).</dd>
+  <dt>a - b</dt><dd>A diferença entre os dois. Pode ser negativa.</dd>
+  <dt>fabs( … )</dt><dd><em>floating-point absolute</em>, "valor absoluto de número com vírgula": o número sem o sinal. Transforma −0.00000000000000005 em 0.00000000000000005, para a distância ser sempre positiva. (Não use <code>abs</code>, que é só para <code>int</code>: ela cortaria a parte depois da vírgula.)</dd>
+  <dt>&lt; 1e-9</dt><dd><code>1e-9</code> é notação científica: 1 × 10<sup>−9</sup> = 0.000000001. É a tolerância: se a distância é menor que isso, consideramos iguais.</dd>
+</dl>
+
+<p>Neste programa o gcc não pediu a opção <code>-lm</code> (a biblioteca de matemática), porque ele resolve a <code>fabs</code> sozinho. Com outras funções de <code>math.h</code>, como <code>sqrt</code> de uma variável, o Linux pode pedir <code>-lm</code>; a aula <a href="matematica.html">Matemática</a> mostra quando.</p>
+
+<p>Qual tolerância usar depende do problema: para dinheiro em reais, <code>0.001</code> já basta; para medidas científicas, pode ser bem menor.</p>
+
+<div class="tip">
+<strong>Dinheiro sem vírgula</strong>
+<p>Uma alternativa muito usada em sistemas de lojas e bancos: guardar dinheiro em <strong>centavos</strong>, num inteiro. R$ 12,34 vira <code>1234</code>. Aí o <code>==</code> volta a ser exato.</p>
+</div>
+
+<hr>
+
+<h2>6. Textos (strings) não se comparam com <code>==</code></h2>
+<p>Em C, um texto é guardado num <strong>array de <code>char</code></strong>, uma fileira de caracteres terminada por um <code>'\0'</code> (aula <a href="strings.html">Strings</a>). A Ana quis conferir uma senha do jeito "óbvio":</p>
+
+<pre class="file" data-file="senha.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char senha[] = "abc123";
+    printf("%d\n", senha == "abc123");
+    printf("%d\n", strcmp(senha, "abc123") == 0);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra senha.c -o senha
+senha.c: In function ‘main’:
+senha.c:6:26: warning: comparison with string literal results in unspecified behavior [-Waddress]
+    6 |     printf("%d\n", senha == "abc123");
+      |                          ^~
+$ ./senha
+0        « com ==: "a senha está errada"?!
+1        « com strcmp: está certa</pre>
+
+<p>O texto é o mesmo, mas o <code>==</code> respondeu "não". O motivo, por enquanto, é só este: o <code>==</code> com textos <strong>não olha as letras</strong>. Ele pergunta se os dois textos estão <strong>no mesmo lugar da memória</strong> (o mesmo <strong>endereço</strong>), e <code>senha</code> e <code>"abc123"</code> são duas cópias em lugares diferentes. Você vai entender endereços em <a href="memoria.html">Memória e Endereços</a> e <a href="ponteiros.html">Ponteiros</a>.</p>
+
+<p>O aviso diz: "comparar com um texto literal tem comportamento não especificado". O Clang do editor é mais explícito: <code>result of comparison against a string literal is unspecified (use an explicit string comparison function instead)</code>, "use uma função de comparação de strings". Com dois arrays (<code>char a[] = "Ana", b[] = "Ana"; a == b</code>), o gcc avisa <code>comparison between two arrays [-Warray-compare]</code> e a resposta também é 0.</p>
+
+<p>A função certa é a <code>strcmp</code> (<em>string compare</em>, "comparar strings"), de <code>&lt;string.h&gt;</code>. Ela compara letra por letra e responde <strong>0 quando os textos são iguais</strong>. Por isso a pergunta completa é <code>strcmp(senha, "abc123") == 0</code>. Ela tem os detalhes explicados em <a href="funcoes-string.html">Funções de String</a>.</p>
+
+<hr>
+
+<h2>7. A armadilha: números com e sem sinal</h2>
+<p>O C tem inteiros <strong>com sinal</strong> (<code>int</code>, que aceita negativos) e <strong>sem sinal</strong> (<code>unsigned int</code>, só 0 e positivos; veja <a href="inteiros.html">Inteiros</a>). Um número escrito com <code>u</code> no fim, como <code>1u</code>, é <code>unsigned</code>. Quando você compara um com o outro, acontece isto:</p>
+
+<pre class="file" data-file="sinal.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int saldo = -1;
+    unsigned int limite = 1;
+    printf("%d\n", saldo &lt; limite);
+    printf("%d\n", -1 &lt; 1u);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sinal.c -o sinal
+sinal.c: In function ‘main’:
+sinal.c:6:26: warning: comparison of integer expressions of different signedness: ‘int’ and ‘unsigned int’ [-Wsign-compare]
+    6 |     printf("%d\n", saldo &lt; limite);
+      |                          ^
+sinal.c:7:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘unsigned int’ [-Wsign-compare]
+    7 |     printf("%d\n", -1 &lt; 1u);
+      |                       ^
+$ ./sinal
+0        « -1 &lt; 1 é FALSO?!
+0</pre>
+
+<p>Menos um é menor que um, qualquer criança sabe. Mas o C respondeu "não" duas vezes. O motivo:</p>
+<ol class="passo">
+  <li>Para comparar, os dois lados precisam ter o <strong>mesmo tipo</strong>.</li>
+  <li>Quando um lado é <code>int</code> e o outro é <code>unsigned int</code>, a regra do C converte o <code>int</code> para <code>unsigned</code>.</li>
+  <li>Um <code>unsigned</code> não tem negativos: o −1 vira <strong>4294967295</strong>, o maior <code>unsigned int</code> (veja <a href="conversao-tipos.html">Conversão de Tipos</a>).</li>
+  <li><code>4294967295 &lt; 1</code> é falso.</li>
+</ol>
+
+<p>O aviso explica isso: "comparação de expressões inteiras com <strong>sinalização diferente</strong>: <code>int</code> e <code>unsigned int</code>". Atenção: em C, o <code>-Wsign-compare</code> vem com o <strong><code>-Wextra</code></strong>, e não com o <code>-Wall</code>. Compilando só com <code>-Wall</code>, o gcc fica quieto e o programa responde errado do mesmo jeito. Mais um motivo para usar as duas opções. (No editor do guia, o Clang só avisa na linha 6; na linha 7, com números escritos direto, ele fica quieto. O resultado é o mesmo 0.)</p>
+
+<p>Isso aparece na prática quando você compara um <code>int</code> com um tamanho, como o resultado de <code>sizeof</code> ou de <code>strlen</code>, que são <code>size_t</code> (sem sinal). A solução é usar o mesmo tipo dos dois lados sempre que puder, ou garantir antes que o número com sinal não é negativo.</p>
+
+<hr>
+
+<h2>8. <code>0 &lt;= nota &lt;= 10</code> não é o que parece</h2>
+<p>Na matemática, escrevemos 0 ≤ nota ≤ 10 para dizer "a nota está entre 0 e 10". Em C, isso compila no gcc, mas significa outra coisa:</p>
+
+<pre class="file" data-file="faixa.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 15;
+    printf("%d\n", 0 &lt;= nota &lt;= 10);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra faixa.c -o faixa
+faixa.c: In function ‘main’:
+faixa.c:5:30: warning: comparison of constant ‘10’ with boolean expression is always true [-Wbool-compare]
+    5 |     printf("%d\n", 0 &lt;= nota &lt;= 10);
+      |                              ^~
+faixa.c:5:22: warning: comparisons like ‘X&lt;=Y&lt;=Z’ do not have their mathematical meaning [-Wparentheses]
+    5 |     printf("%d\n", 0 &lt;= nota &lt;= 10);
+      |                    ~~^~~~~~~
+$ ./faixa
+1        « 15 está entre 0 e 10?!</pre>
+
+<ol class="passo">
+  <li>O C faz uma comparação de cada vez, da esquerda para a direita: <code>(0 &lt;= nota) &lt;= 10</code>.</li>
+  <li><code>0 &lt;= 15</code> dá <code>1</code>.</li>
+  <li>Sobra <code>1 &lt;= 10</code>, que é verdade. Como a primeira comparação só pode dar 0 ou 1, e os dois são menores que 10, a resposta é <strong>sempre</strong> 1.</li>
+</ol>
+<p>Os dois avisos dizem exatamente isso: "comparar a constante 10 com uma expressão booleana (de sim ou não) dá sempre verdadeiro" e "comparações como <code>X&lt;=Y&lt;=Z</code> não têm o significado da matemática".</p>
+
+<p>O Clang (o do laboratório, versão 21, e o do editor do guia) vai além e trata isso como <strong>erro</strong>: o programa nem compila.</p>
+
+<pre class="term" data-cwd="~/c">$ clang -std=c23 -Wall -Wextra faixa.c -o faixa
+faixa.c:5:30: error: chained comparison 'X &lt;= Y &lt;= Z' does not behave the same as a mathematical expression [-Wparentheses]
+    5 |     printf("%d\n", 0 &lt;= nota &lt;= 10);
+      |                              ^
+faixa.c:5:30: warning: result of comparison of constant 10 with boolean expression is always true [-Wtautological-constant-out-of-range-compare]
+    5 |     printf("%d\n", 0 &lt;= nota &lt;= 10);
+      |                    ~~~~~~~~~ ^  ~~
+1 warning and 1 error generated.</pre>
+
+<p>"Comparação encadeada <code>X &lt;= Y &lt;= Z</code> não se comporta como uma expressão matemática." O jeito certo é fazer duas perguntas e juntá-las com "e": <code>0 &lt;= nota &amp;&amp; nota &lt;= 10</code>. O <code>&amp;&amp;</code> é o assunto da próxima aula, <a href="operadores-logicos.html">Operadores Lógicos</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma pergunta</h2>
+<p>Várias comparações podem ser escritas de mais de um jeito. Todas as linhas de cada grupo dão a mesma resposta:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Formas</th><th>Qual usar</th></tr>
+<tr><td>"x é pelo menos 6?"</td><td><code>x &gt;= 6</code> · <code>x &gt; 5</code> (só com inteiros) · <code>6 &lt;= x</code></td><td><code>x &gt;= 6</code>: fala exatamente o que você quer e funciona com <code>double</code> (com 5.5, <code>x &gt; 5</code> dá 1 e <code>x &gt;= 6</code> dá 0).</td></tr>
+<tr><td>"x é diferente de 0?"</td><td><code>x != 0</code> · <code>!(x == 0)</code></td><td><code>x != 0</code>, mais curto e direto. O <code>!</code> ("não") está em <a href="operadores-logicos.html">Operadores Lógicos</a>.</td></tr>
+<tr><td>"x vale 5?"</td><td><code>x == 5</code> · <code>5 == x</code></td><td><code>x == 5</code>, como se fala.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>O "estilo Yoda": <code>5 == x</code></strong>
+<p>Em código antigo você pode ver a constante do lado esquerdo: <code>if (5 == x)</code>. O motivo é que, se a pessoa esquecer um <code>=</code>, <code>5 = x</code> é <strong>erro de compilação</strong> (não dá para guardar nada no número 5), enquanto <code>x = 5</code> compila. O apelido vem do mestre Yoda, que fala "invertido". Hoje o aviso <code>-Wparentheses</code> do <code>-Wall</code> pega o erro do <code>=</code> sem precisar inverter, então prefira o jeito natural, <code>x == 5</code>, e compile sempre com <code>-Wall -Wextra</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: suggest parentheses around assignment used as truth value</code></strong>
+<p><strong>O que significa:</strong> você escreveu <code>=</code> (guardar) onde deveria haver uma pergunta, quase sempre dentro de <code>if</code> ou <code>while</code>. A variável é alterada e a "pergunta" dá sempre a mesma resposta. No Clang: <code>using the result of an assignment as a condition without parentheses</code>.</p>
+<p><strong>Como consertar:</strong> troque por <code>==</code>. Se você queria mesmo guardar e testar ao mesmo tempo (isso existe, em código mais avançado), escreva parênteses extras: <code>if ((x = ler()))</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: comparisons like ‘X&lt;=Y&lt;=Z’ do not have their mathematical meaning</code></strong>
+<p><strong>O que significa:</strong> você escreveu uma faixa como na matemática. No gcc o programa roda e responde quase sempre 1; no Clang é <code>error: chained comparison</code> e nem compila.</p>
+<p><strong>Como consertar:</strong> <code>0 &lt;= nota &amp;&amp; nota &lt;= 10</code> (aula <a href="operadores-logicos.html">Operadores Lógicos</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: comparison of integer expressions of different signedness</code></strong>
+<p><strong>O que significa:</strong> você comparou um <code>int</code> com um <code>unsigned</code> (ou com um <code>size_t</code>). Se o <code>int</code> for negativo, a resposta sai errada. Só aparece com <code>-Wextra</code>.</p>
+<p><strong>Como consertar:</strong> use o mesmo tipo dos dois lados. Não ignore esse aviso.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: comparison with string literal results in unspecified behavior</code></strong>
+<p><strong>O que significa:</strong> você comparou um texto com <code>==</code>. Isso compara endereços, não letras, e quase sempre dá 0. Com dois arrays, o aviso é <code>comparison between two arrays [-Warray-compare]</code>.</p>
+<p><strong>Como consertar:</strong> <code>strcmp(a, b) == 0</code>, com <code>#include &lt;string.h&gt;</code> (aula <a href="funcoes-string.html">Funções de String</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Dois <code>double</code> "iguais" dão 0</strong>
+<p><strong>O que significa:</strong> erros pequenos de arredondamento deixaram os valores diferentes na última casa. Nenhum aviso aparece com <code>-Wall -Wextra</code>.</p>
+<p><strong>Como consertar:</strong> <code>fabs(a - b) &lt; tolerancia</code>, ou trabalhe com inteiros (centavos).</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expected expression before ‘=’ token</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra espaco.c -o espaco
+espaco.c: In function ‘main’:
+espaco.c:5:27: error: expected expression before ‘=’ token
+    5 |     printf("%d\n", nota &lt; = 6);
+      |                           ^</pre>
+<p><strong>O que significa:</strong> há um espaço no meio do operador. Para o gcc, <code>&lt; =</code> são dois operadores separados: um "menor que" seguido de um <code>=</code> que não faz sentido ali ("esperava uma expressão antes do <code>=</code>").</p>
+<p><strong>Como consertar:</strong> escreva grudado: <code>&lt;=</code>, <code>&gt;=</code>, <code>==</code>, <code>!=</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Pergunta</th><th>Resultado</th><th>Cuidado</th></tr>
+<tr><td><code>a == b</code></td><td>Iguais?</td><td><code>int</code>: 1 ou 0</td><td>Não confunda com <code>=</code>. Não use com <code>double</code> (tolerância) nem com textos (<code>strcmp</code>).</td></tr>
+<tr><td><code>a != b</code></td><td>Diferentes?</td><td>idem</td><td>Mesmos cuidados do <code>==</code>.</td></tr>
+<tr><td><code>a &lt; b</code>, <code>a &gt; b</code></td><td>Menor? Maior?</td><td>idem</td><td><code>int</code> × <code>unsigned</code>: resposta errada com negativos (<code>-Wsign-compare</code>, do <code>-Wextra</code>).</td></tr>
+<tr><td><code>a &lt;= b</code>, <code>a &gt;= b</code></td><td>Menor ou igual? Maior ou igual?</td><td>idem</td><td>O <code>=</code> vem por último, grudado.</td></tr>
+<tr><td><code>fabs(a - b) &lt; tol</code></td><td><code>double</code> "iguais"?</td><td>idem</td><td><code>#include &lt;math.h&gt;</code>; escolha a tolerância pelo problema.</td></tr>
+<tr><td><code>strcmp(s, t) == 0</code></td><td>Textos iguais?</td><td>idem</td><td><code>#include &lt;string.h&gt;</code>; <code>strcmp</code> devolve 0 quando são iguais.</td></tr>
+<tr><td><code>0 &lt;= x &amp;&amp; x &lt;= 10</code></td><td>Está na faixa?</td><td>idem</td><td>Nunca <code>0 &lt;= x &lt;= 10</code>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Diferente</h3>
+<p>Complete para perguntar se <code>senha</code> é <strong>diferente</strong> de 1234:</p>
+<div class="ex-code">int errada = senha <input data-answer="!=" aria-label="operador"> 1234;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Maior ou igual</h3>
+<p>Complete para perguntar se <code>nota</code> é maior <strong>ou igual</strong> a 6:</p>
+<div class="ex-code">bool aprovado = nota <input data-answer="&gt;=" aria-label="operador"> 6;</div>
+</div>
+
+<div class="exercise">
+<h3>3. Igual de verdade</h3>
+<p>Complete o <code>if</code> para <strong>perguntar</strong> se <code>vidas</code> vale 0 (sem mudar a variável):</p>
+<div class="ex-code">if (vidas <input data-answer="==" aria-label="operador"> 0) {</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que <code>printf("%d\n", 7 &gt; 3);</code> mostra?</p>
+<label><input type="radio" name="q4"> <code>true</code></label>
+<label><input type="radio" name="q4"> <code>7</code></label>
+<label><input type="radio" name="q4"> <code>1</code></label>
+<label><input type="radio" name="q4"> Nada: não compila</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Com <code>int x = -5;</code> e <code>unsigned int y = 3;</code>, quanto vale <code>x &lt; y</code>?</p>
+<label><input type="radio" name="q5"> 1, porque −5 é menor que 3</label>
+<label><input type="radio" name="q5"> 0, porque o −5 vira um <code>unsigned</code> enorme</label>
+<label><input type="radio" name="q5"> Não compila</label>
+<label><input type="radio" name="q5"> −1</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual é o jeito certo de perguntar se o texto <code>nome</code> é "Ana"?</p>
+<label><input type="radio" name="q6"> <code>nome == "Ana"</code></label>
+<label><input type="radio" name="q6"> <code>nome = "Ana"</code></label>
+<label><input type="radio" name="q6"> <code>strcmp(nome, "Ana") == 1</code></label>
+<label><input type="radio" name="q6"> <code>strcmp(nome, "Ana") == 0</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. Com <code>int nota = 15;</code>, quanto vale <code>0 &lt;= nota &lt;= 10</code> no gcc?</p>
+<label><input type="radio" name="q7"> 1, porque o C calcula <code>(0 &lt;= nota)</code>, que dá 1, e depois <code>1 &lt;= 10</code></label>
+<label><input type="radio" name="q7"> 0, porque 15 não está entre 0 e 10</label>
+<label><input type="radio" name="q7"> 15</label>
+<label><input type="radio" name="q7"> O gcc recusa compilar</label>
+</div>
+
+<h3>Missão final: o boletim</h3>
+
+<div class="tryc" data-stdin="7.5" data-goal="out:Aprovado: 1,out:Nota máxima: 0,src:nota\s*&gt;=\s*6,src:nota\s*==\s*10,semaviso">
+<p class="try-task"><strong>Missão:</strong> o programa lê uma nota (a entrada preparada é <code>7.5</code>). Troque cada <code>0</code> marcado por uma comparação: "aprovado" é nota maior ou igual a 6; "nota máxima" é nota igual a 10. Sem avisos. Com 7.5, a saída deve ser:</p>
+<pre class="out">Aprovado: 1
+Nota máxima: 0</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double nota = 0;
+    if (scanf("%lf", &amp;nota) != 1) {
+        return 1;              // a leitura falhou: encerra
+    }
+    bool aprovado = 0;         // troque 0 pela comparação
+    bool maxima = 0;           // troque 0 pela comparação
+    printf("Aprovado: %d\n", aprovado);
+    printf("Nota máxima: %d\n", maxima);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double nota = 0;
+    if (scanf("%lf", &amp;nota) != 1) {
+        return 1;              // a leitura falhou: encerra
+    }
+    bool aprovado = nota &gt;= 6;
+    bool maxima = nota == 10;
+    printf("Aprovado: %d\n", aprovado);
+    printf("Nota máxima: %d\n", maxima);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Mude a entrada para <code>10</code> e para <code>5.9</code> e rode de novo. O <code>if (scanf(…) != 1)</code> do começo também é uma comparação: o <code>scanf</code> devolve quantos valores conseguiu ler, e se não leu 1 o programa para (aula <a href="scanf.html">Entrada com scanf</a>). Comparar <code>nota == 10</code> com um <code>double</code> aqui é seguro, porque 10 é guardado exatamente e a nota vem digitada, sem contas no meio.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Os seis operadores: <code>==</code> (igual), <code>!=</code> (diferente), <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>. Sinais duplos vão grudados, com o <code>=</code> por último.</li>
+  <li>A resposta é um <code>int</code>: <code>1</code> para sim, <code>0</code> para não. Isso continua valendo no C23. Mostre com <code>%d</code>; guarde num <code>bool</code> ou num <code>int</code>.</li>
+  <li><code>=</code> guarda, <code>==</code> compara. Trocar os dois compila, muda a variável e gera <code>suggest parentheses around assignment used as truth value</code> (do <code>-Wall</code>).</li>
+  <li><code>char</code> compara pelo código ASCII: maiúsculas (65–90) antes das minúsculas (97–122).</li>
+  <li><code>double</code>: não use <code>==</code>; use <code>fabs(a - b) &lt; tolerancia</code>.</li>
+  <li><code>int</code> × <code>unsigned</code>: o negativo vira um número enorme e <code>-1 &lt; 1u</code> dá 0. O aviso <code>-Wsign-compare</code> vem do <code>-Wextra</code>.</li>
+  <li><code>0 &lt;= x &lt;= 10</code> não funciona como na matemática (aviso no gcc, erro no Clang); use <code>0 &lt;= x &amp;&amp; x &lt;= 10</code>.</li>
+  <li>Textos não se comparam com <code>==</code> (compara endereços): use <code>strcmp(a, b) == 0</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
