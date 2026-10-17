@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Passar por Ponteiro — funções que mudam as suas variáveis | Guia C</title>
+<meta name="description" content="Passagem por ponteiro em C para quem nunca programou: por que uma função recebe cópias, a função trocar(int *a, int *b), por que o scanf precisa do &amp;, como devolver mais de um resultado e os erros clássicos (trocar sem ponteiro, esquecer o &amp;, devolver o endereço de uma variável local), com mensagens reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Passar por Ponteiro</span></h1>
+
+<p class="intro">Na aula <a href="parametros.html">Parâmetros</a> você viu que uma função recebe <strong>cópias</strong> dos valores que você passa. Isso é ótimo para proteger as suas variáveis, mas às vezes você <strong>quer</strong> que a função mude uma variável sua: trocar dois valores, ler um número do teclado, devolver dois resultados de uma vez. Em C, o jeito é entregar à função o <strong>endereço</strong> da variável. Esta é a aula em que os ponteiros começam a ser úteis de verdade.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que uma função comum não consegue mudar as variáveis de quem a chamou.</li>
+  <li>Como escrever <code>trocar(int *a, int *b)</code>, a função clássica de troca, e chamá-la com <code>&amp;</code>.</li>
+  <li>Por que o <code>scanf</code> precisa do <code>&amp;</code>, e o que acontece sem ele.</li>
+  <li>Como uma função pode devolver mais de um resultado.</li>
+  <li>Os erros clássicos: trocar sem ponteiro, esquecer o <code>&amp;</code> e devolver o endereço de uma variável local.</li>
+</ul>
+</div>
+
+<p>Os programas foram compilados na máquina da Ana, na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: a fotocópia e o endereço</h2>
+<p>A Ana precisa que o contador corrija um documento. Ela tem duas opções:</p>
+<ul>
+  <li><strong>Mandar uma fotocópia.</strong> O contador rabisca a cópia à vontade, mas o original da Ana continua igual. É assim que o C passa argumentos normalmente: <strong>por valor</strong>, uma cópia.</li>
+  <li><strong>Mandar o endereço</strong> de onde o original está guardado ("está na gaveta 1000 do meu arquivo"). Aí o contador vai até lá e corrige o original. É a <strong>passagem por ponteiro</strong>.</li>
+</ul>
+<p>O C só tem a primeira forma. A segunda é um truque em cima dela: você manda uma cópia... do <strong>endereço</strong>. A cópia de um endereço continua levando à mesma gaveta.</p>
+
+<hr>
+
+<h2>1. O problema: a função recebe cópias</h2>
+<p>O exemplo clássico: uma função que troca dois valores. Escrita do jeito mais natural, ela não funciona:</p>
+
+<pre class="file" data-file="trocar-errado.c">#include &lt;stdio.h&gt;
+
+void trocar(int a, int b) {
+    int temp = a;
+    a = b;
+    b = temp;
+    printf("Dentro de trocar: a = %d, b = %d\n", a, b);
+}
+
+int main(void) {
+    int a = 3;
+    int b = 7;
+
+    trocar(a, b);
+    printf("No main:          a = %d, b = %d\n", a, b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra trocar-errado.c -o trocar-errado
+$ ./trocar-errado
+Dentro de trocar: a = 7, b = 3      « as cópias foram trocadas
+No main:          a = 3, b = 7      « os originais, não</pre>
+
+<p>Os nomes <code>a</code> e <code>b</code> se repetem, mas são <strong>quatro variáveis diferentes</strong>: duas do <code>main</code> e duas da função <code>trocar</code>, que nasceram com cópias dos valores e morreram no <code>}</code> da função. Dá para ver que moram em gavetas diferentes:</p>
+
+<pre class="file" data-file="copias.c">#include &lt;stdio.h&gt;
+
+void mostrar(int x) {
+    printf("na função: x mora em %p\n", (void *) &amp;x);
+}
+
+int main(void) {
+    int x = 3;
+    printf("no main:   x mora em %p\n", (void *) &amp;x);
+    mostrar(x);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra copias.c -o copias
+$ ./copias
+no main:   x mora em 0x7ffd5cc7f8d4
+na função: x mora em 0x7ffd5cc7f8bc     « outra gaveta: é uma cópia</pre>
+
+<figure>
+<svg viewBox="0 0 638 92" width="638" role="img" aria-label="Passagem por valor: a e b do main valem 3 e 7; a e b de trocar são cópias e foram trocadas para 7 e 3" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><rect x="10" y="4" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="85" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">3</text><rect x="166" y="4" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="241" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">7</text><rect x="322" y="4" width="150" height="46" rx="5" style="fill:var(--sidebar-bg);stroke:var(--border);stroke-width:1.5"/><text x="397" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">7</text><rect x="478" y="4" width="150" height="46" rx="5" style="fill:var(--sidebar-bg);stroke:var(--border);stroke-width:1.5"/><text x="553" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">3</text><path d="M12,58 v6 H158 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="85" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">a (main)</text><path d="M168,58 v6 H314 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="241" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">b (main)</text><path d="M324,58 v6 H470 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="397" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">a (trocar)</text><path d="M480,58 v6 H626 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="553" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">b (trocar)</text></svg>
+<figcaption>Por valor: a função troca as <strong>cópias</strong> dela (em cinza). As variáveis do <code>main</code> nem ficam sabendo. Quando <code>trocar</code> termina, as cópias somem.</figcaption>
+</figure>
+
+<hr>
+
+<h2>2. A solução: mandar o endereço</h2>
+<p>Agora a função recebe <strong>ponteiros</strong>, e quem chama entrega os <strong>endereços</strong>:</p>
+
+<pre class="file" data-file="trocar.c">#include &lt;stdio.h&gt;
+
+void trocar(int *a, int *b) {
+    int temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+int main(void) {
+    int a = 3;
+    int b = 7;
+
+    trocar(&amp;a, &amp;b);
+    printf("a = %d, b = %d\n", a, b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra trocar.c -o trocar
+$ ./trocar
+a = 7, b = 3        « agora os originais trocaram</pre>
+
+<p>São três mudanças, todas pequenas:</p>
+
+<dl class="anatomy">
+  <dt>void trocar(int *a, int *b)</dt><dd>Os parâmetros agora são <strong>ponteiros para <code>int</code></strong>: a função recebe dois endereços. (O <code>a</code> e o <code>b</code> daqui ainda são cópias, mas cópias de endereços.)</dd>
+  <dt>int temp = *a;</dt><dd>Dentro da função, todo acesso aos valores leva <code>*</code>: <code>*a</code> é "a variável para onde <code>a</code> aponta", ou seja, o <code>a</code> do <code>main</code>. O <code>temp</code> é um <code>int</code> comum, que guarda o valor 3 durante a troca.</dd>
+  <dt>*a = *b; *b = temp;</dt><dd>Escreve nas gavetas do <code>main</code>: na de <code>a</code>, o valor da de <code>b</code>; na de <code>b</code>, o que estava guardado no <code>temp</code>.</dd>
+  <dt>trocar(&amp;a, &amp;b);</dt><dd>Na chamada, <code>&amp;</code>: o <code>main</code> entrega os endereços das suas variáveis.</dd>
+</dl>
+
+<figure>
+<svg viewBox="0 0 638 136" width="638" role="img" aria-label="Passagem por ponteiro: os parâmetros a e b de trocar guardam os endereços de a e b do main e apontam para eles" style="max-width:100%;height:auto;display:block;font-family:ui-monospace,Menlo,Consolas,monospace"><defs><marker id="g9f2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs><rect x="10" y="4" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="85" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">7</text><rect x="166" y="4" width="150" height="46" rx="5" style="fill:var(--note-bg);stroke:var(--note-border);stroke-width:1.5"/><text x="241" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">3</text><rect x="322" y="4" width="150" height="46" rx="5" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="397" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">&amp;a</text><rect x="478" y="4" width="150" height="46" rx="5" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:1.5"/><text x="553" y="33" text-anchor="middle" font-size="16" font-weight="bold" style="fill:var(--text)">&amp;b</text><path d="M12,58 v6 H158 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="85" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">a (main)</text><path d="M168,58 v6 H314 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="241" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">b (main)</text><path d="M324,58 v6 H470 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="397" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">a (trocar)</text><path d="M480,58 v6 H626 v-6" style="fill:none;stroke:var(--text);stroke-width:1.2"/><text x="553" y="80" text-anchor="middle" font-size="14" style="fill:var(--text)">b (trocar)</text><path d="M397,86 C397,124 85,124 85,86" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#g9f2)"/><text x="241" y="130" text-anchor="middle" font-size="12" style="fill:var(--accent)"></text><path d="M553,86 C553,124 241,124 241,86" style="fill:none;stroke:var(--accent);stroke-width:2" marker-end="url(#g9f2)"/><text x="397" y="130" text-anchor="middle" font-size="12" style="fill:var(--accent)"></text></svg>
+<figcaption>Por ponteiro: os parâmetros da função (em verde) guardam os endereços das variáveis do <code>main</code>. Escrever em <code>*a</code> e <code>*b</code> é escrever nas gavetas do <code>main</code>.</figcaption>
+</figure>
+
+<p>Passo a passo, com as gavetas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th><code>a</code> (main)</th><th><code>b</code> (main)</th><th><code>temp</code></th></tr>
+<tr><td><code>trocar(&amp;a, &amp;b);</code> (entrando)</td><td>3</td><td>7</td><td>–</td></tr>
+<tr><td><code>int temp = *a;</code></td><td>3</td><td>7</td><td>3</td></tr>
+<tr><td><code>*a = *b;</code></td><td><strong>7</strong></td><td>7</td><td>3</td></tr>
+<tr><td><code>*b = temp;</code></td><td>7</td><td><strong>3</strong></td><td>3</td></tr>
+<tr><td>de volta ao <code>main</code></td><td>7</td><td>3</td><td>(sumiu)</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>A receita</strong>
+Para uma função mudar uma variável de quem a chama: (1) o parâmetro é <code>tipo *nome</code>; (2) dentro da função, use <code>*nome</code>; (3) na chamada, passe <code>&amp;variavel</code>.
+</div>
+
+<div class="tryc" data-goal="out:pontos = 20,src:\*\s*n\s*(\*=|=)">
+<p class="try-task"><strong>Missão:</strong> complete a função <code>dobrar</code>, que recebe o endereço de um <code>int</code> e dobra o valor guardado lá. O <code>main</code> já chama <code>dobrar(&amp;pontos)</code>.</p>
+<pre class="out">pontos = 20</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void dobrar(int *n) {
+    // dobre o valor da variável para onde n aponta
+}
+
+int main(void) {
+    int pontos = 10;
+
+    dobrar(&amp;pontos);
+    printf("pontos = %d\n", pontos);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void dobrar(int *n) {
+    *n = *n * 2;
+}
+
+int main(void) {
+    int pontos = 10;
+
+    dobrar(&amp;pontos);
+    printf("pontos = %d\n", pontos);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Por isso o <code>scanf</code> precisa do <code>&amp;</code></h2>
+<p>Agora o mistério da aula <a href="scanf.html">Entrada com scanf</a> está resolvido. O <code>scanf</code> é uma função como a <code>trocar</code>: para guardar o número digitado na <strong>sua</strong> variável, ela precisa do endereço. <code>scanf("%d", &amp;idade)</code> quer dizer "leia um inteiro e guarde na gaveta de <code>idade</code>".</p>
+
+<p>Sem o <code>&amp;</code>, o <code>scanf</code> recebe o <strong>valor</strong> de <code>idade</code> (uma cópia, 0) e o trata como se fosse um endereço. O gcc avisa:</p>
+
+<pre class="file" data-file="scanf-sem.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 0;
+
+    printf("Quantos anos você tem? ");
+    scanf("%d", idade);
+    printf("Você tem %d anos\n", idade);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra scanf-sem.c -o scanf-sem
+scanf-sem.c: In function ‘main’:
+scanf-sem.c:7:13: warning: format ‘%d’ expects argument of type ‘int *’, but argument 2 has type ‘int’ [-Wformat=]
+    7 |     scanf("%d", idade);
+      |            ~^   ~~~~~
+      |             |   |
+      |             |   int
+      |             int *
+$ echo 29 | ./scanf-sem
+Falha de segmentação     (imagem do núcleo gravada) echo 29 | ./scanf-sem</pre>
+
+<p>"O formato <code>%d</code> espera um argumento do tipo <code>int *</code> (endereço de <code>int</code>), mas o argumento 2 é do tipo <code>int</code>". É só um aviso, então o programa foi gerado. Rodando, o <code>scanf</code> tentou guardar o 29 no "endereço 0" (o valor de <code>idade</code>), que é o ponteiro nulo, e o programa morreu. (A pergunta sumiu da tela por causa do balde do <code>printf</code>, explicado em <a href="ponteiro-nulo.html">Ponteiro Nulo</a>; o <code>echo 29 |</code> faz o papel da pessoa digitando.)</p>
+
+<p>No editor do guia, o resultado é outro, e mais traiçoeiro: o Clang avisa (<code>format specifies type 'int *' but the argument has type 'int'</code>), o programa <strong>não morre</strong> e mostra <code>Você tem 0 anos</code>. O 29 foi parar numa gaveta qualquer e o programa seguiu em frente com o valor errado. É mais um exemplo de por que um aviso do <code>-Wall</code> deve ser tratado como erro.</p>
+
+<div class="note">
+<strong>E o <code>scanf("%s", nome)</code>, sem <code>&amp;</code>?</strong>
+Com um array de <code>char</code>, o <code>&amp;</code> não vai, porque o nome do array já vira o endereço do primeiro item (veja <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>). A regra é a mesma: o <code>scanf</code> sempre recebe um endereço. Com <code>int</code>, <code>double</code> e <code>char</code> sozinho, você precisa do <code>&amp;</code> para obtê-lo; com array, o nome já é um.
+</div>
+
+<hr>
+
+<h2>4. Devolver mais de um resultado</h2>
+<p>Uma função só tem um <code>return</code>, que devolve um valor só. Quando a resposta tem duas partes, os ponteiros resolvem: a função recebe os endereços de onde guardar cada parte. A Ana quer dividir balas entre crianças e saber quanto cada uma ganha <strong>e</strong> quantas sobram:</p>
+
+<pre class="file" data-file="dividir.c">#include &lt;stdio.h&gt;
+
+void dividir(int total, int pessoas, int *cada, int *sobra) {
+    *cada = total / pessoas;
+    *sobra = total % pessoas;
+}
+
+int main(void) {
+    int balas = 17;
+    int cada = 0;
+    int sobra = 0;
+
+    dividir(balas, 5, &amp;cada, &amp;sobra);
+    printf("%d balas para 5 crianças: %d para cada, sobram %d\n", balas, cada, sobra);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dividir.c -o dividir
+$ ./dividir
+17 balas para 5 crianças: 3 para cada, sobram 2</pre>
+
+<p>Repare na mistura: <code>total</code> e <code>pessoas</code> são de <strong>entrada</strong> (a função só lê, então vão por valor, sem ponteiro); <code>cada</code> e <code>sobra</code> são de <strong>saída</strong> (a função escreve, então vão por ponteiro). Parâmetros de saída costumam ficar no fim da lista.</p>
+
+<h3>O padrão "deu certo?" + resultado</h3>
+<p>Uma combinação muito comum: o <code>return</code> diz <strong>se deu certo</strong>, e o resultado vai por ponteiro. É exatamente o que o próprio <code>scanf</code> faz (devolve quantos itens leu, e guarda os valores pelos ponteiros):</p>
+
+<pre class="file" data-file="ler.c">#include &lt;stdio.h&gt;
+
+bool ler_idade(int *idade) {
+    printf("Quantos anos você tem? ");
+    if (scanf("%d", idade) != 1) {
+        return false;
+    }
+    return *idade &gt;= 0 &amp;&amp; *idade &lt;= 130;
+}
+
+int main(void) {
+    int idade = 0;
+
+    if (ler_idade(&amp;idade)) {
+        printf("Daqui a 10 anos você terá %d.\n", idade + 10);
+    } else {
+        printf("Idade inválida.\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ler.c -o ler
+$ ./ler
+Quantos anos você tem? 29
+Daqui a 10 anos você terá 39.
+$ ./ler
+Quantos anos você tem? abc
+Idade inválida.
+$ ./ler
+Quantos anos você tem? 200
+Idade inválida.</pre>
+
+<p>Detalhe importante: dentro de <code>ler_idade</code>, o <code>scanf</code> recebe <code>idade</code> <strong>sem</strong> <code>&amp;</code>. Aqui, <code>idade</code> já é um ponteiro (o endereço que veio do <code>main</code>); colocar <code>&amp;</code> daria o endereço do ponteiro, que não é o que o <code>scanf</code> quer. O <code>bool</code>, o <code>true</code> e o <code>false</code> não precisam de <code>#include</code> no C23 (veja <a href="bool.html">Booleanos</a>).</p>
+
+<hr>
+
+<h2>Por valor ou por ponteiro: qual usar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A função precisa…</th><th>Parâmetro</th><th>Chamada</th></tr>
+<tr><td>só <strong>ler</strong> um número, um caractere, um <code>bool</code></td><td><code>int x</code> (por valor)</td><td><code>f(x)</code></td></tr>
+<tr><td><strong>mudar</strong> uma variável de quem chama</td><td><code>int *x</code></td><td><code>f(&amp;x)</code></td></tr>
+<tr><td><strong>devolver</strong> mais de um resultado</td><td><code>int *saida1, int *saida2</code></td><td><code>f(&amp;r1, &amp;r2)</code></td></tr>
+<tr><td>trabalhar com um <strong>array</strong></td><td><code>int *v, int n</code></td><td><code>f(v, n)</code> (o nome já é endereço)</td></tr>
+<tr><td>só <strong>ler</strong> um array ou uma struct grande</td><td><code>const int *v</code></td><td><code>f(v, n)</code>, veja <a href="const-ponteiros.html">const e Ponteiros</a></td></tr>
+</table>
+</div>
+
+<p>Prefira por valor sempre que a função só precisar ler um valor simples: é mais seguro (a função não consegue estragar nada) e mais fácil de entender. Use ponteiro quando a mudança for o objetivo. Com <a href="structs-ponteiros.html">structs</a>, o ponteiro também evita copiar muitos bytes.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A troca "não troca" (sem ponteiro)</strong>
+<pre class="term" data-cwd="~/c">$ ./trocar-errado
+Dentro de trocar: a = 7, b = 3
+No main:          a = 3, b = 7</pre>
+<p><strong>O que aconteceu:</strong> a função recebeu cópias e trocou as cópias. O compilador não avisa nada: o código é válido, só não faz o que você queria.</p>
+<p><strong>Como consertar:</strong> parâmetros <code>int *a, int *b</code>, <code>*a</code> e <code>*b</code> dentro, <code>trocar(&amp;a, &amp;b)</code> na chamada.</p>
+</div>
+
+<div class="cenario">
+<strong>A troca "não troca" (com ponteiro, mas sem <code>*</code>)</strong>
+<pre class="file" data-file="ponteiro-local.c">#include &lt;stdio.h&gt;
+
+void trocar(int *a, int *b) {
+    int *temp = a;
+    a = b;
+    b = temp;
+}
+
+int main(void) {
+    int a = 3;
+    int b = 7;
+
+    trocar(&amp;a, &amp;b);
+    printf("a = %d, b = %d\n", a, b);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ponteiro-local.c -o ponteiro-local
+$ ./ponteiro-local
+a = 3, b = 7</pre>
+<p><strong>O que aconteceu:</strong> sem o <code>*</code>, a função trocou os <strong>próprios ponteiros</strong> (os bilhetes), que são cópias locais. Os dois bilhetes trocaram de mão, mas nenhuma gaveta do <code>main</code> foi aberta. Nenhum aviso.</p>
+<p><strong>Como consertar:</strong> mexa nos valores apontados: <code>int temp = *a; *a = *b; *b = temp;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"makes pointer from integer without a cast": esqueceu o <code>&amp;</code> na chamada</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semecomercial.c -o semecomercial
+semecomercial.c: In function ‘main’:
+semecomercial.c:13:12: error: passing argument 1 of ‘trocar’ makes pointer from integer without a cast [-Wint-conversion]
+   13 |     trocar(a, b);
+      |            ^
+      |            |
+      |            int
+semecomercial.c:13:12: note: possible fix: take the address with ‘&amp;’
+   13 |     trocar(a, b);
+      |            ^
+      |            &amp;
+semecomercial.c:3:18: note: expected ‘int *’ but argument is of type ‘int’
+    3 | void trocar(int *a, int *b) {
+      |             ~~~~~^
+semecomercial.c:13:15: error: passing argument 2 of ‘trocar’ makes pointer from integer without a cast [-Wint-conversion]
+   13 |     trocar(a, b);
+      |               ^
+      |               |
+      |               int
+semecomercial.c:13:15: note: possible fix: take the address with ‘&amp;’
+   13 |     trocar(a, b);
+      |               ^
+      |               &amp;
+semecomercial.c:3:26: note: expected ‘int *’ but argument is of type ‘int’
+    3 | void trocar(int *a, int *b) {
+      |                     ~~~~~^</pre>
+<p><strong>O que significa:</strong> "passar o argumento 1 de <code>trocar</code> transforma inteiro em ponteiro sem conversão". A função espera <code>int *</code> e recebeu <code>int</code>. O gcc até sugere o conserto: "<em>possible fix: take the address with ‘&amp;’</em>", pegue o endereço com <code>&amp;</code>. No gcc 15 isso é erro; em compiladores antigos era só aviso, e o programa gerado podia morrer ao rodar.</p>
+<p><strong>Como consertar:</strong> <code>trocar(&amp;a, &amp;b);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"function returns address of local variable"</strong>
+<pre class="file" data-file="local.c">#include &lt;stdio.h&gt;
+
+int *criar_nota(void) {
+    int nota = 9;
+    return &amp;nota;
+}
+
+int main(void) {
+    int *p = criar_nota();
+    printf("p = %p\n", (void *) p);
+    printf("nota = %d\n", *p);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra local.c -o local
+local.c: In function ‘criar_nota’:
+local.c:5:12: warning: function returns address of local variable [-Wreturn-local-addr]
+    5 |     return &amp;nota;
+      |            ^~~~~
+$ ./local
+p = (nil)
+Falha de segmentação     (imagem do núcleo gravada) ./local</pre>
+<p><strong>O que significa:</strong> "a função devolve o endereço de uma variável local". A <code>nota</code> mora na gaveta da função <code>criar_nota</code>, que é desmontada quando a função termina. O endereço devolvido aponta para um lugar que não é mais de ninguém (um "ponteiro pendurado"). O gcc é tão desconfiado disso que, além de avisar, troca o endereço por <code>NULL</code> de propósito, para o programa morrer logo em vez de ler lixo: por isso <code>p = (nil)</code>. No editor do guia, o Clang avisa com outras palavras (<code>address of stack memory associated with local variable 'nota' returned</code>), o programa <strong>não</strong> morre e mostra um número sem sentido no lugar do 9.</p>
+<p><strong>Como consertar:</strong> devolva o <strong>valor</strong> (<code>int criar_nota(void) { return 9; }</code>), ou receba um ponteiro para onde guardar (<code>void criar_nota(int *nota)</code>), ou reserve a memória com <a href="malloc-free.html">malloc</a>, que não some quando a função termina.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que faz</th></tr>
+<tr><td><code>void f(int x)</code></td><td>Por valor: a função recebe uma cópia e não muda o original.</td></tr>
+<tr><td><code>void f(int *x)</code></td><td>Por ponteiro: a função recebe um endereço.</td></tr>
+<tr><td><code>*x = 5;</code> (dentro de <code>f</code>)</td><td>Muda a variável de quem chamou.</td></tr>
+<tr><td><code>f(&amp;variavel);</code></td><td>Chama entregando o endereço.</td></tr>
+<tr><td><code>void trocar(int *a, int *b)</code></td><td>A troca clássica: <code>int t = *a; *a = *b; *b = t;</code></td></tr>
+<tr><td><code>void f(int entrada, int *saida1, int *saida2)</code></td><td>Devolve vários resultados pelos ponteiros.</td></tr>
+<tr><td><code>bool f(int *resultado)</code></td><td>O <code>return</code> diz se deu certo; o valor vai pelo ponteiro.</td></tr>
+<tr><td><code>scanf("%d", &amp;x)</code></td><td>O <code>scanf</code> é uma função com parâmetro ponteiro.</td></tr>
+<tr><td><code>return &amp;local;</code></td><td>Nunca: a variável local some quando a função termina.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O parâmetro</h3>
+<p>Complete o cabeçalho de uma função que zera uma variável <code>int</code> de quem a chama:</p>
+<div class="ex-code">void zerar(<input data-answer="int *n|int* n|int * n" aria-label="parâmetro">) { *n = 0; }</div>
+</div>
+
+<div class="exercise">
+<h3>2. A chamada</h3>
+<p>Complete a chamada para zerar a variável <code>vidas</code>:</p>
+<div class="ex-code">zerar(<input data-answer="&amp;vidas|&amp; vidas" aria-label="argumento">);</div>
+</div>
+
+<div class="exercise">
+<h3>3. Dentro da função</h3>
+<p>Complete a função para somar 1 à variável apontada por <code>n</code>:</p>
+<div class="ex-code">void incrementar(int *n) { <input data-answer="*n = *n + 1;|(*n)++;|*n += 1;|++*n;|++(*n);" aria-label="comando"> }</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Uma função <code>void f(int x) { x = 10; }</code> é chamada com <code>f(idade)</code>, e <code>idade</code> valia 5. Quanto vale <code>idade</code> depois?</p>
+<label><input type="radio" name="q4"> 10</label>
+<label><input type="radio" name="q4"> 5, porque a função mudou só a cópia</label>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Dentro de <code>bool ler(int *n)</code>, qual chamada do <code>scanf</code> está certa?</p>
+<label><input type="radio" name="q5"> <code>scanf("%d", &amp;n);</code></label>
+<label><input type="radio" name="q5"> <code>scanf("%d", *n);</code></label>
+<label><input type="radio" name="q5"> <code>scanf("%d", &amp;*n + 1);</code></label>
+<label><input type="radio" name="q5"> <code>scanf("%d", n);</code>, porque <code>n</code> já é um endereço</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que <code>return &amp;nota;</code> (com <code>nota</code> local) é um erro?</p>
+<label><input type="radio" name="q6"> Porque a <code>nota</code> deixa de existir quando a função termina</label>
+<label><input type="radio" name="q6"> Porque não se pode devolver ponteiros</label>
+<label><input type="radio" name="q6"> Porque faltou o <code>*</code></label>
+<label><input type="radio" name="q6"> Não é erro</label>
+</div>
+
+<h3>Missão final: o menor e o maior</h3>
+
+<div class="tryc" data-goal="out:Menor: 3,out:Maior: 9,src:\*\s*maior\s*=">
+<p class="try-task"><strong>Missão:</strong> escreva a função <code>min_max</code>, que recebe as notas (<code>int *v</code> e a quantidade <code>n</code>) e guarda a menor nota em <code>*menor</code> e a maior em <code>*maior</code>. Dica: comece com <code>*menor = v[0];</code> e <code>*maior = v[0];</code> e percorra o resto.</p>
+<pre class="out">Menor: 3
+Maior: 9</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void min_max(int *v, int n, int *menor, int *maior) {
+    // guarde a menor nota em *menor e a maior em *maior
+}
+
+int main(void) {
+    int notas[6] = {7, 3, 9, 6, 8, 5};
+    int menor = 0;
+    int maior = 0;
+
+    min_max(notas, 6, &amp;menor, &amp;maior);
+    printf("Menor: %d\n", menor);
+    printf("Maior: %d\n", maior);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void min_max(int *v, int n, int *menor, int *maior) {
+    *menor = v[0];
+    *maior = v[0];
+    for (int i = 1; i &lt; n; i++) {
+        if (v[i] &lt; *menor) {
+            *menor = v[i];
+        }
+        if (v[i] &gt; *maior) {
+            *maior = v[i];
+        }
+    }
+}
+
+int main(void) {
+    int notas[6] = {7, 3, 9, 6, 8, 5};
+    int menor = 0;
+    int maior = 0;
+
+    min_max(notas, 6, &amp;menor, &amp;maior);
+    printf("Menor: %d\n", menor);
+    printf("Maior: %d\n", maior);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Em C, todo argumento vai <strong>por valor</strong>: a função recebe uma cópia. Mudar a cópia não muda o original.</li>
+  <li>Para uma função mudar uma variável sua, passe o <strong>endereço</strong>: parâmetro <code>int *x</code>, uso <code>*x</code>, chamada <code>f(&amp;x)</code>.</li>
+  <li>A troca clássica: <code>void trocar(int *a, int *b) { int t = *a; *a = *b; *b = t; }</code>.</li>
+  <li>O <code>scanf</code> precisa do <code>&amp;</code> pelo mesmo motivo. Sem ele, o gcc avisa e o programa pode morrer (ou, no editor, seguir com o valor errado).</li>
+  <li>Ponteiros permitem devolver vários resultados, e o padrão "<code>return</code> diz se deu certo + resultado por ponteiro" é comum.</li>
+  <li>Nunca devolva o endereço de uma variável local: ela some quando a função termina.</li>
+  <li>Próxima aula: <a href="ponteiros-strings.html">Ponteiros e Strings</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
