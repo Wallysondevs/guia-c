@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Structs — agrupar dados num tipo próprio | Guia C</title>
+<meta name="description" content="Structs em C para quem nunca programou: declarar struct Aluno, criar variáveis, acessar campos com o ponto, inicializar com chaves e designadores (.nome = …, C99), {0} e {} (C23), array de structs, copiar com =, por que == não compara structs, struct dentro de struct e imprimir os campos, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Structs</span></h1>
+
+<p class="intro">Até aqui, cada informação morava numa variável separada: <code>nome</code>, <code>idade</code>, <code>nota</code>. Para uma aluna, funciona. Para uma turma inteira, vira uma bagunça de variáveis soltas e de arrays paralelos que precisam andar sempre na mesma ordem. Uma <strong>struct</strong> junta várias informações que andam juntas num <strong>tipo novo</strong>, criado por você: o tipo <code>struct Aluno</code>, que tem nome, idade e nota. Nesta aula você vai declarar a sua primeira struct, preencher, guardar várias num array, copiar e mostrar na tela.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma struct e como declarar uma: <code>struct Aluno { … };</code>.</li>
+  <li>Como criar uma variável do tipo <code>struct Aluno</code> e acessar os campos com o ponto: <code>a.nota</code>.</li>
+  <li>Por que um campo sem valor guarda lixo, e como zerar tudo com <code>{0}</code> ou <code>{}</code> (C23).</li>
+  <li>Como preencher com chaves, pela ordem ou pelo nome do campo (<code>.nome = …</code>, C99).</li>
+  <li>Como guardar uma turma inteira num array de structs.</li>
+  <li>Como copiar uma struct com <code>=</code>, e por que <code>==</code> não compara structs.</li>
+  <li>Como colocar uma struct dentro de outra e como mostrar os campos com <code>printf</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> (veja <a href="compilar.html">Compilar com gcc</a>). Você pode repetir cada um no editor do guia.</p>
+
+<hr>
+
+<h2>A ideia: uma ficha de cadastro</h2>
+<p>Pense na secretaria de uma escola. Para cada aluno existe uma <strong>ficha</strong> de papel, sempre com os mesmos espaços: <em>Nome</em>, <em>Idade</em>, <em>Nota</em>. A ficha em branco é o <strong>modelo</strong>; cada ficha preenchida é um aluno de verdade.</p>
+
+<p>A struct é o modelo da ficha. Ela diz quais espaços existem e o tipo de cada um. Depois você cria quantas fichas preenchidas quiser, todas no mesmo formato.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na secretaria</th><th>Em C</th><th>Exemplo</th></tr>
+<tr><td>O modelo da ficha</td><td>a <strong>struct</strong> (um tipo novo)</td><td><code>struct Aluno { … };</code></td></tr>
+<tr><td>Cada espaço da ficha</td><td>um <strong>campo</strong> (ou <strong>membro</strong>)</td><td><code>int idade;</code></td></tr>
+<tr><td>Uma ficha preenchida</td><td>uma <strong>variável</strong> do tipo <code>struct Aluno</code></td><td><code>struct Aluno a;</code></td></tr>
+<tr><td>Ler o espaço "Idade" de uma ficha</td><td>o operador <strong>ponto</strong></td><td><code>a.idade</code></td></tr>
+</table>
+</div>
+
+<p>O nome vem do inglês <em>structure</em>, "estrutura": uma estrutura de dados montada com peças menores. Em C, uma struct guarda <strong>só dados</strong>: não tem funções dentro, nem construtores, nem partes "privadas", como as classes de outras linguagens. As funções que trabalham com ela ficam do lado de fora, como sempre.</p>
+
+<hr>
+
+<h2>1. Declarar a struct e criar uma variável</h2>
+
+<pre class="file" data-file="aluno.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+int main(void) {
+    struct Aluno a;
+    strcpy(a.nome, "Ana");
+    a.idade = 20;
+    a.nota = 8.5;
+
+    printf("%s tem %d anos e tirou %.1f\n", a.nome, a.idade, a.nota);
+
+    a.nota = 9.0;
+    printf("Nota corrigida: %.1f\n", a.nota);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>struct Aluno</dt><dd>Começa a declaração de um tipo novo. <code>Aluno</code> é a <strong>etiqueta</strong> (<em>tag</em>) da struct. Por costume, começa com maiúscula, para não confundir com variáveis.</dd>
+  <dt>{ … };</dt><dd>Entre as chaves ficam os campos. Repare no <strong>ponto e vírgula depois da chave</strong>: na struct ele é obrigatório (esquecer é um erro clássico, que você verá em "Quando dá errado").</dd>
+  <dt>char nome[50];</dt><dd>Um campo: tipo + nome, igual a declarar uma variável. Este é um array de 50 <code>char</code>: o nome fica guardado <strong>dentro</strong> da ficha (até 49 letras mais o <code>'\0'</code>).</dd>
+  <dt>int idade; double nota;</dt><dd>Os campos podem ter tipos diferentes entre si. Essa é a grande diferença para um array, em que todos os elementos têm o mesmo tipo.</dd>
+  <dt>struct Aluno a;</dt><dd>Cria uma variável <code>a</code> do tipo <code>struct Aluno</code>. Em C, o nome do tipo são as <strong>duas palavras</strong>: <code>struct Aluno</code>. Escrever só <code>Aluno a;</code> é erro (dá para encurtar com <a href="typedef.html">typedef</a>, na próxima aula, mas uma coisa de cada vez).</dd>
+  <dt>strcpy(a.nome, "Ana");</dt><dd>O ponto entra na ficha <code>a</code> e pega o campo <code>nome</code>. Como <code>nome</code> é um array de <code>char</code>, o texto entra com <code>strcpy</code> (ou <code>snprintf</code>), não com <code>=</code> (veja <a href="funcoes-string.html">Funções de String</a>).</dd>
+  <dt>a.idade = 20;</dt><dd>Campos numéricos se comportam como variáveis comuns: dá para guardar, ler e mudar com <code>=</code>.</dd>
+</dl>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra aluno.c -o aluno
+$ ./aluno
+Ana tem 20 anos e tirou 8.5
+Nota corrigida: 9.0</pre>
+
+<div class="tip">
+<strong>Onde declarar a struct</strong>
+<p>Declare a struct <strong>fora</strong> do <code>main</code>, lá em cima, depois dos <code>#include</code>. Assim todas as funções do arquivo conhecem o tipo <code>struct Aluno</code>. Em projetos maiores, ela vai para um arquivo <code>.h</code> (veja <a href="headers.html">Arquivos .h e .c</a>).</p>
+</div>
+
+<hr>
+
+<h2>2. Campos sem valor: lixo da memória</h2>
+<p>O que tem em <code>a.idade</code> se você nunca guardou nada lá? Uma variável local sem valor inicial <strong>não vale zero</strong>: vale o que estava naquele pedaço da memória antes (veja <a href="variaveis.html">Variáveis</a>). Com os campos de uma struct é igual:</p>
+
+<pre class="file" data-file="lixo.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+int main(void) {
+    struct Aluno a;
+    strcpy(a.nome, "Ana");
+    printf("%s, %d anos, nota %g\n", a.nome, a.idade, a.nota);
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra lixo.c -o lixo
+lixo.c: In function ‘main’:
+lixo.c:13:5: warning: ‘a.nota’ is used uninitialized [-Wuninitialized]
+   13 |     printf("%s, %d anos, nota %g\n", a.nome, a.idade, a.nota);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+lixo.c:11:18: note: ‘a’ declared here
+   11 |     struct Aluno a;
+      |                  ^
+lixo.c:13:5: warning: ‘a.idade’ is used uninitialized [-Wuninitialized]
+   13 |     printf("%s, %d anos, nota %g\n", a.nome, a.idade, a.nota);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+lixo.c:11:18: note: ‘a’ declared here
+   11 |     struct Aluno a;
+      |                  ^
+$ ./lixo
+Ana, 0 anos, nota 0         « zero desta vez, por sorte</pre>
+
+<p>O gcc avisou duas vezes: <em>‘a.nota’ is used uninitialized</em> = "<code>a.nota</code> é usado sem ter recebido valor". Nesta execução saiu zero, mas é sorte: o C não promete nada, e em outro programa (ou com outra opção de compilação) sai um número sem sentido. Ler um valor que nunca foi guardado é <a href="comportamento-indefinido.html">comportamento indefinido</a>.</p>
+
+<h3>A solução: começar zerado</h3>
+<p>Diferente do C++, uma struct em C <strong>não</strong> pode ter valores padrão escritos dentro dela. O jeito é zerar na hora de criar a variável, com chaves:</p>
+
+<pre class="file" data-file="zerada.c">struct Aluno a = {0};      /* todos os campos zerados (qualquer versão do C) */
+struct Aluno b = {};       /* o mesmo, a partir do C23 */
+</pre>
+
+<p>Com <code>{0}</code>, o primeiro campo recebe 0 e todos os que você não citou também viram zero: os números ficam <code>0</code> e o <code>nome</code> fica com todos os bytes <code>'\0'</code> (um texto vazio). As chaves vazias <code>{}</code> fazem o mesmo e são oficiais a partir do <span class="versao">C23</span>; antes disso, use <code>{0}</code>, que funciona em todas as versões. <strong>Crie suas structs sempre zeradas</strong> quando for preenchê-las aos poucos.</p>
+
+<div class="tryc" data-goal="out:Bia tem 19 anos e nota 7.5">
+<p class="try-task"><strong>Missão:</strong> a variável <code>a</code> já existe, zerada. Preencha os três campos com o ponto (o nome com <code>strcpy</code>), para a tela mostrar <code>Bia tem 19 anos e nota 7.5</code>. Rode primeiro sem mudar nada e veja os zeros.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+int main(void) {
+    struct Aluno a = {0};
+    /* preencha os três campos de a aqui */
+
+    printf("%s tem %d anos e nota %.1f\n", a.nome, a.idade, a.nota);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+int main(void) {
+    struct Aluno a = {0};
+    strcpy(a.nome, "Bia");
+    a.idade = 19;
+    a.nota = 7.5;
+
+    printf("%s tem %d anos e nota %.1f\n", a.nome, a.idade, a.nota);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Preencher tudo de uma vez com chaves</h2>
+<p>Preencher campo por campo dá trabalho. Você pode criar a variável já preenchida, com os valores entre chaves. Pela ordem dos campos, ou citando o nome de cada campo com um ponto na frente (os <strong>designadores</strong>, do C99):</p>
+
+<pre class="file" data-file="chaves.c">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+int main(void) {
+    struct Aluno a = {"Ana", 20, 8.5};
+    struct Aluno b = {"Bruno", 19};
+    struct Aluno c = {0};
+    struct Aluno d = {};
+    struct Aluno e = {.nome = "Carla", .idade = 22, .nota = 9.5};
+    struct Aluno f = {.nota = 6.0, .nome = "Davi"};
+
+    printf("%s | %d | %.1f\n", a.nome, a.idade, a.nota);
+    printf("%s | %d | %.1f\n", b.nome, b.idade, b.nota);
+    printf("[%s] | %d | %.1f\n", c.nome, c.idade, c.nota);
+    printf("[%s] | %d | %.1f\n", d.nome, d.idade, d.nota);
+    printf("%s | %d | %.1f\n", e.nome, e.idade, e.nota);
+    printf("%s | %d | %.1f\n", f.nome, f.idade, f.nota);
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra chaves.c -o chaves
+chaves.c: In function ‘main’:
+chaves.c:11:12: warning: missing initializer for field ‘nota’ of ‘struct Aluno’ [-Wmissing-field-initializers]
+   11 |     struct Aluno b = {"Bruno", 19};
+      |            ^~~~~
+chaves.c:6:12: note: ‘nota’ declared here
+    6 |     double nota;
+      |            ^~~~
+$ ./chaves
+Ana | 20 | 8.5
+Bruno | 19 | 0.0       « faltou a nota: ficou zero
+[] | 0 | 0.0          « {0}: tudo zerado, nome vazio
+[] | 0 | 0.0          « {}: o mesmo (C23)
+Carla | 22 | 9.5
+Davi | 0 | 6.0        « designadores fora de ordem, idade pulada: zero</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>{"Ana", 20, 8.5}</code></td><td>Preenche pela ordem: <code>nome</code>, <code>idade</code>, <code>nota</code>. O texto entre aspas pode ir direto para o array <code>nome</code> aqui, na criação (depois, só com <code>strcpy</code>).</td></tr>
+<tr><td><code>{"Bruno", 19}</code></td><td>Valores a menos: os campos do fim viram zero. O <code>-Wextra</code> avisa (<em>missing initializer for field ‘nota’</em>, "faltou valor inicial para o campo <code>nota</code>"), porque pode ter sido esquecimento.</td></tr>
+<tr><td><code>{0}</code> e <code>{}</code></td><td>Tudo zerado. Esses dois não geram aviso: o compilador entende que zerar era a intenção.</td></tr>
+<tr><td><code>{.nome = "Carla", .idade = 22, .nota = 9.5}</code></td><td><strong>Designadores</strong> <span class="versao">C99</span>: cada valor vem com o nome do campo. Mais fácil de ler, e não depende da ordem dos campos na struct.</td></tr>
+<tr><td><code>{.nota = 6.0, .nome = "Davi"}</code></td><td>Em C, os designadores podem vir <strong>em qualquer ordem</strong> e pular campos; os pulados viram zero, sem aviso. (Em C++, a ordem tem de ser a da declaração.)</td></tr>
+</table>
+</div>
+
+<p>Os designadores são ótimos quando a struct tem vários campos do mesmo tipo: em <code>{20, 22}</code> você precisa lembrar qual número é qual; em <code>{.idade = 20, .sala = 22}</code>, não. E se alguém um dia mudar a ordem dos campos na struct, a forma com designadores continua certa.</p>
+
+<hr>
+
+<h2>4. Uma turma inteira: array de structs</h2>
+<p>Aqui a struct mostra a sua força. Um array de <code>struct Aluno</code> é uma pilha de fichas (veja <a href="arrays.html">Arrays</a>). Cada elemento é uma ficha completa:</p>
+
+<pre class="file" data-file="turma.c">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+int main(void) {
+    struct Aluno turma[] = {
+        {"Ana", 20, 8.5},
+        {"Bruno", 19, 6.0},
+        {"Carla", 22, 9.5},
+        {"Davi", 21, 7.0},
+    };
+    size_t n = sizeof turma / sizeof turma[0];
+
+    double soma = 0.0;
+    for (size_t i = 0; i &lt; n; i++) {
+        printf("%-6s %4.1f\n", turma[i].nome, turma[i].nota);
+        soma += turma[i].nota;
+    }
+    printf("Alunos: %zu\n", n);
+    printf("Média da turma: %.2f\n", soma / n);
+    printf("Primeiro: %s\n", turma[0].nome);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>struct Aluno turma[] = { … };</dt><dd>Um array de alunos. Cada <code>{"Ana", 20, 8.5}</code> lá dentro preenche uma ficha, pelas regras da seção 3. Sem número entre os colchetes, o tamanho vem da lista (4). A vírgula depois do último é permitida e facilita acrescentar linhas.</dd>
+  <dt>sizeof turma / sizeof turma[0]</dt><dd>O tamanho do array inteiro dividido pelo tamanho de uma ficha = quantas fichas (veja <a href="sizeof.html">sizeof</a>).</dd>
+  <dt>turma[i].nota</dt><dd>Primeiro o <code>[i]</code> pega a ficha da posição <code>i</code>; depois o <code>.nota</code> pega o campo dela.</dd>
+  <dt>%-6s %4.1f</dt><dd>Nome alinhado à esquerda em 6 espaços e nota em 4 espaços com uma casa decimal, para formar colunas (veja <a href="formatos-printf.html">Formatos do printf</a>).</dd>
+</dl>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra turma.c -o turma
+$ ./turma
+Ana     8.5
+Bruno   6.0
+Carla   9.5
+Davi    7.0
+Alunos: 4
+Média da turma: 7.75
+Primeiro: Ana</pre>
+
+<p>Sem struct, você precisaria de três arrays separados (<code>nomes</code>, <code>idades</code>, <code>notas</code>) e de cuidado para que a posição 2 de cada um fosse sempre a mesma pessoa. Com a struct, cada pessoa é uma peça só: ordenar ou apagar um aluno nunca separa o nome da nota.</p>
+
+<hr>
+
+<h2>5. Copiar com <code>=</code> e passar para funções</h2>
+<p>Ao contrário dos arrays, uma struct pode ser copiada inteira com <code>=</code>. A cópia leva <strong>todos</strong> os campos, inclusive o array <code>nome</code>, e fica independente da original. Passar uma struct para uma função também faz uma cópia:</p>
+
+<pre class="file" data-file="copia.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+void dar_bonus(struct Aluno a) {
+    a.nota += 1.0;
+    printf("Dentro da função: %.1f\n", a.nota);
+}
+
+int main(void) {
+    struct Aluno ana = {"Ana", 20, 6.5};
+    dar_bonus(ana);
+    printf("No main: %.1f\n", ana.nota);
+
+    struct Aluno outra = ana;
+    strcpy(outra.nome, "Bia");
+    outra.nota = 10.0;
+    printf("%s: %.1f | %s: %.1f\n", ana.nome, ana.nota, outra.nome, outra.nota);
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra copia.c -o copia
+$ ./copia
+Dentro da função: 7.5
+No main: 6.5                 « a função mudou a cópia dela, não a Ana do main
+Ana: 6.5 | Bia: 10.0         « mudar a outra não muda a ana</pre>
+
+<p>Guarde esse comportamento de <code>dar_bonus</code>: para uma função mudar a struct de verdade (e para não copiar 64 bytes a cada chamada), ela recebe um <strong>ponteiro</strong> para a struct. Esse é o assunto da próxima aula, <a href="structs-ponteiros.html">Structs e Ponteiros (-&gt;)</a>.</p>
+
+<div class="warning">
+<strong>Campo ponteiro: a cópia divide o mesmo texto</strong>
+<p>Aqui o nome é um <strong>array</strong> (<code>char nome[50]</code>), que mora dentro da ficha e é copiado junto. Se o campo fosse um <strong>ponteiro</strong> (<code>char *nome</code>, apontando para uma <a href="strings-dinamicas.html">string dinâmica</a>), o <code>=</code> copiaria só o endereço: as duas fichas apontariam para o <strong>mesmo</strong> texto, e mudar um mudaria o outro. Para copiar o texto também, faça <code>outra.nome = strdup(ana.nome);</code>.</p>
+</div>
+
+<h3>Devolver uma struct e struct dentro de struct</h3>
+<p>Uma função também pode <strong>devolver</strong> uma struct inteira. E um campo pode ser, ele mesmo, outra struct: a data de nascimento tem dia, mês e ano, e cabe muito bem numa <code>struct Data</code>:</p>
+
+<pre class="file" data-file="funcoes.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+struct Data {
+    int dia;
+    int mes;
+    int ano;
+};
+
+struct Aluno {
+    char nome[50];
+    struct Data nascimento;
+    double nota;
+};
+
+void mostrar(struct Aluno a) {
+    printf("%s, nascida em %02d/%02d/%d, nota %.1f\n",
+           a.nome, a.nascimento.dia, a.nascimento.mes, a.nascimento.ano, a.nota);
+}
+
+struct Aluno criar(const char *nome, double nota) {
+    struct Aluno novo = {0};
+    snprintf(novo.nome, sizeof novo.nome, "%s", nome);
+    novo.nota = nota;
+    return novo;
+}
+
+int main(void) {
+    struct Aluno ana = {"Ana", {14, 3, 2005}, 8.5};
+    mostrar(ana);
+
+    struct Aluno eva = criar("Eva", 7.0);
+    eva.nascimento = (struct Data){2, 9, 2006};
+    mostrar(eva);
+
+    printf("sizeof(struct Data) = %zu\n", sizeof(struct Data));
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>struct Data nascimento;</code></td><td>Um campo que é outra struct. A <code>struct Data</code> precisa estar declarada <strong>antes</strong>.</td></tr>
+<tr><td><code>a.nascimento.dia</code></td><td>Dois pontos seguidos: entra em <code>a</code>, depois em <code>nascimento</code>, depois pega o <code>dia</code>.</td></tr>
+<tr><td><code>{"Ana", {14, 3, 2005}, 8.5}</code></td><td>Chaves dentro de chaves: as de dentro preenchem a data.</td></tr>
+<tr><td><code>snprintf(novo.nome, sizeof novo.nome, "%s", nome);</code></td><td>Copia o nome sem nunca passar dos 50 bytes do campo, mesmo que o texto seja maior (o <code>strcpy</code> não tem essa proteção).</td></tr>
+<tr><td><code>return novo;</code></td><td>Devolve a struct inteira (uma cópia). Para structs pequenas, é normal e barato.</td></tr>
+<tr><td><code>(struct Data){2, 9, 2006}</code></td><td>Um <strong>literal composto</strong> <span class="versao">C99</span>: cria uma <code>struct Data</code> sem nome, ali mesmo, para atribuir de uma vez.</td></tr>
+</table>
+</div>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra funcoes.c -o funcoes
+$ ./funcoes
+Ana, nascida em 14/03/2005, nota 8.5
+Eva, nascida em 02/09/2006, nota 7.0
+sizeof(struct Data) = 12</pre>
+
+<p>Três <code>int</code> de 4 bytes: 12 bytes. O <code>%02d</code> escreve o número com dois dígitos, completando com zero à esquerda (<code>3</code> vira <code>03</code>).</p>
+
+<hr>
+
+<h2>6. Comparar structs: <code>==</code> não funciona</h2>
+<p>Copiar com <code>=</code> pode. Comparar com <code>==</code>, não:</p>
+
+<pre class="file" data-file="compara.c">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+int main(void) {
+    struct Aluno a = {"Ana", 20, 8.5};
+    struct Aluno b = a;
+    if (a == b) {
+        printf("iguais\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra compara.c -o compara
+compara.c: In function ‘main’:
+compara.c:12:11: error: invalid operands to binary == (have ‘struct Aluno’ and ‘struct Aluno’)
+   12 |     if (a == b) {
+      |           ^~</pre>
+
+<p><em>invalid operands to binary ==</em> = "operandos inválidos para o <code>==</code>": o <code>==</code> só sabe comparar números, caracteres e ponteiros. O C não decide sozinho o que é "dois alunos iguais" (mesmo nome? mesma nota? os dois?). No editor do guia, o Clang diz <code>invalid operands to binary expression ('struct Aluno' and 'struct Aluno')</code>.</p>
+
+<p>A solução é escrever uma função que compara campo por campo, do jeito que fizer sentido para o seu programa. Textos se comparam com <code>strcmp</code> (veja <a href="funcoes-string.html">Funções de String</a>):</p>
+
+<pre class="file" data-file="iguais.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+bool mesmo_aluno(struct Aluno a, struct Aluno b) {
+    return strcmp(a.nome, b.nome) == 0 &amp;&amp; a.idade == b.idade &amp;&amp; a.nota == b.nota;
+}
+
+int main(void) {
+    struct Aluno a = {"Ana", 20, 8.5};
+    struct Aluno b = a;
+    struct Aluno c = {"Ana", 20, 9.0};
+    printf("a e b: %s\n", mesmo_aluno(a, b) ? "iguais" : "diferentes");
+    printf("a e c: %s\n", mesmo_aluno(a, c) ? "iguais" : "diferentes");
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra iguais.c -o iguais
+$ ./iguais
+a e b: iguais
+a e c: diferentes</pre>
+
+<div class="note">
+<strong>Por que não comparar os bytes com <code>memcmp</code>?</strong>
+<p>Parece tentador comparar a memória inteira das duas fichas. O problema são os <strong>bytes de preenchimento</strong> (<em>padding</em>): o compilador deixa buracos entre os campos para cada um começar num endereço "redondo". Somando os campos do <code>Aluno</code>, dá 50 + 4 + 8 = 62 bytes, mas <code>sizeof(struct Aluno)</code> é <strong>64</strong> no gcc: há 2 bytes de enchimento depois do <code>nome</code>, com conteúdo qualquer. E o que vem depois do <code>'\0'</code> dentro do <code>nome</code> também pode ser lixo. Duas fichas "iguais" podem ter bytes diferentes. Compare campo por campo.</p>
+</div>
+
+<hr>
+
+<h2>7. Mostrar uma struct na tela</h2>
+<p>O <code>printf</code> não tem um formato para structs: ele não sabe quais campos existem nem como mostrá-los. Passar a struct inteira dá aviso e lixo na tela:</p>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra imprimir.c -o imprimir
+imprimir.c: In function ‘main’:
+imprimir.c:11:14: warning: format ‘%s’ expects argument of type ‘char *’, but argument 2 has type ‘struct Aluno’ [-Wformat=]
+   11 |     printf("%s\n", a);
+      |             ~^     ~
+      |              |     |
+      |              |     struct Aluno
+      |              char *
+$ ./imprimir
+«três ou quatro caracteres estranhos»</pre>
+
+<p><em>format ‘%s’ expects argument of type ‘char *’, but argument 2 has type ‘struct Aluno’</em> = "o formato <code>%s</code> espera um texto, mas o argumento 2 é uma <code>struct Aluno</code>". O jeito é mostrar campo por campo, de preferência numa função própria, como a <code>mostrar</code> da seção 5. Assim, mudar o formato da ficha na tela é mudar um lugar só.</p>
+
+<hr>
+
+<h2>Formas de preencher uma struct: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Zerar e preencher campo por campo</td><td><code>struct Aluno a = {0}; a.idade = 20;</code></td><td>Quando os valores chegam aos poucos (lidos do teclado ou de um arquivo).</td></tr>
+<tr><td>Chaves pela ordem</td><td><code>struct Aluno a = {"Ana", 20, 8.5};</code></td><td>Structs pequenas, em listas (arrays de structs).</td></tr>
+<tr><td>Designadores <span class="versao">C99</span></td><td><code>struct Aluno a = {.nome = "Ana", .nota = 8.5};</code></td><td>Structs com muitos campos ou campos do mesmo tipo. A mais legível; o que ficar de fora vira zero.</td></tr>
+<tr><td>Tudo zerado</td><td><code>{0}</code>, ou <code>{}</code> <span class="versao">C23</span></td><td>Uma ficha em branco. Use <code>{0}</code> se o código precisa compilar em versões antigas.</td></tr>
+<tr><td>Literal composto <span class="versao">C99</span></td><td><code>a = (struct Aluno){"Bia", 19, 7.5};</code></td><td>Trocar todos os campos de uma variável que já existe, numa linha.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"expected ‘;’, identifier or ‘(’ before ‘int’": faltou o <code>;</code> da struct</strong>
+<pre class="file" data-file="semponto.c">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+}
+
+int main(void) {
+    struct Aluno a = {"Ana", 20, 8.5};
+    printf("%s\n", a.nome);
+    return 0;
+}
+</pre>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra semponto.c -o semponto
+semponto.c:9:1: error: expected ‘;’, identifier or ‘(’ before ‘int’
+    9 | int main(void) {
+      | ^~~</pre>
+<p><strong>O que aconteceu:</strong> a chave que fecha a struct precisa de <code>;</code> depois. Funções não precisam (<code>int main(void) { … }</code>), structs precisam. Repare que o gcc aponta a linha <strong>seguinte</strong> (9), onde ele percebeu o problema: <em>esperava ‘;’ … antes de ‘int’</em>.</p>
+<p><strong>Como resolver:</strong> ponha o <code>;</code> depois da <code>}</code> da struct. O Clang, no editor do guia, é mais direto: <code>expected ';' after struct</code>, apontando a linha 7.</p>
+</div>
+
+<div class="cenario">
+<strong>"unknown type name ‘Aluno’; use ‘struct’ keyword"</strong>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra semstruct.c -o semstruct
+semstruct.c: In function ‘main’:
+semstruct.c:10:5: error: unknown type name ‘Aluno’; use ‘struct’ keyword to refer to the type
+   10 |     Aluno a;
+      |     ^~~~~
+      |     struct
+semstruct.c:11:6: error: request for member ‘idade’ in something not a structure or union
+   11 |     a.idade = 20;
+      |      ^
+«…»</pre>
+<p><strong>O que aconteceu:</strong> em C, o nome do tipo é <code>struct Aluno</code>, com as duas palavras. Só <code>Aluno</code> é um "nome de tipo desconhecido". O gcc até sugere: <em>use ‘struct’ keyword</em>. Os erros seguintes são consequência: como <code>a</code> não virou uma struct, ela não tem o campo <code>idade</code>. (Quem vem do C++ cai muito nesse, porque lá <code>Aluno a;</code> funciona.)</p>
+<p><strong>Como resolver:</strong> escreva <code>struct Aluno a;</code>, ou crie um apelido com <a href="typedef.html">typedef</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"assignment to expression with array type": <code>a.nome = "Ana";</code></strong>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra atribuir.c -o atribuir
+atribuir.c: In function ‘main’:
+atribuir.c:11:12: error: assignment to expression with array type
+   11 |     a.nome = "Ana";
+      |            ^</pre>
+<p><strong>O que aconteceu:</strong> "atribuição a uma expressão do tipo array". O campo <code>nome</code> é um array, e array não recebe <code>=</code> (veja <a href="strings.html">Strings</a>). Nas chaves da criação (<code>{"Ana", …}</code>) pode, porque ali é inicialização, não atribuição.</p>
+<p><strong>Como resolver:</strong> <code>strcpy(a.nome, "Ana");</code> ou, mais seguro, <code>snprintf(a.nome, sizeof a.nome, "%s", texto);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"has no member named"</strong>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra membro.c -o membro
+membro.c: In function ‘main’:
+membro.c:11:21: error: ‘struct Aluno’ has no member named ‘email’
+   11 |     printf("%s\n", a.email);
+      |                     ^</pre>
+<p><strong>O que aconteceu:</strong> o <code>struct Aluno</code> não tem o campo <code>email</code>. Acontece por erro de digitação (<code>a.Nome</code> em vez de <code>a.nome</code>) ou porque você esqueceu de declarar o campo.</p>
+<p><strong>Como resolver:</strong> confira o nome exato na declaração da struct (maiúsculas contam) ou acrescente o campo lá.</p>
+</div>
+
+<div class="cenario">
+<strong>"invalid operands to binary ==": comparar structs</strong>
+<p><strong>O que aconteceu:</strong> <code>a == b</code> com duas structs não compila (seção 6).</p>
+<p><strong>Como resolver:</strong> escreva uma função que compara os campos que importam, com <code>strcmp</code> para os textos.</p>
+</div>
+
+<div class="cenario">
+<strong>A função mudou a struct, mas no <code>main</code> nada mudou</strong>
+<p><strong>O que aconteceu:</strong> o parâmetro é <code>struct Aluno a</code>: a função recebeu uma cópia, como em <code>copia.c</code>.</p>
+<p><strong>Como resolver:</strong> passe um ponteiro: <code>void dar_bonus(struct Aluno *a)</code>, e chame com <code>dar_bonus(&amp;ana)</code>. Detalhes em <a href="structs-ponteiros.html">Structs e Ponteiros</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Significado</th></tr>
+<tr><td><code>struct Aluno { char nome[50]; int idade; };</code></td><td>Declara um tipo novo com dois campos (não esqueça o <code>;</code> final).</td></tr>
+<tr><td><code>struct Aluno a;</code></td><td>Cria uma variável; campos com lixo se for local.</td></tr>
+<tr><td><code>struct Aluno a = {0};</code> / <code>= {};</code></td><td>Cria com tudo zerado (<code>{}</code> a partir do C23).</td></tr>
+<tr><td><code>struct Aluno a = {"Ana", 20};</code></td><td>Preenche pela ordem dos campos; o resto vira zero.</td></tr>
+<tr><td><code>struct Aluno a = {.idade = 20, .nome = "Ana"};</code></td><td>Designadores (C99), em qualquer ordem; o resto vira zero.</td></tr>
+<tr><td><code>a.idade</code></td><td>Acessa um campo (ler ou mudar).</td></tr>
+<tr><td><code>a.nascimento.dia</code></td><td>Campo de uma struct dentro de outra.</td></tr>
+<tr><td><code>strcpy(a.nome, "Ana");</code></td><td>Guarda texto num campo array (nunca <code>a.nome = …</code>).</td></tr>
+<tr><td><code>struct Aluno b = a;</code></td><td>Copia todos os campos; <code>b</code> é independente.</td></tr>
+<tr><td><code>a == b</code></td><td>Erro: compare campo por campo.</td></tr>
+<tr><td><code>struct Aluno turma[30];</code></td><td>Um array de structs; <code>turma[i].nota</code>.</td></tr>
+<tr><td><code>(struct Aluno){"Bia", 19, 7.5}</code></td><td>Literal composto (C99): uma struct sem nome, criada na hora.</td></tr>
+<tr><td><code>p-&gt;nota</code></td><td>Campo por um ponteiro: próxima aula.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Declarar um campo</h3>
+<p>Complete a struct <code>Produto</code> com um campo <code>preco</code> do tipo <code>double</code>:</p>
+<div class="ex-code">struct Produto { char nome[40]; <input data-answer="double preco;" aria-label="campo preco"> };</div>
+</div>
+
+<div class="exercise">
+<h3>2. Criar a variável</h3>
+<p>Complete para criar uma variável <code>p</code> do tipo da struct acima, com tudo zerado (forma que funciona em qualquer versão do C):</p>
+<div class="ex-code"><input data-answer="struct Produto p = {0};|struct Produto p={0};" aria-label="declaração"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Acessar o campo</h3>
+<p>Complete para dar o preço de 4.50 ao produto <code>p</code>:</p>
+<div class="ex-code"><input data-answer="p.preco" aria-label="acesso ao preço"> = 4.50;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com <code>struct Aluno { char nome[50]; int idade; double nota; };</code>, quanto vale <code>b.nota</code> depois de <code>struct Aluno b = {"Bruno", 19};</code>?</p>
+<label><input type="radio" name="q4"> 19</label>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> Um lixo qualquer da memória</label>
+<label><input type="radio" name="q4"> Dá erro de compilação: faltou um valor</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Qual destas linhas <strong>não</strong> compila?</p>
+<label><input type="radio" name="q5"> <code>struct Aluno b = a;</code></label>
+<label><input type="radio" name="q5"> <code>a.idade = 21;</code></label>
+<label><input type="radio" name="q5"> <code>if (a == b) { … }</code></label>
+<label><input type="radio" name="q5"> <code>struct Aluno c = {.nota = 7.0, .idade = 20};</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Uma função <code>void f(struct Aluno a)</code> faz <code>a.nota = 10;</code>. O que acontece com a variável que foi passada no <code>main</code>?</p>
+<label><input type="radio" name="q6"> Nada: a função mudou uma cópia.</label>
+<label><input type="radio" name="q6"> A nota dela vira 10.</label>
+<label><input type="radio" name="q6"> Dá erro de compilação.</label>
+<label><input type="radio" name="q6"> O programa trava.</label>
+</div>
+
+<h3>Missão final: a melhor nota da turma</h3>
+<div class="tryc" data-goal="out:Melhor: Carla (9.5),src:turma\[i\]\.nota">
+<p class="try-task"><strong>Missão:</strong> complete a função <code>melhor</code>, que devolve a <strong>posição</strong> do aluno com a maior nota. Dentro do <code>for</code>, se <code>turma[i].nota</code> for maior que <code>turma[indice].nota</code>, guarde <code>i</code> em <code>indice</code>. A tela deve mostrar <code>Melhor: Carla (9.5)</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+size_t melhor(const struct Aluno turma[], size_t n) {
+    size_t indice = 0;
+    for (size_t i = 1; i &lt; n; i++) {
+        /* se a nota de turma[i] for maior que a de turma[indice], guarde i em indice */
+    }
+    return indice;
+}
+
+int main(void) {
+    struct Aluno turma[] = {
+        {"Ana", 20, 8.5},
+        {"Bruno", 19, 6.0},
+        {"Carla", 22, 9.5},
+        {"Davi", 21, 7.0},
+    };
+    size_t n = sizeof turma / sizeof turma[0];
+
+    size_t m = melhor(turma, n);
+    printf("Melhor: %s (%.1f)\n", turma[m].nome, turma[m].nota);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+struct Aluno {
+    char nome[50];
+    int idade;
+    double nota;
+};
+
+size_t melhor(const struct Aluno turma[], size_t n) {
+    size_t indice = 0;
+    for (size_t i = 1; i &lt; n; i++) {
+        if (turma[i].nota &gt; turma[indice].nota) {
+            indice = i;
+        }
+    }
+    return indice;
+}
+
+int main(void) {
+    struct Aluno turma[] = {
+        {"Ana", 20, 8.5},
+        {"Bruno", 19, 6.0},
+        {"Carla", 22, 9.5},
+        {"Davi", 21, 7.0},
+    };
+    size_t n = sizeof turma / sizeof turma[0];
+
+    size_t m = melhor(turma, n);
+    printf("Melhor: %s (%.1f)\n", turma[m].nome, turma[m].nota);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>struct</strong> cria um tipo novo que agrupa campos de tipos diferentes: <code>struct Aluno { char nome[50]; int idade; double nota; };</code>. Não esqueça o <code>;</code> depois da chave.</li>
+  <li>Em C, o tipo se chama <code>struct Aluno</code> (as duas palavras). A struct guarda só dados: nada de funções dentro.</li>
+  <li>Acesse cada campo com o <strong>ponto</strong>: <code>a.nota</code>. Texto num campo array entra com <code>strcpy</code>/<code>snprintf</code>.</li>
+  <li>Campo sem valor = lixo. Crie com <code>{0}</code> (ou <code>{}</code> no C23) para zerar tudo.</li>
+  <li>Preencha com chaves: <code>{"Ana", 20, 8.5}</code> (pela ordem) ou <code>{.nome = "Ana", .nota = 8.5}</code> (designadores, C99, em qualquer ordem).</li>
+  <li><code>=</code> copia a struct inteira; <code>==</code> não compila: compare campo por campo.</li>
+  <li>Passar uma struct para uma função copia tudo; para mudar a original, use um ponteiro (<a href="structs-ponteiros.html">próxima aula</a>).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
