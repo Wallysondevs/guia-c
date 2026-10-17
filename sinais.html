@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Sinais — signal, raise, Ctrl+C e kill | Guia C</title>
+<meta name="description" content="Sinais em C para iniciantes: o que são SIGINT, SIGTERM, SIGKILL, SIGSEGV e SIGABRT, os códigos de saída 128 + n (130, 137, 139, 143), raise, tratar o Ctrl+C com signal e volatile sig_atomic_t, mandar sinais com kill, ignorar com SIG_IGN, o signal que esquece o tratador e sigaction. Saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Sinais</span> (signal)</h1>
+
+<p class="intro">Você aperta Ctrl+C e o programa para. Um programa lê um ponteiro nulo e morre com "Falha de segmentação". O computador vai desligar e avisa os programas para fecharem. Em todos esses casos, quem avisa o programa é um <strong>sinal</strong>: uma mensagem curtinha que o sistema operacional entrega a um programa que está rodando, interrompendo o que ele estiver fazendo. Nesta aula você vai conhecer os sinais mais comuns, entender os códigos de saída 130, 137, 139 e 143, e fazer o seu programa <strong>responder</strong> a um sinal, por exemplo salvando o trabalho antes de sair quando o usuário aperta Ctrl+C.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um sinal e os mais comuns: <code>SIGINT</code>, <code>SIGTERM</code>, <code>SIGKILL</code>, <code>SIGSEGV</code>, <code>SIGABRT</code>, <code>SIGFPE</code>.</li>
+  <li>Por que um programa morto por um sinal termina com o código 128 + o número do sinal.</li>
+  <li>Como mandar um sinal para o próprio programa com <code>raise</code> e para outro com o comando <code>kill</code>.</li>
+  <li>Como tratar o Ctrl+C com <code>signal</code>, um <strong>tratador</strong> e uma variável <code>volatile sig_atomic_t</code>.</li>
+  <li>O que um tratador pode e não pode fazer.</li>
+  <li>Como ignorar um sinal, por que o <code>SIGKILL</code> não pode ser tratado e quando usar <code>sigaction</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/sinais</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Os sinais existem em todo Linux e macOS; no Windows, só uma parte deles (para seguir esta aula no Windows, use o WSL: aula <a href="instalar-windows-mac.html">Instalar no Windows e no Mac</a>).</p>
+
+<hr>
+
+<h2>A ideia: a campainha da casa</h2>
+<p>A Ana está cozinhando. A campainha toca. Ela tem três escolhas:</p>
+<ul>
+  <li><strong>Fazer o de sempre</strong>: largar tudo e ir atender. É a <strong>ação padrão</strong> do sinal; para a maioria dos sinais, o padrão é <strong>terminar o programa</strong>.</li>
+  <li><strong>Ignorar</strong>: continuar cozinhando como se nada tivesse acontecido.</li>
+  <li><strong>Ter um combinado</strong>: "se tocar, desligo o fogão primeiro e depois atendo". É um <strong>tratador</strong> (em inglês, <em>handler</em>): uma função sua que roda quando o sinal chega.</li>
+</ul>
+<p>E existe um toque que não dá para ignorar: os bombeiros arrombando a porta. Esse é o <code>SIGKILL</code>, que nenhum programa consegue tratar nem ignorar.</p>
+
+<hr>
+
+<h2>1. Os sinais que você já viu</h2>
+<p>Cada sinal tem um número e um nome que começa com <code>SIG</code> (de <em>signal</em>, sinal). O comando <code>kill -l</code> ("list", listar) do terminal mostra todos; as três primeiras linhas têm os mais conhecidos:</p>
+
+<pre class="term" data-cwd="~/c/sinais">$ kill -l | head -3
+ 1) SIGHUP	 2) SIGINT	 3) SIGQUIT	 4) SIGILL	 5) SIGTRAP
+ 6) SIGABRT	 7) SIGBUS	 8) SIGFPE	 9) SIGKILL	10) SIGUSR1
+11) SIGSEGV	12) SIGUSR2	13) SIGPIPE	14) SIGALRM	15) SIGTERM</pre>
+
+<p>Quando um programa morre por causa de um sinal, o terminal (o Bash) mostra o código de saída <strong>128 + o número do sinal</strong>. Você já encontrou vários deles nas aulas anteriores:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sinal</th><th>Nº</th><th>Quem manda, e quando</th><th>Código de saída</th><th>O que o Bash escreve</th></tr>
+<tr><td><code>SIGINT</code></td><td>2</td><td>O terminal, quando você aperta <strong>Ctrl+C</strong> ("interrupt", interromper)</td><td>130</td><td>(nada, só pula uma linha)</td></tr>
+<tr><td><code>SIGABRT</code></td><td>6</td><td>O próprio programa, com <code>abort()</code> ou um <code>assert</code> falho (aula <a href="testes.html">Testes</a>)</td><td>134</td><td><code>Abortado (imagem do núcleo gravada)</code></td></tr>
+<tr><td><code>SIGFPE</code></td><td>8</td><td>O processador, numa divisão inteira por zero</td><td>136</td><td><code>Exceção de ponto flutuante (imagem do núcleo gravada)</code></td></tr>
+<tr><td><code>SIGKILL</code></td><td>9</td><td>Alguém que quer o programa morto <strong>já</strong> (<code>kill -9</code>); não dá para tratar</td><td>137</td><td><code>Morto</code></td></tr>
+<tr><td><code>SIGSEGV</code></td><td>11</td><td>O processador, quando o programa mexe em memória que não é dele (aula <a href="ponteiro-nulo.html">Ponteiro Nulo</a>)</td><td>139</td><td><code>Falha de segmentação (imagem do núcleo gravada)</code></td></tr>
+<tr><td><code>SIGTERM</code></td><td>15</td><td>Um pedido educado para terminar ("terminate"): o comando <code>kill</code> sem opções, o desligamento do computador</td><td>143</td><td><code>Terminado</code></td></tr>
+<tr><td><code>SIGHUP</code></td><td>1</td><td>O terminal foi fechado ("hang up", desligar o telefone)</td><td>129</td><td><code>Desligar</code></td></tr>
+<tr><td><code>SIGUSR1</code>, <code>SIGUSR2</code></td><td>10, 12</td><td>Livres para o seu programa usar como quiser ("user", usuário)</td><td>138, 140</td><td><code>Sinal 1 definido pelo usuário</code></td></tr>
+</table>
+</div>
+
+<p>Os números da tabela são os do Linux. Só seis sinais fazem parte do C padrão (<code>SIGINT</code>, <code>SIGTERM</code>, <code>SIGABRT</code>, <code>SIGFPE</code>, <code>SIGSEGV</code> e <code>SIGILL</code>); os outros vêm do POSIX. No código, use sempre os <strong>nomes</strong>, nunca os números.</p>
+
+<hr>
+
+<h2>2. raise: mandar um sinal para si mesmo</h2>
+<p>O jeito mais simples de ver um sinal funcionando é o programa mandar um para ele mesmo, com <code>raise</code> ("levantar", erguer a mão), do cabeçalho <code>&lt;signal.h&gt;</code>:</p>
+
+<pre class="file" data-file="raise.c">#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+
+int main(void) {
+    printf("Antes do sinal.\n");
+    raise(SIGTERM);
+    printf("Depois do sinal.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra raise.c -o raise
+$ ./raise
+Antes do sinal.
+Terminado                  ./raise
+$ echo $?
+143</pre>
+
+<p>O <code>raise(SIGTERM)</code> entregou o sinal na hora. Como o programa não disse o que fazer com ele, valeu a ação padrão do <code>SIGTERM</code>: terminar. O "Depois do sinal" nunca apareceu, o <code>return 0</code> nunca rodou, e o Bash avisou <code>Terminado</code> com o código 143 (128 + 15).</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> o editor do guia sabe entregar sinais com <code>raise</code>. Rode e veja o <code>Terminado</code> e o 143. Depois troque <code>SIGTERM</code> por <code>SIGINT</code>, <code>SIGABRT</code>, <code>SIGSEGV</code> e <code>SIGKILL</code>, um de cada vez, e confira cada código de saída com a tabela da seção 1.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+
+int main(void) {
+    printf("Antes do sinal.\n");
+    raise(SIGTERM);
+    printf("Depois do sinal.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. O Ctrl+C é um sinal</h2>
+<p>Este programa trabalha por 10 segundos, mostrando cada segundo:</p>
+
+<pre class="file" data-file="contar.c">#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void) {
+    for (int s = 1; s &lt;= 10; s++) {
+        printf("Trabalhando... %d s\n", s);
+        sleep(1);
+    }
+    printf("Terminei!\n");
+    return 0;
+}
+</pre>
+
+<p>O <code>sleep(1)</code>, do <code>&lt;unistd.h&gt;</code> (POSIX), faz o programa dormir 1 segundo. A Ana roda e, no segundo 2, perde a paciência e aperta Ctrl+C (o terminal mostra <code>^C</code>):</p>
+
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra contar.c -o contar
+$ ./contar
+Trabalhando... 1 s
+Trabalhando... 2 s
+^C
+$ echo $?
+130</pre>
+
+<p>Quando você aperta Ctrl+C, quem mata o programa não é o teclado: o <strong>terminal</strong> manda o sinal <code>SIGINT</code> ao programa que está rodando, e a ação padrão do <code>SIGINT</code> é terminar. O código 130 é 128 + 2. Para um contador, tudo bem. Mas e se o programa estivesse no meio de gravar a lista de compras? O arquivo ficaria pela metade.</p>
+
+<hr>
+
+<h2>4. signal: o seu tratador</h2>
+<p>Com <code>signal</code>, você diz ao sistema "quando chegar este sinal, chame esta função". O jeito seguro de usar é o tratador só <strong>anotar</strong> que o sinal chegou, e o programa principal decidir com calma o que fazer:</p>
+
+<pre class="file" data-file="tratador.c">#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+#include &lt;unistd.h&gt;
+
+volatile sig_atomic_t parar = 0;
+
+void pedir_parada(int sinal) {
+    (void) sinal;
+    parar = 1;
+}
+
+int main(void) {
+    signal(SIGINT, pedir_parada);
+
+    int s = 0;
+    while (!parar &amp;&amp; s &lt; 10) {
+        s++;
+        printf("Trabalhando... %d s\n", s);
+        sleep(1);
+    }
+
+    if (parar) {
+        printf("\nRecebi o Ctrl+C. Salvando a lista antes de sair...\n");
+    }
+    printf("Tchau!\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>volatile sig_atomic_t parar = 0;</dt><dd>A "anotação". Uma variável global, para o tratador e o <code>main</code> enxergarem a mesma. <code>sig_atomic_t</code> é um inteiro que o processador lê e escreve de uma vez só, sem o sinal poder chegar "no meio" da escrita; <code>volatile</code> obriga o laço a reler a variável a cada volta (sem ele, com <code>-O2</code>, o laço pode nunca ver a mudança: aula <a href="volatile-restrict.html">volatile e restrict</a>).</dd>
+  <dt>void pedir_parada(int sinal)</dt><dd>O tratador. Tem de ter exatamente este formato: recebe um <code>int</code> (o número do sinal que chegou) e não devolve nada.</dd>
+  <dt>(void) sinal;</dt><dd>"Sei que não uso este parâmetro." Sem isso, o <code>-Wextra</code> avisa <code>unused parameter</code>.</dd>
+  <dt>parar = 1;</dt><dd>Tudo o que o tratador faz. Curto de propósito (a próxima seção explica).</dd>
+  <dt>signal(SIGINT, pedir_parada)</dt><dd>Instala o tratador: daqui em diante, um <code>SIGINT</code> chama <code>pedir_parada</code> em vez de matar o programa. Repare que é o <strong>nome</strong> da função, sem parênteses: você passa a função, não a chama (aula <a href="ponteiros-funcao.html">Ponteiros para Funções</a>).</dd>
+  <dt>while (!parar &amp;&amp; s &lt; 10)</dt><dd>O laço confere a anotação a cada volta.</dd>
+  <dt>if (parar)</dt><dd>Fora do tratador, com calma, o programa faz o que precisa: salvar, fechar arquivos, avisar.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra tratador.c -o tratador
+$ ./tratador
+Trabalhando... 1 s
+Trabalhando... 2 s
+Trabalhando... 3 s
+^C
+Recebi o Ctrl+C. Salvando a lista antes de sair...
+Tchau!
+$ echo $?
+0</pre>
+
+<p>O mesmo Ctrl+C, outro final: o programa terminou do jeito dele, com código 0. E a mensagem apareceu na hora, sem esperar o segundo acabar: quando um sinal chega e é tratado, o <code>sleep</code> é <strong>interrompido</strong> e volta mais cedo.</p>
+
+<h3>O que um tratador pode fazer</h3>
+<p>O sinal pode chegar em <strong>qualquer</strong> instante: até no meio de um <code>printf</code> ou de um <code>malloc</code> do programa principal. Se o tratador chamar <code>printf</code> nessa hora, as duas chamadas mexem nas mesmas estruturas internas ao mesmo tempo, e o resultado pode ser texto embaralhado ou o programa travado para sempre. O padrão C só garante um punhado de coisas dentro de um tratador:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Dentro do tratador</th><th>Pode?</th></tr>
+<tr><td>Escrever numa variável <code>volatile sig_atomic_t</code></td><td><strong>Sim</strong>: é o uso recomendado</td></tr>
+<tr><td><code>_Exit(código)</code>, <code>abort()</code>, <code>signal</code> do mesmo sinal</td><td>Sim (padrão C)</td></tr>
+<tr><td><code>write</code> (do <code>&lt;unistd.h&gt;</code>), para mostrar uma mensagem fixa</td><td>Sim, no POSIX, que tem uma lista maior de funções seguras (<code>man signal-safety</code>)</td></tr>
+<tr><td><code>printf</code>, <code>malloc</code>, <code>free</code>, <code>fopen</code>, <code>exit</code></td><td><strong>Não</strong>: funcionam quase sempre, e falham na pior hora</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. kill: mandar sinais de fora</h2>
+<p>Qualquer programa pode receber sinais de <strong>outro</strong> programa. No terminal, quem manda é o comando <code>kill</code> (o nome é "matar", mas ele manda qualquer sinal). Ele precisa do <strong>PID</strong> ("process ID", o número do processo; aula <a href="processos.html">Processos</a>). Este programa simula o caixa da lojinha: ele fica esperando, e qualquer <code>SIGINT</code> ou <code>SIGTERM</code> o faz fechar com calma.</p>
+
+<pre class="file" data-file="loja.c">#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+#include &lt;unistd.h&gt;
+
+volatile sig_atomic_t sinal_recebido = 0;
+
+void anotar(int sinal) {
+    sinal_recebido = sinal;
+}
+
+int main(void) {
+    signal(SIGINT, anotar);
+    signal(SIGTERM, anotar);
+    printf("Caixa da loja aberto (PID %d).\n", (int) getpid());
+
+    while (sinal_recebido == 0) {
+        sleep(1);
+    }
+
+    printf("Chegou o sinal %d. Fechando o caixa com calma.\n", (int) sinal_recebido);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>sinal_recebido = sinal;</dt><dd>O mesmo tratador para os dois sinais. Agora o parâmetro é usado: ele diz <strong>qual</strong> sinal chegou.</dd>
+  <dt>getpid()</dt><dd>"Get process ID": o número deste processo, que o <code>kill</code> precisa.</dd>
+  <dt>while (sinal_recebido == 0) { sleep(1); }</dt><dd>Espera, dormindo de segundo em segundo, até chegar um sinal.</dd>
+</dl>
+
+<p>Na vida real, a Ana deixaria o caixa rodando num terminal e mandaria o <code>kill</code> de outro. Aqui, para caber numa linha só: o <code>&amp;</code> roda o programa "em segundo plano", o <code>$!</code> é o PID dele, e o <code>wait</code> espera ele terminar e devolve o código de saída.</p>
+
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra loja.c -o loja
+$ ./loja &amp; sleep 1; kill -TERM $!; wait $!; echo "código: $?"
+[1] 4
+Caixa da loja aberto (PID 4).
+Chegou o sinal 15. Fechando o caixa com calma.
+[1]+  Concluído                 ./loja
+código: 0
+$ ./loja &amp; sleep 1; kill -INT $!; wait $!; echo "código: $?"
+[1] 6
+Caixa da loja aberto (PID 6).
+Chegou o sinal 2. Fechando o caixa com calma.
+[1]+  Concluído                 ./loja
+código: 0
+$ ./loja &amp; sleep 1; kill -KILL $!; wait $!; echo "código: $?"
+[1] 8
+Caixa da loja aberto (PID 8).
+[1]+  Morto                      ./loja
+código: 137</pre>
+
+<p>Com <code>SIGTERM</code> e <code>SIGINT</code>, o tratador anotou e o caixa fechou com calma (código 0). Com <code>SIGKILL</code>, o tratador nem foi chamado: o sistema removeu o programa na hora (<code>Morto</code>, 137). É por isso que os administradores tentam primeiro <code>kill PID</code> (que manda <code>SIGTERM</code>, o pedido educado) e só depois, se o programa não sair, <code>kill -9 PID</code> (o <code>SIGKILL</code>).</p>
+
+<p>O programa <code>contar.c</code>, que não tem tratador, morre com o <code>kill</code> comum:</p>
+<pre class="term" data-cwd="~/c/sinais">$ ./contar &amp; sleep 2.5; kill $!; wait $!; echo "código: $?"
+[1] 12
+Trabalhando... 1 s
+Trabalhando... 2 s
+Trabalhando... 3 s
+[1]+  Terminado                  ./contar
+código: 143</pre>
+
+<div class="note">
+<strong>No editor do guia não há sinais vindos de fora:</strong> não existe outro terminal para mandar um <code>kill</code>, e não dá para apertar Ctrl+C no meio de um <code>sleep</code> para gerar um <code>SIGINT</code>. Lá, só o <code>raise</code> funciona. Os tratadores, sim, rodam normalmente: é o que as caixas desta aula usam. (O Ctrl+C no terminal da caixa e o botão Parar encerram o programa por fora, sem passar pelo tratador: aparece <code>[programa interrompido]</code>.)
+</div>
+
+<hr>
+
+<h2>6. Ignorar e voltar ao padrão: SIG_IGN e SIG_DFL</h2>
+<p>No lugar de uma função, o <code>signal</code> aceita dois valores especiais:</p>
+<ul>
+  <li><code>SIG_IGN</code> ("ignore"): ignorar o sinal, como se nunca tivesse chegado;</li>
+  <li><code>SIG_DFL</code> ("default"): voltar à ação padrão.</li>
+</ul>
+
+<pre class="file" data-file="ignorar.c">#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+
+int main(void) {
+    signal(SIGINT, SIG_IGN);
+    printf("Vou mandar um Ctrl+C para mim mesmo...\n");
+    raise(SIGINT);
+    printf("Ainda estou aqui!\n");
+
+    signal(SIGINT, SIG_DFL);
+    printf("Agora de novo, com o comportamento padrão...\n");
+    raise(SIGINT);
+    printf("Esta linha não aparece.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra ignorar.c -o ignorar
+$ ./ignorar
+Vou mandar um Ctrl+C para mim mesmo...
+Ainda estou aqui!
+Agora de novo, com o comportamento padrão...
+
+$ echo $?
+130</pre>
+
+<p>Ignorar o Ctrl+C serve, por exemplo, num programa que está gravando algo que não pode ser interrompido: ignore durante a gravação e volte ao padrão no fim. Mas cuidado: o usuário fica sem o jeito mais fácil de parar o programa.</p>
+
+<h3>SIGKILL e SIGSTOP não podem ser tratados</h3>
+<p>Imagine um programa com defeito que ignora todos os sinais: ninguém conseguiria pará-lo. Por isso o sistema reserva dois sinais que <strong>nenhum</strong> programa pode tratar nem ignorar: <code>SIGKILL</code> (matar) e <code>SIGSTOP</code> (pausar). Quem tenta recebe um erro:</p>
+
+<pre class="file" data-file="sigkill.c">#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+
+void anotar(int sinal) {
+    (void) sinal;
+}
+
+int main(void) {
+    if (signal(SIGKILL, anotar) == SIG_ERR) {
+        perror("signal(SIGKILL)");
+    }
+    if (signal(SIGTERM, anotar) == SIG_ERR) {
+        perror("signal(SIGTERM)");
+    } else {
+        printf("SIGTERM: tratador instalado.\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra sigkill.c -o sigkill
+$ ./sigkill
+signal(SIGKILL): Invalid argument
+SIGTERM: tratador instalado.</pre>
+
+<p>Quando falha, o <code>signal</code> devolve <code>SIG_ERR</code> e põe o motivo em <code>errno</code>: aqui, <code>EINVAL</code>, "argumento inválido" (aula <a href="errno.html">errno e perror</a>). O editor do guia dá a mesma resposta.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e veja o programa sobreviver ao primeiro <code>SIGINT</code> e morrer no segundo (código 130). Depois apague a linha <code>signal(SIGINT, SIG_IGN);</code>: em que ponto o programa morre agora? E se você trocar o <code>SIG_DFL</code> por <code>SIG_IGN</code>?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+
+int main(void) {
+    signal(SIGINT, SIG_IGN);
+    printf("Vou mandar um Ctrl+C para mim mesmo...\n");
+    raise(SIGINT);
+    printf("Ainda estou aqui!\n");
+
+    signal(SIGINT, SIG_DFL);
+    printf("Agora de novo, com o comportamento padrão...\n");
+    raise(SIGINT);
+    printf("Esta linha não aparece.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>7. O signal pode esquecer o tratador: sigaction</h2>
+<p>O <code>signal</code> é do C padrão desde 1989, e o padrão deixou um detalhe em aberto: depois de chamar o tratador uma vez, o sistema pode <strong>voltar o sinal ao padrão</strong>. Cada biblioteca escolheu um jeito. Veja este programa, que conta quantos <code>SIGINT</code> recebeu:</p>
+
+<pre class="file" data-file="duas.c">#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+
+volatile sig_atomic_t vezes = 0;
+
+void contar(int sinal) {
+    (void) sinal;
+    vezes++;
+}
+
+int main(void) {
+    signal(SIGINT, contar);
+    raise(SIGINT);
+    printf("Depois do 1º sinal: vezes = %d\n", (int) vezes);
+    raise(SIGINT);
+    printf("Depois do 2º sinal: vezes = %d\n", (int) vezes);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra duas.c -o duas
+$ ./duas
+Depois do 1º sinal: vezes = 1
+
+$ echo $?
+130
+$ gcc -Wall -Wextra duas.c -o duas-gnu        « sem o -std=c23
+$ ./duas-gnu
+Depois do 1º sinal: vezes = 1
+Depois do 2º sinal: vezes = 2</pre>
+
+<p>Com <code>-std=c23</code> (C puro), a glibc segue o comportamento antigo do Unix: o tratador vale <strong>uma vez só</strong>, e o segundo <code>SIGINT</code> matou o programa. Sem o <code>-std</code>, o gcc usa o modo "GNU", e a glibc mantém o tratador. No editor do guia (outra biblioteca C), o tratador também fica: o programa mostra as duas linhas. O mesmo código, três comportamentos possíveis, todos permitidos pelo padrão.</p>
+
+<p>A solução do POSIX é o <code>sigaction</code> ("signal action", a ação do sinal), que existe em todo Linux e macOS e se comporta igual em todos:</p>
+
+<pre class="file" data-file="duas2.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+
+volatile sig_atomic_t vezes = 0;
+
+void contar(int sinal) {
+    (void) sinal;
+    vezes++;
+}
+
+int main(void) {
+    struct sigaction acao = {0};
+    acao.sa_handler = contar;
+    sigemptyset(&amp;acao.sa_mask);
+    sigaction(SIGINT, &amp;acao, NULL);
+
+    raise(SIGINT);
+    printf("Depois do 1º sinal: vezes = %d\n", (int) vezes);
+    raise(SIGINT);
+    printf("Depois do 2º sinal: vezes = %d\n", (int) vezes);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>#define _POSIX_C_SOURCE 200809L</code></td><td>Pede ao cabeçalho as funções do POSIX. Com <code>-std=c23</code>, sem esta linha, o <code>sigaction</code> não existe (aula <a href="compilacao-condicional.html">Compilação Condicional</a>).</td></tr>
+<tr><td><code>struct sigaction acao = {0};</code></td><td>Uma struct com a "ficha" do sinal, toda zerada. Tem o mesmo nome da função (o C deixa, porque uma é <code>struct sigaction</code>).</td></tr>
+<tr><td><code>acao.sa_handler = contar;</code></td><td>O tratador (ou <code>SIG_IGN</code>, <code>SIG_DFL</code>).</td></tr>
+<tr><td><code>sigemptyset(&amp;acao.sa_mask);</code></td><td>A lista de outros sinais a segurar enquanto o tratador roda: nenhum.</td></tr>
+<tr><td><code>sa_flags</code> (ficou 0)</td><td>Opções. Com 0, o tratador fica instalado para sempre. <code>SA_RESTART</code> faz funções de leitura interrompidas pelo sinal recomeçarem sozinhas.</td></tr>
+<tr><td><code>sigaction(SIGINT, &amp;acao, NULL)</code></td><td>Instala. O <code>NULL</code> é onde guardar a ficha antiga (não precisamos). Devolve -1 se falhar.</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra duas2.c -o duas2
+$ ./duas2
+Depois do 1º sinal: vezes = 1
+Depois do 2º sinal: vezes = 2</pre>
+
+<p>O <code>sigaction</code> não existe no editor do guia (a biblioteca dele só tem <code>signal</code> e <code>raise</code>): lá, <code>struct sigaction</code> dá <code>error: variable has incomplete type 'struct sigaction'</code>. Por isso as caixas desta aula usam <code>signal</code>, com um sinal só por tratador.</p>
+
+<hr>
+
+<h2>signal ou sigaction: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>signal(sinal, tratador)</code></td><td>Programas que precisam ser C puro (rodar até no Windows), ou que só esperam o sinal <strong>uma vez</strong> para encerrar com calma (o caso mais comum).</td></tr>
+<tr><td><code>sigaction</code></td><td>Programas para Linux e macOS que recebem o mesmo sinal várias vezes ou precisam das opções (<code>SA_RESTART</code>). É o que os programas de verdade usam.</td></tr>
+<tr><td><code>signal(sinal, SIG_IGN)</code></td><td>Ignorar um sinal por um tempo (lembre de voltar com <code>SIG_DFL</code>).</td></tr>
+<tr><td><code>raise(sinal)</code></td><td>Mandar um sinal para o próprio programa (testes, ou <code>raise(SIGABRT)</code> como o <code>abort</code>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: passing argument 2 of ‘signal’ from incompatible pointer type</code></strong>
+<p>O tratador foi escrito sem o parâmetro: <code>void tratar(void)</code>.</p>
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra assinatura.c -o assinatura
+assinatura.c: In function ‘main’:
+assinatura.c:9:20: error: passing argument 2 of ‘signal’ from incompatible pointer type [-Wincompatible-pointer-types]
+    9 |     signal(SIGINT, tratar);
+      |                    ^~~~~~
+      |                    |
+      |                    void (*)(void)
+In file included from /usr/include/features.h:539,
+                 from /usr/include/x86_64-linux-gnu/bits/libc-header-start.h:33,
+                 from /usr/include/stdio.h:28,
+                 from assinatura.c:1:
+/usr/include/signal.h:93:23: note: expected ‘__sighandler_t’ {aka ‘void (*)(int)’} but argument is of type ‘void (*)(void)’
+   93 | extern __sighandler_t __REDIRECT_NTH (signal,
+      |                       ^~~~~~~~~~~~~~
+assinatura.c:4:6: note: ‘tratar’ declared here
+    4 | void tratar(void) {
+      |      ^~~~~~
+In file included from assinatura.c:2:
+/usr/include/signal.h:72:16: note: ‘__sighandler_t’ declared here
+   72 | typedef void (*__sighandler_t) (int);
+      |                ^~~~~~~~~~~~~~</pre>
+<p><strong>O que significa:</strong> o <code>signal</code> espera <code>void (*)(int)</code>, "ponteiro para uma função que recebe um <code>int</code> e não devolve nada", e recebeu <code>void (*)(void)</code>. A mensagem é longa porque mostra onde, dentro do <code>signal.h</code>, está o tipo esperado. No editor, o Clang diz <code>incompatible function pointer types passing 'void (void)' to parameter of type 'void (*)(int)'</code>.</p>
+<p><strong>Como consertar:</strong> <code>void tratar(int sinal)</code>, com <code>(void) sinal;</code> se não for usar o número.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: unused parameter ‘sinal’ [-Wunused-parameter]</code></strong>
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra semvoid.c -o semvoid
+semvoid.c: In function ‘pedir_parada’:
+semvoid.c:5:23: warning: unused parameter ‘sinal’ [-Wunused-parameter]
+    5 | void pedir_parada(int sinal) {
+      |                   ~~~~^~~~~</pre>
+<p><strong>O que significa:</strong> o tratador recebe o número do sinal e não usa. Não é erro: o formato <code>void f(int)</code> é obrigatório mesmo assim.</p>
+<p><strong>Como consertar:</strong> <code>(void) sinal;</code> na primeira linha do tratador. No C23 também dá para omitir o nome: <code>void pedir_parada(int)</code> <span class="versao">C23</span>.</p>
+</div>
+
+<div class="cenario">
+<strong>O segundo Ctrl+C mata o programa, mesmo com tratador</strong>
+<p><strong>O que significa:</strong> com <code>-std=c23</code> no Linux, o <code>signal</code> vale uma vez só (o <code>duas.c</code> da seção 7).</p>
+<p><strong>Como consertar:</strong> use <code>sigaction</code>. (O truque antigo era chamar <code>signal(sinal, tratador)</code> de novo dentro do próprio tratador.)</p>
+</div>
+
+<div class="cenario">
+<strong>Com <code>-O2</code>, o programa ignora o Ctrl+C e roda para sempre</strong>
+<p><strong>O que significa:</strong> a variável da anotação não é <code>volatile</code>. O laço leu <code>parar</code> uma vez, guardou num registrador e nunca mais olhou a memória. A aula <a href="volatile-restrict.html">volatile e restrict</a> mostra esse caso com um alarme: sem <code>volatile</code>, o <code>timeout</code> teve de matar o programa.</p>
+<p><strong>Como consertar:</strong> <code>volatile sig_atomic_t parar = 0;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa trava (ou mistura letras) de vez em quando ao receber um sinal</strong>
+<p><strong>O que significa:</strong> o tratador chama <code>printf</code>, <code>malloc</code> ou outra função que não é segura em tratadores, e o sinal chegou bem quando o programa principal estava dentro dela. Acontece uma vez em mil, por isso é tão difícil de achar.</p>
+<p><strong>Como consertar:</strong> deixe no tratador só a anotação na variável, e faça o resto no programa principal.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;signal.h&gt;</code></td><td>Traz <code>signal</code>, <code>raise</code>, <code>sig_atomic_t</code> e os nomes dos sinais</td></tr>
+<tr><td><code>void tratador(int sinal) { … }</code></td><td>O formato obrigatório de um tratador</td></tr>
+<tr><td><code>volatile sig_atomic_t x = 0;</code></td><td>A variável que o tratador pode mudar com segurança</td></tr>
+<tr><td><code>signal(SIGINT, tratador)</code></td><td>Instala o tratador; devolve o anterior, ou <code>SIG_ERR</code> se falhar</td></tr>
+<tr><td><code>signal(SIGINT, SIG_IGN)</code> / <code>SIG_DFL</code></td><td>Ignorar / voltar à ação padrão</td></tr>
+<tr><td><code>raise(SIGTERM)</code></td><td>Manda o sinal para o próprio programa</td></tr>
+<tr><td><code>sigaction(SIGINT, &amp;acao, NULL)</code></td><td>A forma do POSIX, sem surpresas (<code>_POSIX_C_SOURCE</code>)</td></tr>
+<tr><td><code>kill PID</code> / <code>kill -INT PID</code> / <code>kill -9 PID</code></td><td>No terminal: manda <code>SIGTERM</code> / <code>SIGINT</code> / <code>SIGKILL</code></td></tr>
+<tr><td><code>kill -l</code></td><td>No terminal: lista os sinais</td></tr>
+<tr><td>Código 128 + n</td><td>Morto pelo sinal n: 130 (<code>SIGINT</code>), 134, 136, 137, 139, 143 (<code>SIGTERM</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O tipo da anotação</h3>
+<p>Complete a declaração da variável que o tratador muda:</p>
+<div class="ex-code">volatile <input data-answer="sig_atomic_t" aria-label="tipo"> parar = 0;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Instalar o tratador</h3>
+<p>Complete para chamar <code>pedir_parada</code> quando o usuário apertar Ctrl+C:</p>
+<div class="ex-code">signal(<input data-answer="SIGINT" aria-label="sinal">, pedir_parada);</div>
+</div>
+
+<div class="exercise">
+<h3>3. Ignorar</h3>
+<p>Complete para ignorar o <code>SIGINT</code>:</p>
+<div class="ex-code">signal(SIGINT, <input data-answer="SIG_IGN" aria-label="valor">);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Um programa terminou com o código 143. O que aconteceu?</p>
+<label><input type="radio" name="q4"> Ele fez <code>return 143;</code> de propósito, com certeza</label>
+<label><input type="radio" name="q4"> Falha de segmentação</label>
+<label><input type="radio" name="q4"> Provavelmente foi morto pelo sinal 15, <code>SIGTERM</code> (128 + 15)</label>
+<label><input type="radio" name="q4"> O usuário apertou Ctrl+C</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Qual sinal nenhum programa consegue tratar nem ignorar?</p>
+<label><input type="radio" name="q5"> <code>SIGTERM</code></label>
+<label><input type="radio" name="q5"> <code>SIGKILL</code></label>
+<label><input type="radio" name="q5"> <code>SIGINT</code></label>
+<label><input type="radio" name="q5"> <code>SIGSEGV</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual é o jeito mais seguro de escrever um tratador?</p>
+<label><input type="radio" name="q6"> Fazer todo o trabalho de salvar e fechar arquivos dentro dele</label>
+<label><input type="radio" name="q6"> Chamar <code>printf</code> e <code>exit</code></label>
+<label><input type="radio" name="q6"> Reservar memória com <code>malloc</code> para guardar o sinal</label>
+<label><input type="radio" name="q6"> Só mudar uma variável <code>volatile sig_atomic_t</code> e deixar o resto para o programa principal</label>
+</div>
+
+<h3>Missão final: fechar o caixa com calma</h3>
+
+<div class="tryc" data-goal="out:Atendendo o pedido 3,out:Recebi SIGTERM. Salvei os pedidos antes de sair.,out:Caixa fechado.,exit:0,src:signal\s*\(\s*SIGTERM">
+<p class="try-task"><strong>Missão:</strong> no pedido 3, alguém manda um <code>SIGTERM</code> ao caixa (aqui, simulado com <code>raise</code>). Hoje o programa morre na hora (<code>Terminado</code>, 143) e perde os pedidos. O tratador já está escrito; falta <strong>instalá-lo</strong> no começo do <code>main</code>, para o laço parar com calma. A saída deve ser:</p>
+<pre class="out">Atendendo o pedido 1
+Atendendo o pedido 2
+Atendendo o pedido 3
+Recebi SIGTERM. Salvei os pedidos antes de sair.
+Caixa fechado.</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+
+volatile sig_atomic_t parar = 0;
+
+void pedir_parada(int sinal) {
+    (void) sinal;
+    parar = 1;
+}
+
+int main(void) {
+    // instale o tratador aqui
+
+    for (int pedido = 1; pedido &lt;= 5 &amp;&amp; !parar; pedido++) {
+        printf("Atendendo o pedido %d\n", pedido);
+        if (pedido == 3) {
+            raise(SIGTERM);       // alguém pediu para o programa parar
+        }
+    }
+
+    if (parar) {
+        printf("Recebi SIGTERM. Salvei os pedidos antes de sair.\n");
+    }
+    printf("Caixa fechado.\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;signal.h&gt;
+
+volatile sig_atomic_t parar = 0;
+
+void pedir_parada(int sinal) {
+    (void) sinal;
+    parar = 1;
+}
+
+int main(void) {
+    // instale o tratador aqui
+    signal(SIGTERM, pedir_parada);
+
+    for (int pedido = 1; pedido &lt;= 5 &amp;&amp; !parar; pedido++) {
+        printf("Atendendo o pedido %d\n", pedido);
+        if (pedido == 3) {
+            raise(SIGTERM);       // alguém pediu para o programa parar
+        }
+    }
+
+    if (parar) {
+        printf("Recebi SIGTERM. Salvei os pedidos antes de sair.\n");
+    }
+    printf("Caixa fechado.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>No terminal da Ana, a solução dá a mesma saída:</p>
+<pre class="term" data-cwd="~/c/sinais">$ gcc -std=c23 -Wall -Wextra pedidos.c -o pedidos
+$ ./pedidos
+Atendendo o pedido 1
+Atendendo o pedido 2
+Atendendo o pedido 3
+Recebi SIGTERM. Salvei os pedidos antes de sair.
+Caixa fechado.</pre>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <strong>sinal</strong> é um aviso do sistema a um programa: <code>SIGINT</code> (Ctrl+C), <code>SIGTERM</code> (pedido para terminar), <code>SIGKILL</code> (morte imediata), <code>SIGSEGV</code>, <code>SIGABRT</code>, <code>SIGFPE</code>.</li>
+  <li>Morto por um sinal, o programa termina com o código 128 + o número: 130, 134, 136, 137, 139, 143.</li>
+  <li><code>raise(sinal)</code> manda um sinal para o próprio programa; o comando <code>kill</code> manda para outro, pelo PID.</li>
+  <li><code>signal(sinal, tratador)</code> instala uma função <code>void f(int)</code>. O tratador só deve mudar uma variável <code>volatile sig_atomic_t</code>; o programa principal faz o resto.</li>
+  <li><code>SIG_IGN</code> ignora e <code>SIG_DFL</code> volta ao padrão. <code>SIGKILL</code> e <code>SIGSTOP</code> não podem ser tratados.</li>
+  <li>O <code>signal</code> pode valer uma vez só (glibc com <code>-std=c23</code>); para tratar o mesmo sinal várias vezes no Linux e no macOS, use <code>sigaction</code>.</li>
+  <li>No editor do guia: <code>raise</code> e os tratadores funcionam; sinais de fora e <code>sigaction</code>, não.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
