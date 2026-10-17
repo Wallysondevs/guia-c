@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C _Generic — escolher pelo tipo | Guia C</title>
+<meta name="description" content="_Generic do C11 para quem está aprendendo C: escolher uma expressão pelo tipo de outra, a macro TIPO(x) que mostra o nome do tipo, uma função imprimir(x) que funciona com int, double e texto, o default, o tgmath.h e os erros reais do gcc 15 e do Clang.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">_Generic</span></h1>
+
+<p class="intro">Em C, cada função tem um tipo fixo: <code>abs</code> trabalha com <code>int</code>, <code>fabs</code> com <code>double</code>, e o <code>printf</code> precisa que você diga <code>%d</code> ou <code>%f</code>. Não existe "uma função que aceita qualquer coisa". O <strong><code>_Generic</code></strong> <span class="versao">C11</span> resolve parte disso: ele olha o <strong>tipo</strong> de uma expressão e escolhe, na hora de compilar, qual código usar. Com ele você vai criar uma macro que diz o nome do tipo de qualquer valor e uma <code>imprimir(x)</code> que funciona com número e com texto.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o <code>_Generic</code> faz e como ler a sua "lista de casos": <code>_Generic(x, int: …, double: …)</code>.</li>
+  <li>A macro <code>TIPO(x)</code>, que mostra o nome do tipo de um valor (e descobre que <code>'A'</code> é <code>int</code> em C).</li>
+  <li>O caso <code>default</code>, para os tipos que você não listou.</li>
+  <li>Como escolher uma <strong>função</strong> pelo tipo e criar um <code>imprimir(x)</code> genérico.</li>
+  <li>O <code>tgmath.h</code>, que faz <code>sqrt</code> e <code>fabs</code> se adaptarem ao tipo, e o seu próprio <code>ABS(x)</code>.</li>
+  <li>Os erros reais: tipo sem caso, dois casos iguais e o ramo que não foi escolhido mas não compila.</li>
+</ul>
+</div>
+
+<p>Os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Antes desta aula, vale ter visto <a href="macros.html">Macros com Parâmetros</a> e <a href="ponteiros-funcao.html">Ponteiros para Funções</a>.</p>
+
+<hr>
+
+<h2>A ideia: a recepção que olha o documento</h2>
+<p>Pense na recepção de um prédio. A pessoa chega e entrega um documento. A recepcionista olha <strong>que tipo</strong> de documento é: se é crachá de funcionário, manda para o elevador A; se é RG de visitante, manda para o balcão de cadastro; se é qualquer outra coisa, manda para a portaria. Ela não lê o nome nem a foto: só o <strong>tipo</strong> do documento decide o caminho.</p>
+
+<p>O <code>_Generic</code> é essa recepcionista. Você entrega uma expressão e uma lista de "tipo → o que usar". O compilador olha o tipo da expressão e coloca no lugar <strong>só</strong> o item escolhido. Tudo isso acontece <strong>na compilação</strong>: quando o programa roda, a escolha já foi feita.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na recepção</th><th>No <code>_Generic</code></th></tr>
+<tr><td>O documento entregue</td><td>A <strong>expressão de controle</strong> (o primeiro item, antes da primeira vírgula)</td></tr>
+<tr><td>"Crachá → elevador A"</td><td>Uma <strong>associação</strong>: <code>int: "inteiro"</code></td></tr>
+<tr><td>"Qualquer outro → portaria"</td><td>O caso <code>default:</code></td></tr>
+<tr><td>A pessoa vai para um lugar só</td><td>O <code>_Generic</code> inteiro vira <strong>uma</strong> expressão: a escolhida</td></tr>
+</table>
+</div>
+
+<p>O nome tem um sublinhado e letra maiúscula (<code>_Generic</code>) porque, em 2011, o C precisava de uma palavra nova que não quebrasse programas antigos, e nomes que começam com <code>_</code> + maiúscula sempre foram reservados para a linguagem. "Generic" quer dizer <strong>genérico</strong>: que serve para vários tipos.</p>
+
+<hr>
+
+<h2>1. O primeiro <code>_Generic</code></h2>
+<p>Este programa pergunta ao compilador se cada variável é inteira ou "com vírgula":</p>
+
+<pre class="file" data-file="primeiro.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    double altura = 1.65;
+
+    const char *a = _Generic(idade, int: "inteiro", double: "com vírgula");
+    const char *b = _Generic(altura, int: "inteiro", double: "com vírgula");
+
+    printf("idade é %s\n", a);
+    printf("altura é %s\n", b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra primeiro.c -o primeiro
+$ ./primeiro
+idade é inteiro
+altura é com vírgula</pre>
+
+<dl class="anatomy">
+  <dt>_Generic( … )</dt><dd>Parece uma função, mas é uma palavra-chave da linguagem. Tudo entre os parênteses é resolvido pelo compilador.</dd>
+  <dt>idade</dt><dd>A <strong>expressão de controle</strong>. O compilador só olha o <strong>tipo</strong> dela (<code>int</code>); o valor 29 não importa.</dd>
+  <dt>int: "inteiro"</dt><dd>Uma <strong>associação</strong>: "se o tipo for <code>int</code>, use <code>"inteiro"</code>". Do lado esquerdo vai um <strong>tipo</strong>; do lado direito, uma <strong>expressão</strong> qualquer.</dd>
+  <dt>, double: "com vírgula"</dt><dd>Outra associação. A lista pode ter quantas você quiser, separadas por vírgula, em qualquer ordem.</dd>
+  <dt>const char *a = …</dt><dd>O <code>_Generic</code> inteiro "vira" a expressão escolhida. Na linha 7, é como se estivesse escrito <code>const char *a = "inteiro";</code>.</dd>
+</dl>
+
+<p>Repare que as duas linhas do <code>_Generic</code> são <strong>idênticas</strong>, menos a variável. O resultado mudou só porque o tipo mudou. É isso que torna o <code>_Generic</code> útil dentro de <strong>macros</strong>: escreve-se uma vez e usa-se com qualquer variável.</p>
+
+<h3>A expressão de controle não é executada</h3>
+<p>O compilador só precisa do <strong>tipo</strong>, então a expressão de controle nunca roda. Um <code>i++</code> ali dentro não soma nada:</p>
+
+<pre class="file" data-file="naoavalia.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i = 5;
+    const char *t = _Generic(i++, int: "int", default: "outro");
+    printf("%s, i = %d\n", t, i);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra naoavalia.c -o naoavalia
+$ ./naoavalia
+int, i = 5                « o i++ não aconteceu</pre>
+
+<p>É o mesmo que acontece com o <code>sizeof</code> (aula <a href="sizeof.html">Tamanho dos Tipos</a>). O gcc ficou calado; o Clang, compilador do editor do guia, avisa: <code>expression with side effects has no effect in an unevaluated context [-Wunevaluated-expression]</code> ("expressão com efeito colateral não tem efeito num contexto que não é avaliado"). Moral: nunca ponha <code>++</code>, chamadas de função ou atribuições na expressão de controle.</p>
+
+<hr>
+
+<h2>2. A macro <code>TIPO(x)</code></h2>
+<p>Sozinho, o <code>_Generic</code> fica comprido. O normal é escondê-lo numa <strong>macro</strong> (aula <a href="macros.html">Macros com Parâmetros</a>). Esta aqui diz o nome do tipo de qualquer coisa que você passar:</p>
+
+<pre class="file" data-file="tipo.c">#include &lt;stdio.h&gt;
+
+#define TIPO(x) _Generic((x),   \
+    int: "int",                 \
+    double: "double",           \
+    float: "float",             \
+    char: "char",               \
+    bool: "bool",               \
+    char *: "char *",           \
+    default: "outro tipo")
+
+int main(void) {
+    int idade = 29;
+    char letra = 'A';
+    printf("idade   -&gt; %s\n", TIPO(idade));
+    printf("1.65    -&gt; %s\n", TIPO(1.65));
+    printf("1.65f   -&gt; %s\n", TIPO(1.65f));
+    printf("letra   -&gt; %s\n", TIPO(letra));
+    printf("'A'     -&gt; %s\n", TIPO('A'));
+    printf("true    -&gt; %s\n", TIPO(true));
+    printf("\"Ana\"   -&gt; %s\n", TIPO("Ana"));
+    printf("10L     -&gt; %s\n", TIPO(10L));
+    printf("idade+0.5 -&gt; %s\n", TIPO(idade + 0.5));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipo.c -o tipo
+$ ./tipo
+idade   -&gt; int
+1.65    -&gt; double
+1.65f   -&gt; float
+letra   -&gt; char
+'A'     -&gt; int                « surpresa!
+true    -&gt; bool
+"Ana"   -&gt; char *
+10L     -&gt; outro tipo
+idade+0.5 -&gt; double</pre>
+
+<dl class="anatomy">
+  <dt>#define TIPO(x)</dt><dd>Uma macro com parâmetro: cada <code>TIPO(algo)</code> é trocado pelo <code>_Generic</code> com <code>algo</code> no lugar de <code>x</code>.</dd>
+  <dt>\ no fim da linha</dt><dd>Diz ao pré-processador "a macro continua na próxima linha". Sem ele, a macro acabaria na primeira linha. Não pode haver nada depois da barra, nem um espaço.</dd>
+  <dt>(x)</dt><dd>O parâmetro entre parênteses, como sempre em macros: assim <code>TIPO(idade + 0.5)</code> funciona.</dd>
+  <dt>bool: "bool"</dt><dd>Em C23, <code>bool</code> é um tipo próprio, diferente de <code>int</code> (aula <a href="bool.html">Booleanos</a>).</dd>
+  <dt>char *: "char *"</dt><dd>Um texto entre aspas é um array de <code>char</code>, mas no <code>_Generic</code> ele vira <strong>ponteiro</strong> para o primeiro caractere (aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>).</dd>
+  <dt>default: "outro tipo"</dt><dd>O caso para "nenhum dos de cima". O <code>10L</code> é <code>long</code>, que não está na lista, e caiu aqui.</dd>
+</dl>
+
+<h3>O que a <code>TIPO</code> revelou</h3>
+<ul>
+  <li><strong><code>'A'</code> é <code>int</code></strong>, não <code>char</code>. Em C, um caractere entre aspas simples tem tipo <code>int</code> (vale 65). Só a variável <code>letra</code>, declarada como <code>char</code>, é <code>char</code>. (Em C++ seria <code>char</code>: é uma das diferenças entre as duas linguagens.)</li>
+  <li><strong><code>1.65</code> é <code>double</code></strong>; com o <code>f</code> no fim, <code>1.65f</code>, é <code>float</code> (aula <a href="ponto-flutuante.html">float e double</a>).</li>
+  <li><strong><code>idade + 0.5</code> é <code>double</code></strong>: numa conta entre <code>int</code> e <code>double</code>, o <code>int</code> é convertido (aula <a href="conversao-tipos.html">Conversão de Tipos</a>). A <code>TIPO</code> é ótima para tirar dúvidas assim.</li>
+</ul>
+
+<div class="note">
+<strong>No editor do guia, alguns tipos mudam</strong>
+<p>O editor roda num computador de 32 bits (WebAssembly), em que <code>long</code> tem 4 bytes. Por isso um número grande como <code>3000000000</code>, que não cabe em 4 bytes, é <code>long</code> no gcc do laboratório e <code>long long</code> no editor. O <code>_Generic</code> não erra: ele mostra o tipo de verdade em cada máquina. Veja a tabela de diferenças em <a href="simulador.html">O Editor do Guia</a>.</p>
+</div>
+
+<div class="tryc" data-goal="out:2.5f é float">
+<p class="try-task"><strong>Missão:</strong> rode: a macro diz que <code>2.5f</code> é "desconhecido", porque não há caso para <code>float</code>. Acrescente a associação <code>float: "float"</code> na macro (não esqueça a vírgula e a barra <code>\</code>) para aparecer <code>2.5f é float</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define TIPO(x) _Generic((x),   \
+    int: "int",                 \
+    double: "double",           \
+    default: "desconhecido")
+
+int main(void) {
+    printf("7 é %s\n", TIPO(7));
+    printf("2.5 é %s\n", TIPO(2.5));
+    printf("2.5f é %s\n", TIPO(2.5f));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define TIPO(x) _Generic((x),   \
+    int: "int",                 \
+    double: "double",           \
+    float: "float",             \
+    default: "desconhecido")
+
+int main(void) {
+    printf("7 é %s\n", TIPO(7));
+    printf("2.5 é %s\n", TIPO(2.5));
+    printf("2.5f é %s\n", TIPO(2.5f));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. O caso <code>default</code></h2>
+<p>O <code>default</code> é opcional. Mas, sem ele, um tipo que não está na lista é <strong>erro de compilação</strong>:</p>
+
+<pre class="file" data-file="semdefault.c">#include &lt;stdio.h&gt;
+
+#define TIPO(x) _Generic((x), int: "int", double: "double")
+
+int main(void) {
+    float preco = 4.5f;
+    printf("%s\n", TIPO(preco));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semdefault.c -o semdefault
+semdefault.c: In function ‘main’:
+semdefault.c:3:26: error: ‘_Generic’ selector of type ‘float’ is not compatible with any association
+    3 | #define TIPO(x) _Generic((x), int: "int", double: "double")
+      |                          ^
+semdefault.c:7:20: note: in expansion of macro ‘TIPO’
+    7 |     printf("%s\n", TIPO(preco));
+      |                    ^~~~</pre>
+
+<dl class="anatomy">
+  <dt>‘_Generic’ selector of type ‘float’</dt><dd>"O seletor (a expressão de controle) do <code>_Generic</code>, de tipo <code>float</code>…"</dd>
+  <dt>is not compatible with any association</dt><dd>"…não combina com nenhuma associação": não há caso <code>float:</code> nem <code>default:</code>.</dd>
+  <dt>note: in expansion of macro ‘TIPO’</dt><dd>"Na expansão da macro <code>TIPO</code>": o erro está dentro da macro, mas quem a usou foi a linha 7. É lá que você descobre qual variável causou o problema.</dd>
+</dl>
+
+<p>O Clang (editor) escreve <code>controlling expression type 'float' not compatible with any generic association type</code>: "o tipo da expressão de controle, <code>float</code>, não é compatível com nenhum tipo das associações".</p>
+
+<p>Isso é ruim? Depende. Na <code>TIPO</code>, que só mostra um nome, o <code>default</code> é bem-vindo. Numa função que <strong>calcula</strong> algo, muitas vezes é melhor <strong>não</strong> ter <code>default</code>: um erro de compilação é mais seguro do que fazer a conta errada em silêncio com um tipo que você não previu.</p>
+
+<hr>
+
+<h2>4. Escolher uma função: o <code>imprimir(x)</code></h2>
+<p>Do lado direito de uma associação pode ir <strong>qualquer expressão</strong>, inclusive o <strong>nome de uma função</strong>. O nome de uma função, sem os parênteses, é um ponteiro para ela (aula <a href="ponteiros-funcao.html">Ponteiros para Funções</a>). Então dá para o <code>_Generic</code> escolher a função e, logo depois, chamá-la com <code>(x)</code>:</p>
+
+<pre class="file" data-file="imprimir.c">#include &lt;stdio.h&gt;
+
+void imprimir_int(int x)            { printf("inteiro: %d\n", x); }
+void imprimir_double(double x)      { printf("double: %.2f\n", x); }
+void imprimir_texto(const char *x)  { printf("texto: %s\n", x); }
+void imprimir_char(char x)          { printf("letra: '%c'\n", x); }
+
+#define imprimir(x) _Generic((x),        \
+    int: imprimir_int,                   \
+    double: imprimir_double,             \
+    char: imprimir_char,                 \
+    char *: imprimir_texto,              \
+    const char *: imprimir_texto)(x)
+
+int main(void) {
+    int macas = 6;
+    double preco = 4.5;
+    char inicial = 'A';
+    imprimir(macas);
+    imprimir(preco);
+    imprimir(inicial);
+    imprimir("Lojinha da Ana");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra imprimir.c -o imprimir
+$ ./imprimir
+inteiro: 6
+double: 4.50
+letra: 'A'
+texto: Lojinha da Ana</pre>
+
+<p>Siga o que o compilador faz com <code>imprimir(preco)</code>:</p>
+<ol class="passo">
+  <li>O pré-processador troca a macro: <code>_Generic((preco), int: imprimir_int, double: imprimir_double, …)(preco)</code>.</li>
+  <li>O compilador vê que <code>preco</code> é <code>double</code> e escolhe <code>imprimir_double</code>.</li>
+  <li>Sobra <code>imprimir_double(preco)</code>: uma chamada de função comum.</li>
+</ol>
+
+<dl class="anatomy">
+  <dt>int: imprimir_int</dt><dd>Sem parênteses: é a função em si, não uma chamada. O <code>_Generic</code> escolhe <strong>qual</strong> função; quem chama é o <code>(x)</code> do fim.</dd>
+  <dt>)(x)</dt><dd>O primeiro <code>)</code> fecha o <code>_Generic</code>; o <code>(x)</code> chama a função escolhida com o mesmo valor.</dd>
+  <dt>char *: e const char *:</dt><dd>Dois casos para a mesma função. <code>char *</code> e <code>const char *</code> são tipos diferentes para o <code>_Generic</code>: um texto entre aspas é <code>char *</code>; uma variável <code>const char *nome</code> é <code>const char *</code>. Com os dois, <code>imprimir</code> aceita as duas formas.</dd>
+</dl>
+
+<p>Para quem usa a macro, parece que existe uma única função <code>imprimir</code> que aceita qualquer tipo. Linguagens como C++ e Java chamam isso de <strong>sobrecarga</strong> (<em>overloading</em>): várias funções com o mesmo nome. O C não tem sobrecarga, e o <code>_Generic</code> é o jeito de imitá-la.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> chame <code>imprimir('B')</code>. Qual função foi escolhida, e por quê? (Lembre do que a <code>TIPO</code> mostrou sobre <code>'A'</code>.) Depois tente <code>imprimir(2.5f)</code> e leia o erro: falta um caso para <code>float</code>. Acrescente <code>float: imprimir_double</code> e rode de novo.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void imprimir_int(int x)            { printf("inteiro: %d\n", x); }
+void imprimir_double(double x)      { printf("double: %.2f\n", x); }
+void imprimir_texto(const char *x)  { printf("texto: %s\n", x); }
+void imprimir_char(char x)          { printf("letra: '%c'\n", x); }
+
+#define imprimir(x) _Generic((x),        \
+    int: imprimir_int,                   \
+    double: imprimir_double,             \
+    char: imprimir_char,                 \
+    char *: imprimir_texto,              \
+    const char *: imprimir_texto)(x)
+
+int main(void) {
+    char inicial = 'A';
+    imprimir(inicial);
+    imprimir(10);
+    imprimir("caderno");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Se você chamou <code>imprimir('B')</code>, viu <code>inteiro: 66</code>: o <code>'B'</code> é <code>int</code>, então a escolhida foi <code>imprimir_int</code>, que mostra o código do caractere.</p>
+
+<hr>
+
+<h2>5. O <code>tgmath.h</code> e um <code>ABS(x)</code> genérico</h2>
+<p>A biblioteca padrão já usa essa ideia. O <code>math.h</code> tem uma função para cada tipo: <code>sqrt</code> (raiz quadrada de <code>double</code>), <code>sqrtf</code> (de <code>float</code>), <code>sqrtl</code> (de <code>long double</code>). O cabeçalho <strong><code>tgmath.h</code></strong> <span class="versao">C99</span> ("type-generic math", matemática genérica de tipo) troca esses nomes por macros que escolhem sozinhas:</p>
+
+<pre class="file" data-file="tg.c">#include &lt;stdio.h&gt;
+#include &lt;tgmath.h&gt;
+
+int main(void) {
+    float f = 2.0f;
+    double d = 2.0;
+    printf("%zu bytes: %.7f\n", sizeof(sqrt(f)), sqrt(f));
+    printf("%zu bytes: %.7f\n", sizeof(sqrt(d)), sqrt(d));
+    printf("%.1f\n", fabs(-3.5f));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tg.c -o tg
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccW3Fms3.o: na função "main":
+tg.c:(.text+0x2e): referência não definida para "sqrtf"
+/usr/bin/x86_64-linux-gnu-ld.bfd: tg.c:(.text+0x67): referência não definida para "sqrt"
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra tg.c -o tg -lm      « -lm: liga a biblioteca de matemática
+$ ./tg
+4 bytes: 1.4142135
+8 bytes: 1.4142136
+3.5</pre>
+
+<ul>
+  <li>O primeiro <code>gcc</code> falhou no <strong>ligador</strong> (<code>referência não definida para "sqrtf"</code>, em inglês <em>undefined reference to</em>). Repare no nome: o seu código escreveu <code>sqrt(f)</code>, mas o <code>tgmath.h</code> escolheu <code>sqrtf</code>. No Linux, as funções de matemática ficam numa biblioteca separada, e o <code>-lm</code> a inclui (aula <a href="matematica.html">Matemática</a>). No editor do guia não precisa de <code>-lm</code>.</li>
+  <li><code>sqrt(f)</code> deu um resultado de <strong>4 bytes</strong> (<code>float</code>, 7 casas certas) e <code>sqrt(d)</code> um de <strong>8 bytes</strong> (<code>double</code>). O mesmo nome, duas funções.</li>
+  <li><code>fabs(-3.5f)</code> ("floating absolute", valor absoluto de ponto flutuante) virou <code>fabsf</code>.</li>
+</ul>
+
+<h3>E o <code>abs</code> de inteiros?</h3>
+<p>O <code>tgmath.h</code> cuida só de <code>float</code>, <code>double</code>, <code>long double</code> e números complexos. Para inteiros, cada tamanho continua tendo a sua função em <code>stdlib.h</code>: <code>abs</code> (<code>int</code>), <code>labs</code> (<code>long</code>), <code>llabs</code> (<code>long long</code>). Usar a errada é um erro clássico que o <code>-Wall</code> pega:</p>
+
+<pre class="term" data-cwd="~/c">$ cat absruim.c
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    double temperatura = -2.5;
+    printf("%d\n", abs(temperatura));
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra absruim.c -o absruim
+absruim.c: In function ‘main’:
+absruim.c:6:20: warning: using integer absolute value function ‘abs’ when argument is of floating-point type ‘double’ [-Wabsolute-value]
+    6 |     printf("%d\n", abs(temperatura));
+      |                    ^~~
+$ ./absruim
+2                         « a temperatura era -2.5: o ,5 sumiu</pre>
+
+<p>"Usando a função de valor absoluto de <strong>inteiro</strong> <code>abs</code> quando o argumento é de ponto flutuante <code>double</code>." Com o <code>_Generic</code>, você faz o seu <code>ABS</code> que escolhe a certa:</p>
+
+<pre class="file" data-file="abs.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;math.h&gt;
+
+#define ABS(x) _Generic((x),   \
+    int: abs,                  \
+    long: labs,                \
+    long long: llabs,          \
+    float: fabsf,              \
+    default: fabs)(x)
+
+int main(void) {
+    printf("%d\n", ABS(-7));
+    printf("%ld\n", ABS(-7L));
+    printf("%.2f\n", ABS(-2.5));
+    printf("%.2f\n", ABS(-1.25f));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra abs.c -o abs
+$ ./abs
+7
+7
+2.50
+1.25</pre>
+
+<p>O <code>default: fabs</code> cobre o <code>double</code> (e qualquer outro tipo, que será convertido para <code>double</code>). Aqui não precisou de <code>-lm</code>: com números escritos direto no código, o gcc calcula o resultado durante a compilação e nem chama a biblioteca.</p>
+
+<hr>
+
+<h2>6. Formas diferentes e qual usar</h2>
+<p>Há dois jeitos comuns de escrever um <code>imprimir</code> genérico. O da seção 4 escolhe uma <strong>função</strong>. Outro, bem curto, escolhe só o <strong>formato</strong> do <code>printf</code>:</p>
+
+<pre class="file" data-file="formato.c">#include &lt;stdio.h&gt;
+
+#define FORMATO(x) _Generic((x), int: "%d\n", double: "%.2f\n", char *: "%s\n")
+#define mostrar(x) printf(FORMATO(x), (x))
+
+int main(void) {
+    mostrar(6);
+    mostrar(4.5);
+    mostrar("caderno");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra formato.c -o formato
+$ ./formato
+6
+4.50
+caderno</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Bom para</th><th>Cuidado</th></tr>
+<tr><td><code>_Generic</code> devolvendo um <strong>texto</strong> (<code>TIPO</code>, <code>FORMATO</code>)</td><td>Mostrar nomes, escolher o formato do <code>printf</code>. Curto.</td><td>No <code>mostrar</code>, o <code>x</code> aparece duas vezes na macro: <code>mostrar(i++)</code> soma 1 (só uma vez, porque o <code>FORMATO</code> não executa o <code>x</code>), mas é fácil errar com macros assim.</td></tr>
+<tr><td><code>_Generic</code> escolhendo uma <strong>função</strong> (<code>imprimir</code>, <code>ABS</code>)</td><td>Quando cada tipo precisa de um código diferente. O <code>x</code> é usado uma vez só.</td><td>Precisa de uma função para cada tipo.</td></tr>
+<tr><td>Uma função por tipo, sem <code>_Generic</code> (<code>imprimir_int</code>, <code>imprimir_double</code>)</td><td>Código simples, fácil de ler e de depurar.</td><td>Quem chama precisa escolher o nome certo.</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar:</strong> no dia a dia, funções com nomes diferentes resolvem quase tudo, e é o que a maioria do código C faz. Use o <code>_Generic</code> quando um nome único deixa o uso <strong>bem</strong> mais seguro, como no <code>ABS</code> (que evita o <code>abs</code> num <code>double</code>) ou numa biblioteca que outras pessoas vão usar. E prefira a forma que escolhe uma função: ela é a mais previsível.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: ‘_Generic’ selector of type ‘float’ is not compatible with any association</code></strong>
+<p><strong>O que significa:</strong> o tipo da expressão não tem caso na lista, e não há <code>default</code>. No Clang: <code>controlling expression type 'float' not compatible with any generic association type</code>.</p>
+<p><strong>Como consertar:</strong> acrescente o caso que falta (<code>float: …</code>) ou um <code>default: …</code>. A <code>note: in expansion of macro</code> mostra a linha que usou a macro.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: ‘_Generic’ specifies two compatible types</code></strong>
+<p>Aparece quando a lista tem dois nomes para o mesmo tipo:</p>
+<pre class="term" data-cwd="~/c">$ cat dupla.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 3;
+    printf("%s\n", _Generic(n, int: "int", signed int: "signed int"));
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra dupla.c -o dupla
+dupla.c: In function ‘main’:
+dupla.c:5:44: error: ‘_Generic’ specifies two compatible types
+    5 |     printf("%s\n", _Generic(n, int: "int", signed int: "signed int"));
+      |                                            ^~~~~~
+dupla.c:5:32: note: compatible type is here
+    5 |     printf("%s\n", _Generic(n, int: "int", signed int: "signed int"));
+      |                                ^~~
+dupla.c:5:44: error: ‘_Generic’ selector matches multiple associations
+    5 |     printf("%s\n", _Generic(n, int: "int", signed int: "signed int"));
+      |                                            ^~~~~~
+dupla.c:5:32: note: other match is here
+    5 |     printf("%s\n", _Generic(n, int: "int", signed int: "signed int"));
+      |                                ^~~</pre>
+<p><strong>O que significa:</strong> <code>int</code> e <code>signed int</code> são o <strong>mesmo</strong> tipo, então a recepcionista teria duas filas para o mesmo documento. Acontece também com <code>typedef</code>: se <code>idade_t</code> é um apelido de <code>int</code>, os dois não podem aparecer juntos.</p>
+<p><strong>Como consertar:</strong> deixe só um dos dois. Atenção: <code>char</code>, <code>signed char</code> e <code>unsigned char</code> são <strong>três</strong> tipos diferentes e podem conviver.</p>
+</div>
+
+<div class="cenario">
+<strong>O ramo não escolhido também precisa compilar</strong>
+<pre class="term" data-cwd="~/c">$ cat ramo.c
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#define TAMANHO(x) _Generic((x), char *: strlen(x), int: sizeof(x))
+
+int main(void) {
+    int n = 7;
+    printf("%zu\n", TAMANHO(n));
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra ramo.c -o ramo
+ramo.c: In function ‘main’:
+ramo.c:8:29: error: passing argument 1 of ‘strlen’ makes pointer from integer without a cast [-Wint-conversion]
+    8 |     printf("%zu\n", TAMANHO(n));
+      |                             ^
+      |                             |
+      |                             int
+ramo.c:4:49: note: in definition of macro ‘TAMANHO’
+    4 | #define TAMANHO(x) _Generic((x), char *: strlen(x), int: sizeof(x))
+      |                                                 ^
+In file included from ramo.c:2:
+/usr/include/string.h:439:35: note: expected ‘const char *’ but argument is of type ‘int’
+  439 | extern size_t strlen (const char *__s)
+      |                       ~~~~~~~~~~~~^~~</pre>
+<p><strong>O que significa:</strong> o <code>n</code> é <code>int</code>, então o ramo escolhido é <code>sizeof(x)</code>. Mesmo assim, o compilador confere <strong>todos</strong> os ramos com o <code>x</code> de verdade, e <code>strlen(n)</code> (passar um inteiro onde se espera um texto) é erro. O <code>_Generic</code> não "apaga" os outros ramos antes de conferir.</p>
+<p><strong>Como consertar:</strong> faça cada ramo ser só o <strong>nome</strong> de uma função e chame com <code>(x)</code> depois do <code>_Generic</code>, como no <code>imprimir</code>. Assim o <code>x</code> aparece numa chamada só, a da função escolhida.</p>
+</div>
+
+<div class="cenario">
+<strong>O caso <code>const int</code> nunca é escolhido</strong>
+<p>Com <code>const int limite = 10;</code>, o programa <code>_Generic(limite, int: "int", const int: "const int")</code> mostra <code>int</code>. O gcc fica quieto; o Clang avisa: <code>due to lvalue conversion of the controlling expression, association of type 'const int' will never be selected because it is qualified [-Wunreachable-code-generic-assoc]</code>.</p>
+<p><strong>O que significa:</strong> antes de escolher, o compilador tira o <code>const</code> (e o <code>volatile</code>) do tipo da variável: o que importa é o tipo do <strong>valor</strong>. Por isso um caso <code>const int:</code> nunca combina. Já <code>const char *</code> funciona, porque ali o <code>const</code> é do texto apontado, não do ponteiro.</p>
+<p><strong>Como consertar:</strong> escreva o caso sem <code>const</code> (<code>int:</code>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>_Generic(x, int: A, double: B)</code></td><td>Vira <code>A</code> se <code>x</code> é <code>int</code>, <code>B</code> se é <code>double</code>; erro se for outro tipo</td></tr>
+<tr><td><code>default: C</code></td><td>Caso para os tipos que não estão na lista</td></tr>
+<tr><td><code>#define TIPO(x) _Generic((x), …)</code></td><td>O jeito normal de usar: dentro de uma macro</td></tr>
+<tr><td><code>_Generic((x), int: f_int, double: f_double)(x)</code></td><td>Escolhe uma função e a chama com <code>x</code></td></tr>
+<tr><td><code>'A'</code></td><td>Tipo <code>int</code> em C (não <code>char</code>)</td></tr>
+<tr><td><code>"Ana"</code></td><td>Tipo <code>char *</code> no <code>_Generic</code></td></tr>
+<tr><td><code>const int</code> na expressão</td><td>Escolhe o caso <code>int</code> (o <code>const</code> é ignorado)</td></tr>
+<tr><td><code>#include &lt;tgmath.h&gt;</code></td><td><code>sqrt</code>, <code>pow</code>, <code>fabs</code>… se adaptam a <code>float</code>/<code>double</code>/<code>long double</code></td></tr>
+<tr><td>Versão</td><td><code>_Generic</code> existe desde o <span class="versao">C11</span>; <code>tgmath.h</code> desde o <span class="versao">C99</span></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o caso</h3>
+<p>Complete para o <code>_Generic</code> virar <code>"texto"</code> quando <code>x</code> for uma string entre aspas:</p>
+<div class="ex-code">_Generic((x), int: "número", <input data-answer="char *|char*" aria-label="tipo">: "texto")</div>
+</div>
+
+<div class="exercise">
+<h3>2. O caso que pega o resto</h3>
+<p>Complete com a palavra que cria o caso para "qualquer outro tipo":</p>
+<div class="ex-code">_Generic((x), int: "int", <input data-answer="default" aria-label="palavra">: "outro")</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Com a macro <code>TIPO</code> da seção 2, o que <code>TIPO('Z')</code> mostra?</p>
+<label><input type="radio" name="q3"> <code>char</code></label>
+<label><input type="radio" name="q3"> <code>int</code>, porque um caractere entre aspas simples tem tipo <code>int</code> em C</label>
+<label><input type="radio" name="q3"> <code>char *</code></label>
+<label><input type="radio" name="q3"> Erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Depois de <code>int i = 1; const char *t = _Generic(i++, int: "a", default: "b");</code>, quanto vale <code>i</code>?</p>
+<label><input type="radio" name="q4"> 2</label>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> 1, porque a expressão de controle não é executada</label>
+<label><input type="radio" name="q4"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Quando o <code>_Generic</code> faz a escolha?</p>
+<label><input type="radio" name="q5"> Na compilação: o programa pronto já tem só o ramo escolhido</label>
+<label><input type="radio" name="q5"> Enquanto o programa roda, a cada chamada</label>
+<label><input type="radio" name="q5"> Na hora de ligar (ld)</label>
+<label><input type="radio" name="q5"> Só quando há um <code>default</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. O que acontece com <code>_Generic(x, int: "a", double: "b")</code> se <code>x</code> é <code>float</code>?</p>
+<label><input type="radio" name="q6"> Escolhe <code>"b"</code>, porque <code>float</code> vira <code>double</code></label>
+<label><input type="radio" name="q6"> Escolhe <code>"a"</code></label>
+<label><input type="radio" name="q6"> Vira uma string vazia</label>
+<label><input type="radio" name="q6"> Erro: o tipo <code>float</code> não combina com nenhuma associação</label>
+</div>
+
+<h3>Missão final: o <code>imprimir</code> da lojinha</h3>
+
+<div class="tryc" data-goal="out:inteiro: 6,out:double: 4.50,out:texto: Caderno,semaviso,src:_Generic">
+<p class="try-task"><strong>Missão:</strong> a macro <code>imprimir</code> só conhece <code>int</code>, e por isso o programa nem compila. Complete o <code>_Generic</code> com os casos <code>double</code> (use <code>imprimir_double</code>) e <code>char *</code> (use <code>imprimir_texto</code>), para a saída ficar como abaixo, sem avisos.</p>
+<pre class="out">inteiro: 6
+double: 4.50
+texto: Caderno</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void imprimir_int(int x)            { printf("inteiro: %d\n", x); }
+void imprimir_double(double x)      { printf("double: %.2f\n", x); }
+void imprimir_texto(const char *x)  { printf("texto: %s\n", x); }
+
+#define imprimir(x) _Generic((x),   \
+    int: imprimir_int)(x)
+
+int main(void) {
+    imprimir(6);
+    imprimir(4.5);
+    imprimir("Caderno");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void imprimir_int(int x)            { printf("inteiro: %d\n", x); }
+void imprimir_double(double x)      { printf("double: %.2f\n", x); }
+void imprimir_texto(const char *x)  { printf("texto: %s\n", x); }
+
+#define imprimir(x) _Generic((x),   \
+    int: imprimir_int,              \
+    double: imprimir_double,        \
+    char *: imprimir_texto)(x)
+
+int main(void) {
+    imprimir(6);
+    imprimir(4.5);
+    imprimir("Caderno");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Desafio extra: acrescente <code>float: imprimir_double</code> e chame <code>imprimir(1.5f)</code>. O <code>float</code> é convertido para <code>double</code> na chamada, e sai <code>double: 1.50</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>_Generic(x, tipo: expressão, …)</code> <span class="versao">C11</span> escolhe uma expressão pelo <strong>tipo</strong> de <code>x</code>, na compilação. O <code>x</code> não é executado.</li>
+  <li>Quase sempre fica dentro de uma macro: <code>#define TIPO(x) _Generic((x), …)</code>.</li>
+  <li><code>default:</code> pega os tipos não listados. Sem ele, um tipo fora da lista é erro de compilação (o que às vezes é bom).</li>
+  <li>Escolhendo o <strong>nome de uma função</strong> e chamando com <code>(x)</code> depois, você imita a sobrecarga: <code>imprimir(6)</code>, <code>imprimir("Ana")</code>.</li>
+  <li>Em C, <code>'A'</code> é <code>int</code>, <code>"Ana"</code> é <code>char *</code> e o <code>const</code> da variável é ignorado na escolha.</li>
+  <li>Todos os ramos têm de compilar com o <code>x</code> de verdade, mesmo os não escolhidos.</li>
+  <li><code>tgmath.h</code> já faz <code>sqrt</code>, <code>fabs</code> e companhia se adaptarem ao tipo; para inteiros, um <code>ABS(x)</code> com <code>_Generic</code> escolhe entre <code>abs</code>, <code>labs</code> e <code>llabs</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
