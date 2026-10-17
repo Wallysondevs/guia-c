@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Saída com printf — mostrar texto, \n, puts, putchar, %d e %s | Guia C</title>
+<meta name="description" content="Mostrar texto na tela em C: o printf linha por linha, a quebra de linha \n, vários printf, uma linha em pedaços, puts (que já pula a linha), putchar (um caractere) e uma introdução a %d e %s para encaixar números e textos, com as saídas e os erros reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Saída com printf</span></h1>
+
+<p class="intro">Um programa que não mostra nada é como uma calculadora sem visor: pode até fazer as contas, mas ninguém fica sabendo. Em C, o jeito mais comum de mostrar algo na tela é o <code>printf</code>, que você já usou no Olá, mundo. Nesta aula você vai conhecê-lo melhor, junto com dois parentes mais simples, o <code>puts</code> e o <code>putchar</code>, e vai dar o primeiro passo para mostrar números no meio do texto.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Mostrar texto com <code>printf</code>, exatamente como ele está entre as aspas.</li>
+  <li>Usar o <code>\n</code> para quebrar a linha, e o que acontece sem ele.</li>
+  <li>Montar uma linha com vários <code>printf</code>, ou várias linhas com um só.</li>
+  <li>Usar o <code>puts</code>, que já pula a linha sozinho, e o <code>putchar</code>, que mostra um caractere.</li>
+  <li>Encaixar um número com <code>%d</code> e um texto com <code>%s</code>.</li>
+  <li>Os erros e avisos mais comuns com o <code>printf</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos foram compilados na máquina fictícia da Ana com o comando padrão do guia, <code>gcc -std=c23 -Wall -Wextra</code>, na pasta <code>~/c</code>.</p>
+
+<hr>
+
+<h2>A ideia: o letreiro e o formulário</h2>
+<p>Pense no <code>printf</code> de dois jeitos:</p>
+<ul>
+  <li>Como um <strong>letreiro luminoso</strong>: você entrega um texto, e ele aparece na tela, letra por letra, do jeito que você escreveu.</li>
+  <li>Como um <strong>formulário com lacunas</strong>: "A Ana tem ___ anos". Você entrega o formulário e o que vai em cada lacuna, e ele mostra tudo preenchido. Esse é o "f" de <code>printf</code>, de <em>formatted</em>, "formatado" (seção 6).</li>
+</ul>
+
+<p>Todas as funções desta aula vêm do cabeçalho <code>stdio.h</code>, por isso todo programa começa com <code>#include &lt;stdio.h&gt;</code>. Elas escrevem na <strong>saída padrão</strong>, que normalmente é a tela do terminal (mais sobre isso em <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>).</p>
+
+<hr>
+
+<h2>1. Mostrar um texto</h2>
+
+<pre class="file" data-file="bomdia.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Bom dia, Ana!\n");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>printf</dt><dd>O nome da função: <em>print formatted</em>, "imprimir formatado". Em programação, "imprimir" quase sempre quer dizer "mostrar na tela".</dd>
+  <dt>( … )</dt><dd>Os parênteses chamam a função e levam o que ela vai mostrar.</dd>
+  <dt>"Bom dia, Ana!\n"</dt><dd>O texto, entre aspas duplas. Ele se chama <strong>string</strong> (aula <a href="strings.html">Strings</a>). As aspas não aparecem na tela.</dd>
+  <dt>\n</dt><dd>A quebra de linha (seção 2).</dd>
+  <dt>;</dt><dd>Termina a instrução.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra bomdia.c -o bomdia
+$ ./bomdia
+Bom dia, Ana!</pre>
+
+<p>O <code>printf</code> mostra o texto <strong>exatamente</strong> como está: espaços repetidos, espaços no começo, maiúsculas, acentos e símbolos, tudo aparece igual:</p>
+
+<pre class="file" data-file="espacos2.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Ana      Souza\n");
+    printf("   recuado\n");
+    printf("ÁÉÍÓÚ ç ã õ €\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra espacos2.c -o espacos2
+$ ./espacos2
+Ana      Souza
+   recuado
+ÁÉÍÓÚ ç ã õ €</pre>
+
+<p>Os acentos funcionam porque o arquivo e o terminal usam a mesma codificação, o UTF-8 (a aula <a href="acentos-utf8.html">Acentos e UTF-8</a> conta os detalhes). Há só alguns caracteres que precisam de cuidado dentro das aspas: a própria aspa <code>"</code>, a barra invertida <code>\</code> e o <code>%</code>. Eles têm uma aula própria: <a href="escapes.html">Novas Linhas e Escapes</a>.</p>
+
+<hr>
+
+<h2>2. A quebra de linha: <code>\n</code></h2>
+<p>O <code>printf</code> <strong>não</strong> pula de linha sozinho. Ele mostra o texto e deixa o cursor parado logo depois da última letra. Quem manda pular é o <code>\n</code>. Veja o que acontece sem ele:</p>
+
+<pre class="file" data-file="grudado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Arroz");
+    printf("Feijão");
+    printf("Café");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra grudado.c -o grudado
+$ ./grudado
+ArrozFeijãoCaféana@notebook:~/c$       « tudo grudado, até o prompt do terminal</pre>
+
+<p>As três palavras ficaram coladas, e o prompt do terminal (<code>ana@notebook:~/c$</code>) apareceu grudado no fim, porque o cursor ficou na mesma linha. Com um <code>\n</code> no fim de cada texto, tudo se arruma:</p>
+
+<pre class="file" data-file="lista.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n- arroz\n- feijão\n- café\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lista.c -o lista
+$ ./lista
+Lista de compras:
+- arroz
+- feijão
+- café</pre>
+
+<p>Repare que este exemplo usou <strong>um só</strong> <code>printf</code> com quatro <code>\n</code>: o <code>\n</code> pode ficar em qualquer lugar do texto, não só no fim. Cada <code>\n</code> é uma quebra.</p>
+
+<div class="tip">
+<strong>Termine a saída com <code>\n</code></strong>
+<p>Além de não grudar o prompt, o <code>\n</code> faz o texto aparecer na hora: o C guarda o que você manda mostrar e só "despeja" na tela quando chega um <code>\n</code> (ou quando o programa termina). A aula <a href="escapes.html">Novas Linhas e Escapes</a> mostra por que isso importa.</p>
+</div>
+
+<hr>
+
+<h2>3. Vários <code>printf</code>: uma linha em pedaços</h2>
+<p>Como o <code>printf</code> não pula linha sozinho, dá para montar <strong>uma</strong> linha com vários <code>printf</code>. Só o último leva o <code>\n</code>:</p>
+
+<pre class="file" data-file="pedacos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Bom ");
+    printf("dia, ");
+    printf("Ana!\n");
+    printf("Hoje é sábado.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pedacos.c -o pedacos
+$ ./pedacos
+Bom dia, Ana!
+Hoje é sábado.</pre>
+
+<p>Os três primeiros <code>printf</code> escreveram, um depois do outro, na mesma linha. Repare nos espaços: <code>"Bom "</code> e <code>"dia, "</code> terminam com espaço, senão sairia <code>Bomdia,Ana!</code>. Isso vai ser útil quando uma parte da linha mudar e outra não, por exemplo com <code>if</code> (aula <a href="if-else.html">if e else</a>).</p>
+
+<p><strong>Um <code>printf</code> por linha ou um <code>printf</code> com vários <code>\n</code>?</strong> Os dois funcionam. Um por linha deixa o código parecido com a saída e é mais fácil de mudar; o guia prefere esse.</p>
+
+<div class="tryc" data-goal="outre:^Ana Souza\nRua das Flores\, 10\nRecife - PE\n$">
+<p class="try-task"><strong>Missão:</strong> o programa mostra a etiqueta de entrega da Ana toda grudada numa linha só. Acrescente os <code>\n</code> que faltam para a saída ficar em três linhas:</p>
+<pre class="out">Ana Souza
+Rua das Flores, 10
+Recife - PE</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Ana Souza");
+    printf("Rua das Flores, 10");
+    printf("Recife - PE");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Ana Souza\n");
+    printf("Rua das Flores, 10\n");
+    printf("Recife - PE\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. <code>puts</code>: mostra e já pula a linha</h2>
+<p><code>puts</code> (de <em>put string</em>, "pôr o texto") é uma função mais simples: mostra o texto e <strong>acrescenta o <code>\n</code> sozinha</strong>.</p>
+
+<pre class="file" data-file="puts.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    puts("Lista de compras:");
+    puts("- arroz");
+    puts("- feijão\n");
+    puts("Fim da lista");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra puts.c -o puts
+$ ./puts
+Lista de compras:
+- arroz
+- feijão
+                         « linha em branco: o \n do texto + o \n do puts
+Fim da lista</pre>
+
+<p>Na terceira linha do código, o texto já tinha um <code>\n</code>, e o <code>puts</code> pôs outro: o resultado foi uma linha em branco. Com <code>puts</code>, não escreva o <code>\n</code> no fim (a não ser que queira mesmo a linha em branco).</p>
+
+<p>Outra diferença: o <code>puts</code> <strong>não</strong> encaixa valores. Ele mostra o texto como está, até com <code>%</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ cat puts3.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    puts("Desconto de 10%");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra puts3.c -o puts3
+$ ./puts3
+Desconto de 10%</pre>
+
+<p>(No <code>printf</code>, o <code>%</code> é especial e, para mostrá-lo, é preciso escrever <code>%%</code>; veja <a href="escapes.html">Novas Linhas e Escapes</a>.)</p>
+
+<hr>
+
+<h2>5. <code>putchar</code>: um caractere de cada vez</h2>
+<p><code>putchar</code> (de <em>put character</em>, "pôr um caractere") mostra <strong>um único caractere</strong>. O caractere vai entre <strong>aspas simples</strong>, <code>'A'</code>, e não entre aspas duplas:</p>
+
+<pre class="file" data-file="putchar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    putchar('O');
+    putchar('i');
+    putchar('!');
+    putchar('\n');
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra putchar.c -o putchar
+$ ./putchar
+Oi!</pre>
+
+<dl class="anatomy">
+  <dt>'O'</dt><dd>Um caractere, entre aspas simples. Dentro delas cabe <strong>um</strong> caractere só (aula <a href="char.html">Caracteres</a>).</dd>
+  <dt>'\n'</dt><dd>A quebra de linha também é um caractere, e o <code>putchar</code> não pula linha sozinho.</dd>
+</dl>
+
+<p>Para mostrar uma frase inteira, <code>putchar</code> é trabalhoso demais. Ele brilha quando o programa produz um caractere de cada vez, como ao desenhar uma linha de <code>*</code> com um laço (aula <a href="for.html">for</a>) ou ao copiar um texto letra por letra.</p>
+
+<div class="warning">
+<strong>Aspas simples ≠ aspas duplas</strong>
+<p>Em C, <code>'A'</code> (simples) é <strong>um caractere</strong> e <code>"A"</code> (duplas) é <strong>um texto</strong> (que por acaso tem uma letra). Não são intercambiáveis: <code>putchar("A")</code> e <code>printf('Olá')</code> dão erro (veja "Quando dá errado").</p>
+</div>
+
+<hr>
+
+<h2>6. Encaixar valores: <code>%d</code> e <code>%s</code></h2>
+<p>Agora o "formulário com lacunas". Dentro do texto do <code>printf</code>, um <code>%</code> seguido de uma letra marca uma <strong>lacuna</strong>. O valor que vai na lacuna vem depois do texto, separado por vírgula:</p>
+
+<pre class="file" data-file="idade.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("A Ana tem %d anos.\n", 29);
+    printf("Daqui a 10 anos, terá %d.\n", 29 + 10);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra idade.c -o idade
+$ ./idade
+A Ana tem 29 anos.
+Daqui a 10 anos, terá 39.</pre>
+
+<dl class="anatomy">
+  <dt>%d</dt><dd>A lacuna para um <strong>número inteiro</strong> (<em>decimal</em>, na base 10). Ela some e, no lugar dela, aparece o número.</dd>
+  <dt>, 29</dt><dd>Depois do texto, uma vírgula e o valor que vai na lacuna.</dd>
+  <dt>29 + 10</dt><dd>O valor pode ser uma conta: o C calcula primeiro (39) e depois encaixa.</dd>
+</dl>
+
+<p>Para encaixar um <strong>texto</strong>, a lacuna é <code>%s</code> (de <em>string</em>). E um mesmo <code>printf</code> pode ter várias lacunas: os valores entram <strong>na ordem</strong>, a primeira lacuna recebe o primeiro valor, a segunda recebe o segundo, e assim por diante:</p>
+
+<pre class="file" data-file="formatos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("A Ana tem %d anos.\n", 29);
+    printf("Ela mora em %s.\n", "Recife");
+    printf("%s comprou %d pães.\n", "Ana", 6);
+    printf("2 + 3 = %d\n", 2 + 3);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra formatos.c -o formatos
+$ ./formatos
+A Ana tem 29 anos.
+Ela mora em Recife.
+Ana comprou 6 pães.
+2 + 3 = 5</pre>
+
+<p>Na terceira linha: <code>%s</code> recebeu <code>"Ana"</code> e <code>%d</code> recebeu <code>6</code>. Na quarta, o texto <code>2 + 3 = </code> foi mostrado como está (dentro das aspas não há conta nenhuma), e o <code>%d</code> recebeu o resultado da conta <code>2 + 3</code>.</p>
+
+<p>Por enquanto, escrever <code>printf("A Ana tem %d anos.\n", 29);</code> parece igual a escrever o 29 direto no texto. A graça vai aparecer na aula <a href="variaveis.html">Variáveis</a>, quando o valor vier de uma variável que muda, ou de algo que o usuário digitou (aula <a href="scanf.html">Entrada com scanf</a>). Existem lacunas para números com vírgula (<code>%f</code>), caracteres (<code>%c</code>) e muito mais, com largura, casas decimais e alinhamento: está tudo em <a href="formatos-printf.html">Formatos do printf</a>.</p>
+
+<div class="tryc" data-goal="out:A Ana tem 30 anos.,src:%d,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana fez aniversário. Faça o programa mostrar <code>A Ana tem 30 anos.</code>, mas sem escrever o 30 dentro das aspas: use a lacuna <code>%d</code> e passe o número depois da vírgula.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("A Ana tem 29 anos.\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("A Ana tem %d anos.\n", 30);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes, e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Pula a linha sozinha?</th><th>Encaixa valores?</th><th>Use quando</th></tr>
+<tr><td><code>printf("texto\n");</code></td><td>Não: escreva <code>\n</code></td><td>Sim: <code>%d</code>, <code>%s</code>…</td><td>Quase sempre. É a mais versátil.</td></tr>
+<tr><td><code>puts("texto");</code></td><td>Sim</td><td>Não</td><td>Texto fixo, uma linha inteira, sem valores.</td></tr>
+<tr><td><code>putchar('x');</code></td><td>Não</td><td>Não: é um caractere só</td><td>O programa produz um caractere de cada vez.</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> Na dúvida, <code>printf</code>: ele faz tudo o que os outros fazem. O guia usa <code>printf</code> na maioria dos exemplos para você se acostumar com ele, e <code>puts</code>/<code>putchar</code> quando deixam o código mais simples.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Aspas simples no <code>printf</code>: <code>makes pointer from integer without a cast</code></strong>
+<pre class="term" data-cwd="~/c">$ cat aspas.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf('Olá, mundo!\n');
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra aspas.c -o aspas
+aspas.c: In function ‘main’:
+aspas.c:4:12: warning: multi-character literal with 13 characters exceeds ‘int’ size of 4 bytes
+    4 |     printf('Olá, mundo!\n');
+      |            ^~~~~~~~~~~~~~~
+aspas.c:4:12: error: passing argument 1 of ‘printf’ makes pointer from integer without a cast [-Wint-conversion]
+    4 |     printf('Olá, mundo!\n');
+      |            ^~~~~~~~~~~~~~~
+      |            |
+      |            int
+In file included from aspas.c:1:
+/usr/include/stdio.h:370:43: note: expected ‘const char * restrict’ but argument is of type ‘int’
+  370 | extern int printf (const char *__restrict __format, ...);
+      |                    ~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~
+aspas.c:4:5: warning: format not a string literal and no format arguments [-Wformat-security]
+    4 |     printf('Olá, mundo!\n');
+      |     ^~~~~~</pre>
+<p><strong>O que significa:</strong> o texto foi escrito com aspas simples. Para o C, <code>'…'</code> é um caractere (que vira um número), e o <code>printf</code> esperava um texto. A mensagem é assustadora, mas a primeira linha já dá a pista: <em>multi-character literal</em>, "caractere com vários caracteres". No editor do guia, o Clang diz <code>character too large for enclosing character literal type</code>.</p>
+<p><strong>Como consertar:</strong> texto vai entre <strong>aspas duplas</strong>: <code>printf("Olá, mundo!\n");</code>. O mesmo vale ao contrário: <code>putchar("A")</code> dá o erro <code>makes integer from pointer without a cast</code>; o certo é <code>putchar('A')</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem aspas: <code>‘Olá’ undeclared</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semaspas.c -o semaspas      « printf(Olá);
+semaspas.c: In function ‘main’:
+semaspas.c:4:12: error: ‘Olá’ undeclared (first use in this function)
+    4 |     printf(Olá);
+      |            ^~~
+semaspas.c:4:12: note: each undeclared identifier is reported only once for each function it appears in</pre>
+<p><strong>O que significa:</strong> sem aspas, o compilador acha que <code>Olá</code> é o nome de uma variável, que ninguém criou ("não declarada").</p>
+<p><strong>Como consertar:</strong> ponha o texto entre aspas duplas.</p>
+</div>
+
+<div class="cenario">
+<strong>Faltou o valor da lacuna: <code>format ‘%d’ expects a matching ‘int’ argument</code></strong>
+<pre class="term" data-cwd="~/c">$ cat faltou.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("A Ana tem %d anos.\n");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra faltou.c -o faltou
+faltou.c: In function ‘main’:
+faltou.c:4:24: warning: format ‘%d’ expects a matching ‘int’ argument [-Wformat=]
+    4 |     printf("A Ana tem %d anos.\n");
+      |                       ~^
+      |                        |
+      |                        int
+$ ./faltou
+A Ana tem 1958863448 anos.     « um número qualquer, que muda de uma vez para outra</pre>
+<p><strong>O que significa:</strong> o texto tem uma lacuna <code>%d</code>, mas nenhum valor foi passado. É só um <strong>aviso</strong>, então o programa foi criado, e o <code>printf</code> encaixou um "lixo" que estava na memória. No editor do guia, o Clang avisa <code>more '%' conversions than data arguments</code> ("mais lacunas do que valores").</p>
+<p><strong>Como consertar:</strong> para cada lacuna, um valor depois do texto, na mesma ordem: <code>printf("A Ana tem %d anos.\n", 29);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Lacuna e valor trocados: o programa pode até cair</strong>
+<pre class="term" data-cwd="~/c">$ cat ordem.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%s comprou %d pães.\n", 6, "Ana");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra ordem.c -o ordem
+ordem.c: In function ‘main’:
+ordem.c:4:14: warning: format ‘%s’ expects argument of type ‘char *’, but argument 2 has type ‘int’ [-Wformat=]
+    4 |     printf("%s comprou %d pães.\n", 6, "Ana");
+      |             ~^                      ~
+      |              |                      |
+      |              char *                 int
+      |             %d
+ordem.c:4:25: warning: format ‘%d’ expects argument of type ‘int’, but argument 3 has type ‘char *’ [-Wformat=]
+    4 |     printf("%s comprou %d pães.\n", 6, "Ana");
+      |                        ~^              ~~~~~
+      |                         |              |
+      |                         int            char *
+      |                        %s
+$ ./ordem
+Falha de segmentação     (imagem do núcleo gravada) ./ordem</pre>
+<p><strong>O que significa:</strong> os valores entraram na ordem errada: o <code>%s</code> recebeu o número 6 e o <code>%d</code> recebeu o texto. O <code>gcc</code> avisou (repare que ele até desenha o tipo de cada lado e sugere a lacuna certa embaixo), mas aviso não impede o programa de ser criado. Ao rodar, o <code>printf</code> tentou ler um texto num lugar da memória que não existe, e o sistema derrubou o programa: <em>Falha de segmentação</em>. No editor do guia, o mesmo programa não cai, mas mostra lixo; os dois estão errados.</p>
+<p><strong>Como consertar:</strong> os valores na mesma ordem das lacunas: <code>printf("%s comprou %d pães.\n", "Ana", 6);</code>. E leve a sério todo aviso que fala de <code>format</code> (aula <a href="avisos.html">Avisos</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu a vírgula: <code>expected ‘)’ before numeric constant</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra virgula.c -o virgula        « printf("Idade: %d\n" 29);
+virgula.c: In function ‘main’:
+virgula.c:4:25: error: expected ‘)’ before numeric constant
+    4 |     printf("Idade: %d\n" 29);
+      |           ~             ^~~
+      |                         )
+virgula.c:4:21: warning: format ‘%d’ expects a matching ‘int’ argument [-Wformat=]
+    4 |     printf("Idade: %d\n" 29);
+      |                    ~^
+      |                     |
+      |                     int</pre>
+<p><strong>O que significa:</strong> faltou a vírgula entre o texto e o valor. O compilador achou que o <code>printf</code> terminava depois do texto e esperava o <code>)</code>.</p>
+<p><strong>Como consertar:</strong> <code>printf("Idade: %d\n", 29);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>too many arguments to function ‘puts’</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra puts2.c -o puts2            « puts("Idade:", 29);
+puts2.c: In function ‘main’:
+puts2.c:4:5: error: too many arguments to function ‘puts’; expected 1, have 2
+    4 |     puts("Idade:", 29);
+      |     ^~~~           ~~
+In file included from puts2.c:1:
+/usr/include/stdio.h:718:12: note: declared here
+  718 | extern int puts (const char *__s);
+      |            ^~~~</pre>
+<p><strong>O que significa:</strong> "argumentos demais para a função <code>puts</code>; esperava 1, recebeu 2". O <code>puts</code> só aceita o texto, não encaixa valores.</p>
+<p><strong>Como consertar:</strong> para encaixar valores, use <code>printf("Idade: %d\n", 29);</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que mostra</th></tr>
+<tr><td><code>printf("Oi\n");</code></td><td><code>Oi</code> e pula a linha</td></tr>
+<tr><td><code>printf("Oi");</code></td><td><code>Oi</code>, e o cursor fica na mesma linha</td></tr>
+<tr><td><code>printf("a\nb\n");</code></td><td><code>a</code> e <code>b</code> em linhas separadas</td></tr>
+<tr><td><code>puts("Oi");</code></td><td><code>Oi</code> e pula a linha (o <code>\n</code> é automático)</td></tr>
+<tr><td><code>putchar('A');</code></td><td>O caractere <code>A</code> (aspas simples!)</td></tr>
+<tr><td><code>printf("%d\n", 29);</code></td><td><code>29</code>: <code>%d</code> é a lacuna de número inteiro</td></tr>
+<tr><td><code>printf("%s\n", "Ana");</code></td><td><code>Ana</code>: <code>%s</code> é a lacuna de texto</td></tr>
+<tr><td><code>printf("%s tem %d\n", "Ana", 29);</code></td><td><code>Ana tem 29</code>: os valores entram na ordem das lacunas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A lacuna do número</h3>
+<p>Complete para mostrar <code>Tenho 3 gatos.</code>:</p>
+<div class="ex-code">printf("Tenho <input data-answer="%d" aria-label="lacuna"> gatos.\n", 3);</div>
+</div>
+
+<div class="exercise">
+<h3>2. A lacuna do texto</h3>
+<p>Complete para mostrar <code>Olá, Pedro!</code>:</p>
+<div class="ex-code">printf("Olá, <input data-answer="%s" aria-label="lacuna">!\n", "Pedro");</div>
+</div>
+
+<div class="exercise">
+<h3>3. Sem o \n</h3>
+<p>Qual função mostra <code>Fim</code> e já pula a linha, sem você escrever <code>\n</code>?</p>
+<div class="ex-code"><input data-answer="puts" aria-label="função">("Fim");</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que aparece com <code>printf("Ana"); printf("Maria\n");</code>?</p>
+<label><input type="radio" name="q4"> <code>Ana</code> e <code>Maria</code> em linhas separadas</label>
+<label><input type="radio" name="q4"> <code>AnaMaria</code> numa linha só</label>
+<label><input type="radio" name="q4"> <code>Ana Maria</code>, com espaço</label>
+<label><input type="radio" name="q4"> Erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Quantas linhas mostra <code>puts("Oi\n");</code>?</p>
+<label><input type="radio" name="q5"> Uma, com <code>Oi\n</code> escrito</label>
+<label><input type="radio" name="q5"> Uma, com <code>Oi</code></label>
+<label><input type="radio" name="q5"> <code>Oi</code> e depois uma linha em branco: o <code>\n</code> do texto e o do <code>puts</code></label>
+<label><input type="radio" name="q5"> Nenhuma</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual linha está certa?</p>
+<label><input type="radio" name="q6"> <code>putchar('A');</code></label>
+<label><input type="radio" name="q6"> <code>putchar("A");</code></label>
+<label><input type="radio" name="q6"> <code>printf('A');</code></label>
+<label><input type="radio" name="q6"> <code>puts('A');</code></label>
+</div>
+
+<h3>Missão final: o recibo da lojinha</h3>
+
+<div class="tryc" data-goal="outre:^=== Lojinha da Ana ===\nProduto: caderno\nQuantidade: 3\nObrigada!\n$,src:puts\s*\(,src:%s,src:%d,semaviso">
+<p class="try-task"><strong>Missão:</strong> escreva o recibo da lojinha da Ana, exatamente assim:</p>
+<pre class="out">=== Lojinha da Ana ===
+Produto: caderno
+Quantidade: 3
+Obrigada!</pre>
+<p class="try-task">Regras: use <code>puts</code> em pelo menos uma linha; mostre o produto com <code>%s</code> (passando <code>"caderno"</code> depois da vírgula) e a quantidade com <code>%d</code> (passando <code>3</code>). E nenhum aviso.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    // escreva o recibo aqui
+
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    puts("=== Lojinha da Ana ===");
+    printf("Produto: %s\n", "caderno");
+    printf("Quantidade: %d\n", 3);
+    puts("Obrigada!");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>printf("…");</code> mostra o texto exatamente como está entre as aspas duplas.</li>
+  <li>O <code>printf</code> não pula linha sozinho: use <code>\n</code>, em qualquer ponto do texto. Sem ele, tudo gruda, até o prompt.</li>
+  <li>Vários <code>printf</code> podem montar uma linha; um <code>printf</code> pode mostrar várias linhas.</li>
+  <li><code>puts("…");</code> mostra o texto e já pula a linha; não encaixa valores.</li>
+  <li><code>putchar('x');</code> mostra um caractere, entre aspas simples.</li>
+  <li>No <code>printf</code>, <code>%d</code> é a lacuna de um número inteiro e <code>%s</code>, a de um texto. Os valores vêm depois do texto, separados por vírgulas, na ordem das lacunas.</li>
+  <li>Lacuna sem valor ou com valor do tipo errado dá aviso, e o programa pode mostrar lixo ou até cair.</li>
+  <li>Próximo passo: <a href="escapes.html">Novas Linhas e Escapes</a>, para mostrar aspas, barras, tabulações e o próprio <code>%</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
