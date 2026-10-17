@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Vários Arquivos — gcc -c, arquivos .o e o ligador | Guia C</title>
+<meta name="description" content="Compilar um programa C de vários arquivos: tudo junto com gcc main.c util.c -o app, ou separado com gcc -c e ligando os .o; o que há dentro de um .o (nm), por que separar acelera projetos grandes, e os erros reais do ligador em português (referência não definida para, múltiplas definições de), com o inglês citado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Vários Arquivos</span></h1>
+
+<p class="intro">Na aula <a href="headers.html">Arquivos .h e .c</a>, a Ana dividiu um programa em vários arquivos e compilou tudo com um comando só. Agora você vai olhar por dentro desse comando: o gcc compila <strong>cada <code>.c</code> separadamente</strong>, gera um pedaço de programa para cada um (um arquivo <code>.o</code>) e, no fim, um outro programa, o <strong>ligador</strong>, junta os pedaços. Você vai fazer essas etapas uma de cada vez, espiar dentro de um <code>.o</code> e aprender a ler os erros do ligador, que são diferentes dos erros do compilador e assustam muita gente.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como compilar vários arquivos juntos: <code>gcc main.c util.c -o app</code>.</li>
+  <li>Como compilar cada arquivo separado com <code>gcc -c</code>, gerando arquivos <code>.o</code>, e depois ligar os <code>.o</code>.</li>
+  <li>O que há dentro de um <code>.o</code>, com o comando <code>nm</code>.</li>
+  <li>Por que separar as etapas economiza tempo em projetos grandes.</li>
+  <li>A ler os erros do ligador: <code>referência não definida para</code> e <code>múltiplas definições de</code> (em inglês, <code>undefined reference to</code> e <code>multiple definition of</code>).</li>
+</ul>
+</div>
+
+<p>Todos os comandos desta aula rodaram na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/loja</code>, com o <strong>gcc 15.2</strong>. O sistema da Ana está em português, e por isso as mensagens do <strong>ligador</strong> saem em português; as do compilador continuam em inglês.</p>
+
+<hr>
+
+<h2>A ideia: a montadora de bicicletas</h2>
+<p>Uma bicicleta não é feita inteira num lugar só. Uma fábrica faz as rodas, outra faz o quadro, outra faz os freios. Cada fábrica trabalha sozinha, sem ver as outras: ela só sabe que a roda tem de ter um encaixe de tal tamanho. No fim, a <strong>montadora</strong> recebe as peças e as encaixa. Se faltar uma peça, ou se chegarem dois guidões, quem percebe é a montadora, e não as fábricas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Bicicleta</th><th>Programa em C</th></tr>
+<tr><td>A especificação do encaixe</td><td>o <code>.h</code>, com os protótipos</td></tr>
+<tr><td>Cada fábrica</td><td>o <strong>compilador</strong>, trabalhando num <code>.c</code> por vez</td></tr>
+<tr><td>Cada peça pronta</td><td>um arquivo <strong>objeto</strong> <code>.o</code> (código de máquina, ainda incompleto)</td></tr>
+<tr><td>A montadora</td><td>o <strong>ligador</strong> (<em>linker</em>, o programa <code>ld</code>)</td></tr>
+<tr><td>A bicicleta montada</td><td>o <strong>executável</strong>, o programa que roda</td></tr>
+</table>
+</div>
+
+<p>Por isso existem dois tipos de erro. O <strong>compilador</strong> reclama do que está errado dentro de um <code>.c</code> (um <code>;</code> faltando, um tipo errado). O <strong>ligador</strong> reclama do que está errado no conjunto (uma função que ninguém definiu, ou que dois definiram).</p>
+
+<hr>
+
+<h2>1. O jeito simples: todos os <code>.c</code> num comando</h2>
+<p>O projeto da Ana tem três arquivos. O <code>util.h</code> promete duas funções:</p>
+
+<pre class="file" data-file="util.h">#ifndef UTIL_H
+#define UTIL_H
+
+int total_compra(int preco, int quantidade);
+void linha(void);
+
+#endif
+</pre>
+
+<p>O <code>util.c</code> as define:</p>
+
+<pre class="file" data-file="util.c">#include &lt;stdio.h&gt;
+#include "util.h"
+
+int total_compra(int preco, int quantidade) {
+    return preco * quantidade;
+}
+
+void linha(void) {
+    printf("--------------------\n");
+}
+</pre>
+
+<p>E o <code>main.c</code> as usa:</p>
+
+<pre class="file" data-file="main.c">#include &lt;stdio.h&gt;
+#include "util.h"
+
+int main(void) {
+    linha();
+    printf("Lojinha da Ana\n");
+    linha();
+    printf("3 cadernos: R$ %d\n", total_compra(12, 3));
+    printf("5 lápis:    R$ %d\n", total_compra(2, 5));
+    linha();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/loja">$ ls
+main.c
+util.c
+util.h
+$ gcc -std=c23 -Wall -Wextra main.c util.c -o app
+$ ./app
+--------------------
+Lojinha da Ana
+--------------------
+3 cadernos: R$ 36
+5 lápis:    R$ 10
+--------------------</pre>
+
+<dl class="anatomy">
+  <dt>main.c util.c</dt><dd>Todos os <code>.c</code> do programa. O <code>.h</code> <strong>não</strong> entra no comando: ele chega pelo <code>#include</code>.</dd>
+  <dt>-o app</dt><dd>O nome do executável. Pode ser qualquer um.</dd>
+</dl>
+
+<p>A ordem dos arquivos não importa: <code>gcc … util.c main.c -o app</code> dá o mesmo programa. E quando todos os <code>.c</code> da pasta fazem parte do programa, o Bash monta a lista para você com <code>*.c</code> (o asterisco quer dizer "todos os arquivos terminados em <code>.c</code>"):</p>
+
+<pre class="term" data-cwd="~/c/loja">$ gcc -std=c23 -Wall -Wextra *.c -o app</pre>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> o editor do guia faz o mesmo que o comando acima: compila todas as abas <code>.c</code> juntas. Rode. Depois acrescente ao <code>util</code> uma função <code>int com_desconto(int valor)</code>, que devolve o valor menos 10%: protótipo no <code>util.h</code>, definição no <code>util.c</code>, e use-a no <code>main.c</code>.</p>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "util.h"
+
+int main(void) {
+    linha();
+    printf("Lojinha da Ana\n");
+    linha();
+    printf("3 cadernos: R$ %d\n", total_compra(12, 3));
+    printf("5 lápis:    R$ %d\n", total_compra(2, 5));
+    linha();
+    return 0;
+}
+</pre>
+<pre class="script" data-file="util.h">#ifndef UTIL_H
+#define UTIL_H
+
+int total_compra(int preco, int quantidade);
+void linha(void);
+
+#endif
+</pre>
+<pre class="script" data-file="util.c">#include &lt;stdio.h&gt;
+#include "util.h"
+
+int total_compra(int preco, int quantidade) {
+    return preco * quantidade;
+}
+
+void linha(void) {
+    printf("--------------------\n");
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. As duas etapas, uma de cada vez</h2>
+<p>Por trás do comando único, o gcc fez três coisas: compilou o <code>main.c</code> num arquivo temporário, compilou o <code>util.c</code> em outro, e chamou o ligador para juntar os dois. Os arquivos temporários foram apagados no fim. Você pode fazer cada etapa à mão.</p>
+
+<h3>Etapa 1: compilar, com <code>-c</code></h3>
+<pre class="term" data-cwd="~/c/loja">$ gcc -std=c23 -Wall -Wextra -c main.c
+$ gcc -std=c23 -Wall -Wextra -c util.c
+$ ls
+main.c
+main.o
+util.c
+util.h
+util.o</pre>
+
+<dl class="anatomy">
+  <dt>-c</dt><dd>"Só compile" (<em>compile</em>): pare antes de ligar. Para cada <code>.c</code>, sai um <code>.o</code> com o mesmo nome.</dd>
+  <dt>main.o</dt><dd>Um <strong>arquivo objeto</strong> (<em>object file</em>): o código de máquina do <code>main.c</code>, mas ainda com "buracos" onde ele chama funções de outros arquivos.</dd>
+</dl>
+
+<p>Também dá para compilar vários de uma vez (<code>gcc -c main.c util.c</code> gera os dois <code>.o</code>) ou escolher o nome do <code>.o</code> com <code>-o</code> (<code>gcc -c util.c -o ferramentas.o</code>). As opções de aviso (<code>-Wall -Wextra</code>) e de padrão (<code>-std=c23</code>) vão nesta etapa, porque é aqui que o código C é lido.</p>
+
+<p>O <code>.o</code> ainda não é um programa. O comando <code>file</code> diz o que ele é, e tentar rodá-lo não funciona:</p>
+
+<pre class="term" data-cwd="~/c/loja">$ file util.o
+util.o: ELF 64-bit LSB relocatable, x86-64, version 1 (SYSV), not stripped
+$ ./util.o
+bash: ./util.o: Permissão negada</pre>
+
+<p>"<em>relocatable</em>" quer dizer "relocável": um pedaço de código que ainda vai ser encaixado num lugar definitivo. Um executável pronto apareceria como <code>ELF 64-bit LSB pie executable</code>.</p>
+
+<h3>Etapa 2: ligar os <code>.o</code></h3>
+<pre class="term" data-cwd="~/c/loja">$ gcc main.o util.o -o app
+$ ./app | tail -3
+3 cadernos: R$ 36
+5 lápis:    R$ 10
+--------------------</pre>
+
+<p>Quando você passa arquivos <code>.o</code>, o gcc não compila nada: ele só chama o ligador. O ligador encaixa as peças, junta a biblioteca C (onde moram o <code>printf</code> e companhia) e grava o executável <code>app</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Etapa</th><th>Comando</th><th>Quem trabalha</th><th>Entra</th><th>Sai</th></tr>
+<tr><td>Compilar</td><td><code>gcc -c main.c</code></td><td>pré-processador + compilador</td><td>um <code>.c</code> (e os <code>.h</code> que ele inclui)</td><td>um <code>.o</code></td></tr>
+<tr><td>Ligar</td><td><code>gcc main.o util.o -o app</code></td><td>ligador (<code>ld</code>)</td><td>todos os <code>.o</code> + bibliotecas</td><td>o executável</td></tr>
+<tr><td>As duas</td><td><code>gcc main.c util.c -o app</code></td><td>todos</td><td>todos os <code>.c</code></td><td>o executável</td></tr>
+</table>
+</div>
+
+<h3>Dentro de um <code>.o</code>: <code>nm</code></h3>
+<p>O comando <code>nm</code> (de <em>names</em>, "nomes") lista os <strong>símbolos</strong> de um <code>.o</code>: os nomes de funções e variáveis que ele <strong>oferece</strong> e os que ele <strong>precisa</strong>:</p>
+
+<pre class="term" data-cwd="~/c/loja">$ nm util.o
+0000000000000017 T linha
+                 U puts
+0000000000000000 T total_compra
+$ nm main.o
+                 U linha
+0000000000000000 T main
+                 U printf
+                 U puts
+                 U total_compra</pre>
+
+<dl class="anatomy">
+  <dt>T</dt><dd>"Está aqui" (de <em>text</em>, o nome da parte do arquivo onde fica o código). O <code>util.o</code> <strong>oferece</strong> <code>linha</code> e <code>total_compra</code>. O número à esquerda é a posição dentro do arquivo.</dd>
+  <dt>U</dt><dd>"Indefinido" (<em>undefined</em>): o arquivo usa esse nome, mas ele está em outro lugar. O <code>main.o</code> <strong>precisa</strong> de <code>linha</code>, <code>total_compra</code>, <code>printf</code> e <code>puts</code>.</dd>
+</dl>
+
+<p>O trabalho do ligador é casar cada <code>U</code> com um <code>T</code>: o <code>linha</code> que o <code>main.o</code> precisa está no <code>util.o</code>; o <code>printf</code> e o <code>puts</code> estão na biblioteca C. (E de onde veio o <code>puts</code>, se ninguém o escreveu? O gcc percebeu que <code>printf("--------------------\n")</code> não tem nenhum <code>%</code> e o trocou pelo <code>puts</code>, que só escreve um texto e é mais rápido. O resultado na tela é o mesmo.)</p>
+
+<hr>
+
+<h2>3. Por que separar as etapas?</h2>
+<p>Num projeto de dois arquivos, tanto faz. Mas um programa de verdade pode ter centenas de <code>.c</code>, e compilar todos leva minutos. Se a Ana mudar só o <code>util.c</code>, o <code>main.o</code> continua valendo: o código do <code>main.c</code> não mudou. Basta recompilar o que mudou e ligar de novo:</p>
+
+<pre class="term" data-cwd="~/c/loja">$ gcc -std=c23 -Wall -Wextra -c util.c      « só o arquivo que mudou
+$ gcc main.o util.o -o app                  « ligar é rápido</pre>
+
+<p>Ligar é muito mais rápido que compilar. Com 200 arquivos, recompilar um só e ligar leva segundos, contra minutos para recompilar tudo.</p>
+
+<div class="warning">
+<strong>Cuidado com o <code>.h</code>.</strong> Se o <code>util.h</code> mudar, <strong>todos</strong> os <code>.c</code> que o incluem têm de ser recompilados (aqui, o <code>main.c</code> e o <code>util.c</code>), porque o <code>.h</code> foi colado dentro deles. Esquecer um deixa um <code>.o</code> velho, compilado com a promessa antiga, e o resultado pode ser um programa que liga mas faz besteira.
+</div>
+
+<p>Lembrar quais arquivos mudaram e quais dependem de qual <code>.h</code> é chato e fácil de errar. Por isso ninguém faz isso à mão: o programa <code>make</code> lê uma receita (o <strong>Makefile</strong>) e recompila exatamente o necessário. É o assunto da aula <a href="make.html">Makefile</a>.</p>
+
+<hr>
+
+<h2>4. Os erros do ligador</h2>
+<p>Os erros do ligador não têm número de linha nem a setinha <code>^</code> embaixo do código, porque o ligador não lê o seu código C: ele só vê os <code>.o</code>. Mas eles são fáceis de entender quando você sabe ler as partes.</p>
+
+<h3>"Referência não definida": a peça que faltou</h3>
+<p>A Ana ligou só o <code>main.o</code>, esquecendo o <code>util.o</code>:</p>
+
+<pre class="term" data-cwd="~/c/loja">$ gcc main.o -o app
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.o: na função "main":
+main.c:(.text+0x9): referência não definida para "linha"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x1d): referência não definida para "linha"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x2c): referência não definida para "total_compra"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x53): referência não definida para "total_compra"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x70): referência não definida para "linha"
+collect2: error: ld returned 1 exit status</pre>
+
+<dl class="anatomy">
+  <dt>/usr/bin/x86_64-linux-gnu-ld.bfd</dt><dd>Quem está falando: o ligador (<code>ld</code>), na versão para computadores x86 de 64 bits.</dd>
+  <dt>main.o: na função "main"</dt><dd>Onde está o problema: dentro da função <code>main</code>, que veio do <code>main.o</code>.</dd>
+  <dt>main.c:(.text+0x9)</dt><dd>Uma posição dentro do código de máquina do <code>main.c</code>. Não é número de linha; pode ignorar.</dd>
+  <dt>referência não definida para "linha"</dt><dd>A mensagem: o <code>main</code> chama <code>linha</code>, e nenhum <code>.o</code> a define. Uma linha para cada chamada (são três chamadas de <code>linha</code>). Em inglês: <code>undefined reference to `linha'</code>.</dd>
+  <dt>collect2: error: ld returned 1 exit status</dt><dd>"O <code>ld</code> terminou com o código 1", ou seja, falhou. O <code>collect2</code> é um ajudante do gcc que chama o ligador. Essa linha aparece em <strong>todo</strong> erro de ligação; a informação útil está nas linhas de cima.</dd>
+</dl>
+
+<p>Repare que o <code>main.o</code> compilou sem reclamar: o <code>util.h</code> prometeu as funções, e o compilador acreditou. Quem descobre que a promessa não foi cumprida é o ligador. Quando você compila tudo junto (<code>gcc main.c -o app</code>, sem o <code>util.c</code>), a mensagem é a mesma, com nomes de arquivos temporários como <code>/tmp/ccU9TVcP.o</code> no lugar do <code>main.o</code>.</p>
+
+<p>Outra causa clássica: o nome no <code>.h</code> é diferente do nome no <code>.c</code>. No projeto da pasta <code>nome</code>, o <code>util.c</code> define <code>Linha</code>, com L maiúsculo:</p>
+
+<pre class="term" data-cwd="~/c/loja/nome">$ gcc -std=c23 -Wall -Wextra main.c util.c -o app
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccU9TVcP.o: na função "main":
+main.c:(.text+0x9): referência não definida para "linha"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x1d): referência não definida para "linha"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x70): referência não definida para "linha"
+collect2: error: ld returned 1 exit status</pre>
+
+<p>Para o C, <code>linha</code> e <code>Linha</code> são nomes diferentes. O <code>nm util.o</code> mostraria <code>T Linha</code>, e o <code>main.o</code> precisa de <code>U linha</code>. O compilador não tem como perceber: o <code>util.c</code> definir uma função a mais, chamada <code>Linha</code>, é permitido. Só o ligador, olhando o conjunto, nota que a <code>linha</code> prometida nunca chegou.</p>
+
+<h3>Sem <code>main</code></h3>
+<p>Todo programa precisa de exatamente um <code>main</code>. Ligar só o <code>util.o</code>:</p>
+
+<pre class="term" data-cwd="~/c/loja">$ gcc util.o -o app
+/usr/bin/x86_64-linux-gnu-ld.bfd: /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o: na função "_start":
+(.text+0x1b): referência não definida para "main"
+collect2: error: ld returned 1 exit status</pre>
+
+<p>O <code>Scrt1.o</code> é um pedacinho de código do sistema que todo programa C recebe. A função <code>_start</code> dele é o verdadeiro começo do programa: ela prepara tudo e chama o seu <code>main</code>. Sem <code>main</code>, a referência fica sem dono.</p>
+
+<h3>"Múltiplas definições": duas peças iguais</h3>
+<p>Agora o contrário. Na pasta <code>dupla</code>, a Ana escreveu uma <code>linha</code> no <code>main.c</code> (com <code>=</code> em vez de <code>-</code>), esquecendo que o <code>util.c</code> já tem uma:</p>
+
+<pre class="term" data-cwd="~/c/loja/dupla">$ gcc -std=c23 -Wall -Wextra main.c util.c -o app
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/cccvbgyH.o: na função "linha":
+util.c:(.text+0x17): múltiplas definições de "linha"; /tmp/ccXm2qlQ.o:main.c:(.text+0x0): definido primeiro aqui
+collect2: error: ld returned 1 exit status</pre>
+
+<p>"Múltiplas definições de <code>linha</code>" no <code>util.c</code>; "definido primeiro aqui", no <code>main.c</code>. Em inglês: <code>multiple definition of `linha'; … first defined here</code>. Cada arquivo, sozinho, estava certo; juntos, há duas funções com o mesmo nome, e o ligador não escolhe uma por você. O conserto é deixar uma só, ou, se as duas devem existir, dar nomes diferentes ou tornar uma delas particular do seu arquivo com <code>static</code> (aula <a href="static-extern.html">static e extern</a>).</p>
+
+<div class="note">
+<strong>No editor do guia</strong>, o ligador é outro (o <code>wasm-ld</code>, para WebAssembly) e fala inglês com outras palavras: <code>undefined symbol: linha</code> ("símbolo indefinido") no lugar de "referência não definida", e <code>duplicate symbol: linha</code> ("símbolo duplicado") no lugar de "múltiplas definições". No fim, ele diz <code>linker command failed</code>, "o comando do ligador falhou".
+</div>
+
+<div class="tryc" data-goal="erro:/undefined symbol|undefined reference|referência não definida/">
+<p class="try-task"><strong>Missão:</strong> no editor não dá para "esquecer um arquivo no comando", porque todas as abas <code>.c</code> entram. Simule o esquecimento: na aba <code>util.c</code>, <strong>apague a função <code>total_compra</code> inteira</strong> (deixe o protótipo no <code>util.h</code>) e rode. O compilador aceita, e o ligador reclama.</p>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "util.h"
+
+int main(void) {
+    linha();
+    printf("3 cadernos: R$ %d\n", total_compra(12, 3));
+    linha();
+    return 0;
+}
+</pre>
+<pre class="script" data-file="util.h">#ifndef UTIL_H
+#define UTIL_H
+
+int total_compra(int preco, int quantidade);
+void linha(void);
+
+#endif
+</pre>
+<pre class="script" data-file="util.c">#include &lt;stdio.h&gt;
+#include "util.h"
+
+int total_compra(int preco, int quantidade) {
+    return preco * quantidade;
+}
+
+void linha(void) {
+    printf("--------------------\n");
+}
+</pre>
+<pre class="solucao" data-file="util.c">#include &lt;stdio.h&gt;
+#include "util.h"
+
+void linha(void) {
+    printf("--------------------\n");
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas de compilar: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Bom para</th><th>Ruim porque</th></tr>
+<tr><td><code>gcc … main.c util.c -o app</code></td><td>Projetos pequenos, testes rápidos, exercícios</td><td>Recompila tudo a cada vez</td></tr>
+<tr><td><code>gcc … *.c -o app</code></td><td>O mesmo, sem digitar os nomes</td><td>Pega também um <code>.c</code> velho ou de teste que esteja na pasta</td></tr>
+<tr><td><code>gcc -c</code> em cada arquivo + <code>gcc *.o -o app</code></td><td>Entender as etapas; projetos médios</td><td>Você tem de lembrar o que mudou e o que depende de cada <code>.h</code></td></tr>
+<tr><td><code>make</code> (ou CMake)</td><td>Qualquer projeto que vai crescer</td><td>Precisa escrever a receita uma vez</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> Para aprender e para programas de dois ou três arquivos, o comando único. Assim que o projeto começar a crescer, ou demorar para compilar, escreva um <a href="make.html">Makefile</a>: ele faz as duas etapas por você, recompilando só o necessário.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>referência não definida para "nome"</code> (<code>undefined reference to `nome'</code>)</strong>
+<p><strong>O que significa:</strong> alguém chama <code>nome</code>, mas nenhum <code>.o</code> o define.</p>
+<p><strong>Como consertar:</strong> passe por esta lista de suspeitos:</p>
+<ol>
+  <li>O <code>.c</code> (ou o <code>.o</code>) que define a função ficou fora do comando.</li>
+  <li>O nome está escrito diferente no <code>.h</code> e no <code>.c</code> (maiúscula, letra trocada). Confira com <code>nm arquivo.o</code>.</li>
+  <li>A função foi declarada no <code>.h</code>, mas nunca escrita.</li>
+  <li>A função está marcada como <code>static</code> no outro arquivo, e por isso é invisível (aula <a href="static-extern.html">static e extern</a>).</li>
+  <li>Ela está numa biblioteca que não foi pedida com <code>-l</code> (aula <a href="bibliotecas.html">Bibliotecas</a>).</li>
+</ol>
+</div>
+
+<div class="cenario">
+<strong><code>referência não definida para "main"</code> na função <code>_start</code></strong>
+<p><strong>O que significa:</strong> nenhum dos arquivos tem a função <code>main</code>: ou o <code>main.c</code> ficou fora do comando, ou o nome está errado (<code>Main</code>, <code>mian</code>).</p>
+<p><strong>Como consertar:</strong> confira se o arquivo com o <code>main</code> está no comando. Se você quer só gerar o <code>.o</code> de um arquivo sem <code>main</code>, faltou o <code>-c</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>múltiplas definições de "nome"</code> (<code>multiple definition of `nome'</code>)</strong>
+<p><strong>O que significa:</strong> dois <code>.o</code> definem a mesma função ou variável global. Causas comuns: o corpo de uma função (ou uma variável com valor) num <code>.h</code> incluído por vários <code>.c</code>; a mesma função copiada em dois arquivos; o mesmo <code>.c</code> passado duas vezes (<code>gcc main.c util.c util.c</code>); um <code>#include "util.c"</code>.</p>
+<p><strong>Como consertar:</strong> cada função e cada variável global com <strong>uma</strong> definição, num <code>.c</code> só. Se duas funções auxiliares têm o mesmo nome em arquivos diferentes, marque-as com <code>static</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>bash: ./util.o: Permissão negada</code></strong>
+<p><strong>O que significa:</strong> você tentou rodar um arquivo objeto. Ele não é um programa completo, e nem tem permissão para rodar.</p>
+<p><strong>Como consertar:</strong> ligue os <code>.o</code> num executável (<code>gcc main.o util.o -o app</code>) e rode o <code>./app</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>gcc -std=c23 -Wall -Wextra main.c util.c -o app</code></td><td>Compila e liga tudo de uma vez</td></tr>
+<tr><td><code>gcc … *.c -o app</code></td><td>O mesmo, com todos os <code>.c</code> da pasta</td></tr>
+<tr><td><code>gcc -std=c23 -Wall -Wextra -c util.c</code></td><td>Só compila: gera <code>util.o</code></td></tr>
+<tr><td><code>gcc -c util.c -o outro.o</code></td><td>Só compila, escolhendo o nome do <code>.o</code></td></tr>
+<tr><td><code>gcc main.o util.o -o app</code></td><td>Só liga os <code>.o</code> num executável</td></tr>
+<tr><td><code>nm arquivo.o</code></td><td>Lista os símbolos: <code>T</code> = definido aqui, <code>U</code> = precisa de outro lugar</td></tr>
+<tr><td><code>file arquivo.o</code></td><td>Mostra o tipo do arquivo (<code>relocatable</code> = objeto)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Só compilar</h3>
+<p>Complete o comando que gera o <code>estoque.o</code> sem ligar:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra <input data-answer="-c" aria-label="opção"> estoque.c</div>
+</div>
+
+<div class="exercise">
+<h3>2. Só ligar</h3>
+<p>Complete o comando que junta <code>main.o</code> e <code>estoque.o</code> no executável <code>loja</code>:</p>
+<div class="ex-code">gcc <input data-answer="main.o estoque.o|estoque.o main.o" aria-label="arquivos"> -o loja</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A Ana mudou só o <code>estoque.c</code>. O <code>estoque.h</code> não mudou. O que ela precisa refazer?</p>
+<label><input type="radio" name="q3"> Recompilar todos os <code>.c</code> e ligar</label>
+<label><input type="radio" name="q3"> <code>gcc -c estoque.c</code> e ligar de novo os <code>.o</code></label>
+<label><input type="radio" name="q3"> Só ligar de novo, sem compilar nada</label>
+<label><input type="radio" name="q3"> Nada: o programa se atualiza sozinho</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Na saída de <code>nm main.o</code> aparece <code>U total_compra</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q4"> <code>total_compra</code> está definida no <code>main.o</code></label>
+<label><input type="radio" name="q4"> <code>total_compra</code> tem um erro</label>
+<label><input type="radio" name="q4"> <code>total_compra</code> foi apagada</label>
+<label><input type="radio" name="q4"> O <code>main.o</code> usa <code>total_compra</code>, que tem de vir de outro <code>.o</code> ou de uma biblioteca</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Quem mostra a mensagem <code>múltiplas definições de "linha"</code>?</p>
+<label><input type="radio" name="q5"> O pré-processador</label>
+<label><input type="radio" name="q5"> O compilador, com a linha do erro</label>
+<label><input type="radio" name="q5"> O ligador, depois que cada arquivo compilou sem erro</label>
+<label><input type="radio" name="q5"> O programa, quando roda</label>
+</div>
+
+<h3>Missão final: cumpra a promessa do <code>.h</code></h3>
+
+<div class="tryc" data-goal="compila,out:3 cadernos: R$ 36,out:Com desconto: R$ 33">
+<p class="try-task"><strong>Missão:</strong> o projeto compila, mas não liga. Leia a mensagem do ligador: quais nomes ele não acha? Um deles foi escrito com outro nome no <code>util.c</code>; o outro nem foi escrito. Conserte <strong>só o <code>util.c</code></strong>. A função <code>com_desconto</code> devolve o valor menos 10% (<code>valor - valor / 10</code>, com inteiros).</p>
+<pre class="out">--------------------
+3 cadernos: R$ 36
+Com desconto: R$ 33
+--------------------</pre>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "util.h"
+
+int main(void) {
+    int total = total_compra(12, 3);
+    linha();
+    printf("3 cadernos: R$ %d\n", total);
+    printf("Com desconto: R$ %d\n", com_desconto(total));
+    linha();
+    return 0;
+}
+</pre>
+<pre class="script" data-file="util.h">#ifndef UTIL_H
+#define UTIL_H
+
+int total_compra(int preco, int quantidade);
+int com_desconto(int valor);
+void linha(void);
+
+#endif
+</pre>
+<pre class="script" data-file="util.c">#include &lt;stdio.h&gt;
+#include "util.h"
+
+int total_compra(int preco, int quantidade) {
+    return preco * quantidade;
+}
+
+void Linha(void) {
+    printf("--------------------\n");
+}
+</pre>
+<pre class="solucao" data-file="util.c">#include &lt;stdio.h&gt;
+#include "util.h"
+
+int total_compra(int preco, int quantidade) {
+    return preco * quantidade;
+}
+
+int com_desconto(int valor) {
+    return valor - valor / 10;
+}
+
+void linha(void) {
+    printf("--------------------\n");
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O gcc compila <strong>cada <code>.c</code> sozinho</strong> e o <strong>ligador</strong> junta as peças. O compilador vê um arquivo de cada vez; só o ligador vê o conjunto.</li>
+  <li>Tudo junto: <code>gcc main.c util.c -o app</code> (a ordem não importa; o <code>.h</code> não entra no comando).</li>
+  <li>Separado: <code>gcc -c arquivo.c</code> gera o <code>arquivo.o</code>; <code>gcc main.o util.o -o app</code> liga. Assim, só o que mudou é recompilado. Se um <code>.h</code> mudar, recompile todos que o incluem.</li>
+  <li><code>nm</code> lista os símbolos de um <code>.o</code>: <code>T</code> (oferece) e <code>U</code> (precisa). O ligador casa cada <code>U</code> com um <code>T</code>.</li>
+  <li><code>referência não definida para</code> (<code>undefined reference to</code>): faltou a definição. <code>múltiplas definições de</code> (<code>multiple definition of</code>): sobrou uma. A linha <code>collect2: error: ld returned 1 exit status</code> só diz que o ligador falhou.</li>
+  <li>Para não ter de lembrar o que recompilar, use o <a href="make.html">make</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
