@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Sanitizers — -fsanitize=address e undefined | Guia C</title>
+<meta name="description" content="Sanitizers em C para quem nunca programou: -fsanitize=address para achar estouro de array, uso de memória depois do free, free duplo e vazamentos; -fsanitize=undefined para estouro de int e deslocamento grande demais; relatórios reais do gcc 15 lidos linha a linha, o papel do -g, o custo e o que funciona no editor do guia.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Sanitizers (-fsanitize)</span></h1>
+
+<p class="intro">Em C, muitos erros de memória <strong>não derrubam</strong> o programa: ler uma posição depois do fim do array, usar memória já devolvida com <code>free</code>, somar além do maior <code>int</code>. O programa segue, mostra um número estranho (ou até o número certo, por sorte) e o erro fica escondido até o dia em que causa um estrago. Os <strong>sanitizers</strong> são fiscais que o compilador coloca <strong>dentro</strong> do seu programa: com uma opção a mais no <code>gcc</code>, cada acesso à memória e cada conta passam a ser conferidos, e o primeiro erro vira um relatório com o arquivo e a linha.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um sanitizer e por que ele acha erros que o compilador e o teste "rodou e deu certo" não acham.</li>
+  <li>A ligar o <strong>AddressSanitizer</strong> (<code>-fsanitize=address</code>) e ler o relatório de: estouro de array na pilha e no heap, uso depois do <code>free</code>, <code>free</code> duplo e vazamento de memória.</li>
+  <li>A ligar o <strong>UndefinedBehaviorSanitizer</strong> (<code>-fsanitize=undefined</code>) e ler os <code>runtime error</code> de estouro de <code>int</code> e de deslocamento de bits.</li>
+  <li>Por que compilar com <code>-g</code> junto, quanto o sanitizer custa e quando usar.</li>
+  <li>O que funciona (e o que não funciona) no editor do guia.</li>
+</ul>
+</div>
+
+<p>Todos os relatórios desta aula são reais, feitos com o <strong>gcc 15</strong> na máquina fictícia da Ana, na pasta <code>~/c/san</code>. Os sanitizers fazem parte do gcc e do Clang no Linux; não precisa instalar nada. <strong>No editor do guia eles não funcionam</strong> (o motivo e o que dá para fazer lá estão na seção 9): as caixas "Experimente" servem para consertar os erros que os relatórios encontraram.</p>
+
+<hr>
+
+<h2>A ideia: o fiscal dentro do programa</h2>
+<p>Pense numa lojinha sem câmeras: se alguém pega um produto da prateleira do vizinho, ninguém vê, e a falta só aparece no fim do mês, sem pista de quem foi. Agora coloque um fiscal ao lado de cada prateleira, anotando tudo: no primeiro produto pego do lugar errado, ele apita, diz <strong>qual prateleira</strong>, <strong>quem</strong> pegou e <strong>quando</strong> aquele produto chegou. A loja fica mais lenta (o fiscal confere tudo), mas o erro é pego na hora.</p>
+
+<p>O sanitizer é esse fiscal. Com <code>-fsanitize=…</code>, o compilador acrescenta uma conferência antes de cada leitura e escrita na memória (ou antes de cada conta), e o programa passa a ser ligado a uma biblioteca que guarda um mapa de qual memória pode ser usada. O nome vem do inglês <em>sanitize</em>, "higienizar": o programa sai "limpo" de erros que antes passavam calados.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sanitizer</th><th>Opção</th><th>Acha</th></tr>
+<tr><td><strong>AddressSanitizer</strong> (ASan, "fiscal de endereços")</td><td><code>-fsanitize=address</code></td><td>Estouro de array (pilha e heap), uso depois do <code>free</code>, <code>free</code> duplo, vazamentos (com o LeakSanitizer embutido).</td></tr>
+<tr><td><strong>UndefinedBehaviorSanitizer</strong> (UBSan, "fiscal de comportamento indefinido")</td><td><code>-fsanitize=undefined</code></td><td>Estouro de <code>int</code> com sinal, deslocamento de bits grande demais, divisão por zero, índice fora do array declarado, ponteiro nulo e outros <a href="comportamento-indefinido.html">comportamentos indefinidos</a>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Um erro que passa calado</h2>
+<p>A Ana quer somar as 5 notas de um aluno. Repare no <code>&lt;=</code> do <code>for</code>:</p>
+
+<pre class="file" data-file="notas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 10, 6, 9};
+    int soma = 0;
+    for (int i = 0; i &lt;= 5; i++) {
+        soma += notas[i];
+    }
+    printf("Soma: %d\n", soma);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g notas.c -o notas
+$ ./notas
+Soma: 40</pre>
+
+<p>Nenhum aviso, nenhum crash, e a soma está até certa (7 + 8 + 10 + 6 + 9 = 40). Mas o laço roda com <code>i</code> de 0 a <strong>5</strong>, e <code>notas[5]</code> não existe: o array vai de <code>notas[0]</code> a <code>notas[4]</code> (veja <a href="arrays.html">Arrays</a>). O programa leu a memória que vem logo depois do array, que por acaso valia 0. Em outro computador, com outro compilador ou depois de uma mudança qualquer no código, ali pode estar outro número, e a soma sai errada.</p>
+
+<hr>
+
+<h2>2. AddressSanitizer: <code>-fsanitize=address</code></h2>
+<p>Compile de novo, com uma opção a mais:</p>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address notas.c -o notas
+$ ./notas
+=================================================================
+==35068==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x6c184b3f0034 at pc 0x57c20fdee477 bp 0x7ffed26363e0 sp 0x7ffed26363d0
+READ of size 4 at 0x6c184b3f0034 thread T0
+    #0 0x57c20fdee476 in main /home/ana/c/san/notas.c:7
+    #1 0x70184d42a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #2 0x70184d42a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #3 0x57c20fdee184 in _start (/home/ana/c/san/notas+0x1184) (BuildId: 5215d4f164e32298b14ee4699a42560f9944ebbc)
+
+Address 0x6c184b3f0034 is located in stack of thread T0 at offset 52 in frame
+    #0 0x57c20fdee258 in main /home/ana/c/san/notas.c:3
+
+  This frame has 1 object(s):
+    [32, 52) 'notas' (line 4) &lt;== Memory access at offset 52 overflows this variable
+HINT: this may be a false positive if your program uses some custom stack unwind mechanism, swapcontext or vfork
+      (longjmp and C++ exceptions *are* supported)
+SUMMARY: AddressSanitizer: stack-buffer-overflow /home/ana/c/san/notas.c:7 in main
+Shadow bytes around the buggy address:
+  0x6c184b3efd80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+«… mais 30 linhas: o mapa da memória (shadow bytes) e a legenda dele …»
+==35068==ABORTING
+$ echo $?
+1</pre>
+
+<p>Assusta, mas só umas poucas linhas importam. Vamos ler de cima para baixo:</p>
+
+<dl class="anatomy">
+  <dt>==35068==ERROR: AddressSanitizer: stack-buffer-overflow</dt><dd>O tipo do erro. <code>35068</code> é o número do processo (o PID), que muda a cada execução. <em>stack-buffer-overflow</em> = "estouro de um buffer na pilha": um array local (as variáveis locais moram na <a href="pilha-heap.html">pilha</a>) foi acessado fora dos limites. Os números <code>0x…</code> da linha são endereços; não precisa deles.</dd>
+  <dt>READ of size 4</dt><dd>"<strong>Leitura</strong> de 4 bytes": o programa tentou <strong>ler</strong> um <code>int</code> (4 bytes). Se fosse <code>WRITE</code>, seria uma escrita, que é ainda mais perigosa.</dd>
+  <dt>#0 … in main /home/ana/c/san/notas.c:7</dt><dd>A <strong>pilha de chamadas</strong> do erro, como o <code>backtrace</code> do <a href="depuracao-gdb.html">gdb</a>. O <code>#0</code> é onde aconteceu: função <code>main</code>, arquivo <code>notas.c</code>, <strong>linha 7</strong> (<code>soma += notas[i];</code>). As linhas <code>#1</code> a <code>#3</code> são da biblioteca do C, que chamou o <code>main</code>: pode ignorar.</dd>
+  <dt>This frame has 1 object(s): [32, 52) 'notas' (line 4)</dt><dd>O ASan diz <strong>qual variável</strong> foi estourada: o array <code>notas</code>, declarado na linha 4, ocupa os bytes 32 a 51 (são 20 bytes: 5 <code>int</code> de 4 bytes). O <code>[32, 52)</code> quer dizer "do 32 até antes do 52".</dd>
+  <dt>&lt;== Memory access at offset 52 overflows this variable</dt><dd>"O acesso no byte 52 passa do fim desta variável": exatamente o primeiro byte depois de <code>notas[4]</code>, ou seja, <code>notas[5]</code>.</dd>
+  <dt>HINT: this may be a false positive…</dt><dd>Uma dica genérica ("pode ser alarme falso se o seu programa usa truques especiais com a pilha"). Não é o seu caso; pode ignorar.</dd>
+  <dt>SUMMARY: … notas.c:7 in main</dt><dd>O resumo em uma linha: tipo do erro, arquivo, linha e função. Se for ler só uma linha, leia esta.</dd>
+  <dt>Shadow bytes around the buggy address</dt><dd>O "mapa da sombra": como o ASan marca cada pedaço da memória (<code>00</code> = pode usar, <code>f1</code>/<code>f3</code> = zonas proibidas em volta do array). É útil para quem desenvolve o ASan; você pode pular.</dd>
+  <dt>==35068==ABORTING e o código 1</dt><dd>O ASan encerra o programa no <strong>primeiro</strong> erro, com código de saída 1. O <code>printf("Soma: …")</code> nem chegou a rodar.</dd>
+</dl>
+
+<p>Receita de leitura: <strong>procure a linha <code>ERROR:</code> (o tipo), a primeira linha <code>#0</code> que aponta para um arquivo seu (o lugar) e o <code>SUMMARY</code></strong>. O resto é detalhe.</p>
+
+<div class="tryc" data-goal="src:i\s*(&lt;\s*5|&lt;=\s*4)\b,out:Soma: 40,exit:0">
+<p class="try-task"><strong>Missão:</strong> corrija a condição do <code>for</code> para o laço passar só por <code>notas[0]</code> a <code>notas[4]</code>. Repare que, no editor, o programa com erro também mostra <code>Soma: 40</code>: o erro passa calado aqui também (o editor não tem sanitizers). Por isso esta missão confere o seu código, não só a saída.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 10, 6, 9};
+    int soma = 0;
+    for (int i = 0; i &lt;= 5; i++) {
+        soma += notas[i];
+    }
+    printf("Soma: %d\n", soma);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[5] = {7, 8, 10, 6, 9};
+    int soma = 0;
+    for (int i = 0; i &lt; 5; i++) {
+        soma += notas[i];
+    }
+    printf("Soma: %d\n", soma);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Estouro no heap: o <code>+ 1</code> esquecido</h2>
+<p>O erro mais clássico de string em C: reservar espaço para as letras e esquecer o <code>'\0'</code> do fim (veja <a href="strings-dinamicas.html">Strings Dinâmicas</a>):</p>
+
+<pre class="file" data-file="nome.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *texto = "Ana Maria";
+    char *copia = malloc(strlen(texto));
+    if (copia == NULL) {
+        return 1;
+    }
+    strcpy(copia, texto);
+    printf("%s\n", copia);
+    free(copia);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g nome.c -o nome
+$ ./nome
+Ana Maria
+$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address nome.c -o nome
+$ ./nome
+=================================================================
+==44079==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x74de027e0019 at pc 0x78be038bd2a9 bp 0x7ffd5aa52dd0 sp 0x7ffd5aa52588
+WRITE of size 10 at 0x74de027e0019 thread T0
+    #0 0x78be038bd2a8 in strcpy ../../../../src/libsanitizer/asan/asan_interceptors.cpp:575
+    #1 0x5ce8fbcbc298 in main /home/ana/c/san/nome.c:11
+    #2 0x78be0342a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #3 0x78be0342a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #4 0x5ce8fbcbc184 in _start (/home/ana/c/san/nome+0x1184) (BuildId: 875af048c2b69d7a2eaaab3145f97a83eb855f6b)
+
+0x74de027e0019 is located 0 bytes after 9-byte region [0x74de027e0010,0x74de027e0019)
+allocated by thread T0 here:
+    #0 0x78be0392b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x5ce8fbcbc273 in main /home/ana/c/san/nome.c:7
+    #2 0x78be0342a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #3 0x78be0342a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #4 0x5ce8fbcbc184 in _start (/home/ana/c/san/nome+0x1184) (BuildId: 875af048c2b69d7a2eaaab3145f97a83eb855f6b)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow /home/ana/c/san/nome.c:11 in main
+«… o mapa da memória …»</pre>
+
+<dl class="anatomy">
+  <dt>heap-buffer-overflow</dt><dd>"Estouro de buffer no heap": a memória estourada veio do <code>malloc</code> (que reserva no <a href="pilha-heap.html">heap</a>).</dd>
+  <dt>WRITE of size 10</dt><dd>Uma <strong>escrita</strong> de 10 bytes: "Ana Maria" tem 9 letras + o <code>'\0'</code>.</dd>
+  <dt>#0 … in strcpy …asan_interceptors.cpp / #1 … in main …nome.c:11</dt><dd>Quem escreveu foi o <code>strcpy</code> (o ASan troca o <code>strcpy</code> da biblioteca por uma versão que confere os tamanhos, um <em>interceptador</em>). A primeira linha com um arquivo seu é a <code>#1</code>: <code>nome.c</code>, linha 11.</dd>
+  <dt>located 0 bytes after 9-byte region</dt><dd>"Fica 0 bytes depois de uma região de 9 bytes": o bloco tinha 9 bytes, e a escrita passou do fim logo no primeiro byte a mais (o lugar do <code>'\0'</code>).</dd>
+  <dt>allocated by thread T0 here: … nome.c:7</dt><dd>E o ASan ainda diz <strong>onde o bloco foi reservado</strong>: linha 7, o <code>malloc(strlen(texto))</code>. Agora você sabe o erro: faltou o <code>+ 1</code>.</dd>
+</dl>
+
+<div class="tryc" data-goal="src:malloc\(\s*strlen\(texto\)\s*\+\s*1\s*\),out:Ana Maria,exit:0">
+<p class="try-task"><strong>Missão:</strong> conserte o <code>malloc</code> da linha 7 para reservar espaço também para o <code>'\0'</code>. Mais uma vez, no editor o programa com erro parece funcionar: só o sanitizer (no seu Linux) prova que está errado.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *texto = "Ana Maria";
+    char *copia = malloc(strlen(texto));
+    if (copia == NULL) {
+        return 1;
+    }
+    strcpy(copia, texto);
+    printf("%s\n", copia);
+    free(copia);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *texto = "Ana Maria";
+    char *copia = malloc(strlen(texto) + 1);
+    if (copia == NULL) {
+        return 1;
+    }
+    strcpy(copia, texto);
+    printf("%s\n", copia);
+    free(copia);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Usar a memória depois do <code>free</code></h2>
+<p>Depois do <code>free</code>, a memória volta para o sistema e pode ser entregue a outro <code>malloc</code>. O ponteiro, porém, continua guardando o endereço antigo (veja <a href="malloc-free.html">malloc e free</a>):</p>
+
+<pre class="file" data-file="depois.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *pontos = malloc(3 * sizeof *pontos);
+    if (pontos == NULL) {
+        return 1;
+    }
+    pontos[0] = 10;
+    free(pontos);
+    printf("Pontos: %d\n", pontos[0]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g depois.c -o depois
+depois.c: In function ‘main’:
+depois.c:11:5: warning: pointer ‘pontos’ used after ‘free’ [-Wuse-after-free]
+   11 |     printf("Pontos: %d\n", pontos[0]);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+depois.c:10:5: note: call to ‘free’ here
+   10 |     free(pontos);
+      |     ^~~~~~~~~~~~
+$ ./depois
+Pontos: -1245621546</pre>
+
+<p>Aqui o gcc 15 até avisou ("ponteiro <code>pontos</code> usado depois do <code>free</code>"), porque o <code>free</code> e o uso estão juntos, na mesma função. Em programas de verdade, o <code>free</code> costuma estar longe, em outra função ou outro arquivo, e o compilador não vê. O sanitizer vê sempre, porque confere enquanto o programa roda:</p>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address depois.c -o depois
+«… o mesmo aviso …»
+$ ./depois
+=================================================================
+==35681==ERROR: AddressSanitizer: heap-use-after-free on address 0x778cc45e0010 at pc 0x57e711ab92f8 bp 0x7ffccbd1d500 sp 0x7ffccbd1d4f0
+READ of size 4 at 0x778cc45e0010 thread T0
+    #0 0x57e711ab92f7 in main /home/ana/c/san/depois.c:11
+    #1 0x7b6cc522a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #2 0x7b6cc522a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #3 0x57e711ab9184 in _start (/home/ana/c/san/depois+0x1184) (BuildId: 4af4807020acc7da00f6d89bc7cdee8b4b8782d1)
+
+0x778cc45e0010 is located 0 bytes inside of 12-byte region [0x778cc45e0010,0x778cc45e001c)
+freed by thread T0 here:
+    #0 0x7b6cc572a3ff in free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:51
+    #1 0x57e711ab92c0 in main /home/ana/c/san/depois.c:10
+    #2 0x7b6cc522a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #3 0x7b6cc522a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #4 0x57e711ab9184 in _start (/home/ana/c/san/depois+0x1184) (BuildId: 4af4807020acc7da00f6d89bc7cdee8b4b8782d1)
+
+previously allocated by thread T0 here:
+    #0 0x7b6cc572b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x57e711ab925e in main /home/ana/c/san/depois.c:5
+    #2 0x7b6cc522a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #3 0x7b6cc522a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #4 0x57e711ab9184 in _start (/home/ana/c/san/depois+0x1184) (BuildId: 4af4807020acc7da00f6d89bc7cdee8b4b8782d1)
+
+SUMMARY: AddressSanitizer: heap-use-after-free /home/ana/c/san/depois.c:11 in main
+«… o mapa da memória …»</pre>
+
+<p>O relatório conta a história inteira em três pilhas: <strong>onde</strong> o programa leu a memória morta (linha 11, <code>READ of size 4</code>), <strong>onde</strong> ela foi liberada (<code>freed by thread T0 here</code>: linha 10) e <strong>onde</strong> tinha sido reservada (<code>previously allocated by thread T0 here</code>: linha 5). <em>heap-use-after-free</em> = "uso do heap depois do <code>free</code>". <code>12-byte region</code>: os 3 <code>int</code> do <code>malloc</code>. O "T0" é a <em>thread</em> 0, a única do programa (veja <a href="threads.html">Threads</a>).</p>
+
+<hr>
+
+<h2>5. <code>free</code> duas vezes</h2>
+<pre class="file" data-file="duplo.c">#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char *nome = malloc(20);
+    if (nome == NULL) {
+        return 1;
+    }
+    strcpy(nome, "Ana");
+    free(nome);
+    free(nome);
+    return 0;
+}
+</pre>
+
+<p>Este caso a própria biblioteca do C às vezes pega, sem sanitizer nenhum, mas só diz <strong>que</strong> aconteceu, não <strong>onde</strong>:</p>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g duplo.c -o duplo
+«… aviso -Wuse-after-free na linha 11 …»
+$ ./duplo
+free(): double free detected in tcache 2
+Abortado                   (imagem do núcleo gravada) ./duplo</pre>
+
+<p>"<code>free()</code>: liberação dupla detectada no tcache" (o <em>tcache</em> é uma parte interna do <code>malloc</code> da glibc) e o programa é abortado (código 134). Com o ASan, o relatório aponta a linha:</p>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address duplo.c -o duplo
+«… o mesmo aviso …»
+$ ./duplo
+=================================================================
+==35695==ERROR: AddressSanitizer: attempting double-free on 0x739b47fe0040 in thread T0:
+    #0 0x776b4912a3ff in free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:51
+    #1 0x5a32d7102263 in main /home/ana/c/san/duplo.c:11
+    #2 0x776b48c2a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #3 0x776b48c2a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #4 0x5a32d7102144 in _start (/home/ana/c/san/duplo+0x1144) (BuildId: 7b49ba4a8a560fd325ffba21141050c77842c3ff)
+
+0x739b47fe0040 is located 0 bytes inside of 20-byte region [0x739b47fe0040,0x739b47fe0054)
+freed by thread T0 here:
+    #0 0x776b4912a3ff in free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:51
+    #1 0x5a32d7102257 in main /home/ana/c/san/duplo.c:10
+«… e onde foi reservado: duplo.c:5 …»</pre>
+
+<p><em>attempting double-free</em> = "tentando liberar duas vezes": o segundo <code>free</code> é o da linha 11; o primeiro (<code>freed by thread T0 here</code>) foi o da linha 10. Um costume que evita o problema: depois do <code>free(p)</code>, faça <code>p = NULL;</code>. Um <code>free(NULL)</code> não faz nada, então um segundo <code>free</code> deixa de ser um erro.</p>
+
+<hr>
+
+<h2>6. Vazamentos: o LeakSanitizer</h2>
+<p>Um <strong>vazamento</strong> é memória reservada com <code>malloc</code> que nunca é devolvida com <code>free</code> (veja <a href="vazamentos.html">Vazamentos de Memória</a>). O ASan traz junto um terceiro fiscal, o <strong>LeakSanitizer</strong> ("fiscal de vazamentos"), que confere tudo quando o programa termina:</p>
+
+<pre class="file" data-file="vaza.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *copiar(const char *texto) {
+    char *copia = malloc(strlen(texto) + 1);
+    if (copia != NULL) {
+        strcpy(copia, texto);
+    }
+    return copia;
+}
+
+int main(void) {
+    char *item = copiar("arroz");
+    printf("Item: %s\n", item);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address vaza.c -o vaza
+$ ./vaza
+Item: arroz
+
+=================================================================
+==35718==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 6 byte(s) in 1 object(s) allocated from:
+    #0 0x73429b72b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x5a7e14f0e250 in copiar /home/ana/c/san/vaza.c:6
+    #2 0x5a7e14f0e28f in main /home/ana/c/san/vaza.c:14
+    #3 0x73429b22a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #4 0x73429b22a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #5 0x5a7e14f0e164 in _start (/home/ana/c/san/vaza+0x1164) (BuildId: 40dcf9e3fb0fd1920489b7d96f582f96583bd114)
+
+SUMMARY: AddressSanitizer: 6 byte(s) leaked in 1 allocation(s).
+$ echo $?
+1</pre>
+
+<dl class="anatomy">
+  <dt>Item: arroz</dt><dd>O programa rodou inteiro. O relatório só aparece <strong>no fim</strong>, quando o LeakSanitizer confere o que não foi devolvido.</dd>
+  <dt>Direct leak of 6 byte(s) in 1 object(s)</dt><dd>"Vazamento direto de 6 bytes em 1 bloco": <code>"arroz"</code> tem 5 letras + o <code>'\0'</code>. <em>Direto</em> quer dizer que nenhum ponteiro aponta mais para o bloco.</dd>
+  <dt>#1 in copiar …vaza.c:6 / #2 in main …vaza.c:14</dt><dd>Onde o bloco foi <strong>reservado</strong>: pelo <code>malloc</code> da linha 6, dentro de <code>copiar</code>, que foi chamada pela linha 14 do <code>main</code>. O conserto é um <code>free(item);</code> no <code>main</code>, quando o item não for mais usado.</dd>
+  <dt>código de saída 1</dt><dd>Mesmo com o programa tendo funcionado, o código de saída vira 1: um vazamento conta como erro.</dd>
+</dl>
+
+<hr>
+
+<h2>7. UndefinedBehaviorSanitizer: <code>-fsanitize=undefined</code></h2>
+<p>O segundo fiscal confere as <strong>contas</strong> e outras operações que o C deixa sem regra (o <a href="comportamento-indefinido.html">comportamento indefinido</a>). Dois exemplos clássicos: passar do maior <code>int</code> (veja <a href="inteiros.html">Inteiros</a>) e deslocar bits demais (veja <a href="operadores-bits.html">Operadores de Bits</a>):</p>
+
+<pre class="file" data-file="conta.c">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+
+int main(void) {
+    int visitas = INT_MAX;
+    visitas = visitas + 1;
+    printf("Visitas: %d\n", visitas);
+
+    int bits = 40;
+    unsigned int mascara = 1u &lt;&lt; bits;
+    printf("Máscara: %u\n", mascara);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g conta.c -o conta
+$ ./conta
+Visitas: -2147483648
+Máscara: 256
+$ gcc -std=c23 -Wall -Wextra -g -fsanitize=undefined conta.c -o conta
+$ ./conta
+conta.c:6:13: runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'
+Visitas: -2147483648
+conta.c:10:31: runtime error: shift exponent 40 is too large for 32-bit type 'unsigned int'
+Máscara: 256
+$ echo $?
+0</pre>
+
+<dl class="anatomy">
+  <dt>conta.c:6:13:</dt><dd>Arquivo, linha e coluna, no mesmo formato das mensagens do compilador. A coluna 13 é o <code>+</code> de <code>visitas + 1</code>.</dd>
+  <dt>runtime error:</dt><dd>"Erro em tempo de execução": foi achado enquanto o programa rodava, não na compilação.</dd>
+  <dt>signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'</dt><dd>"Estouro de inteiro com sinal: 2147483647 + 1 não cabe no tipo <code>int</code>". O resultado, <code>-2147483648</code>, foi a máquina "dando a volta", mas o C não promete isso: com otimização, o compilador pode fazer qualquer coisa.</dd>
+  <dt>shift exponent 40 is too large for 32-bit type 'unsigned int'</dt><dd>"O deslocamento de 40 é grande demais para um tipo de 32 bits". Deslocar um <code>unsigned int</code> por 32 ou mais é indefinido. O <code>256</code> que saiu é o que o processador da Ana faz (ele usa só os 5 bits de baixo de 40, que dão 8, e <code>1 &lt;&lt; 8</code> = 256); outro processador pode dar 0.</dd>
+  <dt>echo $? → 0</dt><dd>Diferente do ASan, o UBSan <strong>avisa e deixa o programa seguir</strong>: por isso os dois <code>printf</code> rodaram e o código de saída é 0.</dd>
+</dl>
+
+<p>Para o programa parar no primeiro erro do UBSan (útil em testes automáticos, que olham o código de saída), acrescente <code>-fno-sanitize-recover=undefined</code> ("não se recupere"):</p>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=undefined -fno-sanitize-recover=undefined conta.c -o conta
+$ ./conta
+conta.c:6:13: runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'
+$ echo $?
+1</pre>
+
+<hr>
+
+<h2>8. Os dois juntos, e o papel do <code>-g</code></h2>
+<p>O ASan e o UBSan combinam bem. Separe os nomes por vírgula:</p>
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address,undefined depois.c -o depois
+$ ./depois
+=================================================================
+==40823==ERROR: AddressSanitizer: heap-use-after-free on address 0x6d11d31e0010 at pc 0x5f0a08f9b368 bp 0x7ffc60270680 sp 0x7ffc60270670
+READ of size 4 at 0x6d11d31e0010 thread T0
+    #0 0x5f0a08f9b367 in main /home/ana/c/san/depois.c:11
+«… o resto do relatório …»</pre>
+
+<p>E o <code>-g</code>? Sem ele, o sanitizer ainda acha o erro, mas não sabe dizer a linha: só o nome da função e uma posição dentro do executável.</p>
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra notas.c -fsanitize=address -o notas-semg
+$ ./notas-semg
+=================================================================
+==36762==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x76a27e1f0034 at pc 0x5f5e2c7ff477 bp 0x7ffec2236c00 sp 0x7ffec2236bf0
+READ of size 4 at 0x76a27e1f0034 thread T0
+    #0 0x5f5e2c7ff476 in main (/home/ana/c/san/notas-semg+0x1476) (BuildId: c6b40295fd84665b28944a56e02ba72824e1cc60)
+«… o resto, também sem linhas …»</pre>
+<p>Em vez de <code>notas.c:7</code>, apareceu <code>(notas-semg+0x1476)</code>: "o byte 0x1476 do executável", que não ajuda ninguém. <strong>Sanitizer sempre com <code>-g</code>.</strong></p>
+
+<hr>
+
+<h2>9. O custo, e o editor do guia</h2>
+<p>O fiscal confere tudo, e isso custa. Um programa que soma um milhão de números 200 vezes, com e sem sanitizers:</p>
+
+<pre class="file" data-file="pesado.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int n = 1000000;
+    int *v = malloc(n * sizeof *v);
+    if (v == NULL) {
+        return 1;
+    }
+    long long soma = 0;
+    for (int volta = 0; volta &lt; 200; volta++) {
+        for (int i = 0; i &lt; n; i++) {
+            v[i] = i % 7;
+            soma += v[i];
+        }
+    }
+    printf("Soma: %lld\n", soma);
+    free(v);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g pesado.c -o pesado
+$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address,undefined pesado.c -o pesado-san
+$ time ./pesado
+Soma: 599999400
+
+real	0m1,081s
+user	0m1,077s
+sys	0m0,004s
+$ time ./pesado-san
+Soma: 599999400
+
+real	0m2,558s
+user	0m2,549s
+sys	0m0,009s
+$ ls -l pesado pesado-san
+-rwxrwxr-x 1 ana ana 17632 out 17 10:35 pesado
+-rwxrwxr-x 1 ana ana 28472 out 17 10:35 pesado-san</pre>
+
+<p>Mais de duas vezes mais lento e com um executável maior (e, enquanto roda, o ASan usa bem mais memória, para o mapa da sombra). Em geral, o ASan deixa o programa umas 2 vezes mais lento; o UBSan, menos. É um preço ótimo <strong>enquanto você desenvolve e testa</strong>, e um preço ruim para o programa que vai para os usuários. Por isso a regra é: <strong>sanitizers no desenvolvimento e nos testes; a versão final sem eles</strong> (veja <a href="cmake.html">CMake</a> e <a href="make.html">Makefile</a> para ter as duas versões).</p>
+
+<h3>No editor do guia</h3>
+<p>O editor roda o seu programa em WebAssembly, e as bibliotecas dos sanitizers não existem lá. Pedir <code>-fsanitize=address</code> num <code>data-flags</code> dá erro na hora de ligar:</p>
+<pre class="term" data-title="Editor do guia">wasm-ld: error: /tmp/notas-62bf3f.o: undefined symbol: __asan_option_detect_stack_use_after_return
+wasm-ld: error: /tmp/notas-62bf3f.o: undefined symbol: __asan_stack_malloc_1
+«… mais linhas iguais …»
+clang: error: linker command failed with exit code 1 (use -v to see invocation)</pre>
+
+<p>Mas há um modo do UBSan que funciona no editor: o <strong>modo armadilha</strong>, <code>-fsanitize=undefined -fsanitize-trap=undefined</code>. Nele não existe relatório: o fiscal só <strong>para o programa</strong> no primeiro erro. No editor, a parada aparece como <code>Falha de segmentação</code> (139). No Linux, como <code>Instrução ilegal</code>:</p>
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=undefined -fsanitize-trap=undefined conta.c -o conta-trap
+$ ./conta-trap
+Instrução ilegal         (imagem do núcleo gravada) ./conta-trap
+$ echo $?
+132</pre>
+
+<div class="tryc" data-flags="-std=c23 -Wall -Wextra -fsanitize=undefined -fsanitize-trap=undefined" data-goal="out:Visitas: 2147483648,out:Máscara: 1099511627776,exit:0">
+<p class="try-task"><strong>Missão:</strong> esta caixa compila com o UBSan em modo armadilha. Rode e veja o programa parar logo no primeiro erro. Depois conserte os dois erros que o relatório da seção 7 apontou: use <code>long long</code> para <code>visitas</code> (com <code>%lld</code> no <code>printf</code>) e <code>unsigned long long</code> para <code>mascara</code>, com <code>1ull &lt;&lt; bits</code> e <code>%llu</code> (veja <a href="inteiros.html">Inteiros</a>). A saída deve ser <code>Visitas: 2147483648</code> e <code>Máscara: 1099511627776</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+
+int main(void) {
+    int visitas = INT_MAX;
+    visitas = visitas + 1;
+    printf("Visitas: %d\n", visitas);
+
+    int bits = 40;
+    unsigned int mascara = 1u &lt;&lt; bits;
+    printf("Máscara: %u\n", mascara);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+
+int main(void) {
+    long long visitas = INT_MAX;
+    visitas = visitas + 1;
+    printf("Visitas: %lld\n", visitas);
+
+    int bits = 40;
+    unsigned long long mascara = 1ull &lt;&lt; bits;
+    printf("Máscara: %llu\n", mascara);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Como usa</th><th>Pontos fortes</th><th>Limites</th></tr>
+<tr><td><code>-Wall -Wextra</code></td><td>Sempre, na compilação.</td><td>De graça; acha erros antes de rodar.</td><td>Só vê o que está à vista no código (como o <code>-Wuse-after-free</code> na mesma função).</td></tr>
+<tr><td><code>-fsanitize=address</code></td><td>Recompila tudo com a opção.</td><td>Rápido (umas 2 vezes mais lento); pega estouros na pilha e no heap; diz onde a memória foi reservada e liberada; vazamentos.</td><td>Precisa recompilar; não pega variável sem valor inicial.</td></tr>
+<tr><td><code>-fsanitize=undefined</code></td><td>Recompila tudo com a opção.</td><td>Pega contas e deslocamentos inválidos; quase não pesa.</td><td>Por padrão avisa e segue.</td></tr>
+<tr><td><a href="valgrind.html">Valgrind</a></td><td><code>valgrind ./programa</code>, sem recompilar.</td><td>Pega uso de variável sem valor inicial; funciona com qualquer executável.</td><td>Muito mais lento (10 a 50 vezes); não pega estouro de array na pilha.</td></tr>
+<tr><td><a href="depuracao-gdb.html">gdb</a></td><td><code>gdb ./programa</code>.</td><td>Anda linha a linha e mostra variáveis.</td><td>Não acha erros sozinho: você precisa saber onde olhar.</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar:</strong> durante o desenvolvimento, compile com <code>-g -fsanitize=address,undefined</code> e rode os seus <a href="testes.html">testes</a>. Quando aparecer um erro estranho que o ASan não explica (um valor aleatório que muda a cada execução), tente o Valgrind, que pega variáveis sem valor inicial. O Clang tem ainda outros fiscais: <code>-fsanitize=memory</code> (variáveis sem valor inicial, só no Clang) e <code>-fsanitize=thread</code> (erros entre <a href="threads.html">threads</a>; não combina com o <code>address</code>).</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Compilou com <code>-fsanitize</code> em partes e o ligador reclamou</strong>
+<pre class="term" data-cwd="~/c/san">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address -c notas.c -o notas.o
+$ gcc notas.o -o notas2
+/usr/bin/x86_64-linux-gnu-ld.bfd: notas.o: aviso: relocalização contra "__asan_option_detect_stack_use_after_return" em secção só de leitura ".text"
+/usr/bin/x86_64-linux-gnu-ld.bfd: notas.o: na função "main":
+/home/ana/c/san/notas.c:3:(.text+0x20): referência não definida para "__asan_option_detect_stack_use_after_return"
+/usr/bin/x86_64-linux-gnu-ld.bfd: /home/ana/c/san/notas.c:3:(.text+0x2d): referência não definida para "__asan_stack_malloc_1"
+«… várias outras referências a __asan_ …»
+collect2: error: ld returned 1 exit status</pre>
+<p><strong>O que aconteceu:</strong> o <code>notas.o</code> foi compilado com o fiscal, mas a ligação (a linha sem <code>-c</code>) foi feita sem <code>-fsanitize=address</code>, então a biblioteca do ASan não entrou. "Referência não definida" é o <code>undefined reference to</code> do ligador em inglês (veja <a href="multiplos-arquivos.html">Vários Arquivos</a>).</p>
+<p><strong>Como resolver:</strong> passe o mesmo <code>-fsanitize=…</code> em <strong>todas</strong> as etapas: na compilação de cada <code>.c</code> e na ligação.</p>
+</div>
+
+<div class="cenario">
+<strong><code>gcc: error: unrecognized argument to ‘-fsanitize=’ option: ‘adress’; did you mean ‘address’?</code></strong>
+<p><strong>O que aconteceu:</strong> erro de digitação no nome do sanitizer ("argumento não reconhecido; você quis dizer <code>address</code>?").</p>
+<p><strong>Como resolver:</strong> <code>address</code> tem dois <strong>d</strong> e dois <strong>s</strong>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>cc1: error: ‘-fsanitize=thread’ is incompatible with ‘-fsanitize=address’</code></strong>
+<p><strong>O que aconteceu:</strong> o ASan e o TSan usam a memória de jeitos que não combinam ("é incompatível").</p>
+<p><strong>Como resolver:</strong> compile duas versões e teste uma de cada vez.</p>
+</div>
+
+<div class="cenario">
+<strong>Rodou no Valgrind um programa compilado com ASan</strong>
+<pre class="term" data-cwd="~/c/san">$ valgrind ./notas
+==46557== Memcheck, a memory error detector
+«…»
+==46557==ASan runtime does not come first in initial library list; you should either link runtime to your application or manually preload it with LD_PRELOAD.
+«… e um relatório vazio: ERROR SUMMARY: 0 errors …»</pre>
+<p><strong>O que aconteceu:</strong> os dois fiscais querem controlar a memória ao mesmo tempo. O programa nem rodou de verdade.</p>
+<p><strong>Como resolver:</strong> para o Valgrind, compile <strong>sem</strong> <code>-fsanitize</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O relatório não tem linhas, só <code>(programa+0x1476)</code></strong>
+<p><strong>O que aconteceu:</strong> faltou o <code>-g</code>.</p>
+<p><strong>Como resolver:</strong> recompile com <code>-g -fsanitize=…</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>cannot specify -static with -fsanitize=address</code></strong>
+<p><strong>O que aconteceu:</strong> o ASan precisa da sua biblioteca carregada à parte e não funciona em executáveis estáticos ("não dá para pedir <code>-static</code> com <code>-fsanitize=address</code>").</p>
+<p><strong>Como resolver:</strong> tire o <code>-static</code> da versão de teste (veja <a href="bibliotecas.html">Bibliotecas</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção ou mensagem</th><th>O que é</th></tr>
+<tr><td><code>-fsanitize=address</code></td><td>Liga o ASan (e o LeakSanitizer).</td></tr>
+<tr><td><code>-fsanitize=undefined</code></td><td>Liga o UBSan.</td></tr>
+<tr><td><code>-fsanitize=address,undefined</code></td><td>Os dois juntos (o mais comum).</td></tr>
+<tr><td><code>-fno-sanitize-recover=undefined</code></td><td>O UBSan para o programa no primeiro erro (código 1).</td></tr>
+<tr><td><code>-fsanitize-trap=undefined</code></td><td>Modo armadilha: para sem relatório; funciona no editor.</td></tr>
+<tr><td><code>-g</code></td><td>Necessário para o relatório ter arquivo e linha.</td></tr>
+<tr><td><code>stack-buffer-overflow</code></td><td>Array local acessado fora dos limites.</td></tr>
+<tr><td><code>heap-buffer-overflow</code></td><td>Bloco do <code>malloc</code> acessado fora dos limites.</td></tr>
+<tr><td><code>global-buffer-overflow</code></td><td>Array global acessado fora dos limites.</td></tr>
+<tr><td><code>heap-use-after-free</code></td><td>Memória usada depois do <code>free</code>.</td></tr>
+<tr><td><code>attempting double-free</code></td><td><code>free</code> duas vezes no mesmo bloco.</td></tr>
+<tr><td><code>LeakSanitizer: detected memory leaks</code></td><td>Vazamento: <code>malloc</code> sem <code>free</code>.</td></tr>
+<tr><td><code>READ of size N</code> / <code>WRITE of size N</code></td><td>Leitura / escrita de N bytes.</td></tr>
+<tr><td><code>runtime error: signed integer overflow</code></td><td>Estouro de inteiro com sinal.</td></tr>
+<tr><td><code>runtime error: shift exponent … is too large</code></td><td>Deslocamento de bits grande demais.</td></tr>
+<tr><td><code>runtime error: division by zero</code></td><td>Divisão inteira por zero.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Ligar o fiscal de endereços</h3>
+<p>Complete a opção que liga o AddressSanitizer:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra -g <input data-answer="-fsanitize=address" aria-label="opção"> prog.c -o prog</div>
+</div>
+
+<div class="exercise">
+<h3>2. Os dois juntos</h3>
+<p>Complete para ligar o ASan e o UBSan numa opção só:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra -g -fsanitize=<input data-answer="address,undefined|undefined,address" aria-label="sanitizers"> prog.c -o prog</div>
+</div>
+
+<div class="exercise">
+<h3>3. Sem linhas</h3>
+<p>O relatório mostra <code>in main (/home/ana/c/prog+0x11a9)</code> em vez de <code>prog.c:12</code>. Qual opção faltou na compilação?</p>
+<div class="ex-code"><input data-answer="-g" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O relatório diz <code>heap-use-after-free</code>. O que o programa fez?</p>
+<label><input type="radio" name="q4"> Passou do fim de um array local.</label>
+<label><input type="radio" name="q4"> Esqueceu um <code>free</code>.</label>
+<label><input type="radio" name="q4"> Usou memória do <code>malloc</code> depois de devolvê-la com <code>free</code>.</label>
+<label><input type="radio" name="q4"> Somou além do maior <code>int</code>.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Num relatório do ASan, qual linha diz <strong>onde</strong> no seu código está o erro?</p>
+<label><input type="radio" name="q5"> A linha <code>Shadow bytes around the buggy address</code>.</label>
+<label><input type="radio" name="q5"> A primeira linha <code>#N … in função arquivo.c:linha</code> com um arquivo seu (e o <code>SUMMARY</code>).</label>
+<label><input type="radio" name="q5"> A linha <code>HINT</code>.</label>
+<label><input type="radio" name="q5"> O número entre <code>==</code>, como <code>==35068==</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Por que não deixar <code>-fsanitize=address</code> ligado na versão que vai para os usuários?</p>
+<label><input type="radio" name="q6"> Porque ele não funciona fora do gdb.</label>
+<label><input type="radio" name="q6"> Porque ele apaga os avisos do compilador.</label>
+<label><input type="radio" name="q6"> Porque ele só funciona no editor do guia.</label>
+<label><input type="radio" name="q6"> Porque deixa o programa mais lento e usa mais memória; é uma ferramenta de teste.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Muitos erros de memória em C não derrubam o programa: o resultado pode até parecer certo. Os sanitizers colocam um fiscal dentro do programa, que para (ou avisa) no primeiro erro.</li>
+  <li><code>-fsanitize=address</code> (ASan): estouro de array na pilha e no heap, uso depois do <code>free</code>, <code>free</code> duplo e, no fim, vazamentos. Ele aborta no primeiro erro, com código 1.</li>
+  <li><code>-fsanitize=undefined</code> (UBSan): estouro de <code>int</code>, deslocamento grande demais, divisão por zero… Ele avisa com <code>runtime error</code> e segue (a não ser com <code>-fno-sanitize-recover=undefined</code>).</li>
+  <li>Para ler o relatório: o tipo na linha <code>ERROR</code>, a primeira linha <code>#N</code> com um arquivo seu e o <code>SUMMARY</code>. Compile sempre com <code>-g</code>.</li>
+  <li>Custa velocidade e memória: use no desenvolvimento e nos testes, não na versão final. Passe a opção em todas as etapas (compilação e ligação).</li>
+  <li>No editor do guia, só o modo armadilha do UBSan funciona; o resto, no seu Linux.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
