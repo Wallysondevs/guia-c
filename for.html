@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C for — repetir um número conhecido de vezes | Guia C</title>
+<meta name="description" content="O laço for em C para quem nunca programou: as três partes (início; condição; passo), for (int i = 0; …) do C99 e o jeito antigo, contar para trás, de 2 em 2, somatório, tabuada e o erro do &quot;um a mais&quot; com &lt;=, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">for</span></h1>
+
+<p class="intro">Na aula do <a href="while.html">while</a>, todo laço com contador tinha três peças espalhadas: o <strong>início</strong> antes do laço (<code>int i = 1;</code>), a <strong>condição</strong> nos parênteses (<code>i &lt;= 5</code>) e o <strong>passo</strong> no fim do corpo (<code>i++</code>). O <code>for</code> ("para") junta as três numa linha só. É o laço mais usado em C quando você <strong>sabe quantas voltas</strong> quer: de 1 a 10, cada aluno da turma, cada posição de um array.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As <strong>três partes</strong> do <code>for</code> e a ordem em que elas rodam.</li>
+  <li>Por que <code>for (int i = 0; …)</code> é coisa do C99 e como era escrito antes.</li>
+  <li>Como contar para trás, de 2 em 2 e com qualquer passo.</li>
+  <li>Como fazer um <strong>somatório</strong> e uma <strong>tabuada</strong>.</li>
+  <li>O erro mais comum de todos os laços: o <strong>"um a mais"</strong> do <code>&lt;=</code>.</li>
+  <li>Outros erros com as mensagens reais do gcc.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15</strong> na máquina fictícia da Ana, na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: "dê 10 voltas na quadra"</h2>
+<p>Um professor de educação física diz: "deem 10 voltas na quadra". Cada aluno faz, sem pensar, três coisas:</p>
+<ol class="passo">
+  <li><strong>Começa a contar</strong> do 1 (isso acontece uma vez só, antes da primeira volta).</li>
+  <li>Antes de cada volta, <strong>confere</strong>: já passei de 10? Se não, corre mais uma.</li>
+  <li>No fim de cada volta, <strong>soma um</strong> na contagem.</li>
+</ol>
+<p>O <code>for</code> escreve exatamente isso, nessa ordem, entre os parênteses: <code>for (começa; confere; soma)</code>. Olhando só a primeira linha, você já sabe quantas voltas o laço vai dar.</p>
+
+<hr>
+
+<h2>1. O primeiro <code>for</code></h2>
+
+<pre class="file" data-file="for1.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 1; i &lt;= 5; i++) {
+        printf("Volta %d\n", i);
+    }
+    printf("Fim!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra for1.c -o for1
+$ ./for1
+Volta 1
+Volta 2
+Volta 3
+Volta 4
+Volta 5
+Fim!</pre>
+
+<dl class="anatomy">
+  <dt>for</dt><dd>A palavra-chave do laço: "para" (para <code>i</code> de 1 até 5…).</dd>
+  <dt>int i = 1;</dt><dd><strong>1ª parte, o início.</strong> Roda <strong>uma vez só</strong>, antes de tudo. Aqui cria o contador <code>i</code> valendo 1.</dd>
+  <dt>i &lt;= 5;</dt><dd><strong>2ª parte, a condição.</strong> Testada <strong>antes de cada volta</strong>, como no <code>while</code>. Se for falsa, o laço termina.</dd>
+  <dt>i++</dt><dd><strong>3ª parte, o passo.</strong> Roda <strong>no fim de cada volta</strong>, depois do corpo. Repare que <strong>não</strong> tem <code>;</code> depois dele.</dd>
+  <dt>{ … }</dt><dd>O corpo, como em qualquer laço.</dd>
+</dl>
+
+<h3>A ordem exata</h3>
+<p>As partes estão escritas lado a lado, mas <strong>não</strong> rodam da esquerda para a direita a cada volta. A ordem é esta:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Passo</th><th>O que roda</th><th><code>i</code></th></tr>
+<tr><td>1</td><td><code>int i = 1</code> (início, só desta vez)</td><td>1</td></tr>
+<tr><td>2</td><td><code>i &lt;= 5</code>? sim → corpo: <code>Volta 1</code> → passo <code>i++</code></td><td>2</td></tr>
+<tr><td>3</td><td><code>i &lt;= 5</code>? sim → corpo: <code>Volta 2</code> → passo <code>i++</code></td><td>3</td></tr>
+<tr><td>…</td><td>…</td><td>…</td></tr>
+<tr><td>6</td><td><code>i &lt;= 5</code>? sim → corpo: <code>Volta 5</code> → passo <code>i++</code></td><td>6</td></tr>
+<tr><td>7</td><td><code>i &lt;= 5</code>? <strong>não</strong> → sai do laço</td><td>6</td></tr>
+</table>
+</div>
+
+<p>Este <code>for</code> faz <strong>exatamente</strong> o mesmo que este <code>while</code> da aula anterior:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th><code>while</code></th><th><code>for</code></th></tr>
+<tr><td><pre class="file">int i = 1;
+while (i &lt;= 5) {
+    printf("Volta %d\n", i);
+    i++;
+}</pre></td><td><pre class="file">for (int i = 1; i &lt;= 5; i++) {
+    printf("Volta %d\n", i);
+}</pre></td></tr>
+</table>
+</div>
+
+<p>A vantagem do <code>for</code>: as três peças ficam juntas no topo, então fica mais difícil esquecer o passo (o laço infinito do <code>while</code>) e mais fácil ver quantas voltas serão.</p>
+
+<hr>
+
+<h2>2. <code>for (int i = …)</code> é C99; antes, a variável vinha fora <span class="versao">C99</span></h2>
+<p>Criar o contador <strong>dentro</strong> dos parênteses (<code>for (int i = 1; …)</code>) só passou a valer no <strong>C99</strong>. Muito código antigo, e muitos livros e cursos, ainda escrevem do jeito do C89: a variável é declarada antes do <code>for</code>, e os parênteses só dão o valor inicial:</p>
+
+<pre class="file" data-file="for_antigo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i;
+    for (i = 1; i &lt;= 5; i++) {
+        printf("Volta %d\n", i);
+    }
+    printf("Fim! i agora vale %d\n", i);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c89 -Wall -Wextra for_antigo.c -o for_antigo
+$ ./for_antigo
+Volta 1
+Volta 2
+Volta 3
+Volta 4
+Volta 5
+Fim! i agora vale 6</pre>
+
+<p>Se você pedir o padrão antigo (<code>-std=c89</code>) e usar a forma nova, o gcc recusa:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c89 -Wall -Wextra for1.c -o for1
+for1.c: In function ‘main’:
+for1.c:4:5: error: ‘for’ loop initial declarations are only allowed in C99 or C11 mode
+    4 |     for (int i = 1; i &lt;= 5; i++) {
+      |     ^~~
+for1.c:4:5: note: use option ‘-std=c99’, ‘-std=gnu99’, ‘-std=c11’ or ‘-std=gnu11’ to compile your code</pre>
+
+<p>"Declarações no início do laço <code>for</code> só são permitidas no modo C99 ou C11". A mensagem é antiga e cita só o C99 e o C11, mas vale para todos os padrões depois deles (C17, C23). Com o comando padrão do guia (<code>-std=c23</code>) e no editor, a forma nova funciona.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>for (int i = 1; …)</code> <span class="versao">C99</span></th><th><code>int i; for (i = 1; …)</code> (C89)</th></tr>
+<tr><td>Onde <code>i</code> existe</td><td><strong>Só dentro</strong> do <code>for</code></td><td>No resto da função, também depois do laço</td></tr>
+<tr><td>Depois do laço</td><td><code>i</code> não existe mais (erro se usar)</td><td><code>i</code> guarda o valor que parou o laço (6)</td></tr>
+<tr><td>Quando usar</td><td><strong>Quase sempre</strong>: o contador não "vaza" para o resto do programa</td><td>Quando precisa saber, depois, em que valor o laço parou</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. Contar para trás e mudar o passo</h2>
+<p>As três partes aceitam qualquer coisa que faça sentido. Para contar para trás: comece do maior, teste "maior ou igual" e use <code>--</code>:</p>
+
+<pre class="file" data-file="regressiva_for.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int s = 10; s &gt;= 1; s--) {
+        printf("%d ", s);
+    }
+    printf("Feliz Ano Novo!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra regressiva_for.c -o regressiva_for
+$ ./regressiva_for
+10 9 8 7 6 5 4 3 2 1 Feliz Ano Novo!</pre>
+
+<p>Para andar de 2 em 2, troque o passo por <code>n += 2</code> (veja <a href="operadores-atribuicao.html">Operadores de Atribuição</a>). Começando do 0, saem os números pares:</p>
+
+<pre class="file" data-file="pares.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int n = 0; n &lt;= 20; n += 2) {
+        printf("%d ", n);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pares.c -o pares
+$ ./pares
+0 2 4 6 8 10 12 14 16 18 20 </pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero…</th><th>Escrevo</th><th>Resultado</th></tr>
+<tr><td>De 1 a 10</td><td><code>for (int i = 1; i &lt;= 10; i++)</code></td><td>1 2 3 … 10</td></tr>
+<tr><td>De 0 a 9 (10 voltas)</td><td><code>for (int i = 0; i &lt; 10; i++)</code></td><td>0 1 2 … 9</td></tr>
+<tr><td>De 10 a 1</td><td><code>for (int i = 10; i &gt;= 1; i--)</code></td><td>10 9 … 1</td></tr>
+<tr><td>Pares de 0 a 20</td><td><code>for (int i = 0; i &lt;= 20; i += 2)</code></td><td>0 2 4 … 20</td></tr>
+<tr><td>Ímpares de 1 a 19</td><td><code>for (int i = 1; i &lt; 20; i += 2)</code></td><td>1 3 5 … 19</td></tr>
+<tr><td>Dobrando</td><td><code>for (int i = 1; i &lt; 1000; i *= 2)</code></td><td>1 2 4 … 512</td></tr>
+</table>
+</div>
+
+<div class="tryc" data-goal="outre:^5 10 15 20 25 30 35 40 45 50 \n$,src:for\s*\(">
+<p class="try-task"><strong>Missão:</strong> mude o <code>for</code> para mostrar os múltiplos de 5, de <strong>5 a 50</strong>: <code>5 10 15 … 50</code>. Você vai mexer no início, na condição e no passo.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int n = 0; n &lt;= 20; n += 2) {
+        printf("%d ", n);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int n = 5; n &lt;= 50; n += 5) {
+        printf("%d ", n);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Somatório: o <code>for</code> com acumulador</h2>
+<p>A técnica do acumulador do <a href="while.html">while</a> fica ainda mais curta com <code>for</code>. Agora quem escolhe até onde somar é a pessoa, com <code>scanf</code>:</p>
+
+<pre class="file" data-file="somatorio.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 0;
+    printf("Somar de 1 até: ");
+    if (scanf("%d", &amp;n) != 1) {
+        printf("Isso não é um número.\n");
+        return 1;
+    }
+
+    int soma = 0;
+    for (int i = 1; i &lt;= n; i++) {
+        soma += i;
+    }
+    printf("1 + 2 + ... + %d = %d\n", n, soma);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra somatorio.c -o somatorio
+$ ./somatorio
+Somar de 1 até: 100
+1 + 2 + ... + 100 = 5050
+$ ./somatorio
+Somar de 1 até: 0
+1 + 2 + ... + 0 = 0</pre>
+
+<dl class="anatomy">
+  <dt>int soma = 0;</dt><dd>O acumulador nasce <strong>fora</strong> do <code>for</code>, valendo 0, para sobreviver entre as voltas e ser mostrado depois.</dd>
+  <dt>i &lt;= n</dt><dd>A condição usa uma variável: o número de voltas é decidido quando o programa roda.</dd>
+  <dt>soma += i;</dt><dd>A cada volta, o contador entra no total.</dd>
+</dl>
+
+<p>Com <code>0</code>, a condição <code>1 &lt;= 0</code> já começa falsa: o <code>for</code>, como o <code>while</code>, pode dar <strong>zero voltas</strong>.</p>
+
+<h3>Tabuada</h3>
+<p>O contador também pode entrar numa conta dentro do corpo. A tabuada do 7:</p>
+
+<pre class="file" data-file="tabuada.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int numero = 7;
+    for (int i = 1; i &lt;= 10; i++) {
+        printf("%d x %2d = %2d\n", numero, i, numero * i);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tabuada.c -o tabuada
+$ ./tabuada
+7 x  1 =  7
+7 x  2 = 14
+7 x  3 = 21
+7 x  4 = 28
+7 x  5 = 35
+7 x  6 = 42
+7 x  7 = 49
+7 x  8 = 56
+7 x  9 = 63
+7 x 10 = 70</pre>
+
+<p>O <code>%2d</code> reserva 2 espaços para o número, alinhando a coluna (veja <a href="formatos-printf.html">Formatos do printf</a>). Para mostrar a tabuada do 1 ao 10 inteira, você precisa de um <code>for</code> dentro de outro: isso é a aula <a href="lacos-aninhados.html">Laços Aninhados</a>.</p>
+
+<hr>
+
+<h2 id="umamais">5. O erro do "um a mais"</h2>
+<p>É o erro de laço mais comum do mundo, e tem até nome em inglês: <em>off-by-one</em> ("errar por um"). A Ana quer mostrar as 5 voltas de uma corrida. Ela começou do 0, como muita gente faz em C, mas manteve o <code>&lt;=</code>:</p>
+
+<pre class="file" data-file="umamais.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("As 5 voltas da corrida:\n");
+    for (int volta = 0; volta &lt;= 5; volta++) {
+        printf("Volta %d\n", volta);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra umamais.c -o umamais
+$ ./umamais
+As 5 voltas da corrida:
+Volta 0
+Volta 1
+Volta 2
+Volta 3
+Volta 4
+Volta 5</pre>
+
+<p><strong>Seis</strong> voltas! De 0 até 5 há seis números. O compilador não avisa: para ele, o programa está certo. As duas formas corretas de dar <strong>N voltas</strong> são:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Valores</th><th>Quando usar</th></tr>
+<tr><td><code>for (int i = 1; i &lt;= N; i++)</code></td><td>1, 2, …, N</td><td>Para mostrar números "humanos" (volta 1, aluno 1)</td></tr>
+<tr><td><code>for (int i = 0; i &lt; N; i++)</code></td><td>0, 1, …, N-1</td><td>Para percorrer <a href="arrays.html">arrays</a>, cujas posições começam em 0. É a forma mais comum em C.</td></tr>
+</table>
+</div>
+
+<p>A regra para lembrar: <strong>começou do 0, use <code>&lt;</code>; começou do 1, use <code>&lt;=</code></strong>. Misturar (0 com <code>&lt;=</code>, ou 1 com <code>&lt;</code>) dá uma volta a mais ou a menos. Nos arrays, a volta a mais é perigosa de verdade: ela acessa uma posição que não existe (veja a aula <a href="arrays.html">Arrays</a>).</p>
+
+<div class="tryc" data-goal="outre:^As 5 voltas da corrida:\nVolta 1\nVolta 2\nVolta 3\nVolta 4\nVolta 5\n$">
+<p class="try-task"><strong>Missão:</strong> conserte o laço para mostrar exatamente <code>Volta 1</code> até <code>Volta 5</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("As 5 voltas da corrida:\n");
+    for (int volta = 0; volta &lt;= 5; volta++) {
+        printf("Volta %d\n", volta);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("As 5 voltas da corrida:\n");
+    for (int volta = 1; volta &lt;= 5; volta++) {
+        printf("Volta %d\n", volta);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de escrever</h2>
+
+<h3>Duas variáveis com a vírgula</h3>
+<p>O início e o passo aceitam várias coisas separadas por vírgula. Aqui <code>i</code> sobe e <code>j</code> desce ao mesmo tempo, até se cruzarem:</p>
+
+<pre class="file" data-file="virgula.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 1, j = 10; i &lt; j; i++, j--) {
+        printf("i = %d, j = %d\n", i, j);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra virgula.c -o virgula
+$ ./virgula
+i = 1, j = 10
+i = 2, j = 9
+i = 3, j = 8
+i = 4, j = 7
+i = 5, j = 6</pre>
+
+<p>É útil de vez em quando (inverter a ordem de um array, por exemplo). Não abuse: se o <code>for</code> não cabe numa linha legível, um <code>while</code> costuma ser mais claro.</p>
+
+<h3>Partes vazias e o <code>for (;;)</code></h3>
+<p>Qualquer uma das três partes pode ficar vazia, mas os dois <code>;</code> continuam lá. Sem início, a variável vem de antes (<code>for (; i &lt;= 5; i++)</code>). Sem condição, ela conta como sempre verdadeira: <code>for (;;)</code> é um laço infinito, igual a <code>while (1)</code>. Ele só sai com <code>break</code> (aula <a href="break-continue.html">break e continue</a>), <kbd>Ctrl</kbd>+<kbd>C</kbd> no terminal ou <strong>■ Parar</strong> no editor.</p>
+
+<h3><code>i++</code> ou <code>++i</code> no passo?</h3>
+<p>No passo do <code>for</code>, tanto faz: o valor da expressão não é usado, só o efeito de somar 1. <code>i++</code> é o mais comum em C. A diferença entre os dois está em <a href="incremento.html">++ e --</a>.</p>
+
+<h3>Qual laço usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Laço</th></tr>
+<tr><td>Sei quantas voltas (de 1 a N, cada posição de um array)</td><td><code>for</code></td></tr>
+<tr><td>Não sei quantas voltas (até digitar 0, até o saldo dobrar)</td><td><a href="while.html">while</a></td></tr>
+<tr><td>Pelo menos uma volta (menu, validar entrada)</td><td><a href="do-while.html">do while</a></td></tr>
+</table>
+</div>
+<p>Qualquer <code>for</code> pode ser reescrito como <code>while</code> e vice-versa. A escolha é sobre <strong>clareza</strong>: o <code>for</code> diz "vou contar"; o <code>while</code> diz "vou esperar algo acontecer".</p>
+
+<hr>
+
+<h2 id="erros">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"‘i’ undeclared" depois do laço</strong>
+<pre class="file" data-file="fora.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 1; i &lt;= 3; i++) {
+        printf("%d\n", i);
+    }
+    printf("i terminou valendo %d\n", i);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fora.c -o fora
+fora.c: In function ‘main’:
+fora.c:7:39: error: ‘i’ undeclared (first use in this function)
+    7 |     printf("i terminou valendo %d\n", i);
+      |                                       ^
+fora.c:7:39: note: each undeclared identifier is reported only once for each function it appears in</pre>
+<p><strong>O que significa:</strong> "‘i’ não declarada". Uma variável criada nos parênteses do <code>for</code> só existe <strong>dentro</strong> dele. Na linha 7, o laço já acabou e <code>i</code> não existe mais. O Clang do editor diz <code>error: use of undeclared identifier 'i'</code>.</p>
+<p><strong>Como consertar:</strong> se você precisa do valor depois do laço, declare antes, no estilo antigo: <code>int i; for (i = 1; i &lt;= 3; i++)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Um ponto e vírgula depois do <code>for ( … )</code></strong>
+<pre class="file" data-file="pv_for.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 1; i &lt;= 3; i++); {
+        printf("Olá!\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pv_for.c -o pv_for
+pv_for.c: In function ‘main’:
+pv_for.c:4:5: warning: this ‘for’ clause does not guard... [-Wmisleading-indentation]
+    4 |     for (int i = 1; i &lt;= 3; i++); {
+      |     ^~~
+pv_for.c:4:35: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘for’
+    4 |     for (int i = 1; i &lt;= 3; i++); {
+      |                                   ^
+$ ./pv_for
+Olá!</pre>
+<p><strong>O que aconteceu:</strong> o <code>;</code> logo depois do <code>)</code> é um corpo vazio. O <code>for</code> deu as 3 voltas sem fazer nada, e o bloco de baixo rodou <strong>uma vez</strong>, depois do laço. O gcc avisa que a indentação engana; o Clang do editor diz <code>warning: for loop has empty body [-Wempty-body]</code>.</p>
+<p><strong>Como consertar:</strong> apague o <code>;</code> entre o <code>)</code> e a <code>{</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"comparison of unsigned expression in ‘&gt;= 0’ is always true"</strong>
+<pre class="file" data-file="semsinal.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (unsigned int i = 3; i &gt;= 0; i--) {
+        printf("%u\n", i);
+    }
+    printf("Fogo!\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semsinal.c -o semsinal
+semsinal.c: In function ‘main’:
+semsinal.c:4:32: warning: comparison of unsigned expression in ‘&gt;= 0’ is always true [-Wtype-limits]
+    4 |     for (unsigned int i = 3; i &gt;= 0; i--) {
+      |                                ^~
+$ ./semsinal
+3
+2
+1
+0
+4294967295
+4294967294
+^C                      « o Fogo! nunca chega</pre>
+<p><strong>O que significa:</strong> "a comparação de uma expressão sem sinal com <code>&gt;= 0</code> é sempre verdadeira". Um <code>unsigned int</code> não tem números negativos (veja <a href="inteiros.html">Inteiros</a>): quando <code>i</code> vale 0 e leva <code>i--</code>, ele "dá a volta" para o maior valor possível, 4294967295, e a contagem continua para sempre. Esse aviso vem do <code>-Wextra</code>: mais um motivo para nunca compilar sem ele. O Clang do editor <strong>não</strong> dá esse aviso com <code>-Wall -Wextra</code>; lá o programa só enche a tela até o limite de saída.</p>
+<p><strong>Como consertar:</strong> para contar para trás até 0, use <code>int</code>: <code>for (int i = 3; i &gt;= 0; i--)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma volta a mais ou a menos</strong>
+<p><strong>O que aconteceu:</strong> o laço começa do 0 com <code>&lt;=</code> (uma volta a mais, como em <a href="#umamais">o erro do "um a mais"</a>) ou começa do 1 com <code>&lt;</code> (uma volta a menos: <code>for (int i = 1; i &lt; 10; i++)</code> para no 9).</p>
+<p><strong>Como investigar:</strong> faça a tabela da primeira e da última volta: qual o valor de <code>i</code> na primeira? E qual o último valor em que a condição ainda é verdadeira? Conte os números entre eles.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>O que faz</th></tr>
+<tr><td><code>for (início; condição; passo) { … }</code></td><td>Roda o início uma vez; antes de cada volta testa a condição; depois de cada volta roda o passo.</td></tr>
+<tr><td><code>for (int i = 0; i &lt; N; i++)</code></td><td>N voltas, de 0 a N-1 (a forma clássica para arrays). <span class="versao">C99</span></td></tr>
+<tr><td><code>for (int i = 1; i &lt;= N; i++)</code></td><td>N voltas, de 1 a N.</td></tr>
+<tr><td><code>for (int i = N; i &gt;= 1; i--)</code></td><td>Contagem regressiva.</td></tr>
+<tr><td><code>for (int i = 0; i &lt;= M; i += 2)</code></td><td>De 2 em 2.</td></tr>
+<tr><td><code>int i; for (i = 0; …)</code></td><td>Estilo C89: <code>i</code> continua existindo depois do laço.</td></tr>
+<tr><td><code>for (int i = 0, j = 9; i &lt; j; i++, j--)</code></td><td>Duas variáveis com vírgula.</td></tr>
+<tr><td><code>for (;;)</code></td><td>Laço infinito (sai com <code>break</code>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o for</h3>
+<p>Complete para mostrar de 1 a 10:</p>
+<div class="ex-code">for (int i = 1; <input data-answer="i &lt;= 10|i&lt;=10|i &lt; 11|i&lt;11" aria-label="condição">; i++) { printf("%d\n", i); }</div>
+</div>
+
+<div class="exercise">
+<h3>2. Contagem regressiva</h3>
+<p>Complete o passo para contar de 10 até 1:</p>
+<div class="ex-code">for (int i = 10; i &gt;= 1; <input data-answer="i--|--i|i -= 1|i = i - 1" aria-label="passo">) { printf("%d\n", i); }</div>
+</div>
+
+<div class="exercise">
+<h3>3. Quantas voltas?</h3>
+<p>Quantas vezes o corpo de <code>for (int i = 0; i &lt;= 10; i++)</code> roda?</p>
+<div class="ex-code"><input data-answer="11|onze" aria-label="quantas voltas"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Em que ordem rodam as partes de <code>for (A; B; C) { D }</code>?</p>
+<label><input type="radio" name="q4"> A, B, C, D, A, B, C, D…</label>
+<label><input type="radio" name="q4"> A uma vez; depois B, D, C, B, D, C… até B ser falso</label>
+<label><input type="radio" name="q4"> D primeiro, depois A, B e C</label>
+<label><input type="radio" name="q4"> A, C, B, D…</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O gcc dá <code>error: ‘for’ loop initial declarations are only allowed in C99 or C11 mode</code>. O que aconteceu?</p>
+<label><input type="radio" name="q5"> Faltou o <code>;</code> depois do passo</label>
+<label><input type="radio" name="q5"> O <code>for</code> não pode ter <code>int</code> em nenhum padrão do C</label>
+<label><input type="radio" name="q5"> O programa foi compilado com um padrão antigo (C89), que não aceita <code>for (int i = …)</code></label>
+<label><input type="radio" name="q5"> A variável <code>i</code> foi usada depois do laço</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual destes laços mostra <strong>exatamente</strong> 5 números?</p>
+<label><input type="radio" name="q6"> <code>for (int i = 0; i &lt; 5; i++)</code></label>
+<label><input type="radio" name="q6"> <code>for (int i = 0; i &lt;= 5; i++)</code></label>
+<label><input type="radio" name="q6"> <code>for (int i = 1; i &lt; 5; i++)</code></label>
+<label><input type="radio" name="q6"> <code>for (int i = 5; i &gt;= 0; i--)</code></label>
+</div>
+
+<h3>Missão final: fatorial</h3>
+<div class="tryc" data-stdin="5" data-goal="out:5! = 120,src:for\s*\(">
+<p class="try-task"><strong>Missão:</strong> o <strong>fatorial</strong> de um número (escrito <code>5!</code>) é a multiplicação de 1 até ele: <code>5! = 1 × 2 × 3 × 4 × 5 = 120</code>. Use um <code>for</code> para multiplicar <code>fatorial</code> por cada número de 1 até <code>n</code>. A entrada já traz o <code>5</code>; a saída deve ter <code>5! = 120</code>. Dica: o acumulador de uma multiplicação começa em <strong>1</strong>, não em 0.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 0;
+    printf("Fatorial de: ");
+    if (scanf("%d", &amp;n) != 1) {
+        return 1;
+    }
+
+    int fatorial = 1;
+    // escreva o for aqui
+
+    printf("%d! = %d\n", n, fatorial);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int n = 0;
+    printf("Fatorial de: ");
+    if (scanf("%d", &amp;n) != 1) {
+        return 1;
+    }
+
+    int fatorial = 1;
+    for (int i = 1; i &lt;= n; i++) {
+        fatorial *= i;
+    }
+
+    printf("%d! = %d\n", n, fatorial);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>for (início; condição; passo) { corpo }</code> junta as três peças de um laço com contador numa linha.</li>
+  <li>O início roda uma vez; a condição, antes de cada volta; o passo, depois de cada volta.</li>
+  <li><code>for (int i = 0; …)</code> é do <strong>C99</strong>; no C89 a variável era declarada antes. A <code>i</code> criada nos parênteses só existe dentro do laço.</li>
+  <li>Para trás: <code>i--</code> com <code>&gt;=</code>. De 2 em 2: <code>i += 2</code>. Contadores que descem até 0 devem ser <code>int</code>, não <code>unsigned</code>.</li>
+  <li>N voltas: <code>i = 0; i &lt; N</code> ou <code>i = 1; i &lt;= N</code>. Misturar dá o erro do <strong>"um a mais"</strong>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
