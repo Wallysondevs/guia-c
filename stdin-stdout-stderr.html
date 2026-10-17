@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C stdin, stdout e stderr — entrada, saída e erros | Guia C</title>
+<meta name="description" content="stdin, stdout e stderr em C para iniciantes: os três canais que todo programa recebe, fprintf(stderr, ...) para mensagens de erro, redirecionar com &gt;, 2&gt;, &lt;, 2&gt;&amp;1 e |, programas-filtro com getchar e putchar, e o buffer que muda a ordem da saída (e o fflush), com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">stdin, stdout e stderr</span></h1>
+
+<p class="intro">Desde o primeiro <code>printf</code>, seus programas escrevem na tela e leem o teclado sem nunca abrir nada. É que todo programa já nasce com <strong>três canais abertos</strong>: um de entrada e dois de saída. Nesta aula você vai conhecê-los pelo nome, aprender a mandar as mensagens de erro pelo canal certo, ver como o terminal liga esses canais a arquivos e a outros programas com <code>&gt;</code>, <code>&lt;</code> e <code>|</code>, e entender por que, às vezes, as linhas saem numa ordem que o programa não escreveu.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são <code>stdin</code>, <code>stdout</code> e <code>stderr</code>, e os números 0, 1 e 2.</li>
+  <li>Por que <code>printf(…)</code> é o mesmo que <code>fprintf(stdout, …)</code>, e quando usar <code>fprintf(stderr, …)</code>.</li>
+  <li>Como o terminal redireciona os canais: <code>&gt;</code>, <code>&gt;&gt;</code>, <code>2&gt;</code>, <code>2&gt;&amp;1</code>, <code>&lt;</code>, <code>|</code> e <code>/dev/null</code>.</li>
+  <li>Como escrever um <strong>filtro</strong>: um programa que lê o <code>stdin</code> e escreve no <code>stdout</code>.</li>
+  <li>O que é o <strong>buffer</strong> da saída, por que ele troca a ordem das linhas e como o <code>fflush</code> resolve.</li>
+</ul>
+</div>
+
+<p>Você vai precisar de <a href="fgets.html">Ler uma Linha</a> e <a href="arquivos.html">Arquivos</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>, e rodados num terminal de verdade.</p>
+
+<hr>
+
+<h2>A ideia: a cozinha com três passagens</h2>
+<p>Imagine a cozinha da lojinha da Ana. Os pedidos chegam por uma <strong>janelinha de entrada</strong>. Os pratos prontos saem pelo <strong>balcão</strong>. E, se falta um ingrediente, o cozinheiro avisa pelo <strong>interfone</strong>, que vai direto para a Ana, e não para o balcão: ninguém quer um bilhete "acabou o queijo" no meio do prato do cliente.</p>
+<p>Um programa tem as mesmas três passagens: o <code>stdin</code> é a janelinha (o que entra), o <code>stdout</code> é o balcão (o resultado) e o <code>stderr</code> é o interfone (avisos e erros). Normalmente as três estão ligadas ao terminal: entra o teclado, os dois tipos de saída vão para a tela. Mas cada uma pode ser ligada a outro lugar, separadamente.</p>
+
+<hr>
+
+<h2>1. Os três canais</h2>
+
+<pre class="file" data-file="canais.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("1. printf\n");
+    fprintf(stdout, "2. fprintf(stdout, ...)\n");
+    fprintf(stderr, "3. fprintf(stderr, ...)\n");
+    fputs("4. fputs(..., stderr)\n", stderr);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>printf("…")</dt><dd>Escreve no <code>stdout</code>. É só um atalho para a linha de baixo.</dd>
+  <dt>fprintf(stdout, "…")</dt><dd>O <code>fprintf</code> da aula <a href="escrever-arquivos.html">Escrever Arquivos</a>, que recebe <strong>onde</strong> escrever. <code>stdout</code> é uma variável do tipo <code>FILE *</code>, como a que o <code>fopen</code> devolve, mas já aberta pelo sistema.</dd>
+  <dt>fprintf(stderr, "…")</dt><dd>O mesmo, no canal de erros.</dd>
+  <dt>fputs("…", stderr)</dt><dd>Escreve um texto sem formatação. Repare na ordem: no <code>fputs</code>, o canal vem <strong>depois</strong> do texto.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra canais.c -o canais
+$ ./canais
+1. printf
+2. fprintf(stdout, ...)
+3. fprintf(stderr, ...)
+4. fputs(..., stderr)</pre>
+
+<p>Na tela não há diferença nenhuma: os dois canais de saída estão ligados ao mesmo terminal. A diferença aparece quando você os separa (seção 2).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nome</th><th>Em inglês</th><th>Número</th><th>Ligado, por padrão, a</th><th>Para quê</th></tr>
+<tr><td><code>stdin</code></td><td>standard input, entrada padrão</td><td>0</td><td>teclado</td><td>O que o programa lê: <code>scanf</code>, <code>fgets(…, stdin)</code>, <code>getchar</code></td></tr>
+<tr><td><code>stdout</code></td><td>standard output, saída padrão</td><td>1</td><td>tela</td><td>O <strong>resultado</strong>: <code>printf</code>, <code>puts</code>, <code>putchar</code></td></tr>
+<tr><td><code>stderr</code></td><td>standard error, saída de erros</td><td>2</td><td>tela</td><td>Erros, avisos, mensagens de uso: <code>fprintf(stderr, …)</code>, <code>perror</code></td></tr>
+</table>
+</div>
+
+<p>Os números são o jeito como o sistema operacional chama cada canal (os "descritores de arquivo"), e é por eles que o terminal os redireciona: o <code>2</code> do <code>2&gt;</code> é o <code>stderr</code>. O <code>perror</code> da aula <a href="errno.html">errno</a> escreve no <code>stderr</code> também.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e repare na cor: no editor do guia, o que vai para o <code>stderr</code> aparece num tom avermelhado. Na mensagem 2, troque o <code>stdout</code> por <code>stderr</code> e rode de novo. (O editor não tem <code>&gt;</code> nem <code>|</code>: a separação dos canais você vê nos terminais desta aula.)</p>
+<pre class="script" data-file="canais.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("1. printf\n");
+    fprintf(stdout, "2. fprintf(stdout, ...)\n");
+    fprintf(stderr, "3. fprintf(stderr, ...)\n");
+    fputs("4. fputs(..., stderr)\n", stderr);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Redirecionar a saída: <code>&gt;</code>, <code>2&gt;</code> e companhia</h2>
+<p>Quem liga os canais é o <strong>shell</strong> (o Bash do terminal), antes de o programa começar. O programa não sabe e não precisa saber para onde está escrevendo. Com o mesmo <code>canais</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ ./canais &gt; saida.txt
+3. fprintf(stderr, ...)
+4. fputs(..., stderr)               « só o stderr ficou na tela
+$ cat saida.txt
+1. printf
+2. fprintf(stdout, ...)             « o stdout foi para o arquivo
+$ ./canais 2&gt; erros.txt
+1. printf
+2. fprintf(stdout, ...)
+$ cat erros.txt
+3. fprintf(stderr, ...)
+4. fputs(..., stderr)
+$ ./canais 2&gt; /dev/null
+1. printf
+2. fprintf(stdout, ...)             « os erros foram para o "lixo"</pre>
+
+<p>E para juntar os dois num arquivo só, ou acrescentar no fim em vez de apagar:</p>
+
+<pre class="term" data-cwd="~/c">$ ./canais &gt; tudo.txt 2&gt;&amp;1
+$ cat tudo.txt
+3. fprintf(stderr, ...)
+4. fputs(..., stderr)
+1. printf
+2. fprintf(stdout, ...)             « ordem trocada! (seção 5)
+$ ./canais &gt;&gt; saida.txt
+3. fprintf(stderr, ...)
+4. fputs(..., stderr)
+$ cat saida.txt
+1. printf
+2. fprintf(stdout, ...)
+1. printf
+2. fprintf(stdout, ...)             « o &gt;&gt; acrescentou no fim</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No terminal</th><th>O que faz</th></tr>
+<tr><td><code>prog &gt; arq</code></td><td><code>stdout</code> vai para <code>arq</code> (apaga o que havia)</td></tr>
+<tr><td><code>prog &gt;&gt; arq</code></td><td><code>stdout</code> vai para o fim de <code>arq</code></td></tr>
+<tr><td><code>prog 2&gt; arq</code></td><td><code>stderr</code> vai para <code>arq</code></td></tr>
+<tr><td><code>prog &gt; arq 2&gt;&amp;1</code></td><td>Os dois vão para <code>arq</code> ("o 2 vai para onde o 1 está agora")</td></tr>
+<tr><td><code>prog &amp;&gt; arq</code></td><td>O mesmo, forma curta do Bash</td></tr>
+<tr><td><code>prog 2&gt; /dev/null</code></td><td>Joga o <code>stderr</code> fora (<code>/dev/null</code> é um "arquivo" que engole tudo)</td></tr>
+<tr><td><code>prog &lt; arq</code></td><td><code>stdin</code> vem de <code>arq</code> (seção 3)</td></tr>
+<tr><td><code>prog1 | prog2</code></td><td>O <code>stdout</code> de <code>prog1</code> vira o <code>stdin</code> de <code>prog2</code> (o "cano", <em>pipe</em>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. Por que separar: o resultado limpo</h2>
+<p>A Ana tem as notas de uma aluna num arquivo, uma por linha, e uma delas foi digitada errado:</p>
+
+<pre class="term" data-cwd="~/c">$ cat notas.txt
+8.5
+7
+sete
+9</pre>
+
+<p>Este programa calcula a média do que vier pelo <code>stdin</code>. O <strong>resultado</strong> vai para o <code>stdout</code>; os <strong>avisos</strong>, para o <code>stderr</code>:</p>
+
+<pre class="file" data-file="media.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[100];
+    int lidas = 0;
+    int numero_linha = 0;
+    double soma = 0.0;
+    while (fgets(linha, sizeof linha, stdin) != NULL) {
+        numero_linha++;
+        linha[strcspn(linha, "\n")] = '\0';
+        char *fim;
+        double nota = strtod(linha, &amp;fim);
+        if (fim == linha || *fim != '\0') {
+            fprintf(stderr, "linha %d ignorada: \"%s\"\n", numero_linha, linha);
+            continue;
+        }
+        soma += nota;
+        lidas++;
+    }
+    if (lidas == 0) {
+        fprintf(stderr, "nenhuma nota lida\n");
+        return 1;
+    }
+    printf("%d notas, média %.2f\n", lidas, soma / lidas);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>while (fgets(linha, sizeof linha, stdin) != NULL)</dt><dd>Lê o <code>stdin</code> até o fim, como na aula <a href="fgets.html">Ler uma Linha</a>. O programa não sabe se as linhas vêm do teclado ou de um arquivo.</dd>
+  <dt>strtod(linha, &amp;fim)</dt><dd>Converte a nota e confere se a linha era só um número (aula <a href="validar-entrada.html">Validar a Entrada</a>).</dd>
+  <dt>fprintf(stderr, "linha %d ignorada…")</dt><dd>Um aviso para a <strong>pessoa</strong>, e não parte do resultado. O <code>continue</code> pula para a próxima linha.</dd>
+  <dt>printf("%d notas, média %.2f\n", …)</dt><dd>O resultado, no <code>stdout</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra media.c -o media
+$ ./media &lt; notas.txt
+linha 3 ignorada: "sete"
+3 notas, média 8.17
+$ ./media &lt; notas.txt &gt; resultado.txt
+linha 3 ignorada: "sete"            « o aviso continua na tela
+$ cat resultado.txt
+3 notas, média 8.17                « o arquivo só tem o resultado
+$ ./media &lt; notas.txt 2&gt; /dev/null
+3 notas, média 8.17</pre>
+
+<p>Esse é o motivo de existir o <code>stderr</code>: quem salva a saída num arquivo (ou a passa para outro programa) recebe só o resultado, e a pessoa na frente do terminal continua vendo os avisos. Se o aviso tivesse ido pelo <code>printf</code>, ele estaria dentro do <code>resultado.txt</code>, e o próximo programa que lesse esse arquivo tropeçaria nele (veja em <a href="#erros">Quando dá errado</a>).</p>
+
+<div class="tryc" data-stdin="8.5\n7\nsete\n9" data-goal="out:linha 3 ignorada,out:3 notas\, média 8.17,src:fprintf\s*\(\s*stderr">
+<p class="try-task"><strong>Missão:</strong> nesta versão, os dois avisos saem pelo <code>printf</code> e iriam parar no arquivo de resultado. Troque esses dois <code>printf</code> por <code>fprintf(stderr, …)</code>, deixando o <code>printf</code> do resultado como está. As notas da Ana já estão na Entrada. Depois de rodar, repare na cor do aviso.</p>
+<pre class="script" data-file="media.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[100];
+    int lidas = 0;
+    int numero_linha = 0;
+    double soma = 0.0;
+    while (fgets(linha, sizeof linha, stdin) != NULL) {
+        numero_linha++;
+        linha[strcspn(linha, "\n")] = '\0';
+        char *fim;
+        double nota = strtod(linha, &amp;fim);
+        if (fim == linha || *fim != '\0') {
+            printf("linha %d ignorada: \"%s\"\n", numero_linha, linha);
+            continue;
+        }
+        soma += nota;
+        lidas++;
+    }
+    if (lidas == 0) {
+        printf("nenhuma nota lida\n");
+        return 1;
+    }
+    printf("%d notas, média %.2f\n", lidas, soma / lidas);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="media.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[100];
+    int lidas = 0;
+    int numero_linha = 0;
+    double soma = 0.0;
+    while (fgets(linha, sizeof linha, stdin) != NULL) {
+        numero_linha++;
+        linha[strcspn(linha, "\n")] = '\0';
+        char *fim;
+        double nota = strtod(linha, &amp;fim);
+        if (fim == linha || *fim != '\0') {
+            fprintf(stderr, "linha %d ignorada: \"%s\"\n", numero_linha, linha);
+            continue;
+        }
+        soma += nota;
+        lidas++;
+    }
+    if (lidas == 0) {
+        fprintf(stderr, "nenhuma nota lida\n");
+        return 1;
+    }
+    printf("%d notas, média %.2f\n", lidas, soma / lidas);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Redirecionar a entrada: <code>&lt;</code> e <code>|</code></h2>
+<p>Na seção 3, o <code>&lt; notas.txt</code> ligou o <code>stdin</code> a um arquivo. Sem ele, o mesmo programa lê o teclado, até a Ana apertar <kbd>Ctrl</kbd>+<kbd>D</kbd>:</p>
+
+<pre class="term" data-cwd="~/c">$ ./media
+8.5
+nove
+linha 2 ignorada: "nove"
+10
+2 notas, média 9.25                « depois do Ctrl+D</pre>
+
+<p>E com o <code>|</code>, a entrada vem da saída de outro programa. Aqui, o <code>cat</code> escreve o arquivo no <code>stdout</code> dele, e o cano o entrega ao <code>stdin</code> do <code>media</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ cat notas.txt | ./media
+linha 3 ignorada: "sete"
+3 notas, média 8.17
+$ ./media &lt; /dev/null
+nenhuma nota lida                  « /dev/null: uma entrada que já começa no fim
+$ echo $?
+1
+$ ./media &lt; faltando.txt
+bash: faltando.txt: Arquivo ou diretório inexistente</pre>
+
+<p>A última mensagem começa com <code>bash:</code>: foi o shell que não achou o arquivo, e o <code>media</code> nem chegou a rodar. Com o <code>&lt;</code>, quem abre o arquivo é o shell; o programa só recebe o <code>stdin</code> pronto. (Para abrir um arquivo pelo nome, dentro do programa, use <code>fopen</code>, aula <a href="arquivos.html">Arquivos</a>.)</p>
+
+<div class="note">
+<strong>No editor do guia,</strong> o campo <strong>Entrada</strong> da caixa (o <code>data-stdin</code> das páginas) faz o papel do <code>&lt;</code>: o programa recebe aquelas linhas no <code>stdin</code> e depois o fim da entrada.
+</div>
+
+<hr>
+
+<h2>5. Filtros: ler o <code>stdin</code>, escrever o <code>stdout</code></h2>
+<p>Um <strong>filtro</strong> é um programa que lê o <code>stdin</code>, transforma e escreve no <code>stdout</code>. Muitos comandos do Linux são filtros (<code>sort</code>, <code>grep</code>, <code>wc</code>), e é isso que permite encaixá-los com <code>|</code>. Este transforma o texto em maiúsculas, um caractere por vez:</p>
+
+<pre class="file" data-file="maiusculas.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int c;
+    while ((c = getchar()) != EOF) {
+        putchar(toupper(c));
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int c;</dt><dd>Um <code>int</code>, e não <code>char</code>, para caber o <code>EOF</code> (aula <a href="char.html">char</a>).</dd>
+  <dt>getchar()</dt><dd>Lê um caractere do <code>stdin</code>. É o mesmo que <code>getc(stdin)</code>.</dd>
+  <dt>toupper(c)</dt><dd>"to upper", para maiúscula (do <code>ctype.h</code>). O que não é letra minúscula passa igual, inclusive o <code>\n</code>.</dd>
+  <dt>putchar(…)</dt><dd>Escreve um caractere no <code>stdout</code>. É o mesmo que <code>putc(…, stdout)</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra maiusculas.c -o maiusculas
+$ echo "arroz e leite" | ./maiusculas
+ARROZ E LEITE
+$ ./maiusculas &lt; lista.txt &gt; LISTA.txt
+$ cat LISTA.txt
+ARROZ
+LEITE
+OVOS</pre>
+
+<p>Na segunda linha, o programa leu de um arquivo e escreveu em outro, sem ter um único <code>fopen</code>. Um filtro bem-comportado escreve só o texto transformado no <code>stdout</code>; qualquer conversa com a pessoa (avisos, resumos) vai para o <code>stderr</code>, para não estragar o arquivo de saída. É o que a missão final pede.</p>
+
+<hr>
+
+<h2>6. O buffer: por que a ordem muda</h2>
+<p>Lembra do <code>tudo.txt</code> da seção 2, com as linhas 3 e 4 antes da 1 e da 2? O motivo é o <strong>buffer</strong>. Escrever no terminal ou no disco custa caro, então o <code>stdout</code> junta o texto numa área de espera e só escreve de tempos em tempos. O <code>stderr</code>, não: erro tem pressa, e cada mensagem sai na hora.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Canal</th><th>Quando escreve de verdade</th></tr>
+<tr><td><code>stdout</code> ligado ao <strong>terminal</strong></td><td>A cada <code>\n</code> (buffer de linha), quando o programa vai ler o teclado, ou no fim</td></tr>
+<tr><td><code>stdout</code> ligado a um <strong>arquivo ou cano</strong></td><td>Quando junta 4.096 bytes (buffer cheio), ou no fim do programa</td></tr>
+<tr><td><code>stderr</code></td><td>Na hora (sem buffer)</td></tr>
+</table>
+</div>
+
+<p>No <code>tudo.txt</code>, o <code>stdout</code> ia para um arquivo: as linhas 1 e 2 ficaram esperando no buffer até o fim do programa, enquanto as 3 e 4 foram escritas na hora. O mesmo acontece com o <code>|</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ ./canais | cat
+3. fprintf(stderr, ...)
+4. fputs(..., stderr)
+1. printf
+2. fprintf(stdout, ...)</pre>
+
+<p>Mesmo no terminal dá para ver o efeito, quando falta o <code>\n</code>:</p>
+
+<pre class="file" data-file="salvando.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Salvando...");
+    fprintf(stderr, "aviso: disco quase cheio\n");
+    printf(" pronto.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra salvando.c -o salvando
+$ ./salvando
+aviso: disco quase cheio
+Salvando... pronto.               « o "Salvando..." esperou o \n</pre>
+
+<p>Para mandar o buffer para a tela (ou para o arquivo) <strong>agora</strong>, use <code>fflush(stdout);</code> ("flush", dar descarga). Esta versão escreve um log com <code>\n</code> em todas as linhas, mas o log vai para um arquivo, onde o <code>\n</code> não basta. Compare sem e com o <code>fflush</code>:</p>
+
+<pre class="file" data-file="salvando3.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Salvando...\n");
+    fflush(stdout);
+    fprintf(stderr, "aviso: disco quase cheio\n");
+    printf("Pronto.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ ./salvando2 &gt; log.txt 2&gt;&amp;1          « igual, sem o fflush
+$ cat log.txt
+aviso: disco quase cheio
+Salvando...
+Pronto.
+$ gcc -std=c23 -Wall -Wextra salvando3.c -o salvando3
+$ ./salvando3 &gt; log.txt 2&gt;&amp;1
+$ cat log.txt
+Salvando...
+aviso: disco quase cheio
+Pronto.</pre>
+
+<dl class="anatomy">
+  <dt>fflush(stdout);</dt><dd>Escreve já tudo o que está no buffer do <code>stdout</code>. Use antes de uma mensagem no <code>stderr</code> quando a ordem importa, ou para mostrar um progresso (<code>printf(".")</code> sem <code>\n</code>) que tem de aparecer na hora.</dd>
+</dl>
+
+<p>O fim do programa também esvazia o buffer (é o ritual do <code>exit</code>, aula <a href="exit.html">exit e atexit</a>). Mas, se o programa <strong>morre</strong>, o que estava no buffer se perde, e isso confunde muita gente que salva a saída num arquivo para procurar um erro (veja em <a href="#erros">Quando dá errado</a>).</p>
+
+<div class="note">
+<strong>No editor do guia,</strong> o <code>stdout</code> se comporta como num terminal (buffer de linha), então o <code>salvando.c</code> mostra o aviso primeiro, como no terminal da Ana. O caso do arquivo e do cano (buffer cheio) só aparece no terminal de verdade.
+</div>
+
+<hr>
+
+<h2>Qual canal usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que o programa escreve</th><th>Canal</th></tr>
+<tr><td>O resultado: a média, o texto transformado, o relatório</td><td><code>stdout</code> (<code>printf</code>, <code>puts</code>, <code>putchar</code>)</td></tr>
+<tr><td>Mensagens de erro e avisos</td><td><code>stderr</code> (<code>fprintf(stderr, …)</code>, <code>perror</code>)</td></tr>
+<tr><td>A mensagem de uso (<code>Uso: ./prog ARQUIVO</code>)</td><td><code>stderr</code> (aula <a href="argc-argv.html">Argumentos</a>)</td></tr>
+<tr><td>Progresso, "carregando…", resumos de um filtro</td><td><code>stderr</code>, para não misturar com o resultado</td></tr>
+<tr><td>Perguntas de um programa interativo (<code>Nome: </code>)</td><td><code>stdout</code>, o costume; o <code>stdout</code> é esvaziado antes de o programa ler o teclado</td></tr>
+<tr><td>Dados num arquivo cujo nome o programa conhece</td><td>Um <code>FILE *</code> do <code>fopen</code> (aula <a href="escrever-arquivos.html">Escrever Arquivos</a>)</td></tr>
+</table>
+</div>
+
+<p>E para ler: <code>stdin</code> quando a entrada é "o que vier" (teclado, <code>&lt;</code>, <code>|</code>), que é o jeito dos filtros; <code>fopen</code> quando o programa recebe o nome do arquivo, por exemplo num <a href="argc-argv.html">argumento</a>.</p>
+
+<hr>
+
+<h2 id="erros">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O aviso foi parar dentro do arquivo de resultado</strong>
+<pre class="term" data-cwd="~/c">$ ./media_printf &lt; notas.txt &gt; resultado.txt
+$ cat resultado.txt
+linha 3 ignorada: "sete"
+3 notas, média 8.17</pre>
+<p><strong>O que significa:</strong> esta versão do <code>media</code> escreve o aviso com <code>printf</code>, que vai para o <code>stdout</code>, junto com o resultado. Na tela nada apareceu, e o arquivo ficou "sujo".</p>
+<p><strong>Como consertar:</strong> erros e avisos com <code>fprintf(stderr, …)</code> (a missão da seção 3).</p>
+</div>
+
+<div class="cenario">
+<strong>Redirecionei a saída e o arquivo ficou vazio (o programa travou no meio)</strong>
+<pre class="file" data-file="relatorio.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int *estoque = NULL;
+    printf("Relatório do dia\n");
+    printf("Pães vendidos: 42\n");
+    printf("Estoque: %d\n", *estoque);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ ./relatorio
+Relatório do dia
+Pães vendidos: 42
+Falha de segmentação     (imagem do núcleo gravada) ./relatorio
+$ ./relatorio &gt; relatorio.txt
+Falha de segmentação     (imagem do núcleo gravada) ./relatorio &gt; relatorio.txt
+$ wc -c relatorio.txt
+0 relatorio.txt</pre>
+<p><strong>O que significa:</strong> no terminal, as duas primeiras linhas saíram a cada <code>\n</code>. No arquivo, elas estavam no buffer cheio quando o programa morreu (o <code>*estoque</code> lê um ponteiro nulo; aula <a href="ponteiro-nulo.html">Ponteiro Nulo</a>), e se perderam. Parece que o programa nem começou, mas ele morreu na terceira linha.</p>
+<p><strong>Como consertar:</strong> o erro de verdade é o ponteiro nulo. Para investigar, escreva as mensagens de rastreio no <code>stderr</code> (que não tem buffer) ou chame <code>fflush(stdout);</code> depois delas.</p>
+</div>
+
+<div class="cenario">
+<strong>Usei <code>2&gt;&amp;1 &gt; arquivo</code> e os erros continuaram na tela</strong>
+<pre class="term" data-cwd="~/c">$ ./canais 2&gt;&amp;1 &gt; tudo.txt
+3. fprintf(stderr, ...)
+4. fputs(..., stderr)
+$ cat tudo.txt
+1. printf
+2. fprintf(stdout, ...)</pre>
+<p><strong>O que significa:</strong> o shell lê da esquerda para a direita. O <code>2&gt;&amp;1</code> disse "o 2 vai para onde o 1 está <strong>agora</strong>", e naquele momento o 1 ainda era a tela. Só depois o <code>&gt; tudo.txt</code> mudou o 1.</p>
+<p><strong>Como consertar:</strong> <code>&gt; tudo.txt 2&gt;&amp;1</code>, nessa ordem, ou <code>&amp;&gt; tudo.txt</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: passing argument 1 of ‘fprintf’ from incompatible pointer type</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semfluxo.c -o semfluxo
+semfluxo.c: In function ‘main’:
+semfluxo.c:4:13: error: passing argument 1 of ‘fprintf’ from incompatible pointer type [-Wincompatible-pointer-types]
+    4 |     fprintf("Erro: arquivo não encontrado\n");
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |             |
+      |             char *
+In file included from semfluxo.c:1:
+/usr/include/stdio.h:364:38: note: expected ‘FILE * restrict’ but argument is of type ‘char *’
+  364 | extern int fprintf (FILE *__restrict __stream,
+      |                     ~~~~~~~~~~~~~~~~~^~~~~~~~
+semfluxo.c:4:5: error: too few arguments to function ‘fprintf’; expected at least 2, have 1
+    4 |     fprintf("Erro: arquivo não encontrado\n");
+      |     ^~~~~~~
+/usr/include/stdio.h:364:12: note: declared here
+  364 | extern int fprintf (FILE *__restrict __stream,
+      |            ^~~~~~~</pre>
+<p><strong>O que significa:</strong> faltou dizer <strong>onde</strong> escrever. O primeiro argumento do <code>fprintf</code> tem de ser um <code>FILE *</code> (o canal), e veio o texto.</p>
+<p><strong>Como consertar:</strong> <code>fprintf(stderr, "Erro: arquivo não encontrado\n");</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>feijão</code> virou <code>FEIJãO</code></strong>
+<pre class="term" data-cwd="~/c">$ echo "feijão" | ./maiusculas
+FEIJãO</pre>
+<p><strong>O que significa:</strong> no terminal da Ana (UTF-8), o <code>ã</code> ocupa <strong>dois</strong> <code>char</code>, e o <code>toupper</code> olha um <code>char</code> por vez: ele só conhece as letras sem acento. O editor do guia dá o mesmo resultado.</p>
+<p><strong>Como consertar:</strong> para texto com acentos, é preciso trabalhar com caracteres "largos" (<code>wchar_t</code> e <code>towupper</code>, com <code>setlocale</code>), um assunto à parte. Para códigos e textos sem acento, o <code>toupper</code> basta.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>stdin</code>, <code>stdout</code>, <code>stderr</code></td><td>Os três <code>FILE *</code> abertos pelo sistema (<code>stdio.h</code>); descritores 0, 1 e 2</td></tr>
+<tr><td><code>printf(…)</code> = <code>fprintf(stdout, …)</code></td><td>Escreve no <code>stdout</code></td></tr>
+<tr><td><code>fprintf(stderr, "…", …)</code></td><td>Escreve no <code>stderr</code>, com formato</td></tr>
+<tr><td><code>fputs("…", stderr)</code></td><td>Escreve um texto (o canal vem depois)</td></tr>
+<tr><td><code>puts("…")</code></td><td>Escreve no <code>stdout</code> e acrescenta o <code>\n</code></td></tr>
+<tr><td><code>getchar()</code> / <code>putchar(c)</code></td><td>Um caractere do <code>stdin</code> / para o <code>stdout</code></td></tr>
+<tr><td><code>fgets(linha, sizeof linha, stdin)</code></td><td>Uma linha do <code>stdin</code></td></tr>
+<tr><td><code>fflush(stdout);</code></td><td>Escreve agora o que está no buffer</td></tr>
+<tr><td><code>setvbuf(stdout, NULL, _IONBF, 0);</code></td><td>Desliga o buffer do <code>stdout</code> (raro; chame antes de escrever)</td></tr>
+<tr><td><code>&gt;</code>, <code>&gt;&gt;</code>, <code>2&gt;</code>, <code>&amp;&gt;</code>, <code>&gt; arq 2&gt;&amp;1</code></td><td>(shell) Mandam o <code>stdout</code> e/ou o <code>stderr</code> para um arquivo</td></tr>
+<tr><td><code>&lt; arq</code>, <code>prog1 | prog2</code></td><td>(shell) O <code>stdin</code> vem de um arquivo / da saída de outro programa</td></tr>
+<tr><td><code>/dev/null</code></td><td>(Linux) O "arquivo" que engole a saída e, como entrada, já está no fim</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O canal dos erros</h3>
+<p>Complete para escrever a mensagem no canal de erros:</p>
+<div class="ex-code">fprintf(<input data-answer="stderr" aria-label="canal">, "Arquivo não encontrado\n");</div>
+</div>
+
+<div class="exercise">
+<h3>2. O número do stderr</h3>
+<p>Complete o comando do terminal que joga fora só as mensagens de erro:</p>
+<div class="ex-code">./media &lt; notas.txt <input data-answer="2" aria-label="número">&gt; /dev/null</div>
+</div>
+
+<div class="exercise">
+<h3>3. Descarga</h3>
+<p>Qual função escreve agora o que está no buffer do <code>stdout</code>?</p>
+<div class="ex-code"><input data-answer="fflush" aria-label="função">(stdout);</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A Ana roda <code>./media &lt; notas.txt &gt; resultado.txt</code>. Onde aparece o que o programa escreve com <code>fprintf(stderr, …)</code>?</p>
+<label><input type="radio" name="q4"> No <code>resultado.txt</code></label>
+<label><input type="radio" name="q4"> Na tela</label>
+<label><input type="radio" name="q4"> No <code>notas.txt</code></label>
+<label><input type="radio" name="q4"> Em lugar nenhum</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Por que, em <code>./canais &gt; tudo.txt 2&gt;&amp;1</code>, as linhas do <code>stderr</code> ficaram antes das do <code>stdout</code>?</p>
+<label><input type="radio" name="q5"> Porque o <code>stderr</code> é o canal 2 e vem antes no arquivo</label>
+<label><input type="radio" name="q5"> Porque o shell ordena as linhas</label>
+<label><input type="radio" name="q5"> Porque o <code>printf</code> só funciona no terminal</label>
+<label><input type="radio" name="q5"> Porque o <code>stdout</code> num arquivo guarda o texto no buffer até o fim, e o <code>stderr</code> escreve na hora</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Em <code>cat notas.txt | ./media</code>, de onde o <code>media</code> lê?</p>
+<label><input type="radio" name="q6"> Do seu <code>stdin</code>, que recebe o <code>stdout</code> do <code>cat</code></label>
+<label><input type="radio" name="q6"> Do teclado</label>
+<label><input type="radio" name="q6"> Ele abre o <code>notas.txt</code> com <code>fopen</code></label>
+<label><input type="radio" name="q6"> Do <code>stderr</code> do <code>cat</code></label>
+</div>
+
+<h3>Missão final: um filtro bem-comportado</h3>
+
+<div class="tryc" data-stdin="arroz\nleite\novos" data-goal="out:ARROZ,out:OVOS,out:3 linhas,src:toupper\s*\(,src:fprintf\s*\(\s*stderr">
+<p class="try-task"><strong>Missão:</strong> complete o filtro: ele deve escrever no <code>stdout</code> o texto em maiúsculas (com <code>toupper</code>) e contar as linhas (cada <code>'\n'</code> é uma). No fim, mostre o resumo <code>3 linhas</code> no <strong><code>stderr</code></strong>, para que um <code>./filtro &lt; lista.txt &gt; LISTA.txt</code> não ponha o resumo dentro do arquivo. A lista de compras já está na Entrada. Saída esperada (o resumo, em vermelho):</p>
+<pre class="out">ARROZ
+LEITE
+OVOS
+3 linhas</pre>
+<pre class="script" data-file="filtro.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int c;
+    int linhas = 0;
+    while ((c = getchar()) != EOF) {
+        // conte as linhas e escreva a letra em maiúscula
+        putchar(c);
+    }
+    // mostre o resumo no stderr
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="filtro.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    int c;
+    int linhas = 0;
+    while ((c = getchar()) != EOF) {
+        if (c == '\n') {
+            linhas++;
+        }
+        putchar(toupper(c));
+    }
+    fprintf(stderr, "%d linhas\n", linhas);
+    return 0;
+}
+</pre>
+</div>
+
+<p>No laboratório, com o resultado num arquivo, o resumo fica na tela e o arquivo sai limpo:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra filtro.c -o filtro
+$ ./filtro &lt; lista.txt &gt; LISTA.txt
+3 linhas
+$ cat LISTA.txt
+ARROZ
+LEITE
+OVOS</pre>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Todo programa nasce com três canais abertos: <code>stdin</code> (0, o teclado), <code>stdout</code> (1, a tela) e <code>stderr</code> (2, a tela).</li>
+  <li><code>printf</code> escreve no <code>stdout</code>; erros, avisos e mensagens de uso vão para o <code>stderr</code>, com <code>fprintf(stderr, …)</code> ou <code>perror</code>.</li>
+  <li>O shell liga os canais antes de o programa começar: <code>&gt;</code> e <code>&gt;&gt;</code> (stdout), <code>2&gt;</code> (stderr), <code>&gt; arq 2&gt;&amp;1</code> ou <code>&amp;&gt;</code> (os dois), <code>&lt;</code> (stdin) e <code>|</code> (um programa no outro).</li>
+  <li>Um filtro lê o <code>stdin</code> e escreve o resultado no <code>stdout</code>, e só o resultado.</li>
+  <li>O <code>stdout</code> tem buffer: de linha no terminal, cheio em arquivos e canos. O <code>stderr</code> escreve na hora. Por isso a ordem pode mudar; <code>fflush(stdout)</code> escreve na hora. Se o programa morre, o buffer se perde.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
