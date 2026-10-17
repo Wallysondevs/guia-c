@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial C — aprenda C23 do zero, como numa escola | Guia C</title>
+<meta name="description" content="Curso de C (C23) do zero ao avançado, em português, para quem nunca programou: cada linha de código explicada, editor Experimente que compila e roda C de verdade no navegador, missões, projetos e exercícios. Todas as saídas e mensagens de erro conferidas com o gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="hero">
+<h1>Tutorial C</h1>
+<p>Aprenda <strong>C do zero</strong>, como numa escola: cada linha de código é explicada parte por parte, você vê exatamente o que aparece na tela e pratica num editor aqui mesmo no navegador. E o editor não é uma imitação: ele <strong>compila e roda C de verdade</strong>, com um compilador real (o Clang) funcionando dentro da página. O guia ensina o <strong>C23</strong>, a versão atual da linguagem, e todas as saídas e mensagens de erro foram conferidas num computador real, com o <strong>gcc 15</strong>. Vale para Linux, Windows e macOS.</p>
+<a class="btn btn-lg" href="introducao.html">Comece pelo Nível 1 &#10095;</a>
+</div>
+
+<div class="pager"></div>
+
+<h2>Experimente agora</h2>
+<p>A caixa abaixo é o editor <strong>Experimente</strong> do guia. Ela tem um programa em C completo, de seis linhas, pronto para rodar. Clique em <strong>Rodar</strong>. Na primeira vez, o navegador baixa o compilador (uns 20 e poucos megabytes; pode levar alguns segundos, dependendo da sua internet). Depois disso, cada execução é bem mais rápida. Nada do que você fizer aqui mexe no seu computador.</p>
+
+<div class="tryc" data-goal="out:Estou aprendendo C!">
+<p class="try-task"><strong>Missão:</strong> clique em <strong>Rodar</strong> e veja o <code>Olá, mundo!</code> aparecer. Depois troque o texto entre as aspas por <code>Estou aprendendo C!</code> e rode de novo. Cuidado para não apagar as aspas <code>"</code>, o <code>\n</code>, o parêntese <code>)</code> nem o <code>;</code> do fim da linha.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Estou aprendendo C!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>O que aconteceu: quando você clicou em Rodar, duas coisas aconteceram, uma depois da outra. Primeiro, o <strong>compilador</strong> leu o seu texto e o transformou num <strong>programa</strong> (como um tradutor que passa uma receita do português para a língua da cozinheira). Depois, o programa <strong>rodou</strong> e escreveu a frase. Esse "traduzir antes de rodar" é a marca do C, e a aula <a href="como-funciona.html">Como o C Vira Programa</a> mostra cada etapa.</p>
+
+<p>Das seis linhas, a que <strong>faz</strong> alguma coisa é a do <code>printf</code>. O nome vem de <em>print formatted</em>, "imprimir formatado": ele escreve um texto na tela. As outras linhas são a moldura que todo programa em C precisa ter. A aula <a href="primeiro-programa.html">Olá, Mundo</a> explica cada pedaço com calma.</p>
+
+<p>Se você apagou o <code>;</code> sem querer, viu uma mensagem em inglês com a palavra <code>error</code>, e o programa nem chegou a rodar. Não se assuste: é o compilador dizendo em que linha e em que coluna ele se perdeu. A aula <a href="erros-compilacao.html">Lendo Erros do Compilador</a> ensina a ler essas mensagens, que no começo parecem grego e depois viram as suas melhores amigas.</p>
+
+<h3>Um programa que faz conta</h3>
+<p>Computadores são ótimos em contas. A caixa abaixo guarda duas notas da Ana em duas <strong>variáveis</strong> (caixinhas com nome, aula <a href="variaveis.html">Variáveis</a>) e mostra a média. O <code>%d</code> dentro do texto é um "buraco" que o <code>printf</code> preenche com o número que vem depois da vírgula (aula <a href="formatos-printf.html">Formatos do printf</a>). Rode e veja o resultado.</p>
+
+<div class="tryc" data-goal="out:Média da Ana: 9">
+<p class="try-task"><strong>Missão:</strong> rode e veja a média <code>8</code>. A professora corrigiu as provas de novo: a primeira valia <code>8</code> e a segunda <code>10</code>. Troque os dois números, rode outra vez, e a média deve virar <code>9</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int prova1 = 7;
+    int prova2 = 9;
+    printf("Média da Ana: %d\n", (prova1 + prova2) / 2);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int prova1 = 8;
+    int prova2 = 10;
+    printf("Média da Ana: %d\n", (prova1 + prova2) / 2);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que o texto entre aspas aparece igualzinho, e no lugar do <code>%d</code> aparece a conta <code>(prova1 + prova2) / 2</code> já <strong>calculada</strong>. Curiosidade que vai ser útil depois: se as notas fossem 7 e 8, a média apareceria <code>7</code>, e não <code>7.5</code>. Em C, a divisão entre dois números inteiros joga fora a parte quebrada. A aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a> explica por quê e como pedir o <code>7.5</code>.</p>
+
+<hr>
+
+<h2>O que é este guia</h2>
+<p>O <strong>C</strong> é uma linguagem de programação pequena e muito rápida, criada em 1972 para escrever o sistema Unix. Mais de cinquenta anos depois, ela continua por trás de muita coisa que você usa todo dia sem perceber: o núcleo do <strong>Linux</strong> (que roda em servidores, no Android e em roteadores), o <strong>Git</strong>, o interpretador do <strong>Python</strong>, o banco de dados <strong>SQLite</strong> (que está dentro de todo celular) e o programa de máquinas de lavar, micro-ondas e placas como o Arduino. A aula <a href="introducao.html">O que é C</a> conta essa história.</p>
+
+<p>Quem aprende C consegue:</p>
+<ul>
+  <li>escrever programas que fazem contas, tomam decisões, repetem tarefas e organizam listas de dados;</li>
+  <li>entender o que acontece "por baixo" de qualquer programa: a memória, os endereços, como o texto que você escreve vira instruções da máquina;</li>
+  <li>criar ferramentas de terminal, jogos simples e programas que leem e gravam arquivos;</li>
+  <li>aprender depois C++, Java, C#, Go, Rust ou JavaScript com muito mais facilidade, porque todas copiaram a "cara" do C.</li>
+</ul>
+
+<p>O guia é para quem <strong>nunca programou</strong>. Ele começa do zero absoluto (o que é um programa? o que é compilar?) e vai até ponteiros, memória dinâmica, estruturas de dados, Makefile, depuração com gdb e as novidades do C23. O C tem fama de difícil porque ele <strong>não protege você</strong>: deixa você mexer direto na memória e não avisa quando você erra. Por isso o guia ensina, desde a primeira aula, os hábitos que evitam esses problemas (ligar os avisos do compilador, conferir o que o usuário digitou, liberar a memória que pediu) e mostra as ferramentas que acham os erros por você.</p>
+
+<hr>
+
+<h2>Como as aulas funcionam</h2>
+<p>Nenhum código aparece "seco". Toda aula segue o mesmo caminho:</p>
+<ol class="passo">
+  <li><strong>A ideia primeiro.</strong> Antes do código, você entende o problema que ele resolve, com uma comparação do dia a dia.</li>
+  <li><strong>Anatomia.</strong> Cada pedaço de uma linha nova é separado e explicado: o que é palavra do C, o que é nome escolhido por você, para que serve cada símbolo.</li>
+  <li><strong>A saída real.</strong> Você vê exatamente o que aparece na tela, com etiquetas laranja apontando o que importa. Toda saída foi produzida por um compilador de verdade.</li>
+  <li><strong>Experimente.</strong> Pelo menos duas caixas por aula para você mudar o código e rodar, muitas com uma <strong>missão</strong> e um botão para ver a solução. As caixas compilam o C de verdade, então os erros que você vir são erros reais.</li>
+  <li><strong>Várias formas de fazer.</strong> Quase sempre há mais de um caminho, e uma tabela "qual usar" mostra quando escolher cada um.</li>
+  <li><strong>Quando dá errado.</strong> O código com erro, a mensagem real do compilador (ou do programa), o que ela quer dizer e como consertar.</li>
+  <li><strong>Exercícios e resumo.</strong> Perguntas com correção na hora e uma lista curta do que levar da aula.</li>
+</ol>
+
+<h3>Exemplo: a anatomia de uma linha</h3>
+<p>Esta é a linha que você mudou lá em cima. Veja como as aulas desmontam uma linha de código:</p>
+
+<pre class="file" data-file="trecho">printf("Olá, mundo!\n");</pre>
+
+<dl class="anatomy">
+  <dt>printf</dt><dd>O nome da função que escreve na tela (<em>print formatted</em>, "imprimir formatado"). Ela não faz parte da linguagem em si: vem pronta na <strong>biblioteca padrão</strong> do C, e é por isso que o programa começa com <code>#include &lt;stdio.h&gt;</code> (<em>standard input/output</em>, "entrada e saída padrão"), o arquivo que apresenta o <code>printf</code> ao compilador.</dd>
+  <dt>( )</dt><dd>Os parênteses levam para a função aquilo com que ela vai trabalhar. Aqui, o texto a escrever.</dd>
+  <dt>"Olá, mundo!\n"</dt><dd>O texto a mostrar. As aspas marcam onde ele começa e termina e não aparecem na tela. O <code>\n</code> no fim é uma <strong>quebra de linha</strong> (aula <a href="escapes.html">Novas Linhas e Escapes</a>).</dd>
+  <dt>;</dt><dd>O ponto e vírgula termina a instrução, como o ponto final de uma frase. Esquecê-lo é o erro número um de quem começa.</dd>
+</dl>
+
+<h3>Exemplo: o terminal</h3>
+<p>Além do editor, as aulas mostram o <strong>terminal</strong> da máquina fictícia do guia: um computador chamado <code>notebook</code>, da usuária <code>ana</code>, com Linux em português e o gcc 15 instalado. Ali, a Ana guarda o código num arquivo, pede ao <code>gcc</code> (o compilador) para transformá-lo em programa e depois roda o programa:</p>
+
+<pre class="term" data-cwd="~/c">$ cat ola.c                                     « mostra o conteúdo do arquivo
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra ola.c -o ola       « compila: ola.c vira o programa ola
+$ ./ola                                         « roda o programa
+Olá, mundo!
+$ echo $?
+0                                               « código de saída 0: terminou sem erro</pre>
+
+<p>Repare que o <code>gcc</code> não escreveu nada: no mundo do terminal, <strong>silêncio quer dizer sucesso</strong>. Se houvesse um erro, ele apareceria ali. E quando falta o <code>;</code>, é assim que o gcc reclama:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra erro.c -o erro
+erro.c: In function ‘main’:
+erro.c:4:28: error: expected ‘;’ before ‘return’   « linha 4, coluna 28: faltou um ; antes do return
+    4 |     printf("Olá, mundo!\n")
+      |                            ^
+      |                            ;                    « o gcc até mostra onde ele vai
+    5 |     return 0;
+      |     ~~~~~~
+$ echo $?
+1                                                   « 1: a compilação falhou, nenhum programa foi criado</pre>
+
+<p>As mensagens do compilador saem em inglês, mesmo com o computador em português. O guia traduz e explica cada uma. A aula <a href="compilar.html">Compilar com gcc</a> explica o que significa cada pedaço do comando <code>gcc -std=c23 -Wall -Wextra ola.c -o ola</code>, e a aula <a href="simulador.html">O Editor do Guia</a> ensina a usar as caixas Experimente.</p>
+
+<hr>
+
+<h2>Escolha sua trilha</h2>
+<p>O guia tem três níveis, uma seção de projetos e uma de referência. Os níveis foram pensados para serem feitos em ordem: cada aula usa o que as anteriores ensinaram.</p>
+<div class="trilhas">
+  <div class="trilha n1">
+    <h3>Nível 1 · Iniciante</h3>
+    <p>Programar em C do zero.</p>
+    <ul>
+      <li><a href="introducao.html">Começando</a>: o que é C, como o código vira programa, instalar e escolher um editor</li>
+      <li><a href="primeiro-programa.html">Primeiros Passos</a>: o primeiro programa, compilar com gcc, <code>printf</code>, erros e avisos</li>
+      <li><a href="variaveis.html">Variáveis e Tipos</a> e <a href="operadores-aritmeticos.html">Operadores</a>: números, letras, <code>bool</code>, <code>scanf</code></li>
+      <li><a href="if-else.html">Decisões</a> e <a href="while.html">Laços</a>: <code>if</code>, <code>switch</code>, <code>while</code>, <code>for</code></li>
+      <li><a href="arrays.html">Arrays e Texto</a> e <a href="funcoes.html">Funções</a>: listas, strings, <code>fgets</code>, recursão, <code>math.h</code></li>
+    </ul>
+    <a class="btn" href="introducao.html">Começar &#10095;</a>
+  </div>
+  <div class="trilha n2">
+    <h3>Nível 2 · Intermediário</h3>
+    <p>Ponteiros, memória, structs e arquivos.</p>
+    <ul>
+      <li><a href="memoria.html">Ponteiros</a>: endereços, <code>&amp;</code> e <code>*</code>, ponteiro nulo, ponteiros e arrays</li>
+      <li><a href="pilha-heap.html">Memória Dinâmica</a>: <code>malloc</code>, <code>free</code>, vazamentos</li>
+      <li><a href="structs.html">Tipos Próprios</a>: <code>struct</code>, <code>typedef</code>, <code>enum</code>, <code>union</code></li>
+      <li><a href="arquivos.html">Arquivos</a> e <a href="argc-argv.html">Programas de Verdade</a>: <code>fopen</code>, <code>argv</code>, <code>stderr</code></li>
+      <li><a href="preprocessador.html">Organizar o Código</a>: macros, arquivos <code>.h</code>, Makefile</li>
+    </ul>
+    <a class="btn" href="memoria.html">Começar &#10095;</a>
+  </div>
+  <div class="trilha n3">
+    <h3>Nível 3 · Avançado</h3>
+    <p>Estruturas de dados, bits, sistema e ferramentas.</p>
+    <ul>
+      <li><a href="operadores-bits.html">Bits</a>: operadores de bits, máscaras e flags</li>
+      <li><a href="listas-ligadas.html">Estruturas de Dados</a>: listas ligadas, pilhas, árvores, tabela hash, <code>qsort</code></li>
+      <li><a href="comportamento-indefinido.html">A Linguagem a Fundo</a>: comportamento indefinido, <code>_Generic</code>, as novidades do C23</li>
+      <li><a href="tempo.html">Sistema</a>: data e hora, sinais, <code>fork</code>, threads</li>
+      <li><a href="depuracao-gdb.html">Ferramentas e Qualidade</a>: gdb, sanitizers, Valgrind, CMake, segurança</li>
+    </ul>
+    <a class="btn" href="operadores-bits.html">Começar &#10095;</a>
+  </div>
+  <div class="trilha proj">
+    <h3>Projetos</h3>
+    <p>Programas completos, construídos passo a passo.</p>
+    <ul>
+      <li><a href="projeto-calculadora.html">Calculadora</a> e <a href="projeto-adivinhacao.html">jogo de adivinhação</a></li>
+      <li><a href="projeto-notas.html">Boletim de notas</a> e <a href="projeto-texto.html">contador de palavras</a></li>
+      <li><a href="projeto-agenda.html">Agenda de contatos</a> com arquivo de texto</li>
+      <li><a href="projeto-estoque.html">Estoque da lojinha</a> (arquivo binário) e <a href="projeto-tarefas.html">lista de tarefas</a> (lista ligada)</li>
+    </ul>
+    <a class="btn" href="projetos.html">Ver projetos &#10095;</a>
+  </div>
+  <div class="trilha ref">
+    <h3>Referência</h3>
+    <p>Consulta rápida para quando você já sabe o que procura.</p>
+    <ul>
+      <li><a href="ref-printf.html"><code>printf</code> e <code>scanf</code></a>, <a href="ref-string.html"><code>string.h</code></a>, <a href="ref-stdlib.html"><code>stdlib.h</code> e <code>stdio.h</code></a></li>
+      <li><a href="ref-tipos.html">Tipos e limites</a> e <a href="ref-operadores.html">operadores</a></li>
+      <li><a href="ref-erros.html">Erros comuns</a> do compilador e do programa</li>
+      <li><a href="glossario.html">Glossário</a> e <a href="quiz.html">quiz</a></li>
+    </ul>
+    <a class="btn" href="ref-printf.html">Consultar &#10095;</a>
+  </div>
+</div>
+
+<hr>
+
+<h2>Como estudar</h2>
+<p>Programar se aprende fazendo, como andar de bicicleta. Para cada aula, siga estes quatro passos:</p>
+<ol class="passo">
+  <li><strong>Leia com calma.</strong> Leia a ideia, a anatomia e a saída. Não pule a parte "Quando dá errado": quem sabe ler um erro programa duas vezes mais rápido.</li>
+  <li><strong>Rode no editor.</strong> Clique em <strong>Rodar</strong> em toda caixa Experimente. Mude um número, um texto, apague um <code>;</code> de propósito e veja o que acontece. Não tem como estragar nada: o botão <strong>Restaurar</strong> volta ao código original.</li>
+  <li><strong>Faça as missões.</strong> As caixas com <strong>Missão</strong> conferem sozinhas se você acertou. Tente de verdade antes de abrir a solução; se abrir, digite a solução você mesmo em vez de só olhar.</li>
+  <li><strong>Pratique no terminal.</strong> Quando tiver o compilador instalado, repita os exemplos no seu computador, com o seu editor, compilando com <code>gcc</code>. É assim que se programa "de verdade", e algumas aulas (gdb, Valgrind, processos, threads) só funcionam ali.</li>
+</ol>
+
+<div class="tip">
+<strong>A regra de ouro</strong>
+<p>Ler não basta: digite cada exemplo. Copiar e colar ensina pouco; digitar faz você reparar em cada <code>;</code>, cada chave e cada aspa. Para instalar o compilador, veja <a href="instalar-linux.html">Instalar no Linux</a> ou <a href="instalar-windows-mac.html">Instalar no Windows e macOS</a>, e para escolher onde escrever o código, <a href="editores.html">Editores e IDEs</a>. Se ainda não quiser instalar nada, tudo bem: quase todo o Nível 1 pode ser feito só no navegador.</p>
+</div>
+
+<h3>O editor que compila C de verdade</h3>
+<p>As caixas Experimente não fingem: dentro delas roda o <strong>Clang</strong>, um dos dois compiladores de C mais usados do mundo, transformado em <strong>WebAssembly</strong> (o formato de programa que os navegadores sabem executar). Ele compila o seu código com <code>-std=c23 -Wall -Wextra</code>, as mesmas opções que o guia usa no terminal, mostra os erros e avisos e roda o programa. Você pode digitar a entrada quando o programa pede, usar vários arquivos e até ver o programa "morrer" com uma falha de segmentação, como no Linux.</p>
+<p>Duas diferenças para lembrar: o editor usa o Clang e os terminais das aulas mostram o <strong>gcc</strong>, então as mensagens de erro dizem a mesma coisa com palavras um pouco diferentes; e o editor imita um computador de 32 bits, então alguns tamanhos (como o de um ponteiro) são menores que no seu computador. A aula <a href="simulador.html">O Editor do Guia</a> mostra tudo isso com calma.</p>
+
+<hr>
+
+<h2>Como ler este guia</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Elemento</th><th>O que significa</th></tr>
+<tr><td>Caixa com o nome <code>ola.c</code> no canto</td><td>O conteúdo de um arquivo de código. O nome no canto é o nome do arquivo. Quando aparece <code>trecho</code>, é só um pedaço de programa, não um arquivo inteiro.</td></tr>
+<tr><td><code>ana@notebook:~/c$</code></td><td>O prompt do terminal: usuária <code>ana</code>, na máquina <code>notebook</code>, na pasta <code>~/c</code> (a pasta <code>c</code> dentro da pasta pessoal). O que vem depois é o comando digitado.</td></tr>
+<tr><td><code>&gt;</code> no começo da linha</td><td>Continuação do comando da linha de cima (por exemplo, o texto de um arquivo sendo criado no terminal).</td></tr>
+<tr><td>Linhas sem prompt</td><td>A resposta do computador: a saída do programa ou a mensagem do compilador.</td></tr>
+<tr><td><span class="t-a">← etiqueta</span></td><td>Uma explicação do guia sobre aquela linha. Não aparece no terminal real.</td></tr>
+<tr><td><span class="versao">C23</span></td><td>O recurso só existe a partir dessa versão do C. A aula diz a alternativa para versões mais antigas (veja <a href="versoes.html">Versões do C</a>).</td></tr>
+<tr><td><strong>ilustrativo</strong></td><td>Uma tela que não pôde ser produzida na máquina do guia (por exemplo, a instalação no Windows). Ela segue os passos oficiais, mas os detalhes podem variar.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Versão de referência: C23, com o gcc 15 e o Clang</strong>
+<p>As saídas do terminal foram conferidas com o <strong>gcc 15.2</strong> e o <strong>clang 21.1</strong>, num Linux (Ubuntu 26.04) em português do Brasil. O editor do navegador usa o <strong>Clang 22</strong>, compilado para WebAssembly, com a <em>wasi-libc</em> como biblioteca padrão. Os compiladores seguem o mesmo padrão da linguagem, então o resultado dos programas corretos é o mesmo; só as mensagens de erro usam palavras um pouco diferentes. Quase tudo do Nível 1 funciona em qualquer compilador de C dos últimos vinte anos; quando um recurso é novo, a aula avisa com o selo de versão.</p>
+</div>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
