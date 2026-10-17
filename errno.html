@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C errno e perror — por que a função falhou | Guia C</title>
+<meta name="description" content="errno, perror e strerror em C para iniciantes: descobrir por que fopen falhou, mensagens em português com setlocale, os códigos ENOENT, EACCES, EISDIR e ERANGE, conferir o retorno antes de olhar errno, guardar errno antes que ele mude e strtol com ERANGE, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Erros do Sistema</span> (errno e perror)</h1>
+
+<p class="intro">O <code>fopen</code> devolveu <code>NULL</code>. Mas <strong>por quê</strong>? O arquivo não existe? Existe, mas a Ana não tem permissão? O nome é de uma pasta? Para o usuário, "não consegui abrir" é pouco; "Permissão negada" diz exatamente o que fazer. Em C, quem guarda o motivo é uma variável especial chamada <code>errno</code>, e quem transforma o motivo em frase são o <code>perror</code> e o <code>strerror</code>. Nesta aula você vai usar os três, ver as mensagens em português e conhecer duas armadilhas que pegam até programador experiente.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é <code>errno</code> e quando ele recebe um valor.</li>
+  <li>Como mostrar o motivo de um erro com <code>perror</code> e montar sua própria mensagem com <code>strerror</code>.</li>
+  <li>Como fazer as mensagens saírem em português com <code>setlocale</code> (e por que no editor do guia elas continuam em inglês).</li>
+  <li>Os códigos mais comuns (<code>ENOENT</code>, <code>EACCES</code>, <code>EISDIR</code>, <code>ERANGE</code>…) e como decidir o que fazer com cada um.</li>
+  <li>A regra de ouro: conferir o <strong>retorno</strong> antes de olhar o <code>errno</code>, e guardar o <code>errno</code> logo depois do erro.</li>
+  <li>Como o <code>strtol</code> usa <code>errno</code> para avisar que o número não coube (<code>ERANGE</code>).</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>, sistema em português), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o bilhete na porta</h2>
+<p>A Ana vai buscar uma encomenda na loja, e a loja está fechada. Ela sabe que não deu certo (a porta não abriu), mas não sabe por quê. Aí ela vê um <strong>bilhete</strong> colado na porta: "Fechado para almoço, volto às 14h". Agora ela sabe o que fazer.</p>
+<p>Em C funciona assim:</p>
+<ul>
+  <li>A <strong>porta que não abre</strong> é o valor de retorno: <code>fopen</code> devolve <code>NULL</code>, <code>fseek</code> devolve -1, <code>malloc</code> devolve <code>NULL</code>. É isso que diz <em>se</em> deu errado.</li>
+  <li>O <strong>bilhete</strong> é o <code>errno</code>: um número que a função deixa para dizer <em>por que</em> deu errado.</li>
+</ul>
+<p>E o bilhete tem uma regra importante: ninguém o tira da porta quando a loja reabre. Se você olhar o bilhete sem antes tentar a porta, pode ler um aviso velho. Isso vai ser a regra de ouro da seção 5.</p>
+
+<hr>
+
+<h2>1. perror: a frase pronta</h2>
+<p>O jeito mais curto de mostrar o motivo é o <code>perror</code> ("print error", mostrar o erro):</p>
+
+<pre class="file" data-file="abrir.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *f = fopen("compras.txt", "r");
+    if (f == NULL) {
+        perror("compras.txt");
+        return 1;
+    }
+    printf("Abri a lista de compras!\n");
+    fclose(f);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>if (f == NULL)</dt><dd>Primeiro, a porta: o <code>fopen</code> falhou? Só então vale a pena perguntar o motivo.</dd>
+  <dt>perror("compras.txt")</dt><dd>Escreve o texto que você passou, um <code>": "</code>, a descrição do erro guardado em <code>errno</code> e uma quebra de linha. Tudo vai para a <strong>saída de erros</strong> (<code>stderr</code>), e não para a saída normal (aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>).</dd>
+  <dt>"compras.txt"</dt><dd>O texto do começo é seu. O costume é pôr o nome do arquivo ou da função que falhou, para o usuário saber <em>o que</em> deu errado.</dd>
+  <dt>return 1;</dt><dd>Termina com código diferente de zero: para o sistema, o programa falhou (aula <a href="exit.html">exit e atexit</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra abrir.c -o abrir
+$ ./abrir
+compras.txt: No such file or directory
+$ echo $?
+1
+$ printf "arroz\nfeijão\n" &gt; compras.txt          « agora o arquivo existe
+$ ./abrir
+Abri a lista de compras!</pre>
+
+<p>"No such file or directory" quer dizer "arquivo ou diretório inexistente". Mas por que em inglês, se o sistema da Ana está em português? Já explicamos na seção 3.</p>
+
+<hr>
+
+<h2>2. errno e strerror: o número e a frase</h2>
+<p>O <code>perror</code> sempre escreve no mesmo formato. Para montar sua própria mensagem, use as peças separadas:</p>
+<ul>
+  <li><code>errno</code> (de "error number", número do erro), declarado em <code>&lt;errno.h&gt;</code>: um <code>int</code> com o código do último erro.</li>
+  <li><code>strerror(codigo)</code> ("string error", o erro como texto), de <code>&lt;string.h&gt;</code>: devolve a frase que descreve aquele código.</li>
+</ul>
+
+<pre class="file" data-file="anotar.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;locale.h&gt;
+
+int main(void) {
+    setlocale(LC_ALL, "");
+
+    char nome[100];
+    printf("Arquivo: ");
+    if (fgets(nome, sizeof nome, stdin) == NULL) {
+        return 1;
+    }
+    nome[strcspn(nome, "\n")] = '\0';
+
+    FILE *f = fopen(nome, "a");
+    if (f == NULL) {
+        int erro = errno;
+        fprintf(stderr, "Não consegui abrir %s: %s (errno %d)\n", nome, strerror(erro), erro);
+        return 1;
+    }
+    fprintf(f, "anotação nova\n");
+    fclose(f);
+    printf("Anotei em %s\n", nome);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>setlocale(LC_ALL, "")</code></td><td>Usa o idioma do sistema nas mensagens (seção 3).</td></tr>
+<tr><td><code>fgets</code> + <code>strcspn</code></td><td>Lê o nome do arquivo e tira o <code>'\n'</code> do fim (aula <a href="fgets.html">Ler uma Linha</a>).</td></tr>
+<tr><td><code>fopen(nome, "a")</code></td><td>Abre para acrescentar no fim (cria se não existir).</td></tr>
+<tr><td><code>int erro = errno;</code></td><td><strong>Guarda</strong> o código logo depois do erro, antes de chamar qualquer outra função (a seção 6 mostra por quê).</td></tr>
+<tr><td><code>fprintf(stderr, …)</code></td><td>Escreve na saída de erros, como o <code>perror</code> faz.</td></tr>
+<tr><td><code>strerror(erro)</code></td><td>A frase do código. O número também vai na mensagem, só para você ver.</td></tr>
+</table>
+</div>
+
+<p>Agora a Ana testa o mesmo programa em quatro situações. Antes, ela tirou a permissão de escrita da lista de compras com o comando <code>chmod 444</code> (o arquivo fica "só leitura" para todos):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra anotar.c -o anotar
+$ chmod 444 compras.txt
+$ ./anotar
+Arquivo: compras.txt
+Não consegui abrir compras.txt: Permissão negada (errno 13)
+$ ./anotar
+Arquivo: ../Documentos
+Não consegui abrir ../Documentos: É um diretório (errno 21)
+$ ./anotar
+Arquivo: viagem/roteiro.txt
+Não consegui abrir viagem/roteiro.txt: Arquivo ou diretório inexistente (errno 2)
+$ chmod 644 compras.txt                    « devolve a permissão
+$ ./anotar
+Arquivo: compras.txt
+Anotei em compras.txt</pre>
+
+<p>O mesmo <code>fopen</code>, três motivos diferentes, três mensagens que dizem ao usuário o que fazer: pedir permissão, escolher um arquivo em vez de uma pasta, criar a pasta <code>viagem</code>. Repare que, com <code>"a"</code>, o <code>fopen</code> cria o arquivo que falta, mas <strong>não</strong> cria pastas.</p>
+
+<hr>
+
+<h2>3. Mensagens em português: setlocale</h2>
+<p>Todo programa em C começa no idioma neutro "C" (que, na prática, é o inglês), não importa o idioma do sistema. Para usar o idioma do usuário, chame <code>setlocale(LC_ALL, "")</code>, de <code>&lt;locale.h&gt;</code>, no começo do <code>main</code>. O <code>""</code> quer dizer "o que estiver configurado no sistema" (as variáveis <code>LANG</code> e <code>LC_*</code>; veja <a href="getenv.html">Variáveis de Ambiente</a>).</p>
+
+<p>Este programa mostra o número e a frase de alguns códigos antes e depois do <code>setlocale</code>:</p>
+
+<pre class="file" data-file="tabela.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;locale.h&gt;
+
+void mostrar(void) {
+    printf("ENOENT  %3d %s\n", ENOENT, strerror(ENOENT));
+    printf("EACCES  %3d %s\n", EACCES, strerror(EACCES));
+    printf("EISDIR  %3d %s\n", EISDIR, strerror(EISDIR));
+    printf("ERANGE  %3d %s\n", ERANGE, strerror(ERANGE));
+}
+
+int main(void) {
+    printf("Antes do setlocale:\n");
+    mostrar();
+    setlocale(LC_ALL, "");
+    printf("Depois do setlocale:\n");
+    mostrar();
+    printf("Código 0: %s; pi = %f\n", strerror(0), 3.14159);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tabela.c -o tabela
+$ ./tabela
+Antes do setlocale:
+ENOENT    2 No such file or directory
+EACCES   13 Permission denied
+EISDIR   21 Is a directory
+ERANGE   34 Numerical result out of range
+Depois do setlocale:
+ENOENT    2 Arquivo ou diretório inexistente
+EACCES   13 Permissão negada
+EISDIR   21 É um diretório
+ERANGE   34 Resultado numérico fora de alcance
+Código 0: Sucesso; pi = 3,141590</pre>
+
+<p>Repare na última linha: o código 0 quer dizer "sem erro" ("Sucesso"), e o <code>setlocale(LC_ALL, "")</code> mudou <strong>também</strong> o jeito de escrever números: o <code>%f</code> passou a usar vírgula (<code>3,141590</code>), como se escreve no Brasil. O <code>LC_ALL</code> ("todas as categorias") troca mensagens, números, datas e a ordem alfabética de uma vez. Se você só quer as mensagens em português e os números com ponto, use <code>setlocale(LC_MESSAGES, "")</code> (do POSIX; existe no Linux e no macOS).</p>
+
+<div class="warning">
+<strong>No editor do guia, as mensagens são sempre em inglês,</strong> mesmo com <code>setlocale</code>. A biblioteca C do editor (a wasi-libc, baseada na musl) não traz traduções. As frases também são um pouco diferentes das do Linux, e até os <strong>números</strong> mudam:
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>gcc + glibc (Linux)</th><th>Editor do guia</th></tr>
+<tr><td><code>ENOENT</code></td><td>2 · Arquivo ou diretório inexistente</td><td>44 · No such file or directory</td></tr>
+<tr><td><code>EACCES</code></td><td>13 · Permissão negada</td><td>2 · Permission denied</td></tr>
+<tr><td><code>EINVAL</code></td><td>22 · Argumento inválido</td><td>28 · Invalid argument</td></tr>
+<tr><td><code>ERANGE</code></td><td>34 · Resultado numérico fora de alcance</td><td>68 · Result not representable</td></tr>
+</table>
+</div>
+Moral: nunca compare <code>errno</code> com um número escrito à mão. Use sempre os nomes (<code>ENOENT</code>, <code>EACCES</code>…), que valem em qualquer sistema.
+</div>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> a caixa tem duas abas, <code>lista.c</code> e o arquivo <code>compras.txt</code>. O programa tenta abrir <code>"compra.txt"</code> (sem o "s") e falha: veja o número, a frase do <code>strerror</code> e a linha do <code>perror</code>. Corrija o nome no <code>fopen</code> e rode de novo. Depois acrescente <code>#include &lt;locale.h&gt;</code> e <code>setlocale(LC_ALL, "");</code> e confira que, aqui no editor, a frase continua em inglês.</p>
+<pre class="script" data-file="lista.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+
+int main(void) {
+    FILE *f = fopen("compra.txt", "r");
+    if (f == NULL) {
+        int erro = errno;
+        printf("errno = %d\n", erro);
+        printf("strerror: %s\n", strerror(erro));
+        perror("compra.txt");
+        return 1;
+    }
+    char linha[100];
+    while (fgets(linha, sizeof linha, f) != NULL) {
+        printf("- %s", linha);
+    }
+    fclose(f);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="compras.txt">arroz
+feijão
+café
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Decidir pelo código: errno == ENOENT</h2>
+<p>Nem todo erro é igual. Para a lista de compras, "o arquivo não existe" não é um problema: é só a primeira vez que a Ana usa o programa. Já "permissão negada" é um problema de verdade. Os nomes de <code>&lt;errno.h&gt;</code> deixam o programa decidir:</p>
+
+<pre class="file" data-file="lista.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+
+int main(void) {
+    FILE *f = fopen("compras.txt", "r");
+    if (f == NULL) {
+        if (errno == ENOENT) {
+            printf("Ainda não há lista de compras. Comece uma!\n");
+            return 0;
+        }
+        perror("compras.txt");
+        return 1;
+    }
+
+    char linha[100];
+    int n = 0;
+    while (fgets(linha, sizeof linha, f) != NULL) {
+        n++;
+        printf("%d. %s", n, linha);
+    }
+    fclose(f);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lista.c -o lista
+$ rm -f compras.txt
+$ ./lista
+Ainda não há lista de compras. Comece uma!
+$ printf "arroz\nfeijão\n" &gt; compras.txt
+$ ./lista
+1. arroz
+2. feijão
+$ chmod 000 compras.txt                    « ninguém pode ler
+$ ./lista
+compras.txt: Permission denied
+$ chmod 644 compras.txt</pre>
+
+<p>Os códigos que você mais vai encontrar com arquivos e números:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nome</th><th>Mensagem (glibc, em português)</th><th>Quando aparece</th></tr>
+<tr><td><code>ENOENT</code></td><td>Arquivo ou diretório inexistente</td><td>Abrir para leitura um arquivo que não existe; pasta do caminho não existe ("Error NO ENTry")</td></tr>
+<tr><td><code>EACCES</code></td><td>Permissão negada</td><td>Sem permissão de leitura ou escrita ("Error ACCESS")</td></tr>
+<tr><td><code>EISDIR</code></td><td>É um diretório</td><td>Abrir uma pasta para escrever</td></tr>
+<tr><td><code>ENOTDIR</code></td><td>Não é um diretório</td><td>Um pedaço do caminho é arquivo: <code>compras.txt/x</code></td></tr>
+<tr><td><code>EEXIST</code></td><td>Arquivo existe</td><td>Criar com <code>"wx"</code> um arquivo que já existe (<span class="versao">C11</span>)</td></tr>
+<tr><td><code>ENOSPC</code></td><td>Não há espaço disponível no dispositivo</td><td>Disco cheio ao gravar</td></tr>
+<tr><td><code>EMFILE</code></td><td>Muitos arquivos abertos</td><td>Esqueceu os <code>fclose</code> num laço</td></tr>
+<tr><td><code>EINVAL</code></td><td>Argumento inválido</td><td>Valor sem sentido, como <code>fseek</code> para posição negativa</td></tr>
+<tr><td><code>ERANGE</code></td><td>Resultado numérico fora de alcance</td><td><code>strtol</code>, <code>strtod</code>, <code>pow</code> com resultado que não cabe</td></tr>
+<tr><td><code>EDOM</code></td><td>Argumento numérico fora de domínio</td><td>Matemática impossível, como <code>sqrt(-1)</code> (se a biblioteca usar <code>errno</code>)</td></tr>
+<tr><td><code>ENOMEM</code></td><td>Não foi possível alocar memória</td><td>Falta de memória (o <code>malloc</code> do POSIX usa)</td></tr>
+</table>
+</div>
+
+<p>Só <code>EDOM</code>, <code>ERANGE</code> e <code>EILSEQ</code> são do padrão C. Os outros vêm do <strong>POSIX</strong> (o padrão do Linux, macOS e outros Unix) e existem em quase todo lugar, inclusive no Windows. A lista completa do Linux está em <code>man errno</code>.</p>
+
+<hr>
+
+<h2>5. A regra de ouro: retorno primeiro, errno depois</h2>
+<p>O <code>errno</code> tem duas manias que confundem:</p>
+<ol class="passo">
+  <li><strong>Uma função que dá certo não zera o <code>errno</code>.</strong> O bilhete velho fica na porta.</li>
+  <li><strong>Uma função que dá certo pode mudar o <code>errno</code></strong> mesmo assim, por algum trabalho interno que ela tentou e não precisou.</li>
+</ol>
+<p>Por isso, o <code>errno</code> só tem significado logo depois de uma função que <strong>avisou pelo retorno</strong> que falhou. Veja o que acontece com quem olha o <code>errno</code> direto:</p>
+
+<pre class="file" data-file="errado.c">#include &lt;stdio.h&gt;
+#include &lt;errno.h&gt;
+
+int main(void) {
+    FILE *velho = fopen("lista-antiga.txt", "r");   // não existe
+    if (velho != NULL) {
+        fclose(velho);
+    }
+
+    FILE *f = fopen("compras.txt", "r");             // existe!
+    if (errno != 0) {                                // ERRADO
+        perror("compras.txt");
+        return 1;
+    }
+    printf("Abri a lista.\n");
+    fclose(f);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra errado.c -o errado
+$ ls compras.txt
+compras.txt
+$ ./errado
+compras.txt: No such file or directory</pre>
+
+<p>O <code>compras.txt</code> existe e foi aberto, mas o programa diz que ele não existe. O <code>errno</code> ainda guardava o <code>ENOENT</code> do primeiro <code>fopen</code>, o da lista antiga. O teste certo é <code>if (f == NULL)</code>: a porta primeiro, o bilhete depois.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Como avisa que falhou</th><th>Usa <code>errno</code>?</th></tr>
+<tr><td><code>fopen</code></td><td>devolve <code>NULL</code></td><td>sim (POSIX)</td></tr>
+<tr><td><code>fclose</code>, <code>fflush</code></td><td>devolve <code>EOF</code></td><td>sim (POSIX)</td></tr>
+<tr><td><code>fseek</code></td><td>devolve diferente de 0</td><td>sim (POSIX)</td></tr>
+<tr><td><code>ftell</code></td><td>devolve <code>-1</code></td><td>sim</td></tr>
+<tr><td><code>fread</code>, <code>fwrite</code></td><td>devolvem menos itens que o pedido</td><td>depois de <code>ferror(f)</code> verdadeiro (POSIX)</td></tr>
+<tr><td><code>strtol</code>, <code>strtod</code></td><td><strong>não</strong> têm valor especial: zere o <code>errno</code> antes e olhe depois</td><td>sim (<code>ERANGE</code>)</td></tr>
+<tr><td><code>malloc</code></td><td>devolve <code>NULL</code></td><td>no POSIX (<code>ENOMEM</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>6. Guarde o errno antes que ele mude</h2>
+<p>Qualquer função da biblioteca pode mexer no <code>errno</code>, inclusive as que você usa para <em>mostrar</em> o erro. Este programa mostra o motivo duas vezes, com <code>perror</code> e depois com <code>strerror(errno)</code>:</p>
+
+<pre class="file" data-file="duas.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+
+int main(void) {
+    FILE *f = fopen("compras.txt", "r");
+    if (f == NULL) {
+        perror("compras.txt");
+        fprintf(stderr, "De novo: %s\n", strerror(errno));
+        return 1;
+    }
+    fclose(f);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra duas.c -o duas
+$ rm compras.txt
+$ ./duas
+compras.txt: No such file or directory
+De novo: No such file or directory
+$ ./duas 2&gt; erros.txt                « manda os erros para um arquivo
+$ cat erros.txt
+compras.txt: No such file or directory
+De novo: Invalid argument</pre>
+
+<p>No terminal, as duas linhas concordam. Mas quando a saída de erros vai para um arquivo (o <code>2&gt;</code> do shell, aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>), o próprio <code>perror</code> da glibc faz um teste interno que falha e deixa <code>EINVAL</code> no <code>errno</code>. A segunda linha mostra um motivo que não tem nada a ver com o problema. Isso é real, e não é defeito da glibc: o padrão permite que qualquer função mude o <code>errno</code>.</p>
+<p><strong>A solução</strong> é a do <code>anotar.c</code>: copie o <code>errno</code> para uma variável sua na primeira linha depois do erro (<code>int erro = errno;</code>) e use só a cópia.</p>
+
+<hr>
+
+<h2>7. strtol e ERANGE: o número não coube</h2>
+<p>O <code>strtol</code> ("string to long", texto para <code>long</code>) da aula <a href="string-numero.html">Texto ↔ Número</a> não tem como avisar pelo retorno que o número é grande demais, porque qualquer <code>long</code> é um resultado possível. Então ele faz assim: devolve o maior <code>long</code> (<code>LONG_MAX</code>) ou o menor (<code>LONG_MIN</code>) e põe <code>ERANGE</code> no <code>errno</code>. Como funções que dão certo não zeram o <code>errno</code>, <strong>você</strong> zera antes:</p>
+
+<pre class="file" data-file="converte.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;locale.h&gt;
+
+int main(void) {
+    setlocale(LC_ALL, "");
+    const char *textos[] = {"42", "99999999999999999999", "-99999999999999999999", "12abc", "abc"};
+
+    for (int i = 0; i &lt; 5; i++) {
+        char *fim;
+        errno = 0;
+        long v = strtol(textos[i], &amp;fim, 10);
+
+        if (fim == textos[i]) {
+            printf("%-22s → não é um número\n", textos[i]);
+        } else if (errno == ERANGE) {
+            printf("%-22s → grande demais: %s (veio %ld)\n", textos[i], strerror(errno), v);
+        } else if (*fim != '\0') {
+            printf("%-22s → %ld, mas sobrou \"%s\"\n", textos[i], v, fim);
+        } else {
+            printf("%-22s → %ld\n", textos[i], v);
+        }
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>errno = 0;</dt><dd>Limpa o bilhete antes de cada conversão. Sem isso, um <code>ERANGE</code> da volta anterior faria o "42" parecer grande demais.</dd>
+  <dt>strtol(textos[i], &amp;fim, 10)</dt><dd>Converte em base 10 e aponta <code>fim</code> para o primeiro caractere que não fez parte do número.</dd>
+  <dt>fim == textos[i]</dt><dd>Não andou nada: não havia número. Nesse caso o <code>strtol</code> devolve 0 e o padrão C não manda mexer no <code>errno</code>.</dd>
+  <dt>errno == ERANGE</dt><dd>Havia número, mas não cabia num <code>long</code>.</dd>
+  <dt>*fim != '\0'</dt><dd>Converteu um pedaço e sobrou texto.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra converte.c -o converte
+$ ./converte
+42                     → 42
+99999999999999999999   → grande demais: Resultado numérico fora de alcance (veio 9223372036854775807)
+-99999999999999999999  → grande demais: Resultado numérico fora de alcance (veio -9223372036854775808)
+12abc                  → 12, mas sobrou "abc"
+abc                    → não é um número</pre>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode o mesmo programa aqui. O <code>long</code> do editor tem 4 bytes, então o "veio" mostra 2147483647, e a frase sai em inglês. Acrescente <code>"3000000000"</code> à lista (mude o 5 para 6): três bilhões cabem no <code>long</code> do Linux, mas e aqui? Depois apague a linha <code>errno = 0;</code> e veja se algum resultado muda.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;locale.h&gt;
+
+int main(void) {
+    setlocale(LC_ALL, "");
+    const char *textos[] = {"42", "99999999999999999999", "-99999999999999999999", "12abc", "abc"};
+
+    for (int i = 0; i &lt; 5; i++) {
+        char *fim;
+        errno = 0;
+        long v = strtol(textos[i], &amp;fim, 10);
+
+        if (fim == textos[i]) {
+            printf("%-22s → não é um número\n", textos[i]);
+        } else if (errno == ERANGE) {
+            printf("%-22s → grande demais: %s (veio %ld)\n", textos[i], strerror(errno), v);
+        } else if (*fim != '\0') {
+            printf("%-22s → %ld, mas sobrou \"%s\"\n", textos[i], v, fim);
+        } else {
+            printf("%-22s → %ld\n", textos[i], v);
+        }
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>perror ou strerror: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>perror("nome")</code></td><td>O caso comum: uma linha, formato padrão <code>nome: motivo</code>, já vai para o <code>stderr</code>.</td></tr>
+<tr><td><code>fprintf(stderr, "… %s\n", strerror(erro))</code></td><td>Quando a mensagem precisa de mais informação (o nome que o usuário digitou, o número da linha) ou de outra ordem.</td></tr>
+<tr><td><code>if (erro == ENOENT) …</code></td><td>Quando o programa deve reagir diferente a cada motivo.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Por dentro:</strong> o <code>errno</code> parece uma variável global, mas o padrão diz que ele é uma <strong>macro</strong> que se comporta como variável. Na glibc ele vira algo como <code>(*__errno_location())</code>, para que cada <em>thread</em> do programa tenha o seu próprio <code>errno</code> (aula <a href="threads.html">Threads</a>). Por isso, nunca declare <code>int errno;</code> por conta própria: inclua <code>&lt;errno.h&gt;</code>.
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O programa diz que deu erro, mas a operação funcionou</strong>
+<p><strong>O que significa:</strong> o código testou <code>errno != 0</code> no lugar do retorno, e o <code>errno</code> tinha um valor velho (o exemplo <code>errado.c</code> da seção 5).</p>
+<p><strong>Como consertar:</strong> teste sempre o retorno da função (<code>f == NULL</code>, <code>r != 0</code>, <code>n &lt; pedido</code>). Olhe o <code>errno</code> só dentro desse <code>if</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A mensagem não tem nada a ver com o problema ("Invalid argument", "Success")</strong>
+<p><strong>O que significa:</strong> entre a função que falhou e o <code>strerror(errno)</code>, outra função mudou o <code>errno</code> (um <code>printf</code>, um <code>perror</code>, um <code>fclose</code>). A seção 6 mostrou o <code>perror</code> trocando <code>ENOENT</code> por <code>EINVAL</code> quando a saída de erros vai para um arquivo. "Success" (em português, "Sucesso") é a frase do código 0: o <code>errno</code> foi zerado no caminho.</p>
+<p><strong>Como consertar:</strong> <code>int erro = errno;</code> na primeira linha depois do erro e, daí em diante, só <code>erro</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: ‘errno’ undeclared (first use in this function)</code></strong>
+<p>Um programa parecido com o <code>lista.c</code> da seção 4, mas que só tem <code>#include &lt;stdio.h&gt;</code> no topo:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semerrno.c -o semerrno
+semerrno.c: In function ‘main’:
+semerrno.c:6:13: error: ‘errno’ undeclared (first use in this function)
+    6 |         if (errno == ENOENT) {
+      |             ^~~~~
+semerrno.c:2:1: note: ‘errno’ is defined in header ‘&lt;errno.h&gt;’; this is probably fixable by adding ‘#include &lt;errno.h&gt;’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;errno.h&gt;
+    2 |
+semerrno.c:6:13: note: each undeclared identifier is reported only once for each function it appears in
+    6 |         if (errno == ENOENT) {
+      |             ^~~~~
+semerrno.c:6:22: error: ‘ENOENT’ undeclared (first use in this function)
+    6 |         if (errno == ENOENT) {
+      |                      ^~~~~~</pre>
+<p><strong>O que significa:</strong> faltou <code>#include &lt;errno.h&gt;</code>. O gcc até sugere a linha a acrescentar (o <code>+++ |+</code>). O <code>perror</code> sozinho não precisa dele (está em <code>&lt;stdio.h&gt;</code>), mas <code>errno</code> e os nomes <code>ENOENT</code>, <code>ERANGE</code>… precisam. No editor, o Clang diz <code>use of undeclared identifier 'errno'</code>.</p>
+<p><strong>Como consertar:</strong> acrescente <code>#include &lt;errno.h&gt;</code> no topo. Para <code>strerror</code>, <code>&lt;string.h&gt;</code>; para <code>setlocale</code>, <code>&lt;locale.h&gt;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>As mensagens saem em inglês</strong>
+<p><strong>O que significa:</strong> o programa não chamou <code>setlocale(LC_ALL, "")</code>, então usa o idioma neutro "C". No editor do guia, saem em inglês de qualquer jeito (não há traduções).</p>
+<p><strong>Como consertar:</strong> <code>setlocale(LC_ALL, "");</code> no começo do <code>main</code>. Atenção: no Linux em português ele também faz o <code>printf</code> escrever <code>3,141590</code> em vez de <code>3.141590</code> (e o <code>strtod</code> esperar vírgula). Se isso atrapalhar, use <code>setlocale(LC_MESSAGES, "")</code>, que muda só as mensagens.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>strtol</code> diz "grande demais" para um número pequeno</strong>
+<p><strong>O que significa:</strong> o <code>errno</code> não foi zerado antes da conversão e guardava um <code>ERANGE</code> antigo.</p>
+<p><strong>Como consertar:</strong> <code>errno = 0;</code> imediatamente antes de cada <code>strtol</code>/<code>strtod</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;errno.h&gt;</code></td><td>Traz <code>errno</code> e os nomes <code>ENOENT</code>, <code>EACCES</code>, <code>ERANGE</code>…</td></tr>
+<tr><td><code>errno</code></td><td>Código do último erro; só vale logo depois de uma função que avisou que falhou</td></tr>
+<tr><td><code>perror("texto")</code></td><td>Escreve <code>texto: motivo</code> no <code>stderr</code> (<code>&lt;stdio.h&gt;</code>)</td></tr>
+<tr><td><code>strerror(codigo)</code></td><td>A frase do código (<code>&lt;string.h&gt;</code>)</td></tr>
+<tr><td><code>int erro = errno;</code></td><td>Guarda o código antes que outra função o mude</td></tr>
+<tr><td><code>errno = 0;</code></td><td>Zera antes de funções sem retorno de erro (<code>strtol</code>, <code>strtod</code>)</td></tr>
+<tr><td><code>if (errno == ENOENT)</code></td><td>Decide pelo motivo (sempre pelo nome, nunca pelo número)</td></tr>
+<tr><td><code>setlocale(LC_ALL, "")</code></td><td>Mensagens no idioma do sistema (<code>&lt;locale.h&gt;</code>)</td></tr>
+<tr><td><code>man errno</code></td><td>No terminal: a lista de códigos do Linux</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A frase pronta</h3>
+<p>Complete para mostrar <code>dados.csv: motivo</code> quando o <code>fopen</code> falhar:</p>
+<div class="ex-code">if (f == NULL) { <input data-answer="perror" aria-label="função">("dados.csv"); return 1; }</div>
+</div>
+
+<div class="exercise">
+<h3>2. O arquivo não existe</h3>
+<p>Complete o nome do código de erro para "arquivo ou diretório inexistente":</p>
+<div class="ex-code">if (errno == <input data-answer="ENOENT" aria-label="código">) { … }</div>
+</div>
+
+<div class="exercise">
+<h3>3. Antes do strtol</h3>
+<p>Complete a linha que deve vir imediatamente antes de <code>long v = strtol(s, &amp;fim, 10);</code>:</p>
+<div class="ex-code"><input data-answer="errno = 0;|errno=0;|errno = 0|errno=0" aria-label="linha"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Qual é o jeito certo de saber se o <code>fopen</code> falhou?</p>
+<label><input type="radio" name="q4"> <code>if (errno != 0)</code></label>
+<label><input type="radio" name="q4"> <code>if (errno == ENOENT)</code></label>
+<label><input type="radio" name="q4"> <code>if (f == NULL)</code></label>
+<label><input type="radio" name="q4"> <code>if (perror(f))</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Por que comparar <code>errno == 2</code> é má ideia?</p>
+<label><input type="radio" name="q5"> Porque o <code>errno</code> é sempre negativo</label>
+<label><input type="radio" name="q5"> Porque o número de cada erro muda de sistema para sistema (no editor do guia, 2 é <code>EACCES</code>)</label>
+<label><input type="radio" name="q5"> Porque o compilador não aceita números com <code>errno</code></label>
+<label><input type="radio" name="q5"> Não é má ideia: 2 é sempre "arquivo inexistente"</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. O programa chama <code>perror</code> e, na linha seguinte, <code>strerror(errno)</code>, e as duas mensagens são diferentes. O que aconteceu?</p>
+<label><input type="radio" name="q6"> O arquivo foi criado entre as duas linhas</label>
+<label><input type="radio" name="q6"> O <code>strerror</code> sempre mostra a mensagem em outro idioma</label>
+<label><input type="radio" name="q6"> Faltou <code>setlocale</code></label>
+<label><input type="radio" name="q6"> O próprio <code>perror</code> mudou o <code>errno</code>; era preciso guardá-lo antes</label>
+</div>
+
+<h3>Missão final: criar a configuração na primeira vez</h3>
+
+<div class="tryc" data-goal="out:Criei config.txt com o padrão.,out:Configuração: volume=5,exit:0,src:ENOENT">
+<p class="try-task"><strong>Missão:</strong> o programa lê <code>config.txt</code>, que não existe na primeira vez, e hoje morre com <code>perror</code>. No lugar marcado, faça assim: se o <code>fopen</code> falhou <strong>e</strong> o motivo é <code>ENOENT</code>, crie o arquivo com <code>"w"</code>, grave <code>volume=5</code>, feche, mostre <code>Criei config.txt com o padrão.</code> e abra de novo para leitura. Qualquer outro erro continua indo para o <code>perror</code>. A saída deve ser:</p>
+<pre class="out">Criei config.txt com o padrão.
+Configuração: volume=5</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;errno.h&gt;
+
+int main(void) {
+    FILE *f = fopen("config.txt", "r");
+    // se faltou o arquivo (ENOENT), crie com o padrão aqui
+
+    if (f == NULL) {
+        perror("config.txt");
+        return 1;
+    }
+
+    char linha[100];
+    while (fgets(linha, sizeof linha, f) != NULL) {
+        printf("Configuração: %s", linha);
+    }
+    fclose(f);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;errno.h&gt;
+
+int main(void) {
+    FILE *f = fopen("config.txt", "r");
+    // se faltou o arquivo (ENOENT), crie com o padrão aqui
+    if (f == NULL &amp;&amp; errno == ENOENT) {
+        FILE *novo = fopen("config.txt", "w");
+        if (novo == NULL) {
+            perror("config.txt");
+            return 1;
+        }
+        fprintf(novo, "volume=5\n");
+        fclose(novo);
+        printf("Criei config.txt com o padrão.\n");
+        f = fopen("config.txt", "r");
+    }
+
+    if (f == NULL) {
+        perror("config.txt");
+        return 1;
+    }
+
+    char linha[100];
+    while (fgets(linha, sizeof linha, f) != NULL) {
+        printf("Configuração: %s", linha);
+    }
+    fclose(f);
+    return 0;
+}
+</pre>
+</div>
+
+<p>O <code>&amp;&amp;</code> aqui é essencial: <code>f == NULL &amp;&amp; errno == ENOENT</code> só olha o <code>errno</code> se o <code>fopen</code> falhou (aula <a href="operadores-logicos.html">Operadores Lógicos</a>). É a regra de ouro escrita numa linha.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <strong>retorno</strong> diz <em>se</em> a função falhou; o <code>errno</code> (de <code>&lt;errno.h&gt;</code>) diz <em>por quê</em>. Olhe o <code>errno</code> só depois que o retorno avisou o erro.</li>
+  <li><code>perror("nome")</code> mostra <code>nome: motivo</code> no <code>stderr</code>; <code>strerror(codigo)</code> devolve a frase para você montar sua mensagem.</li>
+  <li>Com <code>setlocale(LC_ALL, "")</code>, a glibc fala português ("Arquivo ou diretório inexistente"). No editor do guia, as frases ficam em inglês e os números dos códigos são outros.</li>
+  <li>Compare com os nomes (<code>ENOENT</code>, <code>EACCES</code>, <code>EISDIR</code>, <code>ERANGE</code>…), nunca com números.</li>
+  <li>Funções que dão certo não zeram o <code>errno</code> e qualquer função pode mudá-lo: guarde com <code>int erro = errno;</code> logo depois do erro.</li>
+  <li>Para <code>strtol</code>/<code>strtod</code>: <code>errno = 0;</code> antes, <code>errno == ERANGE</code> depois.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
