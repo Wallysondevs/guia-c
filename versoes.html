@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Versões — do K&amp;R C ao C23 | Guia C</title>
+<meta name="description" content="As versões da linguagem C: K&amp;R C (1978), C89/C90, C99, C11, C17, C23 e o próximo, C2y. O que cada uma trouxe, como ver a versão com __STDC_VERSION__, como escolher com -std= no gcc, e por que o gcc 15 já usa gnu23.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Versões</span></h1>
+
+<p class="intro">O C de hoje não é igual ao de 1972. A linguagem ganhou versões novas ao longo dos anos, cada uma com um nome curto como <strong>C99</strong> ou <strong>C23</strong> (o número é o ano). Quando você procura ajuda na internet, encontra código de todas as épocas, e um programa escrito para uma versão às vezes não compila em outra. Nesta aula você vai conhecer cada versão, saber qual o seu compilador está usando e aprender a escolher a versão com a opção <code>-std=</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o <strong>padrão</strong> do C e quem o decide.</li>
+  <li>As versões: K&amp;R C, C89/C90, C99, C11, C17, C23 e o próximo, C2y, com o que cada uma trouxe.</li>
+  <li>A diferença entre a versão do <strong>C</strong> e a versão do <strong>compilador</strong>.</li>
+  <li>Como descobrir a versão com <code>__STDC_VERSION__</code>.</li>
+  <li>Como escolher a versão com <code>-std=c23</code>, <code>-std=c17</code>… e o que muda com <code>gnu23</code> e <code>-pedantic</code>.</li>
+  <li>Os erros que aparecem quando o código e a versão não combinam.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: as regras do futebol</h2>
+<p>O futebol tem um livro de regras oficial, e de tempos em tempos ele muda: um ano surge o cartão amarelo, outro ano o goleiro deixa de poder pegar com a mão a bola recuada pelo companheiro, depois chega o árbitro de vídeo. Um jogo de 1970 e um de hoje são "futebol", mas algumas jogadas de hoje seriam estranhas em 1970, e algumas de 1970 hoje dariam falta.</p>
+<p>O C é igual. Existe um <strong>livro de regras oficial</strong>, o <strong>padrão</strong>, que diz exatamente o que é um programa C válido e o que ele deve fazer. De tempos em tempos sai uma edição nova. Os <strong>compiladores</strong> (gcc, Clang, o da Microsoft) são como os árbitros: cada um aplica as regras, e você pode dizer a ele qual edição do livro usar.</p>
+
+<hr>
+
+<h2>O padrão ISO</h2>
+<p>Nos primeiros anos, o C não tinha regras oficiais: a referência era o livro de Kernighan e Ritchie, e cada fabricante de compilador fazia pequenas mudanças. Um programa que funcionava num computador podia não compilar em outro. Para acabar com a confusão, o instituto americano de normas (<strong>ANSI</strong>) reuniu um comitê e publicou, em 1989, o primeiro padrão do C. No ano seguinte, a <strong>ISO</strong> (a Organização Internacional de Normalização, a mesma das normas ISO de empresas) adotou o mesmo texto.</p>
+<p>Desde então, o C é mantido por um comitê internacional, o <strong>WG14</strong>, com gente de empresas, universidades e projetos de compiladores. O documento oficial se chama <strong>ISO/IEC 9899</strong>; cada edição tem o ano no fim (por exemplo, ISO/IEC 9899:2024 é o C23). O comitê é bem conservador: o C muda devagar, e quase todo programa antigo continua compilando nas versões novas. Isso é proposital: existe muito código em C funcionando há décadas em aviões, bancos e sistemas operacionais.</p>
+
+<hr>
+
+<h2>O que cada versão trouxe</h2>
+<p>O nome curto de cada versão é o ano em que ela ficou pronta (às vezes um ano antes de ser publicada oficialmente). Você não precisa decorar a tabela: ela serve para consultar quando uma aula mostrar o selo de versão, ou quando você encontrar código antigo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Versão</th><th>Ano</th><th>O que trouxe (os destaques)</th></tr>
+<tr><td><strong>K&amp;R C</strong></td><td>1978</td><td>Não era um padrão: era o C descrito no livro <em>The C Programming Language</em>, de Kernighan e Ritchie. Funções sem tipo nos parâmetros, <code>int</code> subentendido quando o tipo era omitido, nada de <code>void</code> nem <code>const</code>.</td></tr>
+<tr><td><strong>C89 / C90</strong> (ANSI C)</td><td>1989 / 1990</td><td>O primeiro padrão. <strong>Protótipos</strong> (<code>int soma(int a, int b)</code>, com o tipo de cada parâmetro), <code>void</code>, <code>const</code>, <code>volatile</code>, e a <strong>biblioteca padrão</strong> oficial: <code>stdio.h</code>, <code>stdlib.h</code>, <code>string.h</code>, <code>math.h</code>… C89 (ANSI) e C90 (ISO) são o mesmo texto.</td></tr>
+<tr><td><strong>C95</strong></td><td>1995</td><td>Um complemento pequeno: caracteres "largos" (<code>wchar.h</code>), para idiomas com muitos símbolos.</td></tr>
+<tr><td><strong>C99</strong></td><td>1999</td><td>Uma grande atualização. Comentários de linha <code>//</code>; declarar variáveis em qualquer ponto e dentro do <code>for</code> (<code>for (int i = 0; …)</code>); <code>bool</code>, <code>true</code> e <code>false</code> com <code>#include &lt;stdbool.h&gt;</code>; <code>long long</code>; inteiros de tamanho fixo (<code>stdint.h</code>: <code>int32_t</code>, <code>uint8_t</code>…); <code>snprintf</code>; <code>inline</code>; arrays de tamanho variável (VLAs); o <code>main</code> pode omitir o <code>return 0</code>.</td></tr>
+<tr><td><strong>C11</strong></td><td>2011</td><td><code>_Generic</code> (escolher o código pelo tipo), <code>_Static_assert</code> (conferir uma condição na hora de compilar), <code>_Noreturn</code>, <code>_Alignas</code>/<code>_Alignof</code>, threads (<code>threads.h</code>) e operações atômicas, textos UTF-8 com <code>u8"…"</code>. E retirou o perigoso <code>gets</code> da biblioteca.</td></tr>
+<tr><td><strong>C17</strong> (ou C18)</td><td>2017 / 2018</td><td>Nenhum recurso novo: só correções e esclarecimentos no texto do C11. Ficou pronto em 2017 e foi publicado em 2018, por isso tem dois nomes.</td></tr>
+<tr><td><strong>C23</strong></td><td>2023 / 2024</td><td><code>bool</code>, <code>true</code> e <code>false</code> viram palavras da linguagem (sem <code>#include</code>); <code>nullptr</code>; <code>constexpr</code>; <code>typeof</code>; <code>auto</code> para deduzir o tipo; atributos como <code>[[nodiscard]]</code>; <code>static_assert</code> como palavra-chave; números binários (<code>0b1010</code>) e separador de dígitos (<code>1'000'000</code>); <code>#embed</code> (embutir um arquivo no programa); <code>_BitInt(N)</code>. E removeu o jeito K&amp;R de definir funções. Ficou pronto em 2023 e foi publicado em outubro de 2024. <strong>É a versão que este guia ensina.</strong></td></tr>
+<tr><td><strong>C2y</strong></td><td>(em andamento)</td><td>A próxima versão, ainda sendo escrita pelo comitê. O "y" é um ano que ainda não se sabe. O gcc 15 já aceita <code>-std=c2y</code> para quem quer testar os primeiros recursos.</td></tr>
+</table>
+</div>
+
+<h3>O C23 numa caixa</h3>
+<p>Este programa usa sete novidades do C23 de uma vez. Não se preocupe em entender cada uma: todas têm a sua aula (<a href="bool.html">Booleanos</a>, <a href="ponteiro-nulo.html">Ponteiro Nulo</a>, <a href="constantes.html">Constantes</a>, <a href="static-assert.html">static_assert</a>, <a href="novidades.html">Novidades do C99 ao C23</a>). O que importa aqui é ver que o compilador do guia entende todas:</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e veja as cinco linhas. Depois troque <code>0b1010</code> por <code>0b1111</code> (o número 15 escrito em binário) e rode de novo.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    constexpr int ANO = 2024;
+    bool aprovada = true;
+    int *nada = nullptr;
+    auto populacao = 1'000'000;
+    typeof(populacao) dobro = populacao * 2;
+    int mascara = 0b1010;
+    static_assert(sizeof(int) &gt;= 4);
+
+    printf("C23 publicado em %d\n", ANO);
+    printf("aprovada = %d\n", aprovada);
+    printf("nada é nulo? %d\n", nada == nullptr);
+    printf("dobro = %d\n", dobro);
+    printf("mascara = %d\n", mascara);
+    return 0;
+}
+</pre>
+</div>
+
+<p>No terminal da Ana, com o gcc 15 e o C23, a saída é a mesma:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra c23.c -o c23 &amp;&amp; ./c23
+C23 publicado em 2024
+aprovada = 1                                « true aparece como 1
+nada é nulo? 1
+dobro = 2000000
+mascara = 10                                « 0b1010 em binário é 10</pre>
+
+<p>E com uma versão mais antiga? A opção <code>-std=c17</code> pede ao gcc as regras do C17. O mesmo arquivo dá uma enxurrada de erros (aqui, só o começo):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c17 -Wall -Wextra c23.c -o c23
+c23.c: In function ‘main’:
+c23.c:4:5: error: ‘constexpr’ undeclared (first use in this function)   « o C17 não conhece constexpr
+    4 |     constexpr int ANO = 2024;
+      |     ^~~~~~~~~
+c23.c:4:5: note: each undeclared identifier is reported only once for each function it appears in
+c23.c:4:14: error: expected ‘;’ before ‘int’
+    4 |     constexpr int ANO = 2024;
+      |              ^~~~
+      |              ;
+c23.c:5:5: error: unknown type name ‘bool’                                « nem bool sem include
+    5 |     bool aprovada = true;
+      |     ^~~~
+c23.c:2:1: note: ‘bool’ is defined in header ‘&lt;stdbool.h&gt;’; this is probably fixable by adding ‘#include &lt;stdbool.h&gt;’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;stdbool.h&gt;
+    2 |
+c23.c:5:21: error: ‘true’ undeclared (first use in this function)
+    5 |     bool aprovada = true;
+      |                     ^~~~
+c23.c:5:21: note: ‘true’ is defined in header ‘&lt;stdbool.h&gt;’; this is probably fixable by adding ‘#include &lt;stdbool.h&gt;’
+c23.c:6:17: error: ‘nullptr’ undeclared (first use in this function)     « nem nullptr
+    6 |     int *nada = nullptr;
+      |                 ^~~~~~~</pre>
+
+<p>Para o C17, palavras como <code>constexpr</code> e <code>nullptr</code> são nomes desconhecidos, como se a Ana tivesse inventado uma palavra. Repare que o gcc é gentil com o <code>bool</code>: ele diz que <code>bool</code> é definido no arquivo <code>&lt;stdbool.h&gt;</code> e até mostra onde acrescentar o <code>#include</code> (a linha com <code>+++</code>). No C99, C11 e C17, era assim que se usava <code>bool</code>.</p>
+
+<hr>
+
+<h2>Padrão × compilador</h2>
+<p>Uma confusão muito comum: a versão do <strong>C</strong> e a versão do <strong>compilador</strong> são coisas diferentes. O C23 é o livro de regras; o gcc 15 é um programa que segue esse livro (e os anteriores). Cada compilador tem a sua própria numeração, e cada versão nova de compilador aprende mais recursos das versões novas do C.</p>
+
+<h3>Ver a versão do compilador</h3>
+<pre class="term" data-cwd="~/c">$ gcc --version
+gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0                « o compilador está na versão 15.2
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+$ clang --version
+Ubuntu clang version 21.1.8 (6ubuntu1)              « o Clang está na versão 21.1
+Target: x86_64-pc-linux-gnu
+Thread model: posix
+InstalledDir: /usr/lib/llvm-21/bin</pre>
+
+<p>Nenhum dos dois diz "C23": o número 15.2 é do gcc, não do C. Para saber qual versão do C está valendo, é preciso perguntar ao próprio código.</p>
+
+<h3>Ver a versão do C: <code>__STDC_VERSION__</code></h3>
+<p>Todo compilador de C define uma palavra especial chamada <code>__STDC_VERSION__</code> (com dois sublinhados antes e dois depois; <em>STDC</em> = <em>standard C</em>, "C padrão"). Ela vale um número no formato <strong>ano e mês</strong> da versão do C que está sendo usada:</p>
+
+<pre class="file" data-file="versao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("__STDC_VERSION__ = %ld\n", __STDC_VERSION__);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>__STDC_VERSION__</dt><dd>Uma <strong>macro</strong> pré-definida: o pré-processador troca essa palavra por um número antes de compilar (como o <code>NOME</code> da aula <a href="como-funciona.html">Como o C Vira Programa</a>). O número é do tipo <code>long</code>: no C23, é <code>202311L</code> (o <code>L</code> no fim marca um <code>long</code>).</dd>
+  <dt>%ld</dt><dd>O "buraco" do <code>printf</code> para um <code>long</code> (<em>long decimal</em>). A aula <a href="formatos-printf.html">Formatos do printf</a> mostra todos.</dd>
+</dl>
+
+<p>A Ana compilou o mesmo arquivo pedindo cada versão:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc versao.c -o versao &amp;&amp; ./versao
+__STDC_VERSION__ = 202311                           « sem -std: o gcc 15 já usa o C23
+$ gcc -std=c23 versao.c -o versao &amp;&amp; ./versao
+__STDC_VERSION__ = 202311                           « C23: novembro de 2023
+$ gcc -std=c17 versao.c -o versao &amp;&amp; ./versao
+__STDC_VERSION__ = 201710                           « C17: outubro de 2017
+$ gcc -std=c11 versao.c -o versao &amp;&amp; ./versao
+__STDC_VERSION__ = 201112                           « C11: dezembro de 2011
+$ gcc -std=c99 versao.c -o versao &amp;&amp; ./versao
+__STDC_VERSION__ = 199901                           « C99: janeiro de 1999
+$ gcc -std=c2y versao.c -o versao &amp;&amp; ./versao
+__STDC_VERSION__ = 202500                           « C2y: número provisório
+$ gcc -std=c89 versao.c -o versao &amp;&amp; ./versao
+versao.c: In function ‘main’:
+versao.c:4:40: error: ‘__STDC_VERSION__’ undeclared (first use in this function)
+    4 |     printf("__STDC_VERSION__ = %ld\n", __STDC_VERSION__);
+      |                                        ^~~~~~~~~~~~~~~~
+versao.c:4:40: note: each undeclared identifier is reported only once for each function it appears in</pre>
+
+<p>Repare no último: no C89, o <code>__STDC_VERSION__</code> <strong>nem existia</strong> (ele surgiu no complemento de 1995), então o compilador diz que é um nome não declarado. Os números servem para o código descobrir em que versão está, com <code>#if __STDC_VERSION__ &gt;= 202311L</code> (aula <a href="compilacao-condicional.html">Compilação Condicional</a>).</p>
+
+<div class="tip">
+<strong>Sem compilar nada</strong>
+<p>Dá para perguntar o valor direto ao pré-processador. A opção <code>-dM</code> lista todas as macros pré-definidas, e o <code>grep</code> filtra a que interessa:</p>
+<pre class="term" data-cwd="~/c">$ gcc -dM -E -x c /dev/null | grep STDC_VERSION
+#define __STDC_VERSION__ 202311L
+$ clang -dM -E -x c /dev/null | grep STDC_VERSION
+#define __STDC_VERSION__ 201710L                    « o Clang 21 ainda usa o C17 se você não pedir</pre>
+<p>O <code>-x c</code> diz "trate como C" e o <code>/dev/null</code> é um arquivo vazio especial do Linux: é um jeito de ver as macros sem ter um programa.</p>
+</div>
+
+<h3>A versão de cada compilador, quando você não pede nenhuma</h3>
+<p>Se você não usar <code>-std=</code>, cada compilador escolhe uma versão por conta própria, e essa escolha muda com o tempo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Compilador</th><th>Versão do C usada sem <code>-std=</code></th></tr>
+<tr><td>gcc 5 a 7</td><td><code>gnu11</code> (C11 com extensões do GNU)</td></tr>
+<tr><td>gcc 8 a 14</td><td><code>gnu17</code></td></tr>
+<tr><td><strong>gcc 15</strong> (o do guia)</td><td><strong><code>gnu23</code></strong>, conferido acima: <code>202311</code></td></tr>
+<tr><td>Clang 21 (conferido acima)</td><td><code>gnu17</code>: <code>201710</code></td></tr>
+<tr><td>Editor do guia (Clang 22)</td><td>Sempre <code>-std=c23</code>, que o guia escolhe por você</td></tr>
+</table>
+</div>
+
+<p>É por isso que o guia sempre escreve o <code>-std=c23</code> no comando: assim o programa se comporta igual no gcc 15, no gcc 14 (que já aceita a opção) e no Clang, em vez de depender do que cada um escolhe sozinho.</p>
+
+<div class="tryc" data-goal="out:Este código foi compilado com 202311,src:__STDC_VERSION__">
+<p class="try-task"><strong>Missão:</strong> o editor compila com <code>-std=c23</code>. Faça o programa mostrar isso: troque o <code>???</code> por <code>%ld</code> e acrescente <code>, __STDC_VERSION__</code> antes do <code>)</code>, como no <code>versao.c</code> lá em cima. A saída deve ser <code>Este código foi compilado com 202311</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Este código foi compilado com ???\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Este código foi compilado com %ld\n", __STDC_VERSION__);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Escolher a versão: as opções <code>-std=</code></h2>
+<p>A opção <code>-std=</code> (de <em>standard</em>, padrão) diz ao compilador qual livro de regras usar. Existem dois "sabores" de cada versão:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>O que pede</th></tr>
+<tr><td><code>-std=c23</code></td><td>O C23 do padrão ISO. Desliga algumas extensões do gcc que entram em conflito com o padrão.</td></tr>
+<tr><td><code>-std=gnu23</code></td><td>O C23 <strong>mais</strong> as extensões do GNU (recursos que só o gcc e o Clang têm). É o que o gcc 15 usa se você não pedir nada.</td></tr>
+<tr><td><code>-std=c17</code> / <code>-std=gnu17</code></td><td>O C17 (também aceita <code>c18</code>, que é o mesmo).</td></tr>
+<tr><td><code>-std=c11</code>, <code>-std=c99</code>, <code>-std=c89</code></td><td>As versões anteriores (<code>c90</code> e <code>ansi</code> são o mesmo que <code>c89</code>).</td></tr>
+<tr><td><code>-std=c2y</code></td><td>A próxima versão, experimental.</td></tr>
+<tr><td><code>-std=c2x</code></td><td>Nome antigo do <code>c23</code>, de antes de o ano ser conhecido. Ainda funciona e dá o mesmo <code>202311</code>.</td></tr>
+</table>
+</div>
+
+<p>Na prática, <code>c23</code> e <code>gnu23</code> quase nunca fazem diferença em programas de iniciante. A diferença aparece quando o código usa uma <strong>extensão</strong>: um recurso que o gcc oferece, mas que não está (ou não estava) no padrão. Por exemplo, os números binários <code>0b1010</code> só entraram no padrão no C23, mas o gcc os aceita há muitos anos como extensão. Para o gcc avisar quando o código sai do padrão escolhido, existe a opção <code>-pedantic</code> ("detalhista"):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c17 -Wall -Wextra binario.c -o binario &amp;&amp; ./binario
+mascara = 10                                        « o gcc aceitou, calado
+$ gcc -std=c17 -Wall -Wextra -pedantic binario.c -o binario
+binario.c: In function ‘main’:
+binario.c:4:19: warning: binary constants are a C23 feature or GCC extension [-Wpedantic]
+    4 |     int mascara = 0b1010;
+      |                   ^~~~~~
+$ gcc -std=c23 -Wall -Wextra -pedantic binario.c -o binario &amp;&amp; ./binario
+mascara = 10                                        « no C23 é padrão: nenhum aviso</pre>
+
+<p>O aviso diz: "constantes binárias são um recurso do C23 ou uma extensão do GCC". Ou seja, o código funciona no gcc, mas outro compilador seguindo o C17 poderia recusá-lo. O <code>-pedantic</code> é útil quando o programa precisa compilar em muitos compiladores diferentes. Neste guia, o comando padrão é <code>gcc -std=c23 -Wall -Wextra</code> (a aula <a href="compilar.html">Compilar com gcc</a> explica cada parte).</p>
+
+<h3>Qual versão usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Aprendendo, ou começando um programa novo</td><td><code>-std=c23</code>, como o guia</td></tr>
+<tr><td>O compilador é antigo e não aceita <code>c23</code> (gcc 13 ou anterior)</td><td><code>-std=c2x</code> (gcc 9 a 13, com parte do C23) ou <code>-std=c17</code></td></tr>
+<tr><td>Projeto que já existe</td><td>A versão que o projeto usa (está no <code>Makefile</code> ou no <code>CMakeLists.txt</code>)</td></tr>
+<tr><td>Microcontroladores e compiladores de fabricantes</td><td>Muitas vezes <code>c99</code> ou <code>c11</code>: é o que essas ferramentas aceitam</td></tr>
+<tr><td>Código que precisa compilar em qualquer lugar</td><td>Uma versão mais antiga com <code>-pedantic</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>O selo de versão do guia</h2>
+<p>Quando uma aula mostra um recurso que não existe em todas as versões, ela coloca um selo ao lado, assim: <span class="versao">C99</span>, <span class="versao">C11</span>, <span class="versao">C23</span>. O selo diz a <strong>primeira</strong> versão que tem o recurso. Por exemplo, <code>bool</code> sem <code>#include</code> <span class="versao">C23</span> quer dizer: "funciona no C23 e nas seguintes; nas anteriores, use <code>#include &lt;stdbool.h&gt;</code>". A aula sempre diz a alternativa antiga, porque muito código e muitos cursos ainda usam C99 ou C11.</p>
+
+<p>A caixa abaixo foi configurada para compilar com <code>-std=c17</code>, como um compilador um pouco mais antigo. Veja o que acontece com o <code>bool</code>:</p>
+
+<div class="tryc" data-flags="-std=c17 -Wall -Wextra" data-goal="out:aprovada = 1">
+<p class="try-task"><strong>Missão:</strong> esta caixa compila com <code>-std=c17</code>. Rode e veja o erro: o C17 não conhece <code>bool</code> sozinho. Conserte do jeito do C99 ao C17: acrescente a linha <code>#include &lt;stdbool.h&gt;</code> logo abaixo do <code>#include &lt;stdio.h&gt;</code>. Rode de novo: deve aparecer <code>aprovada = 1</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool aprovada = true;
+    printf("aprovada = %d\n", aprovada);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdbool.h&gt;
+
+int main(void) {
+    bool aprovada = true;
+    printf("aprovada = %d\n", aprovada);
+    return 0;
+}
+</pre>
+</div>
+
+<p>No editor, o Clang diz <code>use of undeclared identifier 'bool'</code> ("uso de identificador não declarado"); o gcc diz <code>unknown type name ‘bool’</code> ("nome de tipo desconhecido") e sugere o <code>stdbool.h</code>. No C23, as duas versões do programa funcionam: o <code>#include &lt;stdbool.h&gt;</code> continua permitido, só não é mais necessário.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Código novo num compilador configurado para uma versão antiga</strong>
+<p>A Ana compilou um programa com <code>for (int i…)</code> e comentário <code>//</code> num projeto antigo, que usava <code>-std=c89</code>:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c89 -Wall -Wextra antigo.c -o antigo
+antigo.c: In function ‘main’:
+antigo.c:4:5: error: C++ style comments are not allowed in ISO C90
+    4 |     // conta de 1 a 3
+      |     ^
+antigo.c:4:5: note: (this will be reported only once per input file)
+antigo.c:5:5: error: ‘for’ loop initial declarations are only allowed in C99 or C11 mode
+    5 |     for (int i = 1; i &lt;= 3; i++) {
+      |     ^~~
+antigo.c:5:5: note: use option ‘-std=c99’, ‘-std=gnu99’, ‘-std=c11’ or ‘-std=gnu11’ to compile your code</pre>
+<p><strong>O que aconteceu:</strong> o primeiro erro diz "comentários no estilo C++ não são permitidos no ISO C90" (o <code>//</code> veio do C++ e só entrou no C99). O segundo: "declarações iniciais no laço <code>for</code> só são permitidas no modo C99 ou C11", e o gcc ainda sugere as opções que resolvem.</p>
+<p><strong>Como consertar:</strong> se puder, use uma versão nova (<code>-std=c23</code>). Se o projeto exige C89, use <code>/* comentário */</code> e declare a variável antes do laço: <code>int i;</code> e depois <code>for (i = 1; …)</code>. Você vai ver muito código assim em projetos antigos.</p>
+</div>
+
+<div class="cenario">
+<strong>O "hello, world" original do livro K&amp;R não compila mais</strong>
+<p>A Ana copiou o primeiro programa do livro de 1978, do jeito que ele aparece nas edições antigas:</p>
+<pre class="file" data-file="hello.c · erro de propósito">#include &lt;stdio.h&gt;
+
+main()
+{
+    printf("hello, world\n");
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc hello.c -o hello
+hello.c:3:1: error: return type defaults to ‘int’ [-Wimplicit-int]
+    3 | main()
+      | ^~~~
+$ gcc -std=c89 hello.c -o hello &amp;&amp; ./hello          « com as regras de 1989, passa
+hello, world</pre>
+<p><strong>O que aconteceu:</strong> no C antigo, quem não escrevia o tipo ganhava um <code>int</code> de presente: <code>main()</code> queria dizer <code>int main()</code>. O C99 proibiu isso, e o gcc 14 passou a tratar como erro: "o tipo de retorno fica <code>int</code> por padrão". Com <code>-std=c89</code>, o gcc volta às regras antigas e aceita.</p>
+<p><strong>Como consertar:</strong> escreva o tipo: <code>int main(void)</code>, como em todos os exemplos do guia. Ao copiar código antigo da internet, espere pequenas adaptações como essa.</p>
+</div>
+
+<div class="cenario">
+<strong>"Funciona no meu computador e não no do meu colega"</strong>
+<p><strong>O que aconteceu:</strong> sem <code>-std=</code>, cada compilador usa uma versão diferente (veja a tabela acima). Um programa com <code>bool</code> sem <code>#include</code>, ou com <code>nullptr</code>, compila no gcc 15 (que usa C23 sozinho), mas falha no gcc 13 ou no Clang 21, que usam C17 se ninguém pedir outra coisa.</p>
+<p><strong>Como consertar:</strong> escreva sempre a versão no comando: <code>gcc -std=c23 …</code>. Se o compilador do colega for antigo demais para o C23, ele vai dizer isso claramente (<code>unrecognized command-line option</code>), em vez de dar erros confusos no meio do código.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Versão</th><th><code>__STDC_VERSION__</code></th><th>Opção do gcc</th><th>Documento</th></tr>
+<tr><td>K&amp;R C</td><td>(não existe)</td><td>(nenhuma)</td><td>Livro de 1978</td></tr>
+<tr><td>C89 / C90</td><td>(não existe)</td><td><code>-std=c89</code>, <code>-std=c90</code>, <code>-ansi</code></td><td>ANSI X3.159-1989 / ISO/IEC 9899:1990</td></tr>
+<tr><td>C95</td><td><code>199409L</code></td><td><code>-std=iso9899:199409</code></td><td>ISO/IEC 9899/AMD1:1995</td></tr>
+<tr><td>C99</td><td><code>199901L</code></td><td><code>-std=c99</code></td><td>ISO/IEC 9899:1999</td></tr>
+<tr><td>C11</td><td><code>201112L</code></td><td><code>-std=c11</code></td><td>ISO/IEC 9899:2011</td></tr>
+<tr><td>C17</td><td><code>201710L</code></td><td><code>-std=c17</code>, <code>-std=c18</code></td><td>ISO/IEC 9899:2018</td></tr>
+<tr><td><strong>C23</strong></td><td><code>202311L</code></td><td><code>-std=c23</code> (gcc 14+; <code>-std=c2x</code> nos anteriores)</td><td>ISO/IEC 9899:2024</td></tr>
+<tr><td>C2y</td><td><code>202500L</code> (provisório, gcc 15)</td><td><code>-std=c2y</code></td><td>(em andamento)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Para quê</th></tr>
+<tr><td><code>gcc --version</code></td><td>Versão do compilador (não do C)</td></tr>
+<tr><td><code>gcc -dM -E -x c /dev/null | grep STDC_VERSION</code></td><td>Versão do C que o gcc usa sem <code>-std=</code></td></tr>
+<tr><td><code>gcc -std=c23 …</code></td><td>Escolher o C23 (ou outra versão)</td></tr>
+<tr><td><code>gcc -std=c23 -pedantic …</code></td><td>Avisar quando o código usa extensões fora do padrão</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. O que quer dizer o número em "C99" ou "C23"?</p>
+<label><input type="radio" name="q1"> A versão do gcc que criou o recurso.</label>
+<label><input type="radio" name="q1"> O ano em que a versão do padrão ficou pronta.</label>
+<label><input type="radio" name="q1"> Quantas palavras reservadas a linguagem tem.</label>
+<label><input type="radio" name="q1"> A quantidade de bits do processador.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">2. Em que versão os comentários de linha <code>//</code> e o <code>for (int i = 0; …)</code> passaram a ser permitidos?</p>
+<label><input type="radio" name="q2"> K&amp;R C</label>
+<label><input type="radio" name="q2"> C89</label>
+<label><input type="radio" name="q2"> C23</label>
+<label><input type="radio" name="q2"> C99</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. O <code>gcc --version</code> mostra <code>15.2.0</code>. O que isso diz?</p>
+<label><input type="radio" name="q3"> A versão do compilador gcc, que não é a mesma coisa que a versão do C.</label>
+<label><input type="radio" name="q3"> Que o programa vai ser compilado com o C15.</label>
+<label><input type="radio" name="q3"> Que o C tem 15 versões.</label>
+<label><input type="radio" name="q3"> Que o compilador é de 2015.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Qual destas é uma novidade do C23?</p>
+<label><input type="radio" name="q4"> Os protótipos de função.</label>
+<label><input type="radio" name="q4"> A função <code>printf</code>.</label>
+<label><input type="radio" name="q4"> <code>bool</code>, <code>true</code> e <code>false</code> como palavras da linguagem, sem <code>#include</code>.</label>
+<label><input type="radio" name="q4"> O comentário <code>/* … */</code>.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. A Ana compilou sem <code>-std=</code> e o programa mostrou <code>__STDC_VERSION__ = 202311</code>. O que ela pode concluir?</p>
+<label><input type="radio" name="q5"> Que o programa foi compilado em novembro de 2023.</label>
+<label><input type="radio" name="q5"> Que o compilador está usando o C23 por padrão.</label>
+<label><input type="radio" name="q5"> Que o compilador é o Clang 21.</label>
+<label><input type="radio" name="q5"> Que houve um erro de compilação.</label>
+</div>
+
+<div class="exercise">
+<h3>6. Escolher o C17</h3>
+<p>Complete o comando para compilar com as regras do C17:</p>
+<div class="ex-code">gcc <input data-answer="-std=c17|-std=c18|-std=iso9899:2017|-std=iso9899:2018" aria-label="opção"> -Wall -Wextra ola.c -o ola</div>
+</div>
+
+<div class="exercise">
+<h3>7. A macro da versão</h3>
+<p>Qual é o nome da macro que guarda a versão do C usada na compilação? Complete:</p>
+<div class="ex-code">printf("%ld\n", <input data-answer="__STDC_VERSION__" aria-label="macro">);</div>
+</div>
+
+<div class="exercise">
+<h3>8. O include do bool antigo</h3>
+<p>No C99, C11 e C17, qual arquivo é preciso incluir para usar <code>bool</code>, <code>true</code> e <code>false</code>?</p>
+<div class="ex-code">#include &lt;<input data-answer="stdbool.h" aria-label="arquivo">&gt;</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O C tem um <strong>padrão</strong> oficial (ISO/IEC 9899), mantido por um comitê internacional. Cada edição tem um nome com o ano: C89/C90, C99, C11, C17, C23. Antes disso, havia o <strong>K&amp;R C</strong> do livro de 1978; depois vem o <strong>C2y</strong>.</li>
+  <li><strong>C99</strong> trouxe <code>//</code>, variáveis no <code>for</code>, <code>stdbool.h</code> e <code>stdint.h</code>; <strong>C11</strong> trouxe <code>_Generic</code>, <code>_Static_assert</code> e threads; <strong>C17</strong> só corrigiu; <strong>C23</strong> trouxe <code>bool</code> sem include, <code>nullptr</code>, <code>constexpr</code>, <code>typeof</code>, <code>auto</code>, atributos, <code>0b1010</code> e <code>1'000</code>.</li>
+  <li>A versão do compilador (gcc 15.2) não é a versão do C. A versão do C aparece em <code>__STDC_VERSION__</code>: <code>202311L</code> é o C23.</li>
+  <li>Sem <code>-std=</code>, o gcc 15 usa <code>gnu23</code>; o Clang 21 usa <code>gnu17</code>. Por isso o guia sempre escreve <code>-std=c23</code>.</li>
+  <li><code>gnu23</code> = C23 com extensões do GNU; <code>-pedantic</code> avisa quando o código sai do padrão.</li>
+  <li>Código antigo (sem tipo no <code>main</code>, funções no estilo K&amp;R) pode não compilar nos compiladores modernos; código novo (<code>//</code>, <code>bool</code>, <code>nullptr</code>) não compila com <code>-std=</code> antigo.</li>
+  <li>Próximo passo: instalar o compilador no seu computador, em <a href="instalar-linux.html">Instalar no Linux</a> ou <a href="instalar-windows-mac.html">Instalar no Windows e macOS</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
