@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Array que Cresce — realloc dobrando a capacidade | Guia C</title>
+<meta name="description" content="Array dinâmico em C para quem nunca programou: uma lista de compras que cresce com realloc, tamanho × capacidade, por que dobrar a capacidade, o jeito seguro de chamar realloc, as funções adicionar e liberar, valgrind limpo e os erros reais (sizeof esquecido, ponteiro antigo depois do realloc, parênteses), com saídas do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Array que Cresce</span></h1>
+
+<p class="intro">Um array comum tem tamanho fixo: <code>double precos[5];</code> guarda cinco preços, nem um a mais. Mas a lista de compras da Ana não tem tamanho fixo: num dia são três itens, no mês de festa são quarenta. Nesta aula você vai juntar o que aprendeu em <a href="malloc-free.html">malloc e free</a> e <a href="calloc-realloc.html">calloc e realloc</a> para montar um <strong>array que cresce sozinho</strong> conforme os itens chegam. É uma das peças mais usadas de todo programa em C (e é o que o <code>list</code> do Python e o <code>vector</code> do C++ fazem por baixo dos panos).</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre <strong>tamanho</strong> (quantos itens existem) e <strong>capacidade</strong> (quantos cabem).</li>
+  <li>Como fazer o array crescer com <code>realloc</code> quando ele lota.</li>
+  <li>Por que crescer <strong>dobrando</strong> a capacidade é muito melhor do que crescer de um em um.</li>
+  <li>O jeito seguro de chamar <code>realloc</code> (e o que se perde no jeito errado).</li>
+  <li>Como guardar tudo em duas funções, <code>adicionar</code> e <code>liberar</code>.</li>
+  <li>Como ler uma quantidade qualquer de números do teclado ou de um arquivo.</li>
+  <li>Como conferir com o <code>valgrind</code> que nenhum byte vazou.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> (veja <a href="compilar.html">Compilar com gcc</a>). Você pode repetir cada um no editor do guia.</p>
+
+<hr>
+
+<h2>A ideia: o caderno que lota</h2>
+<p>A Ana anota as compras num caderno pequeno, de 4 linhas. Enquanto há linha livre, ela só escreve. Quando o caderno lota, ela compra um caderno <strong>maior</strong>, copia as anotações para ele e joga o pequeno fora. Daí em diante, continua escrevendo no novo.</p>
+
+<p>Repare em dois números diferentes:</p>
+<ul>
+  <li>quantas linhas <strong>estão escritas</strong> (o <strong>tamanho</strong> da lista);</li>
+  <li>quantas linhas o caderno <strong>tem</strong> (a <strong>capacidade</strong>).</li>
+</ul>
+<p>Enquanto o tamanho é menor que a capacidade, escrever é fácil. Quando os dois ficam iguais, é hora de trocar de caderno.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No caderno da Ana</th><th>Em C</th><th>Exemplo</th></tr>
+<tr><td>O caderno (as linhas)</td><td>um bloco de memória reservado com <code>malloc</code>/<code>realloc</code></td><td><code>double *precos</code></td></tr>
+<tr><td>Linhas já escritas</td><td>o <strong>tamanho</strong></td><td><code>size_t tamanho</code></td></tr>
+<tr><td>Linhas que o caderno tem</td><td>a <strong>capacidade</strong></td><td><code>size_t capacidade</code></td></tr>
+<tr><td>Trocar por um caderno maior e copiar</td><td><code>realloc</code></td><td><code>realloc(precos, nova * sizeof(double))</code></td></tr>
+<tr><td>Jogar o caderno fora no fim</td><td><code>free</code></td><td><code>free(precos)</code></td></tr>
+</table>
+</div>
+
+<p>O <code>realloc</code> (de <em>re-allocate</em>, "reservar de novo") faz exatamente a troca de caderno: reserva um bloco maior, copia o conteúdo do antigo e libera o antigo. Às vezes ele consegue até "esticar" o bloco no mesmo lugar, sem copiar nada. Você não precisa saber qual dos dois aconteceu: só precisa usar o ponteiro que ele devolve.</p>
+
+<div class="tip">
+<strong>size_t</strong>
+<p><code>size_t</code> é o tipo que o C usa para tamanhos e quantidades: um inteiro <strong>sem sinal</strong> (nunca negativo), do tamanho certo para contar bytes na sua máquina. É o tipo que o <code>sizeof</code> devolve e que o <code>malloc</code> recebe. No <code>printf</code>, o formato dele é <code>%zu</code>. Detalhes em <a href="sizeof.html">sizeof</a>.</p>
+</div>
+
+<hr>
+
+<h2>1. A primeira versão: crescer de um em um</h2>
+<p>Comece com três variáveis: o ponteiro para a memória, o tamanho e a capacidade. No começo não existe memória nenhuma: o ponteiro vale <code>NULL</code> e os dois números valem zero. A cada item novo, se a lista estiver lotada, o programa pede espaço para <strong>mais um</strong>.</p>
+
+<pre class="file" data-file="cresce1.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    double *precos = NULL;
+    size_t tamanho = 0;
+    size_t capacidade = 0;
+
+    double novos[] = {12.50, 4.99, 7.80, 3.25, 9.90};
+
+    for (size_t i = 0; i &lt; 5; i++) {
+        if (tamanho == capacidade) {
+            size_t nova = capacidade + 1;
+            double *maior = realloc(precos, nova * sizeof(double));
+            if (maior == NULL) {
+                printf("Sem memória!\n");
+                free(precos);
+                return 1;
+            }
+            precos = maior;
+            capacidade = nova;
+            printf("Cresceu: agora cabem %zu\n", capacidade);
+        }
+        precos[tamanho] = novos[i];
+        tamanho++;
+    }
+
+    for (size_t i = 0; i &lt; tamanho; i++) {
+        printf("Item %zu: R$ %.2f\n", i + 1, precos[i]);
+    }
+
+    free(precos);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>double *precos = NULL;</dt><dd>O "caderno". Começa sem memória nenhuma. Iniciar com <code>NULL</code> é importante: o <code>realloc</code> aceita <code>NULL</code> e, nesse caso, funciona igual a um <code>malloc</code>.</dd>
+  <dt>size_t tamanho = 0; size_t capacidade = 0;</dt><dd>Quantos itens estão guardados e quantos cabem. As três variáveis andam sempre juntas: mexeu numa, confira as outras.</dd>
+  <dt>if (tamanho == capacidade)</dt><dd>A lista lotou (ou ainda nem existe, quando os dois valem 0). Só nesse caso é preciso crescer.</dd>
+  <dt>size_t nova = capacidade + 1;</dt><dd>A nova capacidade: um lugar a mais. (Daqui a pouco você vai trocar esta linha.)</dd>
+  <dt>double *maior = realloc(precos, nova * sizeof(double));</dt><dd>Pede um bloco com espaço para <code>nova</code> preços. O tamanho é em <strong>bytes</strong>, por isso o <code>* sizeof(double)</code>. O resultado vai para uma variável <strong>nova</strong>, <code>maior</code>, e não direto para <code>precos</code>: a seção 4 explica por quê.</dd>
+  <dt>if (maior == NULL) { … }</dt><dd>O <code>realloc</code> devolve <code>NULL</code> quando não há memória. Nesse caso o bloco antigo continua intacto em <code>precos</code>, e o programa ainda pode liberá-lo antes de sair.</dd>
+  <dt>precos = maior; capacidade = nova;</dt><dd>Deu certo: agora o caderno é o novo bloco, e a capacidade é a nova.</dd>
+  <dt>precos[tamanho] = novos[i]; tamanho++;</dt><dd>Guarda o item na primeira posição livre (a posição <code>tamanho</code>) e conta mais um. Depois de crescer, sempre existe essa posição livre.</dd>
+  <dt>free(precos);</dt><dd>Um único <code>free</code> no fim: o <code>realloc</code> já liberou cada bloco antigo quando trocou de caderno.</dd>
+</dl>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra cresce1.c -o cresce1
+$ ./cresce1
+Cresceu: agora cabem 1
+Cresceu: agora cabem 2
+Cresceu: agora cabem 3
+Cresceu: agora cabem 4
+Cresceu: agora cabem 5
+Item 1: R$ 12.50
+Item 2: R$ 4.99
+Item 3: R$ 7.80
+Item 4: R$ 3.25
+Item 5: R$ 9.90</pre>
+
+<p>Funciona. Mas repare: <strong>cinco itens, cinco trocas de caderno</strong>. É como comprar um caderno novo, com uma linha a mais, toda vez que você anota uma compra. Para cinco itens, tudo bem. Para mil, a conta fica feia.</p>
+
+<hr>
+
+<h2>2. Dobrar a capacidade</h2>
+<p>O truque usado em praticamente toda biblioteca é: quando lotar, <strong>dobre</strong> a capacidade. Começando com 4 lugares, o caderno vai para 8, depois 16, 32, 64… Cada troca dá espaço para muitos itens novos. Só uma linha muda:</p>
+
+<pre class="file" data-file="dobra.c">            size_t nova = (capacidade == 0) ? 4 : capacidade * 2;
+</pre>
+
+<p>O <a href="ternario.html">operador ternário</a> diz: "se a capacidade é zero (a lista ainda não existe), comece com 4; senão, dobre". Sem esse cuidado, <code>0 * 2</code> daria zero, e a lista nunca cresceria. Com dez preços:</p>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra dobra.c -o dobra
+$ ./dobra
+Cresceu: agora cabem 4
+Cresceu: agora cabem 8
+Cresceu: agora cabem 16
+Item 1: R$ 12.50
+Item 2: R$ 4.99
+Item 3: R$ 7.80
+Item 4: R$ 3.25
+Item 5: R$ 9.90
+Item 6: R$ 6.40
+Item 7: R$ 2.15
+Item 8: R$ 15.00
+Item 9: R$ 8.75
+Item 10: R$ 1.99</pre>
+
+<p>Dez itens, só <strong>três</strong> trocas. No fim sobram 6 lugares vazios (capacidade 16, tamanho 10): é o preço de crescer depressa, e é um preço pequeno.</p>
+
+<h3>A diferença com mil itens</h3>
+<p>Este programa guarda os números de 0 a 999 em duas listas, uma crescendo de um em um e outra dobrando, e conta quantas vezes cada uma chamou o <code>realloc</code>:</p>
+
+<pre class="file" data-file="conta.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *a = NULL, *b = NULL;
+    size_t cap_a = 0, cap_b = 0;
+    int vezes_a = 0, vezes_b = 0;
+
+    for (size_t n = 0; n &lt; 1000; n++) {
+        if (n == cap_a) {                    /* estratégia 1: +1 */
+            cap_a = cap_a + 1;
+            int *novo = realloc(a, cap_a * sizeof(int));
+            if (novo == NULL) { free(a); free(b); return 1; }
+            a = novo;
+            vezes_a++;
+        }
+        a[n] = (int)n;
+
+        if (n == cap_b) {                    /* estratégia 2: dobrar */
+            cap_b = (cap_b == 0) ? 4 : cap_b * 2;
+            int *novo = realloc(b, cap_b * sizeof(int));
+            if (novo == NULL) { free(a); free(b); return 1; }
+            b = novo;
+            vezes_b++;
+        }
+        b[n] = (int)n;
+    }
+
+    printf("1000 itens com +1:     %d realocações (capacidade final %zu)\n", vezes_a, cap_a);
+    printf("1000 itens dobrando:   %d realocações (capacidade final %zu)\n", vezes_b, cap_b);
+    free(a);
+    free(b);
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra conta.c -o conta
+$ ./conta
+1000 itens com +1:     1000 realocações (capacidade final 1000)
+1000 itens dobrando:   9 realocações (capacidade final 1024)</pre>
+
+<p><strong>Mil</strong> contra <strong>nove</strong>. E cada realocação pode copiar a lista inteira: crescendo de um em um, no pior caso o computador copia 0 + 1 + 2 + … + 999 = <strong>499.500</strong> números; dobrando, copia no máximo 4 + 8 + 16 + … + 512 = <strong>1.020</strong>. Com um milhão de itens, a primeira estratégia vira uma eternidade; a segunda continua instantânea.</p>
+
+<div class="tryc" data-goal="out:Realocações: 3,out:Capacidade final: 16,src:\*\s*2">
+<p class="try-task"><strong>Missão:</strong> este programa guarda 10 preços crescendo de um em um e faz 10 realocações. Troque a linha da nova capacidade para <strong>começar com 4 e dobrar</strong>, e veja cair para <code>Realocações: 3</code> e <code>Capacidade final: 16</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    double *precos = NULL;
+    size_t tamanho = 0;
+    size_t capacidade = 0;
+    int realocacoes = 0;
+
+    for (int i = 1; i &lt;= 10; i++) {
+        if (tamanho == capacidade) {
+            size_t nova = capacidade + 1;   /* troque esta linha */
+            double *maior = realloc(precos, nova * sizeof(double));
+            if (maior == NULL) {
+                free(precos);
+                return 1;
+            }
+            precos = maior;
+            capacidade = nova;
+            realocacoes++;
+        }
+        precos[tamanho] = i * 1.5;
+        tamanho++;
+    }
+
+    printf("Itens: %zu\n", tamanho);
+    printf("Realocações: %d\n", realocacoes);
+    printf("Capacidade final: %zu\n", capacidade);
+    free(precos);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    double *precos = NULL;
+    size_t tamanho = 0;
+    size_t capacidade = 0;
+    int realocacoes = 0;
+
+    for (int i = 1; i &lt;= 10; i++) {
+        if (tamanho == capacidade) {
+            size_t nova = (capacidade == 0) ? 4 : capacidade * 2;
+            double *maior = realloc(precos, nova * sizeof(double));
+            if (maior == NULL) {
+                free(precos);
+                return 1;
+            }
+            precos = maior;
+            capacidade = nova;
+            realocacoes++;
+        }
+        precos[tamanho] = i * 1.5;
+        tamanho++;
+    }
+
+    printf("Itens: %zu\n", tamanho);
+    printf("Realocações: %d\n", realocacoes);
+    printf("Capacidade final: %zu\n", capacidade);
+    free(precos);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Guardar tudo em funções: <code>adicionar</code> e <code>liberar</code></h2>
+<p>Copiar aquele bloco do <code>if</code> em todo lugar que acrescenta um item seria pedir para errar. O certo é escrever a lógica uma vez, numa função. O problema: a função precisa <strong>mudar</strong> as três variáveis do <code>main</code> (o ponteiro, o tamanho e a capacidade). Como você viu em <a href="passagem-ponteiro.html">Passar por Ponteiro</a>, para uma função mudar uma variável de fora, ela recebe o <strong>endereço</strong> da variável. E o endereço de um ponteiro é um <a href="ponteiro-ponteiro.html">ponteiro para ponteiro</a>: <code>double **</code>.</p>
+
+<p>De quebra, este programa lê os preços do teclado (ou de um arquivo) até a entrada acabar. É a situação em que o array que cresce brilha: ninguém sabe de antemão quantos preços vão chegar.</p>
+
+<pre class="file" data-file="carrinho.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+bool adicionar(double **precos, size_t *tamanho, size_t *capacidade, double valor) {
+    if (*tamanho == *capacidade) {
+        size_t nova = (*capacidade == 0) ? 4 : *capacidade * 2;
+        double *maior = realloc(*precos, nova * sizeof(double));
+        if (maior == NULL) {
+            return false;
+        }
+        *precos = maior;
+        *capacidade = nova;
+    }
+    (*precos)[*tamanho] = valor;
+    (*tamanho)++;
+    return true;
+}
+
+void liberar(double **precos, size_t *tamanho, size_t *capacidade) {
+    free(*precos);
+    *precos = NULL;
+    *tamanho = 0;
+    *capacidade = 0;
+}
+
+int main(void) {
+    double *precos = NULL;
+    size_t tamanho = 0;
+    size_t capacidade = 0;
+
+    double preco;
+    while (scanf("%lf", &amp;preco) == 1) {
+        if (!adicionar(&amp;precos, &amp;tamanho, &amp;capacidade, preco)) {
+            printf("Sem memória!\n");
+            break;
+        }
+    }
+
+    double total = 0.0;
+    for (size_t i = 0; i &lt; tamanho; i++) {
+        total += precos[i];
+    }
+    printf("%zu itens (capacidade %zu)\n", tamanho, capacidade);
+    printf("Total: R$ %.2f\n", total);
+
+    liberar(&amp;precos, &amp;tamanho, &amp;capacidade);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>bool adicionar(double **precos, size_t *tamanho, size_t *capacidade, double valor)</code></td><td>Recebe o <strong>endereço</strong> das três variáveis da lista e o valor a guardar. Devolve <code>true</code> se deu certo e <code>false</code> se faltou memória. No C23, <code>bool</code>, <code>true</code> e <code>false</code> são palavras da linguagem; antes, era preciso <code>#include &lt;stdbool.h&gt;</code> (veja <a href="bool.html">Booleanos</a>).</td></tr>
+<tr><td><code>*tamanho == *capacidade</code></td><td>O <code>*</code> segue o endereço até a variável do <code>main</code>: compara o tamanho e a capacidade de verdade.</td></tr>
+<tr><td><code>realloc(*precos, …)</code></td><td><code>*precos</code> é o ponteiro <code>precos</code> do <code>main</code> (o caderno atual).</td></tr>
+<tr><td><code>return false;</code></td><td>Sem memória: a função desiste <strong>sem estragar nada</strong>. A lista antiga continua inteira e utilizável.</td></tr>
+<tr><td><code>*precos = maior;</code></td><td>Muda o ponteiro do <code>main</code> para o bloco novo.</td></tr>
+<tr><td><code>(*precos)[*tamanho] = valor;</code></td><td>Primeiro <code>(*precos)</code> pega o ponteiro do <code>main</code>; depois <code>[*tamanho]</code> escolhe a primeira posição livre. Os parênteses são obrigatórios (veja "Quando dá errado").</td></tr>
+<tr><td><code>(*tamanho)++;</code></td><td>Soma 1 ao tamanho do <code>main</code>. Também precisa dos parênteses: <code>*tamanho++</code> andaria com o ponteiro em vez de somar no número (veja <a href="precedencia.html">Precedência</a>).</td></tr>
+<tr><td><code>liberar(…)</code></td><td>Devolve a memória e deixa a lista "zerada": ponteiro <code>NULL</code>, tamanho e capacidade 0. Assim, se alguém chamar <code>adicionar</code> de novo depois, a lista recomeça do zero em vez de usar memória já liberada.</td></tr>
+<tr><td><code>while (scanf("%lf", &amp;preco) == 1)</code></td><td>Lê um número por vez enquanto a leitura der certo. Quando a entrada acaba (fim do arquivo, ou <kbd>Ctrl</kbd>+<kbd>D</kbd> no teclado) ou chega algo que não é número, o <code>scanf</code> devolve outra coisa e o laço termina (veja <a href="scanf.html">Entrada com scanf</a>).</td></tr>
+</table>
+</div>
+
+<p>Para testar, a Ana passa seis preços pelo <code>printf</code> com um <a href="stdin-stdout-stderr.html">pipe</a> e depois dez preços num arquivo:</p>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra -g carrinho.c -o carrinho
+$ printf '12.50\n4.99\n7.80\n3.25\n9.90\n6.40\n' | ./carrinho
+6 itens (capacidade 8)
+Total: R$ 44.84
+$ cat compras.txt
+12.50 4.99 7.80
+3.25 9.90
+6.40 2.15 15.00 8.75 1.99
+$ ./carrinho &lt; compras.txt
+10 itens (capacidade 16)
+Total: R$ 72.73</pre>
+
+<p>O <code>-g</code> no comando guarda os números das linhas dentro do programa, para o <code>valgrind</code> (logo abaixo) dizer em qual linha está cada problema.</p>
+
+<div class="note">
+<strong>Vai ficar mais bonito com struct</strong>
+<p>Três variáveis soltas que sempre andam juntas, e funções com três parâmetros cheios de <code>*</code>: dá para sentir que falta alguma coisa. Falta a <a href="structs.html">struct</a>, que vem logo depois desta parte do guia. Com ela, o ponteiro, o tamanho e a capacidade viram <strong>uma coisa só</strong>, e a chamada fica <code>adicionar(&amp;lista, 12.50)</code>. Você vai reescrever esta lista assim em <a href="structs-ponteiros.html">Structs e Ponteiros</a>. A lógica (dobrar, conferir o <code>realloc</code>, liberar no fim) continua exatamente a mesma.</p>
+</div>
+
+<h3>Conferindo com o valgrind</h3>
+<p>O <code>valgrind</code> roda o programa e vigia cada byte reservado (veja <a href="valgrind.html">Valgrind</a>). A opção <code>--leak-check=full</code> pede o relatório completo de vazamentos:</p>
+
+<pre class="term">$ valgrind --leak-check=full ./carrinho &lt; compras.txt
+==29259== Memcheck, a memory error detector
+==29259== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==29259== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==29259== Command: ./carrinho
+==29259==
+10 itens (capacidade 16)
+Total: R$ 72.73
+==29259==
+==29259== HEAP SUMMARY:
+==29259==     in use at exit: 0 bytes in 0 blocks
+==29259==   total heap usage: 5 allocs, 5 frees, 8,416 bytes allocated
+==29259==
+==29259== All heap blocks were freed -- no leaks are possible        « nenhum vazamento
+==29259==
+==29259== For lists of detected and suppressed errors, rerun with: -s
+==29259== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<p><em>All heap blocks were freed -- no leaks are possible</em> = "todos os blocos do heap foram liberados; vazamento impossível". E <code>0 errors</code>: nenhum acesso fora do lugar. Os <code>5 allocs</code> são as 3 vezes que a lista cresceu (4, 8 e 16 lugares) mais 2 blocos que o próprio <code>scanf</code>/<code>printf</code> reservam para a entrada e a saída (e que eles mesmos liberam no fim).</p>
+
+<p>Agora, sem a linha do <code>liberar</code> (arquivo <code>vaza.c</code>):</p>
+
+<pre class="term">$ valgrind --leak-check=full ./vaza &lt; compras.txt
+«… cabeçalho igual …»
+10 itens (capacidade 16)
+Total: R$ 72.73
+==29331==
+==29331== HEAP SUMMARY:
+==29331==     in use at exit: 128 bytes in 1 blocks
+==29331==   total heap usage: 5 allocs, 4 frees, 8,416 bytes allocated
+==29331==
+==29331== 128 bytes in 1 blocks are definitely lost in loss record 1 of 1
+==29331==    at 0x485807F: realloc (vg_replace_malloc.c:1804)
+==29331==    by 0x400125A: adicionar (vaza.c:7)
+==29331==    by 0x4001359: main (vaza.c:33)
+==29331==
+==29331== LEAK SUMMARY:
+==29331==    definitely lost: 128 bytes in 1 blocks
+«…»
+==29331== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)</pre>
+
+<p><em>128 bytes in 1 blocks are definitely lost</em> = "128 bytes num bloco estão definitivamente perdidos". São os 16 lugares × 8 bytes de cada <code>double</code>: o último caderno, que ninguém jogou fora. As linhas de baixo dizem onde ele nasceu: no <code>realloc</code> da linha 7, dentro de <code>adicionar</code>, chamado pela linha 33 do <code>main</code>. Os cadernos menores não aparecem: o próprio <code>realloc</code> liberou cada um deles na troca. Mais sobre isso em <a href="vazamentos.html">Vazamentos de Memória</a>.</p>
+
+<hr>
+
+<h2>4. O jeito seguro de chamar <code>realloc</code></h2>
+<p>Muita gente escreve assim, numa linha só:</p>
+
+<pre class="file" data-file="errado.c">precos = realloc(precos, nova * sizeof(double));   /* NÃO faça assim */
+</pre>
+
+<p>Funciona enquanto há memória. Mas quando o <code>realloc</code> falha, ele devolve <code>NULL</code> e <strong>não libera</strong> o bloco antigo (isso é de propósito, para você não perder os dados). Só que a linha acima guarda esse <code>NULL</code> em <code>precos</code>, por cima do único endereço que existia do bloco antigo. A lista continua lá na memória, mas ninguém mais sabe onde: não dá para usar nem para liberar.</p>
+
+<p>Para ver acontecer, este programa pede, de propósito, espaço para um trilhão de preços (8 terabytes). O número vem da linha de comando (<a href="argc-argv.html">argv</a>) só para o gcc não perceber o absurdo na hora de compilar:</p>
+
+<pre class="file" data-file="perdeu.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(int argc, char *argv[]) {
+    size_t capacidade = 4;
+    double *precos = malloc(capacidade * sizeof(double));
+    if (precos == NULL) {
+        return 1;
+    }
+    precos[0] = 12.50;
+
+    /* um pedido grande demais, de propósito, para o realloc falhar */
+    capacidade = (argc &gt; 1) ? strtoull(argv[1], NULL, 10) : 8;
+
+    precos = realloc(precos, capacidade * sizeof(double));
+    if (precos == NULL) {
+        printf("O realloc falhou. E a lista antiga?\n");
+        return 1;
+    }
+    printf("Primeiro item: R$ %.2f\n", precos[0]);
+    free(precos);
+    return 0;
+}
+</pre>
+
+<pre class="term">$ gcc -std=c23 -Wall -Wextra -g perdeu.c -o perdeu
+$ ./perdeu
+Primeiro item: R$ 12.50
+$ valgrind --leak-check=full ./perdeu 1000000000000
+«… cabeçalho …»
+O realloc falhou. E a lista antiga?
+==31796==
+==31796== HEAP SUMMARY:
+==31796==     in use at exit: 32 bytes in 1 blocks
+==31796==   total heap usage: 3 allocs, 2 frees, 8,000,000,004,128 bytes allocated
+==31796==
+==31796== 32 bytes in 1 blocks are definitely lost in loss record 1 of 1
+==31796==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==31796==    by 0x4001213: main (perdeu.c:6)
+«…»</pre>
+
+<p>Os 32 bytes (4 preços de 8 bytes) do <code>malloc</code> da linha 6 ficaram perdidos: o <code>NULL</code> apagou o endereço deles. A forma segura usa uma variável a mais, como todos os exemplos desta aula:</p>
+
+<pre class="file" data-file="certo.c">double *maior = realloc(precos, nova * sizeof(double));
+if (maior == NULL) {
+    /* precos ainda aponta para a lista antiga, inteira:
+       dá para avisar, salvar, liberar ou continuar sem o item novo */
+    free(precos);
+    return 1;
+}
+precos = maior;          /* só troca quando deu certo */
+capacidade = nova;
+</pre>
+
+<div class="warning">
+<strong>Depois do <code>realloc</code>, o endereço antigo morreu</strong>
+<p>Quando o <code>realloc</code> muda o bloco de lugar, o bloco antigo é liberado. Qualquer ponteiro que você guardou para dentro dele (por exemplo, <code>double *primeiro = &amp;precos[0];</code>) passa a apontar para memória que não é mais sua. Depois de crescer, use sempre <code>precos</code>, e pegue endereços de dentro da lista de novo, se precisar. O cenário completo está em "Quando dá errado".</p>
+</div>
+
+<hr>
+
+<h2>Formas de crescer: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Estratégia</th><th>Nova capacidade</th><th>Vantagem</th><th>Desvantagem</th></tr>
+<tr><td>De um em um</td><td><code>capacidade + 1</code></td><td>Nunca sobra lugar vazio.</td><td>Um <code>realloc</code> por item: lento com muitos itens.</td></tr>
+<tr><td>De tantos em tantos</td><td><code>capacidade + 100</code></td><td>Simples; bom quando você sabe mais ou menos o tamanho.</td><td>Com muitos itens, volta a ficar lento (10 mil itens = 100 trocas).</td></tr>
+<tr><td><strong>Dobrar</strong></td><td><code>capacidade * 2</code> (começando em 4, 8 ou 16)</td><td>Pouquíssimas trocas, sempre. É a escolha padrão.</td><td>Pode sobrar até metade da capacidade vazia.</td></tr>
+<tr><td>Multiplicar por 1,5</td><td><code>capacidade + capacidade / 2</code></td><td>Desperdiça menos que dobrar; usado por algumas bibliotecas.</td><td>Um pouco mais de trocas. Cuidado: começando em 1, <code>1 + 1/2</code> é 1 e a lista nunca cresce.</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar:</strong> dobre. Se você já sabe quantos itens vêm (por exemplo, leu a quantidade antes), reserve tudo de uma vez com <code>malloc</code> e nem precisa crescer. E se a lista nunca passa de um tamanho pequeno e conhecido, um array comum (<code>double precos[50];</code>) continua sendo o mais simples.</p>
+
+<div class="tip">
+<strong>Encolher no fim (opcional)</strong>
+<p>Se a lista terminou com 10 itens numa capacidade de 16 e vai ficar muito tempo na memória, dá para devolver a sobra com <code>realloc(precos, tamanho * sizeof(double))</code>, também com a variável auxiliar. Para listas pequenas, não vale o trabalho. Cuidado com <code>tamanho</code> igual a 0: <code>realloc</code> com tamanho zero tem comportamento que muda de biblioteca para biblioteca (no C23 passou a ser <a href="comportamento-indefinido.html">comportamento indefinido</a>); nesse caso, use <code>free</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu o <code>sizeof</code>: "heap-buffer-overflow"</strong>
+<pre class="file" data-file="semsizeof.c">        double *maior = realloc(*precos, nova);   /* faltou * sizeof(double) */
+</pre>
+<p>O <code>realloc</code> conta em <strong>bytes</strong>. Sem o <code>sizeof</code>, a "capacidade 4" vira 4 bytes, metade de um único <code>double</code>. O gcc não avisa nada, e o programa escreve fora do bloco desde o primeiro item. O sanitizer de endereços (<code>-fsanitize=address</code>, veja <a href="sanitizers.html">Sanitizers</a>) pega na hora:</p>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address semsizeof.c -o semsizeof
+$ ./semsizeof &lt; compras.txt
+=================================================================
+==30440==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x73853f7e0010 at pc 0x5e54d7d4c47e bp 0x7ffe2eaa3ea0 sp 0x7ffe2eaa3e90
+WRITE of size 8 at 0x73853f7e0010 thread T0
+    #0 0x5e54d7d4c47d in adicionar /home/ana/c/semsizeof.c:14
+    #1 0x5e54d7d4c6e8 in main /home/ana/c/semsizeof.c:33
+«…»
+0x73853f7e0014 is located 0 bytes after 4-byte region [0x73853f7e0010,0x73853f7e0014)
+allocated by thread T0 here:
+    #0 0x77654092a6cf in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:81
+    #1 0x5e54d7d4c399 in adicionar /home/ana/c/semsizeof.c:7
+«…»</pre>
+<p><strong>O que significa:</strong> <em>heap-buffer-overflow</em> = "estouro de um bloco do heap"; <em>WRITE of size 8</em> = uma escrita de 8 bytes (um <code>double</code>) na linha 14 (<code>(*precos)[*tamanho] = valor;</code>), num bloco de só 4 bytes (<em>4-byte region</em>) criado pelo <code>realloc</code> da linha 7.</p>
+<p>No editor do guia, esse programa <strong>roda calado e dá o total errado</strong> (R$ 69.48 em vez de R$ 72.73): os preços escritos fora do bloco atropelaram uns aos outros. Por isso erros assim são tão traiçoeiros.</p>
+<p><strong>Como resolver:</strong> sempre <code>quantidade * sizeof(tipo)</code>. Uma forma que não deixa errar o tipo é <code>nova * sizeof **precos</code> (ou <code>nova * sizeof *precos</code> quando <code>precos</code> é um <code>double *</code> comum): o tamanho vem do próprio ponteiro.</p>
+</div>
+
+<div class="cenario">
+<strong>Guardou um ponteiro de antes do <code>realloc</code>: "may be used after ‘realloc’"</strong>
+<pre class="file" data-file="antigo.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    size_t capacidade = 4;
+    double *precos = malloc(capacidade * sizeof(double));
+    if (precos == NULL) {
+        return 1;
+    }
+    precos[0] = 12.50;
+
+    double *primeiro = &amp;precos[0];
+
+    capacidade = capacidade * 2;
+    double *maior = realloc(precos, capacidade * sizeof(double));
+    if (maior == NULL) {
+        free(precos);
+        return 1;
+    }
+    precos = maior;
+
+    printf("Primeiro item: R$ %.2f\n", *primeiro);
+    free(precos);
+    return 0;
+}
+</pre>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra -g antigo.c -o antigo
+antigo.c: In function ‘main’:
+antigo.c:22:5: warning: pointer ‘primeiro’ may be used after ‘realloc’ [-Wuse-after-free]
+   22 |     printf("Primeiro item: R$ %.2f\n", *primeiro);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+antigo.c:15:21: note: call to ‘realloc’ here
+   15 |     double *maior = realloc(precos, capacidade * sizeof(double));
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+$ ./antigo
+Primeiro item: R$ 12.50        « parece certo, mas foi sorte
+$ valgrind ./antigo
+«… cabeçalho …»
+==29753== Invalid read of size 8
+==29753==    at 0x4001243: main (antigo.c:22)
+==29753==  Address 0x4aa6040 is 0 bytes inside a block of size 32 free'd
+==29753==    at 0x485807F: realloc (vg_replace_malloc.c:1804)
+==29753==    by 0x4001218: main (antigo.c:15)
+==29753==  Block was alloc'd at
+==29753==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==29753==    by 0x40011CC: main (antigo.c:6)
+==29753==
+Primeiro item: R$ 12.50
+«…»
+==29753== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)</pre>
+<p><strong>O que significa:</strong> o gcc avisou: <em>pointer ‘primeiro’ may be used after ‘realloc’</em> = "o ponteiro <code>primeiro</code> pode ser usado depois do <code>realloc</code>". O programa ainda mostrou o valor certo, por sorte. O valgrind confirma o problema: <em>Invalid read</em> ("leitura inválida") de um endereço dentro de um bloco de 32 bytes <em>free'd</em> ("liberado") pelo <code>realloc</code> da linha 15.</p>
+<p><strong>Como resolver:</strong> depois que a lista pode ter crescido, pegue o endereço de novo (<code>&amp;precos[0]</code>) ou, melhor, guarde a <strong>posição</strong> (o índice <code>0</code>) em vez do endereço. Índices continuam valendo depois do <code>realloc</code>; endereços, não.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem os parênteses em <code>(*precos)[*tamanho]</code>: "Falha de segmentação"</strong>
+<pre class="file" data-file="parenteses.c">    *precos[*tamanho] = valor;        /* deveria ser (*precos)[*tamanho] */
+</pre>
+<pre class="term">$ gcc -std=c23 -Wall -Wextra -g parenteses.c -o parenteses
+$ ./parenteses &lt; compras.txt
+Falha de segmentação     (imagem do núcleo gravada) ./parenteses &lt; compras.txt</pre>
+<p><strong>O que aconteceu:</strong> compilou sem nenhum aviso e morreu. O <code>[]</code> é mais forte que o <code>*</code>, então <code>*precos[*tamanho]</code> quer dizer <code>*(precos[*tamanho])</code>: trata <code>precos</code> (o endereço da variável do <code>main</code>) como se fosse um array de ponteiros e pega o "ponteiro" da posição <code>tamanho</code>. Na posição 0 dá certo por coincidência; na posição 1 já é lixo, e escrever lá derruba o programa. No editor do guia acontece o mesmo: <code>Falha de segmentação (imagem do núcleo gravada)</code>.</p>
+<p><strong>Como resolver:</strong> <code>(*precos)[*tamanho] = valor;</code>. Primeiro siga o endereço até o ponteiro do <code>main</code>, depois escolha a posição. (Com uma struct, como você verá em <a href="structs-ponteiros.html">Structs e Ponteiros</a>, isso vira <code>lista-&gt;dados[lista-&gt;tamanho]</code>, bem mais legível.)</p>
+</div>
+
+<div class="cenario">
+<strong>A lista nunca cresce: <code>capacidade * 2</code> começando em zero</strong>
+<p><strong>O que aconteceu:</strong> com <code>size_t nova = capacidade * 2;</code> e a capacidade começando em 0, a nova capacidade é <code>0 * 2 = 0</code>. O <code>realloc</code> recebe tamanho zero e o programa escreve num bloco que não tem lugar para nada.</p>
+<p><strong>Como resolver:</strong> trate o começo à parte: <code>(capacidade == 0) ? 4 : capacidade * 2</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"definitely lost" no valgrind</strong>
+<p><strong>O que aconteceu:</strong> faltou o <code>free</code> (ou o <code>liberar</code>) no fim, ou você usou <code>precos = realloc(precos, …)</code> e o <code>realloc</code> falhou.</p>
+<p><strong>Como resolver:</strong> todo array dinâmico termina com um <code>free</code> do ponteiro atual; e o <code>realloc</code> sempre vai para uma variável auxiliar.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Significado</th></tr>
+<tr><td><code>double *dados = NULL; size_t tamanho = 0, capacidade = 0;</code></td><td>Uma lista vazia, ainda sem memória.</td></tr>
+<tr><td><code>if (tamanho == capacidade)</code></td><td>Lotou: é hora de crescer.</td></tr>
+<tr><td><code>size_t nova = (capacidade == 0) ? 4 : capacidade * 2;</code></td><td>Começa com 4 lugares e depois dobra.</td></tr>
+<tr><td><code>double *maior = realloc(dados, nova * sizeof(double));</code></td><td>Pede um bloco maior (em bytes), copiando o conteúdo antigo.</td></tr>
+<tr><td><code>if (maior == NULL) { … }</code></td><td>Falhou: <code>dados</code> continua válido e inteiro.</td></tr>
+<tr><td><code>dados = maior; capacidade = nova;</code></td><td>Deu certo: troca para o bloco novo.</td></tr>
+<tr><td><code>dados[tamanho] = valor; tamanho++;</code></td><td>Guarda na primeira posição livre.</td></tr>
+<tr><td><code>realloc(NULL, n)</code></td><td>O mesmo que <code>malloc(n)</code>.</td></tr>
+<tr><td><code>free(dados); dados = NULL; tamanho = capacidade = 0;</code></td><td>Libera e deixa a lista vazia de novo.</td></tr>
+<tr><td><code>(*dados)[*tamanho]</code></td><td>Dentro de uma função que recebeu <code>double **dados</code>: a posição livre da lista de fora.</td></tr>
+<tr><td><code>valgrind --leak-check=full ./programa</code></td><td>Confere vazamentos e acessos inválidos (compile com <code>-g</code>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Lotou?</h3>
+<p>Complete a condição que diz que a lista está cheia e precisa crescer:</p>
+<div class="ex-code">if (<input data-answer="tamanho == capacidade|capacidade == tamanho|tamanho &gt;= capacidade" aria-label="condição de lotação">) { /* crescer */ }</div>
+</div>
+
+<div class="exercise">
+<h3>2. Dobrar</h3>
+<p>Complete a nova capacidade, que começa em 8 quando a lista está vazia e dobra nas outras vezes:</p>
+<div class="ex-code">size_t nova = (capacidade == 0) ? <input data-answer="8 : capacidade * 2|8 : 2 * capacidade|8 : capacidade*2|8 : 2*capacidade" aria-label="nova capacidade">;</div>
+</div>
+
+<div class="exercise">
+<h3>3. Em bytes</h3>
+<p>Complete o tamanho pedido ao <code>realloc</code> para uma lista de <code>int</code> com <code>nova</code> lugares:</p>
+<div class="ex-code">int *maior = realloc(numeros, <input data-answer="nova * sizeof(int)|sizeof(int) * nova|nova * sizeof *numeros|nova * sizeof(*numeros)|nova*sizeof(int)" aria-label="tamanho em bytes">);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Uma lista começa com capacidade 4 e dobra quando lota. Quantas vezes o <code>realloc</code> é chamado para guardar 20 itens?</p>
+<label><input type="radio" name="q4"> 20</label>
+<label><input type="radio" name="q4"> 5</label>
+<label><input type="radio" name="q4"> 4 (capacidades 4, 8, 16 e 32)</label>
+<label><input type="radio" name="q4"> 1</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Por que <code>dados = realloc(dados, n);</code> é perigoso?</p>
+<label><input type="radio" name="q5"> Porque o <code>realloc</code> apaga o conteúdo antigo.</label>
+<label><input type="radio" name="q5"> Porque, se o <code>realloc</code> falhar, o <code>NULL</code> apaga o único endereço do bloco antigo, que fica perdido.</label>
+<label><input type="radio" name="q5"> Porque o gcc recusa compilar essa linha.</label>
+<label><input type="radio" name="q5"> Porque o <code>realloc</code> não aceita o mesmo ponteiro duas vezes.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Depois que a lista cresceu com <code>realloc</code>, o que continua valendo com certeza?</p>
+<label><input type="radio" name="q6"> O índice de cada item (<code>dados[3]</code> ainda é o quarto item).</label>
+<label><input type="radio" name="q6"> Os endereços guardados antes (<code>&amp;dados[3]</code> antigo).</label>
+<label><input type="radio" name="q6"> Os dois.</label>
+<label><input type="radio" name="q6"> Nenhum dos dois.</label>
+</div>
+
+<h3>Missão final: o carrinho da Ana</h3>
+<div class="tryc" data-stdin="12.50 4.99 7.80 3.25 9.90 6.40" data-goal="out:6 itens (capacidade 8),out:Total: R$ 44.84,src:realloc">
+<p class="try-task"><strong>Missão:</strong> a função <code>adicionar</code> ainda não sabe crescer: quando a lista lota, ela desiste. Complete o bloco do <code>if</code>: calcule a nova capacidade (começando em 4 e dobrando), chame o <code>realloc</code> numa variável auxiliar, devolva <code>false</code> se ele falhar e atualize <code>*precos</code> e <code>*capacidade</code> se der certo. Os seis preços já estão na entrada; o resultado esperado é <code>6 itens (capacidade 8)</code> e <code>Total: R$ 44.84</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+bool adicionar(double **precos, size_t *tamanho, size_t *capacidade, double valor) {
+    if (*tamanho == *capacidade) {
+        /* lotou: faça a lista crescer aqui */
+        return false;
+    }
+    (*precos)[*tamanho] = valor;
+    (*tamanho)++;
+    return true;
+}
+
+void liberar(double **precos, size_t *tamanho, size_t *capacidade) {
+    free(*precos);
+    *precos = NULL;
+    *tamanho = 0;
+    *capacidade = 0;
+}
+
+int main(void) {
+    double *precos = NULL;
+    size_t tamanho = 0;
+    size_t capacidade = 0;
+
+    double preco;
+    while (scanf("%lf", &amp;preco) == 1) {
+        if (!adicionar(&amp;precos, &amp;tamanho, &amp;capacidade, preco)) {
+            printf("Não coube o item de R$ %.2f\n", preco);
+        }
+    }
+
+    double total = 0.0;
+    for (size_t i = 0; i &lt; tamanho; i++) {
+        total += precos[i];
+    }
+    printf("%zu itens (capacidade %zu)\n", tamanho, capacidade);
+    printf("Total: R$ %.2f\n", total);
+
+    liberar(&amp;precos, &amp;tamanho, &amp;capacidade);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+bool adicionar(double **precos, size_t *tamanho, size_t *capacidade, double valor) {
+    if (*tamanho == *capacidade) {
+        size_t nova = (*capacidade == 0) ? 4 : *capacidade * 2;
+        double *maior = realloc(*precos, nova * sizeof(double));
+        if (maior == NULL) {
+            return false;
+        }
+        *precos = maior;
+        *capacidade = nova;
+    }
+    (*precos)[*tamanho] = valor;
+    (*tamanho)++;
+    return true;
+}
+
+void liberar(double **precos, size_t *tamanho, size_t *capacidade) {
+    free(*precos);
+    *precos = NULL;
+    *tamanho = 0;
+    *capacidade = 0;
+}
+
+int main(void) {
+    double *precos = NULL;
+    size_t tamanho = 0;
+    size_t capacidade = 0;
+
+    double preco;
+    while (scanf("%lf", &amp;preco) == 1) {
+        if (!adicionar(&amp;precos, &amp;tamanho, &amp;capacidade, preco)) {
+            printf("Não coube o item de R$ %.2f\n", preco);
+        }
+    }
+
+    double total = 0.0;
+    for (size_t i = 0; i &lt; tamanho; i++) {
+        total += precos[i];
+    }
+    printf("%zu itens (capacidade %zu)\n", tamanho, capacidade);
+    printf("Total: R$ %.2f\n", total);
+
+    liberar(&amp;precos, &amp;tamanho, &amp;capacidade);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um array que cresce precisa de três coisas: o <strong>ponteiro</strong> para a memória, o <strong>tamanho</strong> (itens guardados) e a <strong>capacidade</strong> (itens que cabem).</li>
+  <li>Quando <code>tamanho == capacidade</code>, cresça com <code>realloc</code>, sempre em <strong>bytes</strong>: <code>nova * sizeof(double)</code>.</li>
+  <li><strong>Dobre</strong> a capacidade (começando em 4, por exemplo): 1000 itens custam 9 realocações em vez de 1000.</li>
+  <li>Guarde o resultado do <code>realloc</code> numa variável auxiliar e confira o <code>NULL</code> antes de trocar o ponteiro.</li>
+  <li>Depois do <code>realloc</code>, endereços antigos de dentro da lista morrem; índices continuam valendo.</li>
+  <li>Coloque a lógica em funções (<code>adicionar</code>, <code>liberar</code>) e termine sempre com <code>free</code>. Confira com <code>valgrind --leak-check=full</code>.</li>
+  <li>Com <a href="structs.html">structs</a>, as três variáveis viram uma só, e o código fica bem mais limpo.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
