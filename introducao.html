@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Introdução — o que é C e para que serve | Guia C</title>
+<meta name="description" content="O que é a linguagem C, para que serve, onde é usada hoje (Linux, Git, Python, SQLite, microcontroladores), a história de Dennis Ritchie no Bell Labs com o Unix, vantagens e cuidados, e uma comparação entre C, C++ e Python.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Introdução</span></h1>
+
+<p class="intro">O <strong>C</strong> (lê-se "cê") é uma linguagem de programação pequena, criada em 1972, feita para escrever programas <strong>rápidos</strong> que falam quase diretamente com o computador. Ela é <strong>compilada</strong>: antes de rodar, o seu texto é traduzido para a língua do processador. Nesta aula você vai entender o que isso quer dizer, de onde o C veio, onde ele está hoje (muito provavelmente dentro do aparelho em que você lê esta página) e como ele se compara com o C++ e o Python.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é programar e o que é uma linguagem de programação.</li>
+  <li>O que é uma linguagem <strong>compilada</strong> e por que isso deixa o C rápido.</li>
+  <li>A história: Dennis Ritchie, o Bell Labs e o sistema Unix.</li>
+  <li>Onde o C está hoje: Linux, Git, Python, SQLite, microcontroladores.</li>
+  <li>As vantagens do C e os cuidados que ele exige.</li>
+  <li>Como o C se compara com o C++ e o Python.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Primeiro: o que é programar?</h2>
+<p>Um computador não "entende" nada sozinho. Ele só sabe seguir instruções, uma de cada vez, muito rápido. <strong>Programar</strong> é escrever essas instruções. Uma <strong>linguagem de programação</strong> é o idioma combinado entre você e o computador: um conjunto de palavras e símbolos com regras rígidas (onde vai o ponto e vírgula, onde abrem e fecham as chaves).</p>
+
+<p>Pense numa receita de bolo. Ela tem uma lista de passos, em ordem: "pré-aqueça o forno", "misture os ovos com o açúcar", "se a massa estiver grossa, acrescente leite". Um programa é igual: uma lista de passos, alguns com decisões ("se…") e repetições ("bata até ficar homogêneo"). A diferença é que o computador segue a receita <strong>ao pé da letra</strong>. Se você escrever <code>pritnf</code> em vez de <code>printf</code>, ele não adivinha o que você quis dizer: ele para e reclama. Essas reclamações são as <strong>mensagens de erro</strong>, e o guia vai ensinar você a lê-las.</p>
+
+<h3>A língua do processador</h3>
+<p>O processador (a CPU, o "cérebro" do computador) não entende português, nem inglês, nem C. Ele só entende <strong>código de máquina</strong>: números que querem dizer coisas como "some estes dois valores" ou "guarde isto na memória". Escrever programas diretamente em números seria um pesadelo. Por isso existem as linguagens de programação, que são feitas para <strong>pessoas</strong> lerem e escreverem.</p>
+
+<p>Alguém precisa traduzir o texto da linguagem para os números do processador. Existem dois jeitos de fazer isso:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Jeito</th><th>Como funciona</th><th>Comparação</th><th>Exemplos</th></tr>
+<tr><td><strong>Compilar</strong></td><td>Um programa chamado <strong>compilador</strong> traduz o texto inteiro <strong>antes</strong>, uma vez só, e gera um arquivo executável. Depois, o executável roda sozinho, quantas vezes você quiser.</td><td>Traduzir um livro inteiro e imprimir a tradução. Quem lê a versão traduzida não precisa do tradutor.</td><td><strong>C</strong>, C++, Rust, Go</td></tr>
+<tr><td><strong>Interpretar</strong></td><td>Um programa chamado <strong>interpretador</strong> lê o texto e vai executando linha por linha, <strong>toda vez</strong> que o programa roda.</td><td>Um intérprete numa palestra, traduzindo frase por frase enquanto a pessoa fala. Sem o intérprete na sala, ninguém entende.</td><td>Python, JavaScript, PHP</td></tr>
+</table>
+</div>
+
+<p>O C é <strong>compilado</strong>. Essa é a principal razão de ele ser tão rápido: quando o programa roda, a tradução já foi feita, e o processador só executa. O compilador mais usado no Linux, e o que aparece nos terminais deste guia, é o <strong>gcc</strong> (<em>GNU Compiler Collection</em>, "coleção de compiladores do projeto GNU"). A aula <a href="como-funciona.html">Como o C Vira Programa</a> mostra a tradução acontecendo, etapa por etapa.</p>
+
+<hr>
+
+<h2>O que é o C</h2>
+<p>O C é uma linguagem de <strong>uso geral</strong> (serve para quase qualquer tipo de programa), mas brilha num lugar específico: programas que precisam ser rápidos, pequenos e próximos da máquina. Três características explicam isso:</p>
+
+<ul>
+  <li><strong>Rápido.</strong> O compilador gera código de máquina, e a linguagem não coloca nada "no meio do caminho": cada linha de C vira poucas instruções do processador.</li>
+  <li><strong>Pequeno.</strong> A linguagem inteira cabe num livro fino. Ela tem pouco mais de 50 palavras reservadas (eram 32 no primeiro padrão) (<code>int</code>, <code>if</code>, <code>while</code>, <code>return</code>…) e uma biblioteca padrão enxuta. Dá para aprender o C <em>inteiro</em>, coisa rara entre as linguagens.</li>
+  <li><strong>Perto da máquina.</strong> Em C você mexe diretamente na memória: sabe onde cada dado está guardado e quantos bytes ele ocupa. É por isso que sistemas operacionais e programas de aparelhos eletrônicos são escritos em C.</li>
+</ul>
+
+<p>Veja um programa C pequeno. Ele faz uma conta simples dez milhões de vezes (somar o resto da divisão de cada número por 7) e mostra o total:</p>
+
+<pre class="file" data-file="conta.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    long long total = 0;
+    for (long long i = 0; i &lt; 10000000; i++) {
+        total += i % 7;
+    }
+    printf("%lld\n", total);
+    return 0;
+}
+</pre>
+
+<p>Não se preocupe em entender cada linha agora: <code>long long</code> é um tipo de número inteiro grande (aula <a href="inteiros.html">Inteiros</a>), o <code>for</code> repete um trecho (aula <a href="for.html">for</a>), o <code>%</code> calcula o resto da divisão (aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>) e o <code>%lld</code> diz ao <code>printf</code> para escrever um <code>long long</code> (aula <a href="formatos-printf.html">Formatos do printf</a>). A Ana escreveu o mesmo programa em Python, uma linguagem interpretada:</p>
+
+<pre class="file" data-file="conta.py">total = 0
+for i in range(10000000):
+    total += i % 7
+print(total)
+</pre>
+
+<p>E mediu o tempo dos dois com o comando <code>time</code>, que mostra quanto um programa demorou (a linha <code>real</code> é o tempo de relógio):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra conta.c -o conta
+$ time ./conta
+29999994
+
+real	0m0,048s                       « C: 48 milésimos de segundo
+user	0m0,047s
+sys	0m0,001s
+$ time python3 conta.py
+29999994
+
+real	0m1,637s                       « Python: mais de um segundo e meio
+user	0m1,630s
+sys	0m0,007s</pre>
+
+<p>Mesmo resultado, e o C foi uns <strong>30 vezes mais rápido</strong> nesta conta, na máquina da Ana. Os números exatos mudam de computador para computador e de programa para programa, e o Python tem truques (bibliotecas escritas em C) para chegar perto em muitas tarefas. Mas a ordem de grandeza é essa: em contas pesadas, um programa compilado costuma ganhar com folga.</p>
+
+<p>Rode o programa aqui. A caixa compila o código com um compilador C real e mostra o resultado:</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode como está e confira o <code>29999994</code>. Depois troque <code>10000000</code> por <code>10</code> e rode de novo: o total vira <code>24</code> (0+1+2+3+4+5+6+0+1+2). Conferiu de cabeça?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    long long total = 0;
+    for (long long i = 0; i &lt; 10000000; i++) {
+        total += i % 7;
+    }
+    printf("%lld\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Um pouco de história</h2>
+<p>O C nasceu de um problema prático. No fim dos anos 1960, <strong>Ken Thompson</strong> e <strong>Dennis Ritchie</strong> trabalhavam no <strong>Bell Labs</strong>, o laboratório de pesquisa da companhia telefônica AT&amp;T, nos Estados Unidos. Os dois estavam criando um sistema operacional novo, o <strong>Unix</strong>. A primeira versão foi escrita em <em>assembly</em>, a linguagem que é quase o código de máquina, com uma palavra para cada instrução do processador. Funcionava, mas tinha dois problemas: dava muito trabalho escrever, e o programa só servia para aquele modelo de computador. Para levar o Unix a outra máquina, era preciso reescrever tudo.</p>
+
+<p>Thompson criou uma linguagem chamada <strong>B</strong>, simplificando uma mais antiga, a BCPL. Ritchie foi melhorando o B, acrescentou <strong>tipos</strong> (dizer se um dado é um número inteiro, um caractere etc.) e, em 1972, a linguagem nova ganhou o nome óbvio: a letra seguinte, <strong>C</strong>. Em 1973, o núcleo do Unix foi reescrito em C. Foi uma revolução: pela primeira vez um sistema operacional inteiro estava escrito numa linguagem que podia ser compilada para máquinas diferentes. O Unix (e o C junto com ele) se espalhou por universidades e empresas do mundo todo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ano</th><th>O que aconteceu</th></tr>
+<tr><td>1969</td><td>Ken Thompson e Dennis Ritchie começam o <strong>Unix</strong> no Bell Labs, escrito em assembly. Thompson cria a linguagem <strong>B</strong>.</td></tr>
+<tr><td>1972</td><td>Dennis Ritchie cria o <strong>C</strong>, a partir do B.</td></tr>
+<tr><td>1973</td><td>O núcleo do Unix é reescrito em C.</td></tr>
+<tr><td>1978</td><td>Brian Kernighan e Dennis Ritchie publicam o livro <em>The C Programming Language</em>, chamado de <strong>"K&amp;R"</strong> pelas iniciais dos autores. Por mais de dez anos, o livro foi a definição do C. É dele a tradição de começar com um programa que escreve <code>hello, world</code>.</td></tr>
+<tr><td>1983</td><td>Thompson e Ritchie recebem o Prêmio Turing, o "Nobel da computação", pelo Unix.</td></tr>
+<tr><td>1989–1990</td><td>Primeiro padrão oficial: o <strong>ANSI C</strong> (C89), adotado pela ISO (a organização internacional de normas) em 1990 como <strong>C90</strong>. A partir daí, o C é decidido por um comitê internacional.</td></tr>
+<tr><td>1991</td><td>Linus Torvalds, um estudante finlandês, começa o <strong>Linux</strong>, escrito em C.</td></tr>
+<tr><td>2011</td><td>Morre Dennis Ritchie, aos 70 anos.</td></tr>
+<tr><td>2024</td><td>Sai oficialmente o <strong>C23</strong>, a versão que este guia ensina (aula <a href="versoes.html">Versões do C</a>).</td></tr>
+</table>
+</div>
+
+<p>Rode a linha do tempo abaixo. Cada linha com <code>printf</code> escreve um ano e um acontecimento:</p>
+
+<div class="tryc" data-goal="out:2024: sai o C23">
+<p class="try-task"><strong>Missão:</strong> a linha do tempo parou em 1991. Copie a última linha com <code>printf</code>, cole logo abaixo dela e mude o texto para <code>2024: sai o C23</code>. Rode e confira que a lista ganhou uma linha.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("1969: começa o Unix\n");
+    printf("1972: nasce o C\n");
+    printf("1978: o livro K&amp;R\n");
+    printf("1989: ANSI C, o primeiro padrão\n");
+    printf("1991: nasce o Linux, escrito em C\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("1969: começa o Unix\n");
+    printf("1972: nasce o C\n");
+    printf("1978: o livro K&amp;R\n");
+    printf("1989: ANSI C, o primeiro padrão\n");
+    printf("1991: nasce o Linux, escrito em C\n");
+    printf("2024: sai o C23\n");
+    return 0;
+}
+</pre>
+</div>
+
+<div class="note">
+<strong>Por que o C mudou a história</strong>
+<p>Quase todas as linguagens populares de hoje copiaram a "cara" do C: as chaves <code>{ }</code> para agrupar instruções, o <code>;</code> no fim, o <code>if (…)</code>, o <code>for (…; …; …)</code>, o <code>printf</code>. C++, Java, C#, JavaScript, PHP, Go e Rust são todas "filhas" ou "netas" do C. Quem aprende C reconhece metade de cada uma delas logo de cara.</p>
+</div>
+
+<hr>
+
+<h2>Onde o C está hoje</h2>
+<p>Mais de cinquenta anos depois, o C continua em toda parte, quase sempre escondido, fazendo o trabalho pesado:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde</th><th>Exemplos concretos</th><th>Por que C</th></tr>
+<tr><td><strong>Sistemas operacionais</strong></td><td>O núcleo do <strong>Linux</strong> (que roda em quase todos os servidores da internet, no <strong>Android</strong>, em roteadores e TVs) é escrito em C, com uma parte nova em Rust desde 2022. Os núcleos do Windows e do macOS também têm muito C.</td><td>Precisa falar direto com o hardware e não pode desperdiçar nada.</td></tr>
+<tr><td><strong>Ferramentas de programação</strong></td><td>O <strong>Git</strong>, que guarda o histórico de quase todo projeto de software do mundo, foi escrito em C por Linus Torvalds em 2005. O <strong>curl</strong> (que baixa arquivos da internet, presente em bilhões de aparelhos) também é C.</td><td>Tem de ser rápido e funcionar em qualquer sistema.</td></tr>
+<tr><td><strong>Outras linguagens</strong></td><td>O interpretador mais usado do <strong>Python</strong> se chama <strong>CPython</strong> justamente porque é escrito em C. Os interpretadores do PHP, do Ruby e do Lua também. Quando um programa Python roda, é um programa em C que está lendo o seu código.</td><td>Uma linguagem lenta precisa de um "motor" rápido por baixo.</td></tr>
+<tr><td><strong>Bancos de dados</strong></td><td>O <strong>SQLite</strong>, escrito em C, está dentro de todo celular Android e iPhone, dos navegadores e de milhares de aplicativos: é provavelmente o banco de dados mais instalado do mundo. O PostgreSQL e o Redis também são C.</td><td>Guardar e procurar dados rápido, gastando pouca memória.</td></tr>
+<tr><td><strong>Microcontroladores</strong></td><td>Os "computadorzinhos" dentro de micro-ondas, máquinas de lavar, controles remotos, carros, marca-passos e placas como o ESP32 e o STM32 são programados principalmente em C. O Arduino usa um C++ escrito quase todo no estilo do C.</td><td>Alguns têm só alguns quilobytes de memória: não sobra espaço para linguagens "pesadas".</td></tr>
+<tr><td><strong>Servidores e mídia</strong></td><td>O <strong>nginx</strong> (servidor web que entrega boa parte dos sites), o <strong>FFmpeg</strong> (converte vídeo e áudio; está por trás de muitos players e sites de vídeo) e o <strong>OpenSSL</strong> (o cadeado do <code>https</code>).</td><td>Atender milhares de pessoas ao mesmo tempo.</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Uma língua que todas as outras falam</strong>
+<p>O C virou o "idioma comum" entre linguagens. Uma biblioteca escrita em C pode ser usada a partir do Python, do Java, do Rust, do Go e de quase qualquer outra linguagem. É por isso que bibliotecas importantes continuam sendo escritas em C: uma vez escritas, todo mundo pode usar.</p>
+</div>
+
+<hr>
+
+<h2>Vantagens e cuidados</h2>
+<p>O C é uma ferramenta poderosa e "sem proteção", como uma faca de chef bem afiada: corta qualquer coisa, inclusive o seu dedo. Conhecer os dois lados ajuda a entender o jeito como este guia ensina.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Vantagens</th><th>Cuidados</th></tr>
+<tr><td><strong>Velocidade:</strong> está entre as linguagens mais rápidas que existem.</td><td><strong>Sem rede de segurança:</strong> se você escrever além do fim de uma lista, o C não impede. O programa pode dar resultados errados, travar ou abrir uma brecha de segurança.</td></tr>
+<tr><td><strong>Roda em qualquer lugar:</strong> praticamente todo processador do mundo, do supercomputador ao chip de uma torradeira, tem um compilador de C.</td><td><strong>Memória à mão:</strong> quem pede memória (com <code>malloc</code>) tem de devolver (com <code>free</code>). Esquecer causa "vazamentos"; devolver duas vezes causa falhas.</td></tr>
+<tr><td><strong>Pequeno e estável:</strong> dá para aprender a linguagem inteira, e um programa escrito há 30 anos quase sempre ainda compila hoje.</td><td><strong>Pouca coisa pronta:</strong> o C não tem um tipo "texto" de verdade, nem listas que crescem sozinhas. Você aprende a construir essas coisas (o que ensina muito, mas dá trabalho).</td></tr>
+<tr><td><strong>Ensina como o computador funciona:</strong> memória, endereços, bytes. Depois do C, as outras linguagens deixam de ser "mágica".</td><td><strong>Comportamento indefinido:</strong> alguns erros não dão mensagem nenhuma; o programa parece funcionar e falha mais tarde, em outro computador (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>).</td></tr>
+</table>
+</div>
+
+<p>Os cuidados são sérios: a Microsoft e o Google já contaram que cerca de 70% das falhas graves de segurança nos seus produtos vinham de erros de memória, o tipo de erro que o C deixa acontecer. A boa notícia é que existem hábitos e ferramentas que pegam a maioria desses erros, e o guia ensina todos desde o começo: compilar sempre com os avisos ligados (<code>-Wall -Wextra</code>, aula <a href="avisos.html">Avisos</a>), conferir o que o usuário digitou, usar as funções seguras (<code>fgets</code>, <code>snprintf</code>), e usar o <a href="sanitizers.html">-fsanitize</a> e o <a href="valgrind.html">Valgrind</a>, que encontram os erros de memória por você.</p>
+
+<hr>
+
+<h2>C, C++ e Python</h2>
+<p>Quem começa a estudar programação quase sempre ouve falar dessas três. Cada uma brilha num lugar diferente:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>C</th><th>C++</th><th>Python</th></tr>
+<tr><td><strong>Nasceu</strong></td><td>1972, Dennis Ritchie</td><td>1985, Bjarne Stroustrup (começou como "C com Classes" em 1979)</td><td>1991, Guido van Rossum</td></tr>
+<tr><td><strong>Como roda</strong></td><td><strong>Compilado</strong> para código de máquina</td><td><strong>Compilado</strong> para código de máquina</td><td><strong>Interpretado</strong> (por um programa escrito em C)</td></tr>
+<tr><td><strong>Velocidade</strong></td><td>Muito alta</td><td>Muito alta</td><td>Baixa em contas puras; alta quando usa bibliotecas escritas em C</td></tr>
+<tr><td><strong>Tamanho da linguagem</strong></td><td>Pequena: dá para conhecer inteira</td><td>Enorme: pouca gente conhece tudo</td><td>Média, com uma biblioteca padrão gigante</td></tr>
+<tr><td><strong>Memória</strong></td><td>Você controla tudo, à mão (<code>malloc</code> e <code>free</code>)</td><td>Você controla, mas ferramentas modernas liberam sozinhas</td><td>Automática: o Python libera o que não é mais usado</td></tr>
+<tr><td><strong>Texto e listas</strong></td><td>Arrays de tamanho fixo e strings terminadas em <code>'\0'</code>; o resto você constrói</td><td>Prontos: <code>std::string</code>, <code>std::vector</code></td><td>Prontos e fáceis: <code>"texto"</code>, <code>[1, 2, 3]</code></td></tr>
+<tr><td><strong>Classes e objetos</strong></td><td>Não (usa <code>struct</code> e funções)</td><td>Sim, e templates</td><td>Sim</td></tr>
+<tr><td><strong>Olá, mundo</strong></td><td><code>printf("Olá\n");</code></td><td><code>std::cout &lt;&lt; "Olá\n";</code></td><td><code>print("Olá")</code></td></tr>
+<tr><td><strong>Arquivo</strong></td><td><code>ola.c</code>, compilado com <code>gcc</code></td><td><code>ola.cpp</code>, compilado com <code>g++</code></td><td><code>ola.py</code>, rodado com <code>python3</code></td></tr>
+<tr><td><strong>Famoso por</strong></td><td>Sistemas operacionais, microcontroladores, bibliotecas, interpretadores</td><td>Jogos, navegadores, programas grandes que precisam de velocidade</td><td>Ciência de dados, automação, inteligência artificial</td></tr>
+</table>
+</div>
+
+<p>Resumindo: o <strong>C</strong> é o "avô" pequeno e direto; o <strong>C++</strong> pegou o C e acrescentou ferramentas para organizar programas grandes, sem perder a velocidade; o <strong>Python</strong> troca velocidade por facilidade (e roda em cima de um programa em C). Nenhuma é "a melhor": cada uma resolve um tipo de problema. Se você quiser aprender C++ depois, este site tem um <strong>Guia C++</strong> irmão, e quase tudo deste guia vai valer lá também.</p>
+
+<div class="tip">
+<strong>C é difícil demais para começar?</strong>
+<p>O C é pequeno, e isso ajuda: em poucas semanas você conhece quase todas as palavras da linguagem. A parte difícil (ponteiros e memória) fica para o Nível 2, quando você já estiver à vontade com o resto. E existe uma vantagem enorme: quem aprende C aprende <strong>como o computador funciona de verdade</strong>, e depois qualquer outra linguagem fica mais fácil.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+<p>Ainda não escrevemos programas, mas há confusões muito comuns em quem está começando com C:</p>
+
+<div class="cenario">
+<strong>"Achei um curso de C# (ou de C++) pensando que era C"</strong>
+<p><strong>O que aconteceu:</strong> os nomes são parecidos, mas são linguagens diferentes. O <strong>C#</strong> (lê-se "cê sharp") é uma linguagem da Microsoft, de 2000, mais parecida com o Java do que com o C. O <strong>C++</strong> é a linguagem que nasceu do C e acrescentou muita coisa. Muito material "de C" na internet é, na verdade, C++.</p>
+<p><strong>Como conferir:</strong> um programa C tem <code>#include &lt;stdio.h&gt;</code> e <code>printf</code>, e o arquivo termina em <code>.c</code>. Se aparecer <code>#include &lt;iostream&gt;</code>, <code>std::cout</code>, <code>cin</code> ou <code>class</code>, é C++. Se aparecer <code>Console.WriteLine</code>, é C#.</p>
+</div>
+
+<div class="cenario">
+<strong>Copiei um código C++ para um arquivo <code>.c</code> e o gcc reclamou</strong>
+<p>A Ana achou um "Olá, mundo" na internet, salvou como <code>cpp.c</code> e compilou:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra cpp.c -o cpp
+cpp.c:1:10: fatal error: iostream: Arquivo ou diretório inexistente
+    1 | #include &lt;iostream&gt;
+      |          ^~~~~~~~~~
+compilation terminated.</pre>
+<p><strong>O que aconteceu:</strong> o código era C++. O <code>&lt;iostream&gt;</code> é um arquivo da biblioteca do C++, e o C não o conhece. A mensagem diz "erro fatal: iostream: arquivo ou diretório inexistente" (essa parte veio traduzida, porque é o sistema que a escreve). "Fatal" quer dizer que o compilador desistiu ali mesmo, sem nem olhar o resto, e "compilation terminated" é "compilação encerrada".</p>
+<p><strong>Como resolver:</strong> use material de C. Em C, o "Olá, mundo" usa <code>#include &lt;stdio.h&gt;</code> e <code>printf</code>, como na página <a href="index.html">Início</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Um programa C que não compila como C++</strong>
+<p>"Quase todo programa C também é C++", diz muita gente. Quase. A Ana guardou o número da turma numa variável chamada <code>class</code> ("turma", em inglês). Em C, funciona:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra turma.c -o turma
+$ ./turma
+A Ana está na turma 3.
+$ cp turma.c turma.cpp                                   « o mesmo código, como C++
+$ g++ -std=c++23 -Wall -Wextra turma.cpp -o turma
+turma.cpp: In function ‘int main()’:
+turma.cpp:4:5: error: expected primary-expression before ‘int’
+    4 |     int class = 3;
+      |     ^~~
+turma.cpp:5:41: error: expected primary-expression before ‘class’
+    5 |     printf("A Ana está na turma %d.\n", class);
+      |                                         ^~~~~</pre>
+<p><strong>O que aconteceu:</strong> em C++, <code>class</code> é uma palavra reservada (serve para criar classes), então não pode ser nome de variável. Em C, é um nome como outro qualquer. O C e o C++ são parentes próximos, mas são <strong>linguagens diferentes</strong>, com regras diferentes.</p>
+<p><strong>Como resolver:</strong> código C vai em arquivos <code>.c</code> e é compilado com <code>gcc</code>; código C++ vai em <code>.cpp</code> e é compilado com <code>g++</code>. Não misture os dois sem saber o que está fazendo.</p>
+</div>
+
+<div class="cenario">
+<strong>"Dei dois cliques no arquivo <code>.c</code> e só abriu um texto"</strong>
+<p><strong>O que aconteceu:</strong> nada de errado. O arquivo <code>.c</code> é só o <strong>texto</strong> do programa, o "código-fonte". Ele não roda sozinho: primeiro precisa ser compilado. Quem roda é o executável gerado pelo compilador.</p>
+<p><strong>Como resolver:</strong> use as caixas Experimente do guia ou instale um compilador (aulas <a href="instalar-linux.html">Instalar no Linux</a> e <a href="instalar-windows-mac.html">Instalar no Windows e macOS</a>).</p>
+</div>
+
+<hr>
+
+<h2>O que você vai conseguir fazer</h2>
+<p>Ao terminar cada parte do guia, você vai saber:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ao terminar</th><th>Você consegue</th></tr>
+<tr><td><strong>Nível 1 · Iniciante</strong></td><td>Escrever, compilar e rodar programas que guardam valores, fazem contas, leem o que o usuário digita, tomam decisões, repetem tarefas, trabalham com listas (arrays) e textos, e se dividem em funções. Ler as mensagens de erro e os avisos do compilador.</td></tr>
+<tr><td><strong>Nível 2 · Intermediário</strong></td><td>Entender a memória e os ponteiros, pedir e devolver memória com <code>malloc</code> e <code>free</code>, criar seus próprios tipos com <code>struct</code> e <code>enum</code>, ler e gravar arquivos, receber argumentos na linha de comando e organizar projetos com vários arquivos e um Makefile.</td></tr>
+<tr><td><strong>Nível 3 · Avançado</strong></td><td>Trabalhar com bits, construir listas ligadas, pilhas, árvores e tabelas hash, entender o comportamento indefinido, usar as novidades do C23, criar processos e threads, e achar erros com o gdb, os sanitizers e o Valgrind.</td></tr>
+<tr><td><strong>Projetos</strong></td><td>Juntar tudo: calculadora, jogo de adivinhação, boletim de notas, agenda de contatos, estoque da lojinha, contador de palavras e lista de tarefas.</td></tr>
+</table>
+</div>
+
+<p>Para fechar, rode o seu primeiro programa da aula:</p>
+
+<div class="tryc" data-goal="out:e eu vou aprender C!,src:Meu nome é (?!\?\?\?)">
+<p class="try-task"><strong>Missão:</strong> o programa já escreve a primeira linha. Complete a segunda: troque <code>???</code> pelo seu nome e coloque um <code>!</code> depois do <code>C</code>, para a saída ficar <code>Meu nome é Ana e eu vou aprender C!</code> (com o seu nome no lugar de Ana).</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá! Este é o meu primeiro programa em C.\n");
+    printf("Meu nome é ??? e eu vou aprender C\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá! Este é o meu primeiro programa em C.\n");
+    printf("Meu nome é Ana e eu vou aprender C!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>O <code>\n</code> no fim de cada texto é a quebra de linha: ele faz a segunda frase começar numa linha nova. Tente apagar o primeiro <code>\n</code> e rodar: as duas frases ficam grudadas. A aula <a href="escapes.html">Novas Linhas e Escapes</a> conta tudo sobre ele.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. O que significa dizer que o C é uma linguagem <strong>compilada</strong>?</p>
+<label><input type="radio" name="q1"> Que o código é lido linha por linha toda vez que o programa roda.</label>
+<label><input type="radio" name="q1"> Que o código é traduzido para código de máquina antes de rodar, gerando um executável.</label>
+<label><input type="radio" name="q1"> Que o código só funciona dentro do navegador.</label>
+<label><input type="radio" name="q1"> Que o código precisa do Python instalado para rodar.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Quem criou o C, onde e para quê?</p>
+<label><input type="radio" name="q2"> Bjarne Stroustrup, na Universidade de Cambridge, para criar jogos.</label>
+<label><input type="radio" name="q2"> Linus Torvalds, na Finlândia, para escrever o Git.</label>
+<label><input type="radio" name="q2"> Dennis Ritchie, no Bell Labs, para escrever o sistema Unix.</label>
+<label><input type="radio" name="q2"> Guido van Rossum, na Holanda, para ensinar programação.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Qual destas afirmações é verdadeira?</p>
+<label><input type="radio" name="q3"> O núcleo do Linux é escrito em Python.</label>
+<label><input type="radio" name="q3"> O C deixou de ser usado depois que o C++ foi criado.</label>
+<label><input type="radio" name="q3"> O C só funciona em computadores com Linux.</label>
+<label><input type="radio" name="q3"> O interpretador mais usado do Python, o CPython, é escrito em C.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Qual é um cuidado que o C exige e que o Python não exige?</p>
+<label><input type="radio" name="q4"> Devolver com <code>free</code> a memória que você pediu com <code>malloc</code>.</label>
+<label><input type="radio" name="q4"> Instalar um interpretador para rodar o programa.</label>
+<label><input type="radio" name="q4"> Escrever o programa em inglês.</label>
+<label><input type="radio" name="q4"> Usar apenas números inteiros.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. A Ana encontrou um programa com <code>#include &lt;iostream&gt;</code> e <code>std::cout</code>. Em que linguagem ele está?</p>
+<label><input type="radio" name="q5"> C</label>
+<label><input type="radio" name="q5"> C++</label>
+<label><input type="radio" name="q5"> C#</label>
+<label><input type="radio" name="q5"> Python</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. De onde vem o nome "C"?</p>
+<label><input type="radio" name="q6"> De "Computador".</label>
+<label><input type="radio" name="q6"> Da nota dó (C) na notação musical inglesa.</label>
+<label><input type="radio" name="q6"> É a letra seguinte a "B", a linguagem de Ken Thompson da qual o C nasceu.</label>
+<label><input type="radio" name="q6"> Do número 100 em algarismos romanos.</label>
+</div>
+
+<div class="exercise">
+<h3>7. A extensão certa</h3>
+<p>Para o <code>gcc</code> tratar o arquivo como código C, qual é a extensão do nome do arquivo? Complete:</p>
+<div class="ex-code">ola<input data-answer=".c" aria-label="extensão"></div>
+</div>
+
+<div class="exercise">
+<h3>8. O livro clássico</h3>
+<p>O livro <em>The C Programming Language</em>, de Kernighan e Ritchie, é conhecido pelas iniciais dos autores. Complete (use o <code>&amp;</code> no meio):</p>
+<div class="ex-code">O livro <input data-answer="K&amp;R|K&amp;R C|KR|K e R" aria-label="apelido do livro"> foi publicado em 1978.</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Programar é escrever instruções para o computador; o processador só entende código de máquina, e alguém precisa traduzir.</li>
+  <li>O C é <strong>compilado</strong>: o compilador (no guia, o <code>gcc</code>) traduz tudo antes, e o executável roda sozinho, rápido.</li>
+  <li>Ele é <strong>rápido</strong>, <strong>pequeno</strong> e <strong>perto da máquina</strong>: você mexe direto na memória.</li>
+  <li>Criado por <strong>Dennis Ritchie</strong> no <strong>Bell Labs</strong>, em 1972, para escrever o <strong>Unix</strong>; o livro <strong>K&amp;R</strong> é de 1978, o primeiro padrão (ANSI C) de 1989, e o guia ensina o <strong>C23</strong>.</li>
+  <li>Está no Linux e no Android, no Git, no interpretador do Python, no SQLite, em servidores e nos microcontroladores de aparelhos do dia a dia.</li>
+  <li>O preço da velocidade é a falta de proteção: erros de memória não são impedidos. O guia ensina desde o começo os hábitos e as ferramentas que pegam esses erros.</li>
+  <li>C, C++ e Python são linguagens diferentes: o C++ nasceu do C e é bem maior; o Python é mais fácil e mais lento, e roda em cima do C.</li>
+  <li>Próximo passo: ver o código virar programa, etapa por etapa, em <a href="como-funciona.html">Como o C Vira Programa</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
