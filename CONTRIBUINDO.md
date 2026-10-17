@@ -141,7 +141,7 @@ No `.exercise`, `data-answer="a|b"` aceita respostas alternativas. Para uma barr
 - `argc`/`argv` (`data-args`; `argv[0]` é `./programa`), `return N` e `exit(N)` (de 0 a 255, como no Linux: `exit(300)` dá 44), `atexit`.
 - `time()`, `clock()`, `sleep()`, `getpid()`, `rand()`/`srand()`, VLAs.
 - **Erros de execução, como no Linux:**
-  - ponteiro nulo (`*p` com `p == NULL`) dá `Falha de segmentação`, 139;
+  - ponteiro nulo (`*p` com `p == NULL`) dá `Falha de segmentação`, 139, **só quando o seu código desreferencia**. Se quem escreve no endereço 0 é a biblioteca, nada acontece: `scanf("%d", idade)` sem `&`, com `idade` valendo 0, imprime `Você tem 0 anos.` e termina com 0. No gcc, isso dá `Falha de segmentação` e 139;
   - divisão inteira por zero dá `Exceção de ponto flutuante`, 136;
   - recursão infinita estoura a pilha (8 MB) e dá `Falha de segmentação`, 139;
   - `abort()` e `assert` falho dão `Abortado`, 134;
@@ -155,6 +155,7 @@ No `.exercise`, `data-answer="a|b"` aceita respostas alternativas. Para uma barr
 - **Erros de memória que não são ponteiro nulo passam calados no editor** (no WebAssembly a memória é organizada de outro jeito):
   - índice fora do array (`v[5]` num `int v[3]`) lê um valor qualquer, sem erro;
   - usar memória já liberada lê o valor antigo (`7`), sem erro;
+  - estouro de array na pilha (`scanf("%s", nome)` com texto maior que `char nome[8]`, `strcpy` grande) termina normalmente; no gcc dá `*** stack smashing detected ***: terminated` + `Abortado` (134);
   - **`free` duplo passa sem erro**, enquanto no gcc dá `free(): double free detected in tcache 2` + `Abortado` (134).
   - Mostre o efeito real no `pre.term` do laboratório (com `-fsanitize=address` ou `valgrind`).
 - `printf("%s", 30)` (formato errado) no gcc dá `Falha de segmentação`; no editor imprime uma linha vazia. Os dois avisam na compilação.
@@ -219,7 +220,8 @@ printf '%s\n' 'mkdir -p c && cd c' "cat > ola.c <<'FIM'" '#include <stdio.h>' 'i
   - `math.h` no gcc: confira se precisa de `-lm` no seu exemplo e mostre o erro real se precisar.
 - **O ligador (`ld`) e o `make` saem em português** no laboratório (`referência não definida para "main"`); mostre a saída real e cite o inglês (`undefined reference to`), que aparece em fóruns e no editor.
 - **As mensagens do gcc saem em inglês**, com aspas tipográficas ‘assim’: copie como saíram e explique em português.
-- **Saída com buffer:** quando o programa morre (segfault), o que estava no `printf` sem `\n`… ou mesmo com `\n` mas indo para um pipe, pode **não aparecer**. Com `-i` a saída vai para um pipe (buffer cheio); com `-t` é terminal (buffer de linha). Para mostrar o que o leitor vê no terminal dele, use `-t`.
+- **Saída com buffer:** quando o programa morre (segfault), o que estava no `printf` sem `\n`… ou mesmo com `\n` mas indo para um pipe, pode **não aparecer**. Com `-i` a saída vai para um pipe (buffer cheio); com `-t` é terminal (buffer de linha). Para mostrar o que o leitor vê no terminal dele, use `-t`. Para mostrar a entrada digitada no `-t`, mande-a com atraso, senão ela não aparece na tela: `{ echo ./prog; sleep 2; echo 29; sleep 1; echo exit; } | ~/guia-c-lab/vps '~/guia-c-lab/lab -n SEUNOME -t'`.
+- **Exercícios `.exercise`:** o site corta os espaços do começo e do fim da resposta (`data-answer=" %c"` aceita `%c`). Se o espaço importa, peça a resposta entre aspas.
 - Um processo por vez, sempre com `timeout 60`. Programas que travam rodam com `timeout 3`.
 - **Privacidade:** nada da máquina real. Nas saídas do `gdb`, sanitizers e `valgrind`, os caminhos têm de ser `/home/ana/…`. Os PIDs (`==20397==`) podem ficar.
 
