@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Valgrind — vazamentos, Invalid read e valores sem inicializar | Guia C</title>
+<meta name="description" content="Valgrind para quem nunca programou: valgrind --leak-check=full ./programa, compilar com -g, ler Invalid read e Invalid write, Conditional jump or move depends on uninitialised value(s), --track-origins=yes, o HEAP SUMMARY e o LEAK SUMMARY (definitely, indirectly, still reachable), valgrind × sanitizers e alternativas no macOS e no Windows, com saídas reais do Valgrind 3.26.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Valgrind</span></h1>
+
+<p class="intro">O <strong>Valgrind</strong> é um programa que roda o <strong>seu</strong> programa dentro de uma espécie de máquina virtual e observa cada byte de memória que ele usa: cada <code>malloc</code>, cada <code>free</code>, cada leitura e cada escrita. No fim, ele conta quanta memória ficou sem <code>free</code> (os vazamentos) e, durante a execução, avisa sempre que o programa lê ou escreve onde não devia, ou usa uma variável que nunca recebeu valor. A grande vantagem: <strong>não precisa recompilar com nenhuma opção especial</strong>. Basta escrever <code>valgrind</code> antes do <code>./programa</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A rodar <code>valgrind --leak-check=full ./programa</code> e por que compilar com <code>-g</code>.</li>
+  <li>A ler o <code>HEAP SUMMARY</code> e o <code>LEAK SUMMARY</code>: <em>definitely lost</em>, <em>indirectly lost</em>, <em>still reachable</em>.</li>
+  <li>A ler <code>Invalid write</code>, <code>Invalid read</code> e <code>Invalid free()</code>.</li>
+  <li>A achar variáveis sem valor inicial: <code>Conditional jump or move depends on uninitialised value(s)</code> e a opção <code>--track-origins=yes</code>.</li>
+  <li>Quando usar o Valgrind e quando usar os <a href="sanitizers.html">sanitizers</a>, e o que fazer no macOS e no Windows.</li>
+</ul>
+</div>
+
+<p>Todas as saídas desta aula são reais, feitas com o <strong>Valgrind 3.26</strong> e o <strong>gcc 15</strong> na máquina fictícia da Ana, na pasta <code>~/c/vg</code>. O Valgrind <strong>não funciona no editor do guia</strong> (ele precisa de um programa Linux de verdade); as caixas "Experimente" servem para consertar o que ele encontrou. Para instalar no Ubuntu e no Debian:</p>
+<pre class="term">$ sudo apt install valgrind</pre>
+
+<hr>
+
+<h2>A ideia: o contador de estoque</h2>
+<p>Na lojinha da Ana, cada produto que sai da prateleira (<code>malloc</code>) tem de voltar ou ser registrado como vendido (<code>free</code>). O Valgrind é o funcionário que fica na porta com uma prancheta: anota tudo o que sai, tudo o que volta, e grita quando alguém mexe numa prateleira vazia ou num produto já devolvido. Quando a loja fecha, ele confere a prancheta e diz: "saíram 3 produtos e voltaram 2; o que faltou saiu pela porta tal, às tantas horas".</p>
+
+<p>Para ele poder dizer "às tantas horas" (o arquivo e a linha), compile com <code>-g</code>, como no <a href="depuracao-gdb.html">gdb</a>.</p>
+
+<hr>
+
+<h2>1. O primeiro relatório: um vazamento</h2>
+<p>A função <code>copiar</code> reserva memória e devolve o ponteiro. O <code>main</code> usa o texto e esquece do <code>free</code> (veja <a href="vazamentos.html">Vazamentos de Memória</a>):</p>
+
+<pre class="file" data-file="vaza.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *copiar(const char *texto) {
+    char *copia = malloc(strlen(texto) + 1);
+    if (copia != NULL) {
+        strcpy(copia, texto);
+    }
+    return copia;
+}
+
+int main(void) {
+    char *item = copiar("arroz");
+    printf("Item: %s\n", item);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/vg">$ gcc -std=c23 -Wall -Wextra -g vaza.c -o vaza
+$ valgrind ./vaza
+==56079== Memcheck, a memory error detector
+==56079== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==56079== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==56079== Command: ./vaza
+==56079==
+Item: arroz
+==56079==
+==56079== HEAP SUMMARY:
+==56079==     in use at exit: 6 bytes in 1 blocks
+==56079==   total heap usage: 2 allocs, 1 frees, 4,102 bytes allocated
+==56079==
+==56079== LEAK SUMMARY:
+==56079==    definitely lost: 6 bytes in 1 blocks
+==56079==    indirectly lost: 0 bytes in 0 blocks
+==56079==      possibly lost: 0 bytes in 0 blocks
+==56079==    still reachable: 0 bytes in 0 blocks
+==56079==         suppressed: 0 bytes in 0 blocks
+==56079== Rerun with --leak-check=full to see details of leaked memory
+==56079==
+==56079== For lists of detected and suppressed errors, rerun with: -s
+==56079== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<dl class="anatomy">
+  <dt>==56079==</dt><dd>Toda linha do Valgrind começa com o número do processo (PID) entre <code>==</code>. Isso separa o que é <strong>do Valgrind</strong> do que é <strong>do seu programa</strong>: o <code>Item: arroz</code> não tem o prefixo, porque foi o seu <code>printf</code>.</dd>
+  <dt>Memcheck, a memory error detector</dt><dd>O Valgrind é uma caixa de ferramentas; a ferramenta padrão é o <strong>Memcheck</strong>, "conferidor de memória". As três linhas seguintes são a versão e a licença.</dd>
+  <dt>Command: ./vaza</dt><dd>O programa que ele está observando.</dd>
+  <dt>HEAP SUMMARY: in use at exit: 6 bytes in 1 blocks</dt><dd>"Resumo do heap: em uso na saída, 6 bytes em 1 bloco": quando o programa terminou, ainda havia 1 bloco reservado e não devolvido (o <code>"arroz"</code>: 5 letras + o <code>'\0'</code>).</dd>
+  <dt>total heap usage: 2 allocs, 1 frees, 4,102 bytes allocated</dt><dd>"Uso total: 2 reservas, 1 liberação, 4.102 bytes reservados" (o Valgrind usa a vírgula para separar milhares, como em inglês). Mas o programa só tem <strong>um</strong> <code>malloc</code>! O outro é do próprio <code>printf</code>, que reserva 4.096 bytes de <em>buffer</em> para a saída (veja <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>) e os devolve sozinho no fim. A conta fecha: 4.096 + 6 = 4.102.</dd>
+  <dt>LEAK SUMMARY: definitely lost: 6 bytes in 1 blocks</dt><dd>"Resumo de vazamentos: definitivamente perdidos, 6 bytes": um vazamento de verdade (os outros tipos estão na seção 5).</dd>
+  <dt>Rerun with --leak-check=full to see details</dt><dd>"Rode de novo com <code>--leak-check=full</code> para ver os detalhes": ele sabe que vazou, mas não disse onde.</dd>
+  <dt>ERROR SUMMARY: 0 errors</dt><dd>"Resumo de erros": conta os erros de acesso à memória (as seções 2 a 4). Sem o <code>--leak-check=full</code>, vazamentos não entram nessa conta.</dd>
+</dl>
+
+<h3>Os detalhes: <code>--leak-check=full</code></h3>
+<p>Quase sempre você vai querer rodar assim:</p>
+
+<pre class="term" data-cwd="~/c/vg">$ valgrind --leak-check=full ./vaza
+==56117== Memcheck, a memory error detector
+==56117== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==56117== Using Valgrind-3.26.0 and LibVEX; rerun with -h for copyright info
+==56117== Command: ./vaza
+==56117==
+Item: arroz
+==56117==
+==56117== HEAP SUMMARY:
+==56117==     in use at exit: 6 bytes in 1 blocks
+==56117==   total heap usage: 2 allocs, 1 frees, 4,102 bytes allocated
+==56117==
+==56117== 6 bytes in 1 blocks are definitely lost in loss record 1 of 1
+==56117==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==56117==    by 0x40011D0: copiar (vaza.c:6)
+==56117==    by 0x400120F: main (vaza.c:14)
+==56117==
+==56117== LEAK SUMMARY:
+==56117==    definitely lost: 6 bytes in 1 blocks
+«… as outras linhas do resumo, todas com 0 …»
+==56117==
+==56117== For lists of detected and suppressed errors, rerun with: -s
+==56117== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)</pre>
+
+<dl class="anatomy">
+  <dt>6 bytes in 1 blocks are definitely lost in loss record 1 of 1</dt><dd>"6 bytes em 1 bloco estão definitivamente perdidos, no registro de perda 1 de 1" (se houvesse 3 vazamentos diferentes, seriam 3 registros).</dd>
+  <dt>at 0x4850858: malloc (vg_replace_malloc.c:447)</dt><dd>A pilha de chamadas de <strong>onde o bloco foi reservado</strong>, de cima (o mais recente) para baixo. O <code>malloc</code> aparece num arquivo do Valgrind porque ele troca o <code>malloc</code> da biblioteca pelo seu, para anotar tudo.</dd>
+  <dt>by 0x40011D0: copiar (vaza.c:6)</dt><dd>"Chamado por <code>copiar</code>, linha 6 de <code>vaza.c</code>": é o <code>malloc(strlen(texto) + 1)</code>.</dd>
+  <dt>by 0x400120F: main (vaza.c:14)</dt><dd>"…que foi chamada pelo <code>main</code>, linha 14". O conserto: dar <code>free(item)</code> no <code>main</code> quando o item não for mais usado.</dd>
+  <dt>ERROR SUMMARY: 1 errors from 1 contexts</dt><dd>Com <code>--leak-check=full</code>, cada vazamento conta como erro.</dd>
+</dl>
+
+<div class="tryc" data-goal="src:free\(\s*item\s*\)\s*;,out:Item: arroz,exit:0">
+<p class="try-task"><strong>Missão:</strong> conserte o vazamento que o Valgrind encontrou: libere o <code>item</code> no <code>main</code>, depois do <code>printf</code>. (O editor não tem Valgrind e um vazamento não muda a saída; a missão confere o seu código. No seu Linux, rode <code>valgrind --leak-check=full</code> e veja <code>All heap blocks were freed -- no leaks are possible</code>.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *copiar(const char *texto) {
+    char *copia = malloc(strlen(texto) + 1);
+    if (copia != NULL) {
+        strcpy(copia, texto);
+    }
+    return copia;
+}
+
+int main(void) {
+    char *item = copiar("arroz");
+    printf("Item: %s\n", item);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *copiar(const char *texto) {
+    char *copia = malloc(strlen(texto) + 1);
+    if (copia != NULL) {
+        strcpy(copia, texto);
+    }
+    return copia;
+}
+
+int main(void) {
+    char *item = copiar("arroz");
+    printf("Item: %s\n", item);
+    free(item);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Com o <code>free</code> (no arquivo <code>vaza2.c</code>), o relatório fica assim:</p>
+<pre class="term" data-cwd="~/c/vg">$ gcc -std=c23 -Wall -Wextra -g vaza2.c -o vaza2
+$ valgrind --leak-check=full ./vaza2
+«… o cabeçalho …»
+Item: arroz
+==64316== 
+==64316== HEAP SUMMARY:
+==64316==     in use at exit: 0 bytes in 0 blocks
+==64316==   total heap usage: 2 allocs, 2 frees, 4,102 bytes allocated
+==64316== 
+==64316== All heap blocks were freed -- no leaks are possible
+==64316== 
+==64316== For lists of detected and suppressed errors, rerun with: -s
+==64316== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+<p><code>2 allocs, 2 frees</code>: a conta fecha. E a última frase é a que você quer ver sempre: "todos os blocos do heap foram liberados: não há vazamento possível".</p>
+
+<hr>
+
+<h2>2. <code>Invalid write</code> e <code>Invalid read</code>: passou do fim</h2>
+<p>O clássico <code>+ 1</code> esquecido: <code>"Ana Maria"</code> tem 9 letras, mas precisa de 10 bytes por causa do <code>'\0'</code> (veja <a href="strings.html">Strings</a>):</p>
+
+<pre class="file" data-file="nome.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *texto = "Ana Maria";
+    char *copia = malloc(strlen(texto));
+    if (copia == NULL) {
+        return 1;
+    }
+    strcpy(copia, texto);
+    printf("%s\n", copia);
+    free(copia);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/vg">$ gcc -std=c23 -Wall -Wextra -g nome.c -o nome
+$ valgrind ./nome
+==56312== Memcheck, a memory error detector
+«… as 3 linhas de sempre …»
+==56312== Command: ./nome
+==56312==
+==56312== Invalid write of size 1
+==56312==    at 0x485A2F6: strcpy (vg_replace_strmem.c:565)
+==56312==    by 0x4001218: main (nome.c:11)
+==56312==  Address 0x4aa6049 is 0 bytes after a block of size 9 alloc'd
+==56312==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==56312==    by 0x40011F3: main (nome.c:7)
+==56312==
+==56312== Invalid read of size 1
+==56312==    at 0x485A174: strlen (vg_replace_strmem.c:506)
+==56312==    by 0x491087A: puts (ioputs.c:35)
+==56312==    by 0x4001224: main (nome.c:12)
+==56312==  Address 0x4aa6049 is 0 bytes after a block of size 9 alloc'd
+==56312==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==56312==    by 0x40011F3: main (nome.c:7)
+==56312==
+Ana Maria
+==56312==
+==56312== HEAP SUMMARY:
+==56312==     in use at exit: 0 bytes in 0 blocks
+==56312==   total heap usage: 2 allocs, 2 frees, 4,105 bytes allocated
+==56312==
+==56312== All heap blocks were freed -- no leaks are possible
+==56312==
+==56312== For lists of detected and suppressed errors, rerun with: -s
+==56312== ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)</pre>
+
+<dl class="anatomy">
+  <dt>Invalid write of size 1</dt><dd>"Escrita inválida de 1 byte": o programa escreveu 1 byte onde não podia.</dd>
+  <dt>at … strcpy … / by … main (nome.c:11)</dt><dd>Quem escreveu foi o <code>strcpy</code>, chamado na linha 11. A primeira linha com um arquivo seu é a pista.</dd>
+  <dt>Address 0x4aa6049 is 0 bytes after a block of size 9 alloc'd</dt><dd>"O endereço fica 0 bytes depois de um bloco de 9 bytes reservado": logo depois do fim do bloco, exatamente onde o <code>'\0'</code> foi parar. E as duas linhas seguintes dizem onde o bloco foi reservado: <code>nome.c:7</code>, o <code>malloc(strlen(texto))</code>.</dd>
+  <dt>Invalid read of size 1 … puts … main (nome.c:12)</dt><dd>"Leitura inválida": na linha 12, o <code>printf</code> (que o gcc trocou pelo <code>puts</code>, mais simples, porque a string termina em <code>\n</code>) leu o mesmo byte proibido, procurando o fim da string.</dd>
+  <dt>Ana Maria</dt><dd>Diferente do ASan, o Valgrind <strong>não para</strong> o programa: anota o erro e deixa seguir. Por isso a saída apareceu e vieram 2 erros.</dd>
+  <dt>All heap blocks were freed</dt><dd>Não há vazamento: o <code>free</code> está lá. Um programa pode ter erros de acesso <strong>sem</strong> vazar, e vice-versa.</dd>
+</dl>
+
+<hr>
+
+<h2>3. Memória usada depois do <code>free</code> e <code>free</code> duplo</h2>
+<pre class="file" data-file="depois.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *pontos = malloc(3 * sizeof *pontos);
+    if (pontos == NULL) {
+        return 1;
+    }
+    pontos[0] = 10;
+    free(pontos);
+    printf("Pontos: %d\n", pontos[0]);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/vg">$ gcc -std=c23 -Wall -Wextra -g depois.c -o depois
+«… o aviso -Wuse-after-free, que você já viu em Sanitizers …»
+$ valgrind ./depois
+«… o cabeçalho …»
+==56357== Invalid read of size 4
+==56357==    at 0x40011CB: main (depois.c:11)
+==56357==  Address 0x4aa6040 is 0 bytes inside a block of size 12 free'd
+==56357==    at 0x48538BF: free (vg_replace_malloc.c:990)
+==56357==    by 0x40011C6: main (depois.c:10)
+==56357==  Block was alloc'd at
+==56357==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==56357==    by 0x400119E: main (depois.c:5)
+==56357==
+Pontos: 10
+«… HEAP SUMMARY …»
+==56357== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)</pre>
+
+<p>Três pistas: o programa <strong>leu</strong> 4 bytes (um <code>int</code>) na linha 11; o endereço fica "0 bytes dentro de um bloco de 12 bytes <strong>liberado</strong>" (<em>free'd</em>) pelo <code>free</code> da linha 10; e o bloco tinha sido <strong>reservado</strong> (<em>Block was alloc'd at</em>) na linha 5. Repare que, dentro do Valgrind, o programa mostrou <code>Pontos: 10</code> (o valor antigo, por sorte), e fora dele mostrou lixo: um erro de memória pode mudar de cara a cada execução.</p>
+
+<p>O <code>free</code> duplo vira <code>Invalid free()</code>:</p>
+<pre class="file" data-file="duplo.c">#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char *nome = malloc(20);
+    if (nome == NULL) {
+        return 1;
+    }
+    strcpy(nome, "Ana");
+    free(nome);
+    free(nome);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/vg">$ valgrind ./duplo
+«… o cabeçalho …»
+==57258== Invalid free() / delete / delete[] / realloc()
+==57258==    at 0x48538BF: free (vg_replace_malloc.c:990)
+==57258==    by 0x40011B2: main (duplo.c:11)
+==57258==  Address 0x4aa6040 is 0 bytes inside a block of size 20 free'd
+==57258==    at 0x48538BF: free (vg_replace_malloc.c:990)
+==57258==    by 0x40011A6: main (duplo.c:10)
+==57258==  Block was alloc'd at
+==57258==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==57258==    by 0x400117E: main (duplo.c:5)
+==57258==
+==57258==
+==57258== HEAP SUMMARY:
+==57258==     in use at exit: 0 bytes in 0 blocks
+==57258==   total heap usage: 1 allocs, 2 frees, 20 bytes allocated
+«…»</pre>
+<p>"<code>free()</code> inválido" (o título cita também <code>delete</code>, <code>delete[]</code> e <code>realloc</code> porque o Valgrind serve para C++ também). O segundo <code>free</code> está na linha 11; o primeiro, na 10. E o resumo denuncia: <code>1 allocs, 2 frees</code>, uma reserva e duas liberações.</p>
+
+<hr>
+
+<h2>4. Variável sem valor inicial: <code>Conditional jump…</code></h2>
+<p>Esta é a especialidade do Valgrind, e o que os sanitizers do gcc <strong>não</strong> pegam. A Ana esqueceu o <code>= 0</code> da <code>soma</code>:</p>
+
+<pre class="file" data-file="media.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[] = {7, 8, 10};
+    int soma;
+    for (int i = 0; i &lt; 3; i++) {
+        soma += notas[i];
+    }
+    if (soma &gt; 20) {
+        printf("Passou: %d\n", soma);
+    } else {
+        printf("Não passou: %d\n", soma);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/vg">$ gcc -std=c23 -Wall -Wextra -g media.c -o media
+$ ./media
+Passou: 25</pre>
+
+<p>Nem o gcc avisou (o aviso <code>-Wuninitialized</code> do gcc nem sempre aparece sem otimização), e o resultado está certo: a <code>soma</code> começou com 0 por pura sorte, porque aquele pedaço da pilha estava zerado. Em outro programa, ou mais tarde neste mesmo, ela pode começar com qualquer lixo (veja <a href="variaveis.html">Variáveis</a>). O Valgrind percebe:</p>
+
+<pre class="term" data-cwd="~/c/vg">$ valgrind ./media
+«… o cabeçalho …»
+==56748== Conditional jump or move depends on uninitialised value(s)
+==56748==    at 0x40011BC: main (media.c:9)
+==56748==
+==56748== Use of uninitialised value of size 8
+==56748==    at 0x48E5062: _itoa_word (_fitoa_word.c:38)
+==56748==    by 0x48F061C: __printf_buffer (vfprintf-process-arg.c:155)
+==56748==    by 0x48F2767: __vfprintf_internal (vfprintf-internal.c:1548)
+==56748==    by 0x48E6132: printf (printf.c:33)
+==56748==    by 0x40011D6: main (media.c:10)
+==56748==
+«… mais 3 erros parecidos, todos dentro do printf da linha 10 …»
+Passou: 25
+«… HEAP SUMMARY …»
+==56748== Use --track-origins=yes to see where uninitialised values come from
+==56748== For lists of detected and suppressed errors, rerun with: -s
+==56748== ERROR SUMMARY: 7 errors from 5 contexts (suppressed: 0 from 0)</pre>
+
+<dl class="anatomy">
+  <dt>Conditional jump or move depends on uninitialised value(s)</dt><dd>"Um desvio condicional (ou uma cópia) depende de valor(es) não inicializado(s)". Em português de gente: um <code>if</code> (ou laço, ou <code>?:</code>) tomou uma decisão com base num valor que ninguém definiu. É a linha 9: <code>if (soma &gt; 20)</code>.</dd>
+  <dt>Use of uninitialised value of size 8</dt><dd>"Uso de valor não inicializado": o <code>printf</code> da linha 10 recebeu a <code>soma</code> para escrever na tela. As linhas de cima (<code>_itoa_word</code>, <code>__printf_buffer</code>) são o código interno do <code>printf</code> transformando o número em texto; a linha que interessa é <code>main (media.c:10)</code>.</dd>
+  <dt>Use --track-origins=yes…</dt><dd>O Valgrind diz <strong>onde</strong> o valor ruim foi usado, mas não onde ele nasceu. A opção <code>--track-origins=yes</code> ("rastrear origens") responde isso.</dd>
+</dl>
+
+<p>Repare que o Valgrind <strong>não</strong> reclama da linha 7 (<code>soma += notas[i]</code>), onde o lixo entrou na conta: copiar e somar lixo não é proibido. Ele só reclama quando o lixo <strong>decide alguma coisa</strong> (um <code>if</code>) ou sai do programa (o <code>printf</code>). Por isso, a primeira linha apontada nem sempre é a do erro: siga a pista com o <code>--track-origins=yes</code>.</p>
+
+<h3>De onde veio o lixo: <code>--track-origins=yes</code></h3>
+<pre class="term" data-cwd="~/c/vg">$ valgrind --track-origins=yes ./media
+«… o cabeçalho …»
+==56768== Conditional jump or move depends on uninitialised value(s)
+==56768==    at 0x40011BC: main (media.c:9)
+==56768==  Uninitialised value was created by a stack allocation
+==56768==    at 0x4001169: main (media.c:3)
+==56768==
+«… os outros erros, cada um com a mesma origem …»</pre>
+
+<p>"O valor não inicializado foi criado por uma reserva na pilha, em <code>main (media.c:3)</code>": uma variável local do <code>main</code> (as locais moram na <a href="pilha-heap.html">pilha</a>; a linha 3 é onde o <code>main</code> começa). Agora é só olhar as variáveis locais do <code>main</code> que nunca recebem valor: a <code>soma</code>. Se o lixo viesse de um <code>malloc</code>, a mensagem seria <code>created by a heap allocation</code>, com a linha do <code>malloc</code>. O <code>--track-origins=yes</code> deixa o Valgrind ainda mais lento, por isso não vem ligado.</p>
+
+<div class="tryc" data-goal="semaviso,out:Passou: 25,exit:0">
+<p class="try-task"><strong>Missão:</strong> o editor usa o Clang, que avisa deste erro com <code>-Wall</code> (o gcc não avisou). Rode, leia o aviso e conserte a variável que o Valgrind apontou. A missão termina quando o programa compilar <strong>sem nenhum aviso</strong> e mostrar <code>Passou: 25</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[] = {7, 8, 10};
+    int soma;
+    for (int i = 0; i &lt; 3; i++) {
+        soma += notas[i];
+    }
+    if (soma &gt; 20) {
+        printf("Passou: %d\n", soma);
+    } else {
+        printf("Não passou: %d\n", soma);
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int notas[] = {7, 8, 10};
+    int soma = 0;
+    for (int i = 0; i &lt; 3; i++) {
+        soma += notas[i];
+    }
+    if (soma &gt; 20) {
+        printf("Passou: %d\n", soma);
+    } else {
+        printf("Não passou: %d\n", soma);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Os tipos de vazamento</h2>
+<p>O <code>LEAK SUMMARY</code> tem cinco linhas. Duas aparecem o tempo todo em programas com <a href="listas-ligadas.html">listas ligadas</a> e <a href="structs-ponteiros.html">structs com ponteiros</a>. Esta lista tem 3 nós, mas o <code>main</code> só libera o primeiro:</p>
+
+<pre class="file" data-file="lista.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct no {
+    int valor;
+    struct no *prox;
+};
+
+struct no *novo(int valor, struct no *prox) {
+    struct no *n = malloc(sizeof *n);
+    if (n == NULL) {
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = prox;
+    return n;
+}
+
+int main(void) {
+    struct no *lista = novo(1, novo(2, novo(3, NULL)));
+    for (struct no *p = lista; p != NULL; p = p-&gt;prox) {
+        printf("%d\n", p-&gt;valor);
+    }
+    free(lista);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/vg">$ gcc -std=c23 -Wall -Wextra -g lista.c -o lista
+$ valgrind --leak-check=full ./lista
+«… o cabeçalho …»
+1
+2
+3
+==57294==
+==57294== HEAP SUMMARY:
+==57294==     in use at exit: 32 bytes in 2 blocks
+==57294==   total heap usage: 4 allocs, 2 frees, 4,144 bytes allocated
+==57294==
+==57294== 32 (16 direct, 16 indirect) bytes in 1 blocks are definitely lost in loss record 2 of 2
+==57294==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==57294==    by 0x40011C5: novo (lista.c:10)
+==57294==    by 0x400121D: main (lista.c:20)
+==57294==
+==57294== LEAK SUMMARY:
+==57294==    definitely lost: 16 bytes in 1 blocks
+==57294==    indirectly lost: 16 bytes in 1 blocks
+==57294==      possibly lost: 0 bytes in 0 blocks
+==57294==    still reachable: 0 bytes in 0 blocks
+==57294==         suppressed: 0 bytes in 0 blocks
+«…»</pre>
+
+<p>Cada nó tem 16 bytes (um <code>int</code>, 4 bytes de enchimento e um ponteiro de 8; veja <a href="sizeof.html">sizeof</a>). O nó 1 foi liberado. O nó 2 ficou sem ninguém apontando para ele: <strong>definitely lost</strong>. O nó 3 ainda tem um ponteiro apontando para ele, mas esse ponteiro mora <strong>dentro</strong> do nó 2, que está perdido: <strong>indirectly lost</strong>. Por isso a linha <code>32 (16 direct, 16 indirect)</code>. Conserte o "direto" e o "indireto" some junto.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha do LEAK SUMMARY</th><th>Quer dizer</th><th>Gravidade</th></tr>
+<tr><td><code>definitely lost</code></td><td>Nenhum ponteiro aponta para o bloco: perdido de vez.</td><td>Vazamento. Conserte.</td></tr>
+<tr><td><code>indirectly lost</code></td><td>Só é apontado por blocos que estão perdidos (o resto de uma lista ou árvore).</td><td>Some quando você conserta o <em>definitely lost</em>.</td></tr>
+<tr><td><code>possibly lost</code></td><td>Só há ponteiros para o <strong>meio</strong> do bloco, não para o começo.</td><td>Quase sempre um vazamento; investigue.</td></tr>
+<tr><td><code>still reachable</code></td><td>Ainda há um ponteiro para o bloco no fim (numa variável global, por exemplo), mas ninguém deu <code>free</code>.</td><td>Não é perdido, mas é desleixo: libere antes de sair.</td></tr>
+<tr><td><code>suppressed</code></td><td>Vazamentos que o Valgrind foi mandado ignorar (geralmente de bibliotecas do sistema).</td><td>Ignore.</td></tr>
+</table>
+</div>
+
+<p>Um <em>still reachable</em> de verdade: um ponteiro global que nunca é liberado.</p>
+<pre class="file" data-file="guarda.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+char *historico;
+
+int main(void) {
+    historico = malloc(100);
+    if (historico == NULL) {
+        return 1;
+    }
+    printf("Histórico pronto.\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/vg">$ valgrind --leak-check=full ./guarda
+«…»
+==58023== LEAK SUMMARY:
+==58023==    definitely lost: 0 bytes in 0 blocks
+==58023==    indirectly lost: 0 bytes in 0 blocks
+==58023==      possibly lost: 0 bytes in 0 blocks
+==58023==    still reachable: 100 bytes in 1 blocks
+==58023==         suppressed: 0 bytes in 0 blocks
+==58023== Reachable blocks (those to which a pointer was found) are not shown.
+==58023== To see them, rerun with: --leak-check=full --show-leak-kinds=all
+==58023==
+==58023== For lists of detected and suppressed errors, rerun with: -s
+==58023== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+<p>O bloco ainda é alcançável pela global <code>historico</code>, então não conta como erro (<code>0 errors</code>) e nem mostra a linha. Para ver de onde ele veio, o próprio Valgrind ensina: <code>--show-leak-kinds=all</code> ("mostre todos os tipos de vazamento"), que acrescenta <code>100 bytes in 1 blocks are still reachable in loss record 1 of 1</code> com <code>by 0x400117A: main (guarda.c:7)</code>.</p>
+
+<div class="tryc" data-goal="outre:liberado 1\nliberado 2\nliberado 3\n,exit:0">
+<p class="try-task"><strong>Missão:</strong> escreva a função <code>liberar</code>, que libera <strong>todos</strong> os nós da lista. Cuidado: depois do <code>free(p)</code>, não dá mais para ler <code>p-&gt;prox</code> (seria um <code>Invalid read</code>). Guarde o próximo numa variável <strong>antes</strong> do <code>free</code>. Para a missão conferir, mostre <code>liberado N</code> antes de cada <code>free</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct no {
+    int valor;
+    struct no *prox;
+};
+
+struct no *novo(int valor, struct no *prox) {
+    struct no *n = malloc(sizeof *n);
+    if (n == NULL) {
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = prox;
+    return n;
+}
+
+void liberar(struct no *lista) {
+    /* libere todos os nós aqui; antes de cada free, mostre "liberado N" */
+    printf("liberado %d\n", lista-&gt;valor);
+    free(lista);
+}
+
+int main(void) {
+    struct no *lista = novo(1, novo(2, novo(3, NULL)));
+    liberar(lista);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+struct no {
+    int valor;
+    struct no *prox;
+};
+
+struct no *novo(int valor, struct no *prox) {
+    struct no *n = malloc(sizeof *n);
+    if (n == NULL) {
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;prox = prox;
+    return n;
+}
+
+void liberar(struct no *lista) {
+    struct no *p = lista;
+    while (p != NULL) {
+        struct no *prox = p-&gt;prox;
+        printf("liberado %d\n", p-&gt;valor);
+        free(p);
+        p = prox;
+    }
+}
+
+int main(void) {
+    struct no *lista = novo(1, novo(2, novo(3, NULL)));
+    liberar(lista);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>6. O que o Valgrind não vê, e quanto ele custa</h2>
+<p>O Memcheck vigia o <strong>heap</strong> (os blocos do <code>malloc</code>) byte a byte, mas não sabe onde termina cada array <strong>local</strong>. O estouro de <code>notas[5]</code> da aula <a href="sanitizers.html">Sanitizers</a>, que o ASan chamou de <code>stack-buffer-overflow</code>, passa sem um <code>Invalid read</code>:</p>
+
+<pre class="term" data-cwd="~/c/vg">$ valgrind ./notas
+«… o cabeçalho …»
+==56412== Use of uninitialised value of size 8
+==56412==    at 0x48E5062: _itoa_word (_fitoa_word.c:38)
+==56412==    by 0x48F061C: __printf_buffer (vfprintf-process-arg.c:155)
+==56412==    by 0x48F2767: __vfprintf_internal (vfprintf-internal.c:1548)
+==56412==    by 0x48E6132: printf (printf.c:33)
+==56412==    by 0x40011E5: main (notas.c:9)
+«… mais erros iguais, todos no printf …»
+Soma: 40
+«…»
+==56412== ERROR SUMMARY: 6 errors from 4 contexts (suppressed: 0 from 0)</pre>
+
+<p>Ele só percebeu o <strong>efeito</strong>: o byte lido depois do array nunca tinha recebido valor, e a <code>soma</code> que chegou ao <code>printf</code> da linha 9 ficou "contaminada". A linha do erro de verdade (a 7) nem aparece. Para estouros de arrays locais, o ASan é muito melhor.</p>
+
+<p>E o preço: o programa roda dentro do Valgrind, que confere cada instrução. O mesmo programa de somas da aula de sanitizers (com 20 voltas, em vez de 200):</p>
+<pre class="term" data-cwd="~/c/vg">$ time ./pesado
+Soma: 59999940
+
+real	0m0,103s
+user	0m0,101s
+sys	0m0,002s
+$ time valgrind -q ./pesado
+Soma: 59999940
+
+real	0m2,134s
+user	0m2,095s
+sys	0m0,039s</pre>
+<p>Uns <strong>20 vezes</strong> mais lento (o <code>-q</code>, <em>quiet</em>, esconde tudo do Valgrind menos os erros). Em geral, conte com 10 a 50 vezes. Para os programas pequenos das aulas, não faz diferença; para um jogo ou um servidor, faz.</p>
+
+<hr>
+
+<h2>Valgrind × sanitizers: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Valgrind (Memcheck)</th><th>ASan + UBSan (<code>-fsanitize=address,undefined</code>)</th></tr>
+<tr><td>Precisa recompilar?</td><td>Não (mas <code>-g</code> ajuda muito).</td><td>Sim, com a opção.</td></tr>
+<tr><td>Velocidade</td><td>10 a 50 vezes mais lento.</td><td>Umas 2 vezes mais lento.</td></tr>
+<tr><td>Estouro no heap, uso depois do <code>free</code>, <code>free</code> duplo, vazamentos</td><td>Sim.</td><td>Sim.</td></tr>
+<tr><td>Estouro de array local (pilha) ou global</td><td>Não (no máximo vê o efeito).</td><td>Sim.</td></tr>
+<tr><td>Variável sem valor inicial</td><td><strong>Sim</strong> (<code>Conditional jump…</code>).</td><td>Não (o Clang tem o <code>-fsanitize=memory</code> para isso).</td></tr>
+<tr><td>Estouro de <code>int</code>, deslocamento grande</td><td>Não.</td><td>Sim (UBSan).</td></tr>
+<tr><td>No primeiro erro</td><td>Anota e segue.</td><td>ASan para; UBSan anota e segue.</td></tr>
+<tr><td>Sistemas</td><td>Linux (x86, ARM…). Não roda nos macOS recentes nem no Windows.</td><td>Linux, macOS; no Windows, com o Clang ou o Visual Studio.</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar:</strong> no dia a dia, compile os testes com <code>-g -fsanitize=address,undefined</code>, que é rápido e pega mais tipos de erro. Use o Valgrind quando: (1) um valor muda de execução para execução e você suspeita de variável sem valor inicial; (2) você não pode recompilar o programa; (3) quer uma segunda opinião. <strong>Nunca os dois juntos</strong>: um programa compilado com <code>-fsanitize=address</code> não roda direito no Valgrind (veja o cenário abaixo).</p>
+
+<h3>No macOS e no Windows</h3>
+<p>O Valgrind oficial não roda nas versões recentes do macOS (nem nos Macs com processador Apple) nem no Windows. Alternativas:</p>
+<ul>
+  <li><strong>Qualquer sistema:</strong> os <a href="sanitizers.html">sanitizers</a> (<code>-fsanitize=address</code>) do Clang e do gcc.</li>
+  <li><strong>macOS:</strong> o comando <code>leaks</code> (procura vazamentos num programa) e o <strong>Instruments</strong>, do Xcode.</li>
+  <li><strong>Windows:</strong> o Visual Studio tem <code>/fsanitize=address</code>; o <strong>Dr. Memory</strong> é uma ferramenta gratuita parecida com o Valgrind; e no <strong>WSL</strong> (o Linux dentro do Windows; veja <a href="instalar-windows-mac.html">Instalar no Windows e macOS</a>) o Valgrind funciona normalmente.</li>
+</ul>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O relatório mostra <code>main (in /home/ana/c/vg/vaza-semg)</code> em vez de <code>main (vaza.c:14)</code></strong>
+<pre class="term" data-cwd="~/c/vg">$ gcc -std=c23 -Wall -Wextra vaza.c -o vaza-semg
+$ valgrind --leak-check=full ./vaza-semg
+«…»
+==64335== 6 bytes in 1 blocks are definitely lost in loss record 1 of 1
+==64335==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==64335==    by 0x40011D0: copiar (in /home/ana/c/vg/vaza-semg)
+==64335==    by 0x400120F: main (in /home/ana/c/vg/vaza-semg)
+«…»</pre>
+<p><strong>O que aconteceu:</strong> o programa foi compilado sem <code>-g</code>; o Valgrind sabe o nome da função, mas não o arquivo nem a linha ("<code>in</code> executável").</p>
+<p><strong>Como resolver:</strong> recompile com <code>-g</code> (e, de preferência, sem <code>-O2</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>ASan runtime does not come first in initial library list</code></strong>
+<pre class="term" data-cwd="~/c/vg">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address notas.c -o notas
+$ valgrind ./notas
+«…»
+==46557==ASan runtime does not come first in initial library list; you should either link runtime to your application or manually preload it with LD_PRELOAD.
+==46557==
+==46557== HEAP SUMMARY:
+==46557==     in use at exit: 0 bytes in 0 blocks
+==46557==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+«…»
+==46557== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+<p><strong>O que aconteceu:</strong> o programa foi compilado com o AddressSanitizer, e os dois fiscais brigam pela memória. O programa nem rodou (<code>0 allocs</code>), e o <code>0 errors</code> é enganoso.</p>
+<p><strong>Como resolver:</strong> para usar o Valgrind, compile <strong>sem</strong> <code>-fsanitize</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Erros dentro de <code>printf</code>, <code>_itoa_word</code>, <code>strlen</code>…</strong>
+<p><strong>O que aconteceu:</strong> a biblioteca recebeu do seu código um valor sem inicializar ou um ponteiro ruim.</p>
+<p><strong>Como resolver:</strong> desça a pilha até a primeira linha <code>by …: função (seu-arquivo.c:N)</code>. Para valores sem inicializar, rode com <code>--track-origins=yes</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"valgrind: comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o Valgrind não está instalado (ou você está no macOS ou no Windows, onde ele não existe).</p>
+<p><strong>Como resolver:</strong> no Ubuntu e no Debian, <code>sudo apt install valgrind</code>. Nos outros sistemas, veja as alternativas acima.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa pede entrada e o Valgrind "trava"</strong>
+<p><strong>O que aconteceu:</strong> nada travou: o seu programa está esperando você digitar, como sempre. A entrada e os argumentos passam normalmente: <code>valgrind ./prog arg1 &lt; dados.txt</code>.</p>
+<p><strong>Como resolver:</strong> digite a entrada (ou use <code>&lt;</code> para ler de um arquivo). Lembre que tudo fica mais lento.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando ou mensagem</th><th>O que é</th></tr>
+<tr><td><code>valgrind ./prog</code></td><td>Roda o programa no Memcheck.</td></tr>
+<tr><td><code>--leak-check=full</code></td><td>Mostra onde cada bloco vazado foi reservado.</td></tr>
+<tr><td><code>--show-leak-kinds=all</code></td><td>Mostra também os <em>still reachable</em>.</td></tr>
+<tr><td><code>--track-origins=yes</code></td><td>Diz onde nasceu o valor não inicializado.</td></tr>
+<tr><td><code>--error-exitcode=1</code></td><td>Se houver erro, o código de saída vira 1 (bom para testes automáticos).</td></tr>
+<tr><td><code>-q</code></td><td>Mostra só os erros.</td></tr>
+<tr><td><code>Invalid read of size N</code> / <code>Invalid write of size N</code></td><td>Leitura / escrita de N bytes em memória proibida.</td></tr>
+<tr><td><code>Address … is 0 bytes after a block of size N alloc'd</code></td><td>Passou do fim de um bloco do <code>malloc</code>.</td></tr>
+<tr><td><code>Address … is … inside a block of size N free'd</code></td><td>Usou memória já liberada.</td></tr>
+<tr><td><code>Invalid free()</code></td><td><code>free</code> duplo ou de um ponteiro que não veio do <code>malloc</code>.</td></tr>
+<tr><td><code>Conditional jump or move depends on uninitialised value(s)</code></td><td>Um <code>if</code>/laço decidiu com um valor nunca definido.</td></tr>
+<tr><td><code>Use of uninitialised value of size N</code></td><td>Um valor nunca definido foi usado (por exemplo, impresso).</td></tr>
+<tr><td><code>definitely lost</code> / <code>indirectly lost</code></td><td>Vazamento / vazamento por tabela.</td></tr>
+<tr><td><code>still reachable</code></td><td>Não liberado, mas ainda apontado no fim.</td></tr>
+<tr><td><code>All heap blocks were freed -- no leaks are possible</code></td><td>Nenhum vazamento. É o que você quer ver.</td></tr>
+</table>
+</div>
+
+<p>Um exemplo de <code>--error-exitcode</code>, útil num <a href="make.html">Makefile</a> ou num teste:</p>
+<pre class="term" data-cwd="~/c/vg">$ valgrind -q --leak-check=full --error-exitcode=1 ./vaza
+Item: arroz
+==57335== 6 bytes in 1 blocks are definitely lost in loss record 1 of 1
+==57335==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==57335==    by 0x40011D0: copiar (vaza.c:6)
+==57335==    by 0x400120F: main (vaza.c:14)
+==57335==
+$ echo $?
+1</pre>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O comando de sempre</h3>
+<p>Complete para ver onde cada bloco vazado foi reservado:</p>
+<div class="ex-code">valgrind <input data-answer="--leak-check=full" aria-label="opção"> ./prog</div>
+</div>
+
+<div class="exercise">
+<h3>2. De onde veio o lixo?</h3>
+<p>Apareceu <code>Conditional jump or move depends on uninitialised value(s)</code>. Complete para o Valgrind dizer onde o valor nasceu:</p>
+<div class="ex-code">valgrind <input data-answer="--track-origins=yes" aria-label="opção"> ./prog</div>
+</div>
+
+<div class="exercise">
+<h3>3. Sem linhas</h3>
+<p>O relatório mostra <code>main (in /home/ana/c/vg/prog)</code>, sem número de linha. Qual opção faltou no <code>gcc</code>?</p>
+<div class="ex-code"><input data-answer="-g" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O <code>LEAK SUMMARY</code> mostra <code>definitely lost: 16 bytes</code> e <code>indirectly lost: 32 bytes</code>. O que fazer primeiro?</p>
+<label><input type="radio" name="q4"> Consertar os 32 bytes indiretos, que são mais.</label>
+<label><input type="radio" name="q4"> Consertar o bloco <em>definitely lost</em>: os indiretos eram apontados por ele e normalmente somem junto.</label>
+<label><input type="radio" name="q4"> Nada: <em>indirectly lost</em> não é vazamento.</label>
+<label><input type="radio" name="q4"> Rodar com <code>-fsanitize=address</code> dentro do Valgrind.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Qual erro o Valgrind encontra e o <code>-fsanitize=address</code> <strong>não</strong>?</p>
+<label><input type="radio" name="q5"> Uso de memória depois do <code>free</code>.</label>
+<label><input type="radio" name="q5"> Vazamento de memória.</label>
+<label><input type="radio" name="q5"> Uso de uma variável sem valor inicial.</label>
+<label><input type="radio" name="q5"> Estouro de um array local.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. <code>Address 0x4aa6049 is 0 bytes after a block of size 9 alloc'd</code>. O que provavelmente aconteceu?</p>
+<label><input type="radio" name="q6"> O programa reservou 9 bytes e escreveu (ou leu) o décimo, por exemplo o <code>'\0'</code> de uma string de 9 letras.</label>
+<label><input type="radio" name="q6"> O programa liberou o bloco duas vezes.</label>
+<label><input type="radio" name="q6"> O bloco vazou.</label>
+<label><input type="radio" name="q6"> Uma variável local ficou sem valor.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Compile com <code>-g</code> e rode <code>valgrind --leak-check=full ./programa</code>. Sem recompilar com opções especiais; as linhas com <code>==PID==</code> são do Valgrind.</li>
+  <li><code>Invalid read</code>/<code>Invalid write</code>: acesso a memória proibida; as linhas seguintes dizem onde o bloco foi reservado (<em>alloc'd</em>) ou liberado (<em>free'd</em>). <code>Invalid free()</code>: <code>free</code> duplo.</li>
+  <li><code>Conditional jump or move depends on uninitialised value(s)</code>: uma decisão com uma variável sem valor; <code>--track-origins=yes</code> mostra onde ela nasceu.</li>
+  <li><code>LEAK SUMMARY</code>: conserte os <em>definitely lost</em> (os <em>indirectly lost</em> vão junto); <em>still reachable</em> é memória não liberada mas ainda apontada. A meta é <code>All heap blocks were freed -- no leaks are possible</code>.</li>
+  <li>Valgrind: lento, sem recompilar, pega variáveis sem valor inicial. Sanitizers: rápidos, pegam estouros na pilha e contas inválidas. Nunca os dois juntos.</li>
+  <li>No macOS e no Windows, use os sanitizers, <code>leaks</code>/Instruments, Dr. Memory ou o WSL.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
