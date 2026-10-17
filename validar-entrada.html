@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Validar a Entrada — pedir de novo até o valor ser válido | Guia C</title>
+<meta name="description" content="Validar a entrada em C para iniciantes: conferir o retorno do scanf e jogar fora o resto da linha, ler com fgets e converter com strtol, conferir a faixa, uma função ler_int reutilizável, linhas compridas demais, nome em branco e resposta s/n, o fim da entrada (Ctrl+D), com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Validar a Entrada</span></h1>
+
+<p class="intro">Quem usa o seu programa erra: digita <code>seis</code> em vez de <code>6</code>, aperta Enter sem escrever nada, põe uma nota 15 numa escala de 0 a 10, cola um texto enorme. Um programa bem-feito não trava, não entra em laço infinito e não segue em frente com um valor errado: ele <strong>confere</strong> o que chegou e, se não serve, explica o problema e <strong>pergunta de novo</strong>. Nesta aula você vai juntar o que aprendeu em <a href="fgets.html">Ler uma Linha</a> e <a href="string-numero.html">Texto ↔ Número</a> numa função que pede um número até ele ser válido, e que você vai reaproveitar em todos os seus programas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Os jeitos como uma entrada pode chegar errada, e o que o programa deve fazer em cada um.</li>
+  <li>Como pedir de novo com <code>scanf</code>: conferir o retorno e <strong>jogar fora o resto da linha</strong>.</li>
+  <li>O jeito robusto: ler a linha com <code>fgets</code>, converter com <code>strtol</code> e conferir a <strong>faixa</strong>.</li>
+  <li>Uma função <code>ler_int</code> para reutilizar, que também trata o fim da entrada (Ctrl+D).</li>
+  <li>O que fazer quando a linha é maior que o array.</li>
+  <li>Como validar texto: nome em branco e resposta <code>s</code>/<code>n</code>.</li>
+</ul>
+</div>
+
+<p>Você vai precisar de <a href="fgets.html">Ler uma Linha</a>, <a href="string-numero.html">Texto ↔ Número</a> e <a href="funcoes.html">Funções</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Nos terminais, o que vem depois da pergunta (como <code>oito</code> em <code>Nota (0 a 10): oito</code>) foi o que a Ana digitou.</p>
+
+<hr>
+
+<h2>A ideia: o caixa que confere a nota</h2>
+<p>No caixa da padaria, a atendente não aceita qualquer papel como dinheiro. Ela olha a nota: é dinheiro de verdade? É o valor certo? Se tem algo errado, ela devolve e diz o motivo: "essa nota está rasgada, tem outra?". E não fecha a venda até receber um pagamento que sirva.</p>
+<p>Validar a entrada é isso: o programa <strong>olha</strong> o que a pessoa digitou antes de usar, <strong>devolve</strong> o que não serve com uma explicação e <strong>pede de novo</strong>. A regra de ouro: <strong>nunca confie na entrada</strong>. Nem na sua: você mesma vai errar ao testar.</p>
+
+<hr>
+
+<h2>1. O que pode chegar errado</h2>
+<p>Este programa da lojinha da Ana confia no que recebe:</p>
+
+<pre class="file" data-file="confia.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int qtd = 0;
+    printf("Quantos pães? ");
+    scanf("%d", &amp;qtd);
+    printf("Total: R$ %.2f\n", qtd * 0.75);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra confia.c -o confia
+$ ./confia
+Quantos pães? 6
+Total: R$ 4.50
+$ ./confia
+Quantos pães? seis
+Total: R$ 0.00           « não leu nada e seguiu com 0
+$ ./confia
+Quantos pães? -3
+Total: R$ -2.25          « um número, mas sem sentido
+$ ./confia
+Quantos pães? 6abc
+Total: R$ 4.50           « aceitou o 6 e ignorou o resto, calado</pre>
+
+<p>O compilador não reclamou de nada, e o programa nunca avisou a Ana. Os problemas possíveis são sempre estes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A pessoa…</th><th>Exemplo</th><th>O programa deve…</th></tr>
+<tr><td>digitou texto no lugar de número</td><td><code>seis</code></td><td>dizer que não é número e pedir de novo</td></tr>
+<tr><td>apertou Enter sem escrever nada</td><td>(linha vazia)</td><td>pedir de novo</td></tr>
+<tr><td>escreveu um número com sobra</td><td><code>6abc</code>, <code>7.5</code>, <code>20 anos</code></td><td>recusar a linha inteira</td></tr>
+<tr><td>escreveu um número fora da faixa</td><td><code>-3</code>, <code>15</code> numa nota de 0 a 10</td><td>dizer qual é a faixa e pedir de novo</td></tr>
+<tr><td>escreveu um número enorme</td><td><code>99999999999999999999</code></td><td>tratar como fora da faixa</td></tr>
+<tr><td>colou um texto maior que o array</td><td>200 caracteres</td><td>jogar fora o excesso (seção 5)</td></tr>
+<tr><td>encerrou a entrada</td><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>parar de perguntar e encerrar com uma mensagem</td></tr>
+</table>
+</div>
+
+<p>O último caso é o mais esquecido: quando a entrada acaba, <strong>não adianta perguntar de novo</strong>, ninguém vai responder. Um programa que insiste entra num laço infinito (você vai ver isso em <a href="#erros">Quando dá errado</a>).</p>
+
+<hr>
+
+<h2>2. Pedir de novo com <code>scanf</code>: jogar fora o resto da linha</h2>
+<p>Na aula <a href="while.html">while</a> você viu que um <code>scanf("%d")</code> que falha deixa o texto <strong>parado na entrada</strong>: a próxima tentativa tropeça nele de novo, e de novo, para sempre. Por isso, em <a href="do-while.html">do while</a>, o programa das notas encerrava ao receber uma letra. Para pedir de novo, falta uma peça: <strong>jogar fora o resto da linha</strong> depois de cada leitura, dando certo ou não.</p>
+
+<pre class="file" data-file="nota.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 0;
+    while (true) {
+        printf("Nota (0 a 10): ");
+        int lidos = scanf("%d", &amp;nota);
+        if (lidos == EOF) {
+            printf("\nA entrada acabou.\n");
+            return 1;
+        }
+        int c;
+        while ((c = getchar()) != '\n' &amp;&amp; c != EOF) {
+            // joga fora o resto da linha
+        }
+        if (lidos != 1) {
+            printf("Isso não é um número. Tente de novo.\n");
+        } else if (nota &lt; 0 || nota &gt; 10) {
+            printf("A nota vai de 0 a 10. Tente de novo.\n");
+        } else {
+            break;
+        }
+    }
+    printf("Nota registrada: %d\n", nota);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>while (true)</dt><dd>Um laço "para sempre": só termina pelo <code>break</code> (nota válida) ou pelo <code>return</code> (entrada acabou). Veja <a href="break-continue.html">break e continue</a>. <code>true</code> é palavra-chave desde o <span class="versao">C23</span>; antes, era preciso <code>#include &lt;stdbool.h&gt;</code> ou escrever <code>while (1)</code>.</dd>
+  <dt>int lidos = scanf("%d", &amp;nota);</dt><dd>Guarda o que o <code>scanf</code> devolve: <code>1</code> se leu o número, <code>0</code> se encontrou algo que não é número, <code>EOF</code> (um valor negativo) se a entrada acabou antes de ler qualquer coisa.</dd>
+  <dt>if (lidos == EOF)</dt><dd>A entrada acabou (<kbd>Ctrl</kbd>+<kbd>D</kbd>, ou o fim de um arquivo). O <code>\n</code> no começo da mensagem é porque o cursor ficou parado depois da pergunta.</dd>
+  <dt>while ((c = getchar()) != '\n' &amp;&amp; c != EOF)</dt><dd>O laço de descarte da aula <a href="fgets.html">Ler uma Linha</a>: lê um caractere por vez e para no Enter. Ele leva embora o <code>oito</code> que travaria o <code>scanf</code>, e também o <code>\n</code> de uma leitura que deu certo.</dd>
+  <dt>if (lidos != 1) … else if (nota &lt; 0 || nota &gt; 10) … else break;</dt><dd>Primeiro "é um número?", depois "está na faixa?". Só com as duas respostas "sim" o laço termina.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nota.c -o nota
+$ ./nota
+Nota (0 a 10): oito
+Isso não é um número. Tente de novo.
+Nota (0 a 10): 15
+A nota vai de 0 a 10. Tente de novo.
+Nota (0 a 10): 8
+Nota registrada: 8
+$ ./nota
+Nota (0 a 10): oito
+Isso não é um número. Tente de novo.
+Nota (0 a 10):                         « a Ana apertou Ctrl+D
+A entrada acabou.
+$ echo $?
+1</pre>
+
+<p>Funciona, mas o <code>scanf</code> tem um defeito que nenhum descarte conserta: ele lê o <strong>começo</strong> da linha e não se importa com o resto.</p>
+
+<pre class="term" data-cwd="~/c">$ ./nota
+Nota (0 a 10): 8abc
+Nota registrada: 8            « o "abc" foi para o lixo sem aviso
+$ ./nota
+Nota (0 a 10): 7.5
+Nota registrada: 7            « o ".5" também</pre>
+
+<p>Para recusar a linha <strong>inteira</strong> quando ela não é só um número, o jeito é ler a linha toda primeiro e examiná-la depois (seção 3).</p>
+
+<div class="tryc" data-stdin="oito\n8" data-goal="out:Nota registrada: 8,src:getchar\s*\(">
+<p class="try-task"><strong>Missão:</strong> este programa encerra quando recebe uma letra. Faça-o pedir de novo: escreva o laço que joga fora o resto da linha (com <code>getchar</code>) logo depois do <code>if (lidos == EOF)</code> e apague o <code>return 1;</code> do "não é um número". A entrada é <code>oito</code> e depois <code>8</code>. (Se você só apagar o <code>return 1;</code>, sem o descarte, o programa repete a pergunta sem parar: o editor o interrompe depois de alguns segundos.)</p>
+<pre class="script" data-file="nota.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 0;
+    while (true) {
+        printf("Nota (0 a 10): ");
+        int lidos = scanf("%d", &amp;nota);
+        if (lidos == EOF) {
+            printf("\nA entrada acabou.\n");
+            return 1;
+        }
+        if (lidos != 1) {
+            printf("Isso não é um número. Tente de novo.\n");
+            return 1;
+        } else if (nota &lt; 0 || nota &gt; 10) {
+            printf("A nota vai de 0 a 10. Tente de novo.\n");
+        } else {
+            break;
+        }
+    }
+    printf("Nota registrada: %d\n", nota);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="nota.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 0;
+    while (true) {
+        printf("Nota (0 a 10): ");
+        int lidos = scanf("%d", &amp;nota);
+        if (lidos == EOF) {
+            printf("\nA entrada acabou.\n");
+            return 1;
+        }
+        int c;
+        while ((c = getchar()) != '\n' &amp;&amp; c != EOF) {
+            // joga fora o resto da linha
+        }
+        if (lidos != 1) {
+            printf("Isso não é um número. Tente de novo.\n");
+        } else if (nota &lt; 0 || nota &gt; 10) {
+            printf("A nota vai de 0 a 10. Tente de novo.\n");
+        } else {
+            break;
+        }
+    }
+    printf("Nota registrada: %d\n", nota);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. O jeito robusto: <code>fgets</code> + <code>strtol</code> + faixa</h2>
+<p>A receita que os programadores experientes usam tem três passos, cada um com sua conferência:</p>
+<ol class="passo">
+  <li><strong>Ler a linha inteira</strong> com <code>fgets</code>. Se ele devolver <code>NULL</code>, a entrada acabou.</li>
+  <li><strong>Converter</strong> com <code>strtol</code> e conferir se a linha era só um número (o <code>fim</code> da aula <a href="string-numero.html">Texto ↔ Número</a>).</li>
+  <li><strong>Conferir a faixa</strong>: o número faz sentido para o programa?</li>
+</ol>
+
+<pre class="file" data-file="idade.c">#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[100];
+    long idade = 0;
+    while (true) {
+        printf("Idade: ");
+        if (fgets(linha, sizeof linha, stdin) == NULL) {
+            printf("\nNenhuma idade digitada.\n");
+            return 1;
+        }
+        linha[strcspn(linha, "\n")] = '\0';
+
+        char *fim;
+        errno = 0;
+        idade = strtol(linha, &amp;fim, 10);
+        if (fim == linha || *fim != '\0') {
+            printf("\"%s\" não é um número inteiro.\n", linha);
+        } else if (errno == ERANGE || idade &lt; 0 || idade &gt; 130) {
+            printf("A idade vai de 0 a 130.\n");
+        } else {
+            break;
+        }
+    }
+    printf("Idade registrada: %ld\n", idade);
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>fgets(linha, sizeof linha, stdin) == NULL</code></td><td>Passo 1. Lê a linha inteira, com o Enter. <code>NULL</code> = a entrada acabou: avisa e encerra, sem perguntar de novo.</td></tr>
+<tr><td><code>linha[strcspn(linha, "\n")] = '\0';</code></td><td>Tira o Enter do fim. Sem isso, o <code>\n</code> seria a "sobra" depois de todo número.</td></tr>
+<tr><td><code>errno = 0;</code></td><td>Zera o aviso de erro antes de converter (o <code>strtol</code> só o escreve quando dá erro; veja <a href="errno.html">errno</a>).</td></tr>
+<tr><td><code>idade = strtol(linha, &amp;fim, 10);</code></td><td>Passo 2. Converte, e <code>fim</code> marca onde a conversão parou.</td></tr>
+<tr><td><code>fim == linha || *fim != '\0'</code></td><td>Nenhum dígito (<code>vinte</code>, linha vazia) <strong>ou</strong> sobrou texto (<code>20 anos</code>, <code>7.5</code>).</td></tr>
+<tr><td><code>errno == ERANGE || idade &lt; 0 || idade &gt; 130</code></td><td>Passo 3. Grande demais para um <code>long</code>, ou fora da faixa que faz sentido para uma idade.</td></tr>
+<tr><td><code>break;</code></td><td>Passou nas três conferências: sai do laço com a idade válida.</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra idade.c -o idade
+$ ./idade
+Idade: vinte
+"vinte" não é um número inteiro.
+Idade:                                « só Enter
+"" não é um número inteiro.
+Idade: 20 anos
+"20 anos" não é um número inteiro.
+Idade: -5
+A idade vai de 0 a 130.
+Idade: 200
+A idade vai de 0 a 130.
+Idade: 99999999999999999999
+A idade vai de 0 a 130.
+Idade:  29                            « espaço antes: o strtol aceita
+Idade registrada: 29</pre>
+
+<p>Cada tipo de erro da tabela da seção 1 recebeu uma resposta, e nenhum deles passou. Repare que a faixa (0 a 130) é uma decisão <strong>sua</strong>, e não do C: o <code>strtol</code> aceita <code>-5</code> sem problema, porque -5 é um número perfeitamente bom. Só o programa sabe que uma idade não pode ser negativa.</p>
+
+<div class="note">
+<strong>Escreva a faixa na mensagem.</strong> "Valor inválido" obriga a pessoa a adivinhar. "A idade vai de 0 a 130" diz o que fazer. Uma boa mensagem de erro de entrada responde a duas perguntas: o que estava errado e o que a pessoa deve digitar.
+</div>
+
+<hr>
+
+<h2>4. Uma função para reutilizar: <code>ler_int</code></h2>
+<p>Num programa de verdade, há várias perguntas: quantidade, dia, mês, nota… Copiar o laço da seção 3 para cada uma seria repetitivo e fácil de errar. A saída é colocar a receita numa <a href="funcoes.html">função</a> que recebe a pergunta e a faixa:</p>
+
+<pre class="file" data-file="pedido.c">#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+// Pergunta até a pessoa digitar um inteiro de min a max.
+// Devolve true e guarda o número em *saida.
+// Devolve false se a entrada acabou (Ctrl+D).
+bool ler_int(const char *pergunta, int min, int max, int *saida) {
+    char linha[100];
+    while (true) {
+        printf("%s", pergunta);
+        if (fgets(linha, sizeof linha, stdin) == NULL) {
+            return false;
+        }
+        linha[strcspn(linha, "\n")] = '\0';
+
+        char *fim;
+        errno = 0;
+        long n = strtol(linha, &amp;fim, 10);
+        if (fim == linha || *fim != '\0') {
+            printf("\"%s\" não é um número inteiro. Tente de novo.\n", linha);
+        } else if (errno == ERANGE || n &lt; min || n &gt; max) {
+            printf("Digite um número de %d a %d.\n", min, max);
+        } else {
+            *saida = (int)n;
+            return true;
+        }
+    }
+}
+
+int main(void) {
+    int qtd = 0;
+    int dia = 0;
+    if (!ler_int("Quantos pães (1 a 50)? ", 1, 50, &amp;qtd) ||
+        !ler_int("Dia da entrega (1 a 31)? ", 1, 31, &amp;dia)) {
+        printf("\nPedido cancelado.\n");
+        return 1;
+    }
+    printf("Pedido: %d pães para o dia %d.\n", qtd, dia);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>bool ler_int(…)</dt><dd>A função devolve um <code>bool</code>: <code>true</code> = "consegui um número válido", <code>false</code> = "a entrada acabou, não há número". Assim, quem chama sabe se pode usar o resultado.</dd>
+  <dt>const char *pergunta</dt><dd>O texto da pergunta. <code>const</code> promete que a função não vai mudá-lo (aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>).</dd>
+  <dt>int min, int max</dt><dd>A faixa aceita. A mesma função serve para pães (1 a 50) e para dias (1 a 31).</dd>
+  <dt>int *saida</dt><dd>Onde guardar o número. O valor de retorno já está ocupado com o <code>true</code>/<code>false</code>, então o número sai por um ponteiro, como no <code>scanf</code> (aula <a href="passagem-ponteiro.html">Passagem por Ponteiro</a>).</dd>
+  <dt>*saida = (int)n; return true;</dt><dd>Só escreve no <code>*saida</code> quando o número é válido. O <code>(int)</code> converte o <code>long</code> do <code>strtol</code> para <code>int</code>; é seguro, porque o número já está entre <code>min</code> e <code>max</code>, que são <code>int</code>.</dd>
+  <dt>if (!ler_int(…) || !ler_int(…))</dt><dd>"Se a primeira leitura falhar <strong>ou</strong> a segunda falhar…". O <code>||</code> para na primeira que der <code>true</code>: se a entrada acabou na quantidade, o programa nem pergunta o dia.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pedido.c -o pedido
+$ ./pedido
+Quantos pães (1 a 50)? meia dúzia
+"meia dúzia" não é um número inteiro. Tente de novo.
+Quantos pães (1 a 50)? 6
+Dia da entrega (1 a 31)? 0
+Digite um número de 1 a 31.
+Dia da entrega (1 a 31)? 32
+Digite um número de 1 a 31.
+Dia da entrega (1 a 31)? 15
+Pedido: 6 pães para o dia 15.
+$ ./pedido
+Quantos pães (1 a 50)? 6
+Dia da entrega (1 a 31)?               « Ctrl+D
+Pedido cancelado.
+$ echo $?
+1</pre>
+
+<p>O <code>main</code> ficou curto e legível: ele só diz <strong>o que</strong> perguntar. O <strong>como</strong> (ler, converter, conferir, repetir) está num lugar só. Se um dia você quiser melhorar a validação, muda uma função e todas as perguntas melhoram juntas.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> esta caixa não tem entrada pronta: rode e responda no terminal da caixa. Tente tudo o que uma pessoa distraída faria: <code>seis</code>, só Enter, <code>6 </code> (com espaço no fim), <code>0</code>, <code>51</code>, <code>-1</code>, e no fim um pedido válido. Depois rode de novo e aperte <kbd>Ctrl</kbd>+<kbd>D</kbd> no campo de digitação, na primeira pergunta.</p>
+<pre class="script" data-file="pedido.c">#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+bool ler_int(const char *pergunta, int min, int max, int *saida) {
+    char linha[100];
+    while (true) {
+        printf("%s", pergunta);
+        if (fgets(linha, sizeof linha, stdin) == NULL) {
+            return false;
+        }
+        linha[strcspn(linha, "\n")] = '\0';
+
+        char *fim;
+        errno = 0;
+        long n = strtol(linha, &amp;fim, 10);
+        if (fim == linha || *fim != '\0') {
+            printf("\"%s\" não é um número inteiro. Tente de novo.\n", linha);
+        } else if (errno == ERANGE || n &lt; min || n &gt; max) {
+            printf("Digite um número de %d a %d.\n", min, max);
+        } else {
+            *saida = (int)n;
+            return true;
+        }
+    }
+}
+
+int main(void) {
+    int qtd = 0;
+    int dia = 0;
+    if (!ler_int("Quantos pães (1 a 50)? ", 1, 50, &amp;qtd) ||
+        !ler_int("Dia da entrega (1 a 31)? ", 1, 31, &amp;dia)) {
+        printf("\nPedido cancelado.\n");
+        return 1;
+    }
+    printf("Pedido: %d pães para o dia %d.\n", qtd, dia);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Você deve ter visto que <code>6 </code>, com um espaço no fim, foi recusado: o espaço é "sobra" para o <code>*fim != '\0'</code>. Se quiser aceitar, pule os espaços do fim antes de conferir, com <code>while (isspace((unsigned char)*fim)) fim++;</code> (o <code>isspace</code> está na seção 6).</p>
+
+<hr>
+
+<h2>5. Quando a linha é maior que o array</h2>
+<p>O <code>fgets(linha, sizeof linha, stdin)</code> nunca escreve além do array: é por isso que ele é seguro. Mas o que não coube <strong>não some</strong>: fica na entrada e vira a próxima "linha". Para ver isso sem digitar 100 caracteres, troque o array do <code>pedido.c</code> por <code>char linha[8];</code> (cabem 7 caracteres e o <code>'\0'</code>):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra curta.c -o curta
+$ ./curta
+Quantos pães (1 a 50)? 123456789012
+Digite um número de 1 a 50.               « leu só "1234567"
+Quantos pães (1 a 50)? Digite um número de 1 a 50.     « leu "89012" sem esperar
+Quantos pães (1 a 50)? 6
+Dia da entrega (1 a 31)? 4
+Pedido: 6 pães para o dia 4.</pre>
+
+<p>A pergunta apareceu duas vezes por uma única resposta. Com <code>char linha[100]</code> acontece o mesmo, só que a partir do 100º caractere (uma pessoa que cola um texto, ou um arquivo com uma linha enorme). Para descobrir que a linha não coube, olhe se o Enter chegou: se o <code>fgets</code> leu o <code>'\n'</code>, a linha inteira está no array; se não, ainda há mais na entrada.</p>
+
+<pre class="file" data-file="comprida.c">        if (fgets(linha, sizeof linha, stdin) == NULL) {
+            return false;
+        }
+        char *enter = strchr(linha, '\n');
+        if (enter != NULL) {
+            *enter = '\0';
+        } else {
+            int c = getchar();
+            if (c != '\n' &amp;&amp; c != EOF) {
+                while ((c = getchar()) != '\n' &amp;&amp; c != EOF) {
+                    // joga fora o resto da linha
+                }
+                printf("Linha comprida demais. Tente de novo.\n");
+                continue;
+            }
+        }
+</pre>
+
+<dl class="anatomy">
+  <dt>char *enter = strchr(linha, '\n');</dt><dd>Procura o Enter no que foi lido (aula <a href="funcoes-string.html">Funções de String</a>). Achou: a linha coube, e o <code>*enter = '\0'</code> o apaga, como fazia o <code>strcspn</code>.</dd>
+  <dt>int c = getchar();</dt><dd>Não achou o Enter. Ainda pode estar tudo bem: a linha tinha exatamente 7 caracteres e o Enter ficou de fora, ou era a última linha de um arquivo, sem Enter. O <code>getchar</code> espia o próximo caractere para decidir.</dd>
+  <dt>if (c != '\n' &amp;&amp; c != EOF)</dt><dd>O próximo não é o Enter nem o fim: a linha era comprida mesmo. O laço de sempre joga fora o resto.</dd>
+  <dt>continue;</dt><dd>Volta para o começo do <code>while (true)</code> e pergunta de novo, sem tentar converter o pedaço.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra comprida.c -o comprida
+$ ./comprida
+Quantos pães (1 a 50)? 123456789012
+Linha comprida demais. Tente de novo.
+Quantos pães (1 a 50)? 1234567
+Digite um número de 1 a 50.          « 7 caracteres: coube, e foi recusado pela faixa
+Quantos pães (1 a 50)? 6
+Pedido: 6 pães.</pre>
+
+<p>Agora uma resposta comprida gera <strong>uma</strong> mensagem e <strong>uma</strong> nova pergunta. Na prática, com <code>char linha[100]</code>, muitos programas pequenos aceitam o risco e usam só o <code>strcspn</code>. Programas que leem arquivos ou texto colado devem tratar a linha comprida.</p>
+
+<hr>
+
+<h2>6. Validar texto: em branco e "s ou n"</h2>
+<p>Nem toda entrada é número. Um nome não pode ficar em branco, e uma pergunta de sim ou não só aceita duas respostas. As ferramentas são as funções de caractere do <code>ctype.h</code> (aula <a href="char.html">char</a>): <code>isspace</code> ("is space", é espaço?) e <code>tolower</code> ("to lower", para minúscula).</p>
+
+<pre class="file" data-file="cadastro.c">#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+// true se o texto está vazio ou só tem espaços
+bool so_espacos(const char *s) {
+    for (; *s != '\0'; s++) {
+        if (!isspace((unsigned char)*s)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ler_nome(const char *pergunta, char *nome, int tamanho) {
+    while (true) {
+        printf("%s", pergunta);
+        if (fgets(nome, tamanho, stdin) == NULL) {
+            return false;
+        }
+        nome[strcspn(nome, "\n")] = '\0';
+        if (!so_espacos(nome)) {
+            return true;
+        }
+        printf("O nome não pode ficar em branco.\n");
+    }
+}
+
+// Devolve 's' ou 'n', ou 0 se a entrada acabou.
+char ler_sim_nao(const char *pergunta) {
+    char linha[20];
+    while (true) {
+        printf("%s", pergunta);
+        if (fgets(linha, sizeof linha, stdin) == NULL) {
+            return 0;
+        }
+        linha[strcspn(linha, "\n")] = '\0';
+        char r = (char)tolower((unsigned char)linha[0]);
+        if (strlen(linha) == 1 &amp;&amp; (r == 's' || r == 'n')) {
+            return r;
+        }
+        printf("Responda s ou n.\n");
+    }
+}
+
+int main(void) {
+    char nome[50];
+    if (!ler_nome("Nome do cliente: ", nome, sizeof nome)) {
+        return 1;
+    }
+    char entrega = ler_sim_nao("Entregar em casa? (s/n) ");
+    if (entrega == 0) {
+        return 1;
+    }
+    printf("Cliente: %s, entrega: %s\n", nome, entrega == 's' ? "sim" : "não");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>for (; *s != '\0'; s++)</dt><dd>Anda pela string caractere por caractere, até o <code>'\0'</code> do fim (aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>).</dd>
+  <dt>isspace((unsigned char)*s)</dt><dd>Verdadeiro para espaço, tab e Enter. O <code>(unsigned char)</code> é obrigatório nas funções do <code>ctype.h</code>: letras acentuadas como o <code>é</code> viram números negativos num <code>char</code>, e um valor negativo nessas funções é comportamento indefinido.</dd>
+  <dt>if (!so_espacos(nome)) return true;</dt><dd>Achou pelo menos um caractere que não é espaço: o nome serve.</dd>
+  <dt>tolower(…linha[0])</dt><dd>Transforma <code>S</code> em <code>s</code>: a pessoa pode responder em maiúscula ou minúscula.</dd>
+  <dt>strlen(linha) == 1 &amp;&amp; (r == 's' || r == 'n')</dt><dd>Exatamente um caractere, e ele é <code>s</code> ou <code>n</code>. Sem o <code>strlen</code>, <code>socorro</code> valeria como "sim".</dd>
+  <dt>return 0;</dt><dd>O caractere de código 0 (o <code>'\0'</code>) não é <code>'s'</code> nem <code>'n'</code>, então serve de sinal para "a entrada acabou".</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra cadastro.c -o cadastro
+$ ./cadastro
+Nome do cliente:                       « só Enter
+O nome não pode ficar em branco.
+Nome do cliente:                       « três espaços
+O nome não pode ficar em branco.
+Nome do cliente: Ana Maria
+Entregar em casa? (s/n) talvez
+Responda s ou n.
+Entregar em casa? (s/n) S
+Cliente: Ana Maria, entrega: sim</pre>
+
+<hr>
+
+<h2>Formas diferentes, e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Bom para</th><th>Cuidado</th></tr>
+<tr><td><code>scanf</code> + confere o retorno + encerra</td><td>Exercícios rápidos</td><td>Um erro de digitação encerra o programa</td></tr>
+<tr><td><code>scanf</code> + descarta a linha + pede de novo (seção 2)</td><td>Programas pequenos que já usam <code>scanf</code></td><td>Aceita <code>8abc</code> como 8 e <code>7.5</code> como 7</td></tr>
+<tr><td><code>fgets</code> + <code>strtol</code> + faixa (seções 3 e 4)</td><td><strong>A escolha padrão</strong> para qualquer entrada digitada</td><td>Lembre do <code>errno = 0</code> e de tirar o <code>\n</code></td></tr>
+<tr><td>… + tratar a linha comprida (seção 5)</td><td>Texto colado, arquivos, programas que outras pessoas usam</td><td>Um pouco mais de código</td></tr>
+<tr><td><code>fgets</code> + <code>strtod</code> + faixa</td><td>Números com casas decimais (preço, peso)</td><td>Só aceita ponto: <code>4,99</code> sobra <code>,99</code></td></tr>
+<tr><td><code>fgets</code> + <code>sscanf</code></td><td>Formatos com várias partes (<code>17/10/2026</code>)</td><td>Confira o retorno; não detecta número grande demais</td></tr>
+</table>
+</div>
+
+<p>E quantas vezes perguntar? Num programa de terminal, perguntar até acertar é o normal: a pessoa sempre pode desistir com <kbd>Ctrl</kbd>+<kbd>D</kbd> ou <kbd>Ctrl</kbd>+<kbd>C</kbd>. Uma senha, por outro lado, costuma ter um limite de tentativas (exercício 6). E quando a entrada vem de um <strong>arquivo</strong> ou de <a href="argc-argv.html">argumentos</a>, não há ninguém para responder: o certo é mostrar o erro e encerrar com código diferente de 0 (aula <a href="exit.html">exit e atexit</a>).</p>
+
+<hr>
+
+<h2 id="erros">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A pergunta se repete sem parar depois de uma letra</strong>
+<pre class="file" data-file="semdescarte.c">    while (nota &lt; 0 || nota &gt; 10) {
+        printf("Nota (0 a 10): ");
+        if (scanf("%d", &amp;nota) != 1) {
+            printf("Isso não é um número. Tente de novo.\n");
+        }
+    }
+</pre>
+<pre class="term" data-cwd="~/c">$ ./semdescarte
+Nota (0 a 10): oito
+Isso não é um número. Tente de novo.
+Nota (0 a 10): Isso não é um número. Tente de novo.
+Nota (0 a 10): Isso não é um número. Tente de novo.
+Nota (0 a 10): Isso não é um número. Tente de novo.
+^C                    « até a Ana apertar Ctrl+C</pre>
+<p><strong>O que significa:</strong> o <code>scanf</code> falhou e deixou o <code>oito</code> na entrada. Cada nova tentativa encontra o mesmo <code>oito</code>.</p>
+<p><strong>Como consertar:</strong> jogue fora o resto da linha depois de cada <code>scanf</code> (seção 2), ou troque por <code>fgets</code> + <code>strtol</code> (seção 3).</p>
+</div>
+
+<div class="cenario">
+<strong>Depois do Ctrl+D, <code>Nota (0 a 10):</code> sem parar</strong>
+<pre class="file" data-file="semnull.c">    do {
+        printf("Nota (0 a 10): ");
+        fgets(linha, sizeof linha, stdin);
+        linha[strcspn(linha, "\n")] = '\0';
+        nota = strtol(linha, &amp;fim, 10);
+    } while (fim == linha || *fim != '\0' || nota &lt; 0 || nota &gt; 10);
+</pre>
+<pre class="term" data-cwd="~/c">$ ./semnull
+Nota (0 a 10): oito
+Nota (0 a 10):                « Ctrl+D
+Nota (0 a 10): Nota (0 a 10): Nota (0 a 10): Nota (0 a 10): Nota (0 a 10): Nota (0 a 10): Nota (0 a 10): Nota (0 a 10): Nota (0 a 10): …</pre>
+<p><strong>O que significa:</strong> ninguém conferiu o retorno do <code>fgets</code>. Quando a entrada acaba, ele devolve <code>NULL</code> na hora, toda vez, sem mexer no array, que continua com o <code>oito</code> antigo. O laço pergunta para sempre para ninguém. O gcc avisa se você compilar com otimização (<code>-O2</code>), porque aí o Ubuntu liga as conferências extras da glibc:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -O2 semnull.c -o semnull
+semnull.c: In function ‘main’:
+semnull.c:11:9: warning: ignoring return value of ‘fgets’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   11 |         fgets(linha, sizeof linha, stdin);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</pre>
+<p>"Ignorando o valor de retorno de <code>fgets</code>, declarada com o atributo <code>warn_unused_result</code>" (avise se o resultado não for usado). O mesmo aviso aparece para o <code>scanf</code> do <code>confia.c</code> da seção 1.</p>
+<p><strong>Como consertar:</strong> <code>if (fgets(…) == NULL)</code>, e aí encerre ou devolva <code>false</code>, como a <code>ler_int</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Todo número é recusado, e a mensagem sai quebrada em duas linhas</strong>
+<pre class="term" data-cwd="~/c">$ ./semtirar
+Idade: 29
+"29
+" não é um número inteiro.</pre>
+<p><strong>O que significa:</strong> faltou tirar o Enter que o <code>fgets</code> guarda. O <code>strtol</code> parou no <code>\n</code>, o <code>*fim != '\0'</code> deu verdadeiro, e o <code>\n</code> também apareceu dentro das aspas da mensagem.</p>
+<p><strong>Como consertar:</strong> <code>linha[strcspn(linha, "\n")] = '\0';</code> logo depois do <code>fgets</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>8abc</code> virou 8 e <code>7.5</code> virou 7</strong>
+<p><strong>O que significa:</strong> o programa usa <code>scanf("%d")</code>, que lê o começo da linha e para no primeiro caractere que não é dígito. O descarte joga fora o resto sem olhar.</p>
+<p><strong>Como consertar:</strong> leia a linha com <code>fgets</code> e confira com <code>*fim != '\0'</code> (seção 3).</p>
+</div>
+
+<div class="cenario">
+<strong>A pergunta aparece duas vezes seguidas, sem esperar</strong>
+<p><strong>O que significa:</strong> a resposta anterior não coube no array do <code>fgets</code>, e o pedaço que sobrou foi lido como uma nova resposta. Outra causa comum é um <code>scanf</code> antes do <code>fgets</code>, que deixa o Enter na entrada (aula <a href="fgets.html">Ler uma Linha</a>).</p>
+<p><strong>Como consertar:</strong> confira se o <code>'\n'</code> chegou e jogue fora o resto (seção 5); e não misture <code>scanf</code> com <code>fgets</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A idade 4294967326 foi aceita como 30</strong>
+<pre class="file" data-file="estouro.c">    char *fim;
+    int idade = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0' || idade &lt; 0 || idade &gt; 130) {
+        printf("Idade inválida.\n");
+        return 1;
+    }
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estouro.c -o estouro
+$ ./estouro
+Idade: 4294967326
+Idade registrada: 30</pre>
+<p><strong>O que significa:</strong> o <code>strtol</code> devolve um <code>long</code>, que no Linux de 64 bits guarda 4294967326 sem problema. Mas o valor foi guardado num <code>int</code> <strong>antes</strong> de conferir a faixa, e um <code>int</code> só vai até 2147483647: o número "deu a volta" e virou 30, que passou na conferência. Nenhum aviso do compilador. (No editor do guia o <code>long</code> tem 4 bytes, o <code>strtol</code> já estoura e o mesmo programa mostra <code>Idade inválida.</code>)</p>
+<p><strong>Como consertar:</strong> guarde o resultado num <code>long</code>, confira <code>errno</code> e a faixa nele, e só depois converta para <code>int</code>, como a <code>ler_int</code> faz com <code>*saida = (int)n;</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>int lidos = scanf("%d", &amp;n);</code></td><td><code>1</code> = leu; <code>0</code> = não era número; <code>EOF</code> = a entrada acabou</td></tr>
+<tr><td><code>while ((c = getchar()) != '\n' &amp;&amp; c != EOF) { }</code></td><td>Joga fora o resto da linha (com <code>int c</code>)</td></tr>
+<tr><td><code>if (fgets(linha, sizeof linha, stdin) == NULL)</code></td><td>A entrada acabou: pare de perguntar</td></tr>
+<tr><td><code>linha[strcspn(linha, "\n")] = '\0';</code></td><td>Tira o Enter</td></tr>
+<tr><td><code>errno = 0; n = strtol(linha, &amp;fim, 10);</code></td><td>Converte, marcando onde parou</td></tr>
+<tr><td><code>fim == linha || *fim != '\0'</code></td><td>Não era só um número</td></tr>
+<tr><td><code>errno == ERANGE || n &lt; min || n &gt; max</code></td><td>Fora da faixa</td></tr>
+<tr><td><code>strchr(linha, '\n') == NULL</code></td><td>A linha talvez não tenha cabido (confira com <code>getchar</code>)</td></tr>
+<tr><td><code>isspace((unsigned char)c)</code>, <code>tolower((unsigned char)c)</code></td><td>É espaço? Para minúscula. (<code>ctype.h</code>)</td></tr>
+<tr><td><code>bool ler_int(const char *pergunta, int min, int max, int *saida)</code></td><td>O modelo desta aula: pergunta até valer; <code>false</code> no fim da entrada</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Fim da entrada</h3>
+<p>Complete a condição que é verdadeira quando a entrada acabou:</p>
+<div class="ex-code">if (fgets(linha, sizeof linha, stdin) == <input data-answer="NULL|nullptr" aria-label="valor">)</div>
+</div>
+
+<div class="exercise">
+<h3>2. Sobrou texto</h3>
+<p>Depois de <code>strtol(linha, &amp;fim, 10)</code>, complete o teste que é verdadeiro quando sobrou texto depois do número:</p>
+<div class="ex-code">*fim <input data-answer="!=" aria-label="operador"> '\0'</div>
+</div>
+
+<div class="exercise">
+<h3>3. O retorno do scanf</h3>
+<p>A Ana digitou <code>abc</code>. Quanto vale <code>lidos</code> em <code>int lidos = scanf("%d", &amp;n);</code>?</p>
+<div class="ex-code">lidos = <input data-answer="0" aria-label="lidos"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Com a <code>ler_int</code> da seção 4 e a faixa de 1 a 50, qual destas respostas é aceita?</p>
+<label><input type="radio" name="q4"> <code>6 pães</code></label>
+<label><input type="radio" name="q4"> <code>51</code></label>
+<label><input type="radio" name="q4"> <code> 6</code> (com um espaço antes)</label>
+<label><input type="radio" name="q4"> <code>6.0</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Por que a <code>ler_int</code> devolve <code>false</code> quando o <code>fgets</code> devolve <code>NULL</code>, em vez de perguntar de novo?</p>
+<label><input type="radio" name="q5"> Porque o <code>fgets</code> só pode ser chamado uma vez</label>
+<label><input type="radio" name="q5"> Porque a entrada acabou: perguntar de novo daria um laço infinito</label>
+<label><input type="radio" name="q5"> Porque <code>NULL</code> quer dizer que a pessoa digitou zero</label>
+<label><input type="radio" name="q5"> Para economizar memória</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. A Ana quer que a senha tenha só 3 tentativas. Qual laço faz isso?</p>
+<label><input type="radio" name="q6"> <code>for (int t = 1; t &lt;= 3; t++) { …; if (certa) break; }</code>, e depois do laço conferir se acertou</label>
+<label><input type="radio" name="q6"> <code>while (true) { … }</code> sem mais nada</label>
+<label><input type="radio" name="q6"> Três <code>scanf</code> seguidos, sem conferir</label>
+<label><input type="radio" name="q6"> Não dá para limitar tentativas em C</label>
+</div>
+
+<h3>Missão final: o lançamento de notas</h3>
+
+<div class="tryc" data-stdin="oito\n15\n7\n8.5\n9\n5" data-goal="out:&quot;oito&quot; não é um número inteiro,out:Digite um número de 0 a 10,out:&quot;8.5&quot; não é um número inteiro,out:Média: 7.0,src:strtol\s*\(">
+<p class="try-task"><strong>Missão:</strong> a professora Ana lança três notas, de 0 a 10. A <code>ler_int</code> deste programa usa <code>atoi</code> e aceita qualquer coisa: <code>oito</code> virou 0 e <code>15</code> passou. Troque o <code>atoi</code> por <code>strtol</code> com as conferências da seção 4: se não for número, mostre <code>"oito" não é um número inteiro. Tente de novo.</code>; se estiver fora da faixa, <code>Digite um número de 0 a 10.</code>; e só devolva <code>true</code> com um número válido. Os avisos de <code>min</code> e <code>max</code> não usados somem quando você usar os dois. A entrada já está pronta (<code>oito</code>, <code>15</code>, <code>7</code>, <code>8.5</code>, <code>9</code>, <code>5</code>), e a saída deve terminar com:</p>
+<pre class="out">Média: 7.0</pre>
+<pre class="script" data-file="notas.c">#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+bool ler_int(const char *pergunta, int min, int max, int *saida) {
+    char linha[100];
+    while (true) {
+        printf("%s", pergunta);
+        if (fgets(linha, sizeof linha, stdin) == NULL) {
+            return false;
+        }
+        linha[strcspn(linha, "\n")] = '\0';
+
+        // troque o atoi por strtol e confira se é um número
+        // e se está entre min e max
+        *saida = atoi(linha);
+        return true;
+    }
+}
+
+int main(void) {
+    int notas[3];
+    for (int i = 0; i &lt; 3; i++) {
+        char pergunta[40];
+        snprintf(pergunta, sizeof pergunta, "Nota %d (0 a 10): ", i + 1);
+        if (!ler_int(pergunta, 0, 10, &amp;notas[i])) {
+            printf("\nLançamento cancelado.\n");
+            return 1;
+        }
+    }
+    printf("Média: %.1f\n", (notas[0] + notas[1] + notas[2]) / 3.0);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="notas.c">#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+bool ler_int(const char *pergunta, int min, int max, int *saida) {
+    char linha[100];
+    while (true) {
+        printf("%s", pergunta);
+        if (fgets(linha, sizeof linha, stdin) == NULL) {
+            return false;
+        }
+        linha[strcspn(linha, "\n")] = '\0';
+
+        char *fim;
+        errno = 0;
+        long n = strtol(linha, &amp;fim, 10);
+        if (fim == linha || *fim != '\0') {
+            printf("\"%s\" não é um número inteiro. Tente de novo.\n", linha);
+        } else if (errno == ERANGE || n &lt; min || n &gt; max) {
+            printf("Digite um número de %d a %d.\n", min, max);
+        } else {
+            *saida = (int)n;
+            return true;
+        }
+    }
+}
+
+int main(void) {
+    int notas[3];
+    for (int i = 0; i &lt; 3; i++) {
+        char pergunta[40];
+        snprintf(pergunta, sizeof pergunta, "Nota %d (0 a 10): ", i + 1);
+        if (!ler_int(pergunta, 0, 10, &amp;notas[i])) {
+            printf("\nLançamento cancelado.\n");
+            return 1;
+        }
+    }
+    printf("Média: %.1f\n", (notas[0] + notas[1] + notas[2]) / 3.0);
+    return 0;
+}
+</pre>
+</div>
+
+<p>No laboratório, o programa pronto dá a mesma saída:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra notas.c -o notas
+$ ./notas
+Nota 1 (0 a 10): oito
+"oito" não é um número inteiro. Tente de novo.
+Nota 1 (0 a 10): 15
+Digite um número de 0 a 10.
+Nota 1 (0 a 10): 7
+Nota 2 (0 a 10): 8.5
+"8.5" não é um número inteiro. Tente de novo.
+Nota 2 (0 a 10): 9
+Nota 3 (0 a 10): 5
+Média: 7.0</pre>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Nunca confie na entrada: confira, explique o problema (com a faixa certa) e pergunte de novo.</li>
+  <li>Com <code>scanf</code>: confira o retorno (<code>1</code>, <code>0</code> ou <code>EOF</code>) e jogue fora o resto da linha com o laço do <code>getchar</code>. Ainda assim, <code>8abc</code> vira 8.</li>
+  <li>O jeito robusto: <code>fgets</code> (com <code>NULL</code> = fim da entrada), tirar o <code>\n</code>, <code>strtol</code> com <code>fim</code> e <code>errno</code>, e conferir a faixa.</li>
+  <li>Ponha a receita numa função como <code>bool ler_int(pergunta, min, max, &amp;saida)</code> e reaproveite.</li>
+  <li>Quando o <code>fgets</code> não leu o <code>'\n'</code>, a linha pode não ter cabido: jogue fora o resto.</li>
+  <li>Texto também se valida: em branco com <code>isspace</code>, respostas fixas com <code>tolower</code> e <code>strlen</code>. Nas funções do <code>ctype.h</code>, use <code>(unsigned char)</code>.</li>
+  <li>Quando a entrada acaba, pare de perguntar: senão o programa entra num laço infinito.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
