@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C malloc e free — reservar e devolver memória do heap | Guia C</title>
+<meta name="description" content="malloc e free em C para quem nunca programou: reservar memória do heap com malloc(sizeof *p), um array do tamanho que o usuário pedir, conferir o NULL, por que o malloc não limpa a memória, devolver com free, ponteiro pendurado, free duplo e free de um endereço que não veio do malloc, com saídas reais do gcc 15, do AddressSanitizer e do Valgrind, e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">malloc e free</span></h1>
+
+<p class="intro">Na aula <a href="pilha-heap.html">Pilha e Heap</a> você viu que o <strong>heap</strong> é a parte da memória que o programa pede durante a execução, do tamanho que quiser, e que vive até ser devolvida. As duas funções que fazem isso são o <code>malloc</code> (de <em>memory allocation</em>, "reserva de memória"), que <strong>pede</strong> um pedaço do heap, e o <code>free</code> ("liberar"), que o <strong>devolve</strong>. São duas funções pequenas, mas quase todo programa em C de verdade depende delas, e quase todos os erros graves de C nascem de usá-las errado. Nesta aula você aprende o uso certo e vê, com saídas reais, o que acontece em cada erro.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A reservar memória com <code>malloc</code> e a calcular o tamanho com <code>sizeof *p</code>.</li>
+  <li>A criar um array do tamanho que o usuário pedir, durante a execução.</li>
+  <li>Por que <strong>todo</strong> <code>malloc</code> precisa ser conferido contra <code>NULL</code>.</li>
+  <li>Que o <code>malloc</code> não limpa a memória: o que vem lá dentro é lixo.</li>
+  <li>A devolver a memória com <code>free</code> e as três regras do <code>free</code>.</li>
+  <li>Os erros clássicos (ponteiro pendurado, <code>free</code> duplo, <code>free</code> de um endereço errado), como o gcc, o AddressSanitizer e o Valgrind os mostram, e por que o editor do guia <strong>não</strong> os mostra.</li>
+</ul>
+</div>
+
+<p>Esta aula supõe que você já leu <a href="ponteiros.html">Ponteiros</a>, <a href="ponteiros-arrays.html">Ponteiros e Arrays</a> e <a href="pilha-heap.html">Pilha e Heap</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o guarda-volumes</h2>
+<p>Volte ao guarda-volumes do restaurante da aula <a href="pilha-heap.html">Pilha e Heap</a>. O atendimento funciona assim:</p>
+<ol class="passo">
+  <li>Você vai ao balcão e diz <strong>quantos bytes</strong> precisa: "quero um armário de 40 bytes".</li>
+  <li>O atendente procura um armário livre desse tamanho e te entrega <strong>o número dele</strong> (o endereço). Se não houver nenhum, ele te entrega um papel escrito "NENHUM" (o <code>NULL</code>).</li>
+  <li>Você guarda o que quiser lá dentro, pelo tempo que quiser. O armário vem como o último cliente deixou: pode ter lixo dentro.</li>
+  <li>Quando não precisa mais, você <strong>devolve a chave</strong> no balcão. Daí em diante o armário é de outra pessoa: abrir de novo é invasão, e devolver a mesma chave duas vezes deixa o atendente maluco.</li>
+</ol>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No guarda-volumes</th><th>Em C</th></tr>
+<tr><td>Pedir um armário de N bytes</td><td><code>malloc(N)</code></td></tr>
+<tr><td>O número do armário</td><td>O endereço que o <code>malloc</code> devolve, guardado num ponteiro</td></tr>
+<tr><td>O papel "NENHUM"</td><td><code>NULL</code>: não havia memória</td></tr>
+<tr><td>O lixo do cliente anterior</td><td>O conteúdo indefinido da memória nova</td></tr>
+<tr><td>Devolver a chave</td><td><code>free(ponteiro)</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro <code>malloc</code>: um <code>int</code> no heap</h2>
+<p>O programa mais simples possível: reservar espaço para <strong>um</strong> inteiro, usar e devolver.</p>
+
+<pre class="file" data-file="um.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *pontos = malloc(sizeof *pontos);
+    if (pontos == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+    *pontos = 1500;
+    printf("Reservei %zu bytes no heap.\n", sizeof *pontos);
+    printf("Pontos: %d\n", *pontos);
+    free(pontos);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;stdlib.h&gt;</dt><dd>O <code>malloc</code> e o <code>free</code> moram na <code>stdlib.h</code> ("standard library", biblioteca padrão), não na <code>stdio.h</code>. Esquecer este include é um erro comum (veja "Quando dá errado").</dd>
+  <dt>int *pontos = malloc(sizeof *pontos);</dt><dd>O coração da aula. O <code>malloc</code> recebe <strong>quantos bytes</strong> você quer e devolve o endereço do primeiro deles. <code>sizeof *pontos</code> quer dizer "o tamanho daquilo para onde <code>pontos</code> aponta", ou seja, o tamanho de um <code>int</code>: 4 bytes. O endereço vai para o ponteiro <code>pontos</code>.</dd>
+  <dt>if (pontos == NULL) { … }</dt><dd>Se não houver memória, o <code>malloc</code> devolve <code>NULL</code> (aula <a href="ponteiro-nulo.html">Ponteiro Nulo</a>). Usar um <code>NULL</code> derruba o programa, então a conferência vem <strong>logo depois</strong> de todo <code>malloc</code>.</dd>
+  <dt>*pontos = 1500;</dt><dd>Daqui em diante, <code>*pontos</code> é um <code>int</code> como outro qualquer: dá para guardar, ler e fazer contas. A diferença é <strong>onde</strong> ele mora: no heap, e não na pilha.</dd>
+  <dt>free(pontos);</dt><dd>Devolve os 4 bytes. Repare que se passa o <strong>ponteiro</strong> (o número do armário), sem o <code>*</code>. Depois do <code>free</code>, <code>*pontos</code> não pode mais ser usado.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra um.c -o um
+$ ./um
+Reservei 4 bytes no heap.
+Pontos: 1500</pre>
+
+<h3>De onde vem o tipo do ponteiro?</h3>
+<p>O <code>malloc</code> não sabe o que você vai guardar: ele só entrega bytes. Por isso devolve um <code>void *</code>, o "endereço sem etiqueta" da aula <a href="void-ponteiro.html">Ponteiro void*</a>. Em C, um <code>void *</code> vira qualquer outro ponteiro sozinho, na atribuição: é o <code>int *pontos = …</code> que diz "aqui moram inteiros".</p>
+
+<div class="tip">
+<strong>Sem conversão na frente do malloc</strong>
+<p>Você vai encontrar na internet <code>int *p = (int *)malloc(sizeof(int));</code>. O <code>(int *)</code> é uma conversão (aula <a href="conversao-tipos.html">Conversão de Tipos</a>) que em C <strong>não é necessária</strong>: o <code>void *</code> já se converte sozinho. Ela é obrigatória em C++, e por isso aparece em códigos escritos por quem vem de lá. Em C, deixe sem: é menos para escrever e menos para errar.</p>
+</div>
+
+<div class="tryc" data-goal="out:Vidas: 3,src:malloc\s*\(,src:free\s*\(\s*vidas\s*\)">
+<p class="try-task"><strong>Missão:</strong> o programa ainda não reserva nada: <code>vidas</code> começa com <code>NULL</code> e ele mostra <code>Faltou memória!</code>. Troque o <code>NULL</code> por um <code>malloc</code> do tamanho certo e acrescente o <code>free(vidas);</code> antes do <code>return 0;</code>. A saída deve ser <code>Vidas: 3</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *vidas = NULL;
+    if (vidas == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+    *vidas = 3;
+    printf("Vidas: %d\n", *vidas);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *vidas = malloc(sizeof *vidas);
+    if (vidas == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+    *vidas = 3;
+    printf("Vidas: %d\n", *vidas);
+    free(vidas);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Quantos bytes pedir: <code>sizeof</code></h2>
+<p>O <code>malloc</code> conta em <strong>bytes</strong>, nunca em "itens". Para guardar 10 inteiros, você precisa de 10 vezes o tamanho de um inteiro. Há duas formas de escrever isso:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>O que acontece se o tipo mudar</th></tr>
+<tr><td><code>sizeof *p</code> (o tamanho daquilo que o ponteiro aponta)</td><td><code>int *idades = malloc(10 * sizeof *idades);</code></td><td>Se um dia <code>idades</code> virar <code>long *</code>, o tamanho se ajusta sozinho.</td></tr>
+<tr><td><code>sizeof(tipo)</code></td><td><code>int *idades = malloc(10 * sizeof(int));</code></td><td>Se <code>idades</code> virar <code>long *</code> e alguém esquecer de mudar o <code>sizeof(int)</code>, o bloco fica pequeno demais.</td></tr>
+</table>
+</div>
+
+<p>As duas funcionam, e você vai ver as duas por aí. Este guia prefere <code>sizeof *p</code>: o tipo é escrito uma vez só. Repare que o <code>sizeof *idades</code> não segue o ponteiro de verdade (ele ainda nem tem valor); o compilador só olha o <strong>tipo</strong> de <code>*idades</code>. Mais sobre o operador em <a href="sizeof.html">sizeof</a>.</p>
+
+<p>O erro mais comum é esquecer a multiplicação: <code>malloc(n)</code> reserva <code>n</code> <strong>bytes</strong>, não <code>n</code> inteiros. A Ana queria 10 idades:</p>
+
+<pre class="file" data-file="semsizeof.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int n = 10;
+    int *idades = malloc(n);
+    if (idades == NULL) {
+        return 1;
+    }
+    for (int i = 0; i &lt; n; i++) {
+        idades[i] = 20 + i;
+    }
+    printf("Última idade: %d\n", idades[n - 1]);
+    free(idades);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semsizeof.c -o semsizeof      « nenhum aviso
+$ ./semsizeof
+malloc(): corrupted top size
+Abortado                   (imagem do núcleo gravada) ./semsizeof</pre>
+
+<p>O programa pediu 10 bytes e escreveu 40 (10 inteiros de 4 bytes). Os 30 bytes a mais caíram em cima das <strong>anotações internas</strong> que o <code>malloc</code> guarda ao lado de cada bloco. Quando o <code>printf</code> pediu memória para ele mesmo, o <code>malloc</code> encontrou as anotações estragadas ("tamanho do topo corrompido"), desistiu e abortou o programa (código 134). Repare que a mensagem não fala da linha 11, onde está o erro: ela aparece mais tarde, em outro lugar. Com o AddressSanitizer (aula <a href="sanitizers.html">Sanitizers</a>), a linha certa aparece:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address semsizeof.c -o semsizeof
+$ ./semsizeof
+=================================================================
+==419872==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x7b4eff9e0018 at pc 0x5602f1e2e2da bp 0x7ffc3f3235a0 sp 0x7ffc3f323590
+WRITE of size 4 at 0x7b4eff9e0018 thread T0
+    #0 0x5602f1e2e2d9 in main /home/ana/c/semsizeof.c:11
+«…»
+0x7b4eff9e001a is located 0 bytes after 10-byte region [0x7b4eff9e0010,0x7b4eff9e001a)
+allocated by thread T0 here:
+    #0 0x7f2f00b2b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x5602f1e2e268 in main /home/ana/c/semsizeof.c:6
+«… o resto do relatório …»</pre>
+
+<p><em>heap-buffer-overflow</em> é "estouro de um bloco do heap": uma escrita de 4 bytes (<code>WRITE of size 4</code>, um <code>int</code>) na linha 11, logo depois do fim de uma região de <strong>10 bytes</strong> (<code>10-byte region</code>) reservada na linha 6. O "10 bytes" é a pista: era para ser 40. O conserto é <code>malloc(n * sizeof *idades)</code>.</p>
+
+<div class="warning">
+<strong>No editor do guia, este erro passa calado</strong>
+<p>O mesmo <code>semsizeof.c</code> no editor mostra <code>Última idade: 29</code> e termina com código 0, como se estivesse certo. O <code>malloc</code> do editor (da wasi-libc, para WebAssembly) arruma a memória de outro jeito e não confere as anotações. O erro continua lá: só não aparece. Por isso, os programas com <code>malloc</code> merecem uma rodada com <code>-fsanitize=address</code> ou com o <a href="valgrind.html">Valgrind</a> num Linux de verdade.</p>
+</div>
+
+<hr>
+
+<h2>3. Um array do tamanho que o usuário pedir</h2>
+<p>Este é o motivo número um para usar o <code>malloc</code>: o tamanho só é conhecido <strong>durante a execução</strong>. A professora Ana não sabe quantos alunos cada turma tem; o programa pergunta e reserva exatamente o necessário:</p>
+
+<pre class="file" data-file="notas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int n;
+    printf("Quantos alunos? ");
+    if (scanf("%d", &amp;n) != 1 || n &lt;= 0) {
+        printf("Número inválido.\n");
+        return 1;
+    }
+
+    double *notas = malloc(n * sizeof *notas);
+    if (notas == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+
+    for (int i = 0; i &lt; n; i++) {
+        printf("Nota %d: ", i + 1);
+        if (scanf("%lf", &amp;notas[i]) != 1) {
+            printf("Nota inválida.\n");
+            free(notas);
+            return 1;
+        }
+    }
+
+    double soma = 0;
+    for (int i = 0; i &lt; n; i++) {
+        soma += notas[i];
+    }
+    printf("Média da turma: %.2f\n", soma / n);
+
+    free(notas);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>if (scanf("%d", &amp;n) != 1 || n &lt;= 0)</dt><dd>Antes de reservar, confira o número: se o usuário digitar <code>quatro</code> ou <code>-3</code>, o programa para aqui. Um <code>n</code> negativo viraria um tamanho gigante no <code>malloc</code>, que recebe um <code>size_t</code> (sem sinal).</dd>
+  <dt>double *notas = malloc(n * sizeof *notas);</dt><dd><code>n</code> notas de 8 bytes cada (o tamanho de um <code>double</code>). Com 4 alunos, 32 bytes.</dd>
+  <dt>&amp;notas[i]</dt><dd>O ponteiro é usado com colchetes, como um array comum (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>): <code>notas[i]</code> é a nota <code>i</code>, e <code>&amp;notas[i]</code> é o endereço dela, que o <code>scanf</code> precisa.</dd>
+  <dt>free(notas); return 1;</dt><dd>Se uma nota vier errada, o programa desiste. Mas antes devolve a memória: todo caminho que sai do programa depois do <code>malloc</code> passa por um <code>free</code>. (Na saída do <code>main</code> o sistema recolheria tudo de qualquer jeito, mas o hábito importa: dentro de uma função comum, esquecer aqui é um <a href="vazamentos.html">vazamento</a>.)</dd>
+  <dt>free(notas);</dt><dd>Um único <code>free</code> devolve o bloco inteiro, as <code>n</code> notas de uma vez. Nunca se libera item por item.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra notas.c -o notas
+$ ./notas
+Quantos alunos? 4
+Nota 1: 7.5
+Nota 2: 8
+Nota 3: 6.5
+Nota 4: 9
+Média da turma: 7.75
+$ ./notas
+Quantos alunos? quatro
+Número inválido.</pre>
+
+<p>Compare com um array comum, <code>double notas[30];</code>: ou sobra espaço (turma de 12), ou falta (turma de 45). Com o <code>malloc</code>, o tamanho é exato. E se o tamanho mudar depois que o array já existe (chegou um aluno novo), o <code>realloc</code> da próxima aula, <a href="calloc-realloc.html">calloc e realloc</a>, aumenta o bloco.</p>
+
+<div class="tryc" data-stdin="5\n7\n8.5\n6\n9\n10" data-goal="out:Média da turma: 8.10,src:malloc\s*\(,src:free\s*\(">
+<p class="try-task"><strong>Missão:</strong> este programa usa um array fixo de 3 notas, e a turma de hoje tem 5 alunos (a entrada já está pronta na caixa). Rode e veja <code>Só cabem 3 notas!</code>. Troque o array por um <code>malloc</code> de <code>n</code> notas, logo depois de ler o <code>n</code> (apague o teste do "só cabem 3"), confira o <code>NULL</code> e chame <code>free</code> no fim. A saída deve terminar com <code>Média da turma: 8.10</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    double notas[3];
+    int n;
+    printf("Quantos alunos? ");
+    if (scanf("%d", &amp;n) != 1 || n &lt;= 0) {
+        printf("Número inválido.\n");
+        return 1;
+    }
+    if (n &gt; 3) {
+        printf("Só cabem 3 notas!\n");
+        return 1;
+    }
+
+    for (int i = 0; i &lt; n; i++) {
+        printf("Nota %d: ", i + 1);
+        if (scanf("%lf", &amp;notas[i]) != 1) {
+            printf("Nota inválida.\n");
+            return 1;
+        }
+    }
+
+    double soma = 0;
+    for (int i = 0; i &lt; n; i++) {
+        soma += notas[i];
+    }
+    printf("Média da turma: %.2f\n", soma / n);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int n;
+    printf("Quantos alunos? ");
+    if (scanf("%d", &amp;n) != 1 || n &lt;= 0) {
+        printf("Número inválido.\n");
+        return 1;
+    }
+
+    double *notas = malloc(n * sizeof *notas);
+    if (notas == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+
+    for (int i = 0; i &lt; n; i++) {
+        printf("Nota %d: ", i + 1);
+        if (scanf("%lf", &amp;notas[i]) != 1) {
+            printf("Nota inválida.\n");
+            free(notas);
+            return 1;
+        }
+    }
+
+    double soma = 0;
+    for (int i = 0; i &lt; n; i++) {
+        soma += notas[i];
+    }
+    printf("Média da turma: %.2f\n", soma / n);
+    free(notas);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Conferir o <code>NULL</code>: quando o <code>malloc</code> falha</h2>
+<p>O heap é grande, mas não é infinito. Quando não dá para atender o pedido, o <code>malloc</code> não trava nem avisa: ele devolve <code>NULL</code>, em silêncio. A Ana pediu 100 bilhões de bytes (100 GB) num computador que não tem tudo isso:</p>
+
+<pre class="file" data-file="enorme.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    size_t bytes = 100000000000;
+    char *bloco = malloc(bytes);
+    if (bloco == NULL) {
+        printf("Não deu: malloc devolveu NULL.\n");
+        return 1;
+    }
+    printf("Consegui!\n");
+    free(bloco);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra enorme.c -o enorme
+$ ./enorme
+Não deu: malloc devolveu NULL.</pre>
+
+<p>Sem o <code>if</code>, a primeira escrita em <code>bloco[0]</code> seria uma escrita no endereço zero: <code>Falha de segmentação</code> (aula <a href="ponteiro-nulo.html">Ponteiro Nulo</a>). Com o <code>if</code>, o programa sai de forma organizada, com uma mensagem que diz o que houve. Num programa pequeno de aula, o <code>malloc</code> quase nunca falha; mas o hábito de conferir custa uma linha e evita um erro que, quando acontece, é difícil de reproduzir.</p>
+
+<div class="note">
+<strong>No editor do guia, o limite é 256 MB</strong>
+<p>O programa do editor roda em WebAssembly de 32 bits, com no máximo <strong>256 MB</strong> de memória. Lá, um <code>malloc</code> de 300 MB já devolve <code>NULL</code>, e o mesmo pedido funciona no gcc do Linux. Outro detalhe: no editor, <code>size_t</code> tem 4 bytes e não consegue guardar 100 bilhões; o Clang avisa <code>implicit conversion from 'long long' to 'size_t' (aka 'unsigned long') changes value from 100000000000 to 1215752192 [-Wconstant-conversion]</code> e pede uns 1,2 GB, que também voltam como <code>NULL</code>.</p>
+</div>
+
+<hr>
+
+<h2>5. O <code>malloc</code> não limpa a memória</h2>
+<p>O armário vem como o último cliente deixou. O <code>malloc</code> só marca o bloco como seu; não apaga o que estava lá. Este programa reserva 8 inteiros, preenche, devolve, e depois reserva outros 8 <strong>sem preencher</strong>, mostrando o que veio dentro:</p>
+
+<pre class="file" data-file="lixo.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *antes = malloc(8 * sizeof *antes);
+    if (antes == NULL) {
+        return 1;
+    }
+    for (int i = 0; i &lt; 8; i++) {
+        antes[i] = (i + 1) * 11;
+    }
+    free(antes);
+
+    int *notas = malloc(8 * sizeof *notas);
+    if (notas == NULL) {
+        return 1;
+    }
+    for (int i = 0; i &lt; 8; i++) {
+        printf("%d ", notas[i]);
+    }
+    printf("\n");
+    free(notas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lixo.c -o lixo
+$ ./lixo
+1694505054 5 0 0 55 66 77 88
+$ ./lixo
+1575119293 5 0 0 55 66 77 88       « o primeiro número muda a cada execução</pre>
+
+<p>O segundo <code>malloc</code> recebeu <strong>o mesmo armário</strong> que o primeiro acabou de devolver. As quatro últimas posições ainda têm o <code>55 66 77 88</code> do programa anterior. As quatro primeiras foram rabiscadas pelo próprio <code>malloc</code>, que usa o começo de um bloco livre para anotar a lista de blocos livres. No editor do guia, o resultado é outro (<code>11 22 33 44 55 66 77 88</code>, porque o <code>malloc</code> da wasi-libc anota em outro lugar), e isso só confirma a regra: o conteúdo de um bloco novo é <strong>lixo</strong>, e lixo pode ser qualquer coisa.</p>
+
+<p>Por isso, depois de um <code>malloc</code>, dê valor a tudo antes de ler (como o laço do <code>scanf</code> do <code>notas.c</code>). Se você quer o bloco começando com zeros, há uma função própria, o <code>calloc</code>, da próxima aula, <a href="calloc-realloc.html">calloc e realloc</a>.</p>
+
+<hr>
+
+<h2>6. <code>free</code>: devolver a chave</h2>
+<p>O <code>free</code> recebe o endereço que o <code>malloc</code> deu e devolve o bloco ao heap, para ser reaproveitado. Ele não devolve nada (é <code>void</code>) e não muda o seu ponteiro: depois do <code>free(p)</code>, <code>p</code> continua guardando o mesmo número, só que agora de um armário que não é mais seu. As regras são três:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Regra</th><th>Se quebrar</th></tr>
+<tr><td>1. Depois do <code>free(p)</code>, não use mais <code>*p</code> nem <code>p[i]</code>.</td><td>"Ponteiro pendurado": lê lixo ou estraga dados de outro bloco.</td></tr>
+<tr><td>2. Cada bloco é liberado <strong>uma vez só</strong>.</td><td><code>free(): double free detected</code>, o programa aborta.</td></tr>
+<tr><td>3. Só se passa ao <code>free</code> um endereço que veio do <code>malloc</code> (ou do <code>calloc</code>/<code>realloc</code>), e <strong>exatamente</strong> o endereço do começo.</td><td><code>free(): invalid pointer</code>, o programa aborta.</td></tr>
+</table>
+</div>
+
+<p>E uma exceção útil: <code>free(NULL)</code> é permitido e <strong>não faz nada</strong>. Por isso o costume de, logo depois do <code>free(p)</code>, escrever <code>p = NULL;</code>: um segundo <code>free(p)</code> por engano vira inofensivo, e um <code>if (p != NULL)</code> passa a dizer a verdade.</p>
+
+<h3>Regra 1: o ponteiro pendurado</h3>
+<p>Um ponteiro que guarda o endereço de memória já liberada se chama <strong>ponteiro pendurado</strong> (<em>dangling pointer</em>). O <code>p = NULL</code> protege <strong>aquele</strong> ponteiro, mas não as cópias dele. Aqui o <code>copia</code> continua pendurado:</p>
+
+<pre class="file" data-file="apelido.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *placar = malloc(sizeof *placar);
+    if (placar == NULL) {
+        return 1;
+    }
+    *placar = 7;
+    int *copia = placar;
+
+    free(placar);
+    placar = NULL;
+
+    printf("Placar: %d\n", *copia);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra apelido.c -o apelido
+apelido.c: In function ‘main’:
+apelido.c:15:5: warning: pointer ‘copia’ used after ‘free’ [-Wuse-after-free]
+   15 |     printf("Placar: %d\n", *copia);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+apelido.c:12:5: note: call to ‘free’ here
+   12 |     free(placar);
+      |     ^~~~~~~~~~~~
+$ ./apelido
+Placar: 1495898798</pre>
+
+<dl class="anatomy">
+  <dt>warning: pointer ‘copia’ used after ‘free’ [-Wuse-after-free]</dt><dd>"Ponteiro <code>copia</code> usado depois do <code>free</code>". O gcc percebeu que <code>copia</code> e <code>placar</code> apontam para o mesmo lugar, e a <code>note</code> mostra o <code>free</code> da linha 12. Ele só consegue avisar porque tudo está na mesma função; quando o <code>free</code> fica em outra função, o aviso some (veja a regra 2).</dd>
+  <dt>Placar: 1495898798</dt><dd>O programa rodou e mostrou lixo em vez de 7: o <code>free</code> usou o bloco para as anotações dele. Nada de falha de segmentação: o erro passa sem barulho, e o programa segue com um valor errado.</dd>
+</dl>
+
+<p>Para ver o erro de verdade, chame os fiscais. O AddressSanitizer para o programa na linha do erro e conta a história do bloco:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address apelido.c -o apelido
+«… o mesmo aviso …»
+$ ./apelido
+=================================================================
+==419821==ERROR: AddressSanitizer: heap-use-after-free on address 0x7bcc115e0010 at pc 0x55ef43f57308 bp 0x7fff91a04070 sp 0x7fff91a04060
+READ of size 4 at 0x7bcc115e0010 thread T0
+    #0 0x55ef43f57307 in main /home/ana/c/apelido.c:15
+«…»
+0x7bcc115e0010 is located 0 bytes inside of 4-byte region [0x7bcc115e0010,0x7bcc115e0014)
+freed by thread T0 here:
+    #0 0x7fac1272a3ff in free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:51
+    #1 0x55ef43f572c8 in main /home/ana/c/apelido.c:12
+«…»
+previously allocated by thread T0 here:
+    #0 0x7fac1272b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x55ef43f5725e in main /home/ana/c/apelido.c:5
+«… o resto do relatório …»</pre>
+
+<p>Leia de cima para baixo: <strong>leitura</strong> de 4 bytes depois do <code>free</code> (<em>heap-use-after-free</em>) na linha 15; o bloco foi <strong>liberado</strong> na linha 12 e tinha sido <strong>reservado</strong> na linha 5. O Valgrind, sem recompilar com nada especial (só o <code>-g</code>), diz o mesmo com outras palavras:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g apelido.c -o apelido-vg
+«… o mesmo aviso …»
+$ valgrind ./apelido-vg
+«… o cabeçalho …»
+==419837== Invalid read of size 4
+==419837==    at 0x40011DB: main (apelido.c:15)
+==419837==  Address 0x4a8e040 is 0 bytes inside a block of size 4 free'd
+==419837==    at 0x48538BF: free (vg_replace_malloc.c:990)
+==419837==    by 0x40011CE: main (apelido.c:12)
+==419837==  Block was alloc'd at
+==419837==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==419837==    by 0x400119E: main (apelido.c:5)
+==419837==
+Placar: 7
+«… o resumo: ERROR SUMMARY: 1 errors from 1 contexts …»</pre>
+
+<p>Dentro do Valgrind o programa até mostrou <code>Placar: 7</code>, porque o Valgrind não reaproveita o bloco liberado logo de cara. O valor certo, aqui, não quer dizer que o código está certo: o <code>Invalid read</code> diz que não está.</p>
+
+<div class="warning">
+<strong>No editor do guia: <code>Placar: 7</code>, sem erro nenhum</strong>
+<p>O editor mostra <code>Placar: 7</code> e código 0. O Clang não tem o aviso <code>-Wuse-after-free</code> do gcc, e o <code>malloc</code> do editor não rabisca o bloco liberado. É o pior cenário: o erro existe e tudo parece certo. Os erros de memória que não são ponteiro nulo <strong>não aparecem no editor</strong>; para eles, use o gcc com <code>-fsanitize=address</code> ou o Valgrind no seu Linux.</p>
+</div>
+
+<div class="tryc" data-goal="out:O placar já foi liberado.">
+<p class="try-task"><strong>Missão:</strong> rode e veja o editor mostrar <code>Placar depois do free: 7</code>, um valor que já não existe (no gcc sairia lixo). Conserte com o costume desta seção: logo depois do <code>free(placar);</code>, faça o ponteiro valer <code>NULL</code>. Aí o <code>if</code> passa a dizer a verdade, e a saída mostra <code>O placar já foi liberado.</code></p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *placar = malloc(sizeof *placar);
+    if (placar == NULL) {
+        return 1;
+    }
+    *placar = 7;
+    printf("Placar: %d\n", *placar);
+    free(placar);
+
+    if (placar != NULL) {
+        printf("Placar depois do free: %d\n", *placar);
+    } else {
+        printf("O placar já foi liberado.\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *placar = malloc(sizeof *placar);
+    if (placar == NULL) {
+        return 1;
+    }
+    *placar = 7;
+    printf("Placar: %d\n", *placar);
+    free(placar);
+    placar = NULL;
+
+    if (placar != NULL) {
+        printf("Placar depois do free: %d\n", *placar);
+    } else {
+        printf("O placar já foi liberado.\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Regra 2: o <code>free</code> duplo</h3>
+<p>O caso típico: uma função libera o bloco e quem a chamou não sabe, e libera de novo.</p>
+
+<pre class="file" data-file="duplo.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void encerrar(int *placar) {
+    printf("Placar final: %d\n", *placar);
+    free(placar);
+}
+
+int main(void) {
+    int *placar = malloc(sizeof *placar);
+    if (placar == NULL) {
+        return 1;
+    }
+    *placar = 42;
+    encerrar(placar);
+    free(placar);
+    printf("Fim do jogo.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra duplo.c -o duplo      « nenhum aviso: os dois free estão em funções diferentes
+$ ./duplo
+Placar final: 42
+free(): double free detected in tcache 2
+Abortado                   (imagem do núcleo gravada) ./duplo
+$ echo $?
+134</pre>
+
+<p>A própria glibc (a biblioteca C do Linux) percebeu: "<code>free()</code>: liberação dupla detectada" (o <em>tcache</em> é um cache interno do <code>malloc</code>) e abortou (134 = 128 + 6, o sinal <code>SIGABRT</code>). O <code>Fim do jogo.</code> nunca apareceu. Ela diz <strong>que</strong> houve, mas não <strong>onde</strong>. O ASan diz onde, e ainda mostra que o primeiro <code>free</code> foi dentro de <code>encerrar</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g -fsanitize=address duplo.c -o duplo
+$ ./duplo
+=================================================================
+==419866==ERROR: AddressSanitizer: attempting double-free on 0x7b530fbe0010 in thread T0:
+    #0 0x7f3310d2a3ff in free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:51
+    #1 0x5571f18f335b in main /home/ana/c/duplo.c:16
+«…»
+freed by thread T0 here:
+    #0 0x7f3310d2a3ff in free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:51
+    #1 0x5571f18f32d7 in encerrar /home/ana/c/duplo.c:6
+    #2 0x5571f18f334f in main /home/ana/c/duplo.c:15
+«…»
+previously allocated by thread T0 here:
+    #0 0x7f3310d2b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x5571f18f32f0 in main /home/ana/c/duplo.c:10
+«…»
+SUMMARY: AddressSanitizer: double-free /home/ana/c/duplo.c:16 in main
+==419866==ABORTING</pre>
+
+<p>No <strong>editor do guia</strong>, o <code>free</code> duplo passa calado: o programa mostra <code>Placar final: 42</code> e <code>Fim do jogo.</code> e termina com 0. O conserto é decidir <strong>quem</strong> libera (seção 7): ou <code>encerrar</code> libera e o <code>main</code> não, ou o contrário. Nunca os dois.</p>
+
+<h3>Regra 3: só o endereço que veio do <code>malloc</code></h3>
+<p>Dois jeitos de quebrar esta regra. O primeiro: liberar uma variável local, que mora na pilha e nunca veio do <code>malloc</code>:</p>
+
+<pre class="file" data-file="freelocal.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int vidas = 3;
+    int *p = &amp;vidas;
+    printf("Vidas: %d\n", *p);
+    free(p);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra freelocal.c -o freelocal
+freelocal.c: In function ‘main’:
+freelocal.c:8:5: warning: ‘free’ called on unallocated object ‘vidas’ [-Wfree-nonheap-object]
+    8 |     free(p);
+      |     ^~~~~~~
+freelocal.c:5:9: note: declared here
+    5 |     int vidas = 3;
+      |         ^~~~~
+$ ./freelocal
+Vidas: 3
+free(): invalid pointer
+Abortado                   (imagem do núcleo gravada) ./freelocal</pre>
+
+<p>O gcc avisou ("<code>free</code> chamado num objeto que não foi reservado: <code>vidas</code>") e, ao rodar, a glibc abortou com "ponteiro inválido". O segundo jeito é mais traiçoeiro: o endereço veio do <code>malloc</code>, mas o ponteiro <strong>andou</strong>:</p>
+
+<pre class="file" data-file="freemeio.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *notas = malloc(5 * sizeof *notas);
+    if (notas == NULL) {
+        return 1;
+    }
+    int *p = notas;
+    for (int i = 0; i &lt; 5; i++) {
+        *p = 7;
+        p++;
+    }
+    printf("Preenchi 5 notas.\n");
+    free(p);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra freemeio.c -o freemeio      « nenhum aviso
+$ ./freemeio
+Preenchi 5 notas.
+free(): invalid pointer
+Abortado                   (imagem do núcleo gravada) ./freemeio</pre>
+
+<p>Depois do laço, <code>p</code> aponta para <strong>depois</strong> da quinta nota, e não para o começo do bloco. O <code>free</code> precisa do endereço exato que o <code>malloc</code> devolveu, porque é ali que ele encontra as anotações do bloco. O conserto é <code>free(notas);</code>: guarde sempre o ponteiro original e ande com uma cópia. No editor do guia, os dois programas terminam com código 0, sem mensagem.</p>
+
+<hr>
+
+<h2>7. Quem libera? O dono da memória</h2>
+<p>A memória do heap não pertence a uma função: ela vive até alguém chamar <code>free</code>. Por isso, todo bloco precisa de um <strong>dono</strong>, a parte do programa responsável por liberá-lo. A regra mais usada:</p>
+<ul>
+  <li>Uma função que <strong>reserva e devolve</strong> o ponteiro (como o <code>criar_contador</code> da aula <a href="pilha-heap.html">Pilha e Heap</a>) passa a posse para quem chamou: quem recebe o ponteiro dá o <code>free</code>.</li>
+  <li>Uma função que <strong>só recebe</strong> o ponteiro para ler ou mudar o conteúdo (como um <code>mostrar(notas, n)</code>) não libera nada.</li>
+  <li>Se uma função precisa liberar o que recebeu (como o <code>encerrar</code> do <code>duplo.c</code>), o nome e um comentário devem dizer isso, e quem chamou não toca mais no ponteiro.</li>
+</ul>
+
+<pre class="file" data-file="dono.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+/* Reserva n inteiros com os valores 1, 2, …, n.
+   Quem chamar é o dono: tem de chamar free no fim. */
+int *sequencia(int n) {
+    int *v = malloc(n * sizeof *v);
+    if (v == NULL) {
+        return NULL;
+    }
+    for (int i = 0; i &lt; n; i++) {
+        v[i] = i + 1;
+    }
+    return v;
+}
+
+/* Só lê: não libera. */
+void mostrar(const int *v, int n) {
+    for (int i = 0; i &lt; n; i++) {
+        printf("%d ", v[i]);
+    }
+    printf("\n");
+}
+
+int main(void) {
+    int *numeros = sequencia(5);
+    if (numeros == NULL) {
+        printf("Faltou memória!\n");
+        return 1;
+    }
+    mostrar(numeros, 5);
+    free(numeros);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dono.c -o dono
+$ ./dono
+1 2 3 4 5</pre>
+
+<p>Repare no <code>const int *v</code> de <code>mostrar</code>: além de não liberar, ela promete não mudar os números (aula <a href="const-ponteiros.html">const e Ponteiros</a>). A biblioteca padrão segue a mesma regra: o <code>strdup</code> da aula <a href="strings-dinamicas.html">Strings Dinâmicas</a> devolve memória nova e a documentação dele diz "libere com <code>free</code>".</p>
+
+<hr>
+
+<h2>Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Poucos dados, tamanho fixo, usados só dentro da função</td><td>Variável ou array local, sem <code>malloc</code> (aula <a href="pilha-heap.html">Pilha e Heap</a>)</td></tr>
+<tr><td>Tamanho conhecido só na execução, dados grandes, ou dados que saem da função</td><td><code>malloc</code> + <code>free</code></td></tr>
+<tr><td>Bloco que precisa começar com zeros</td><td><code>calloc</code> (próxima aula)</td></tr>
+<tr><td>Bloco que precisa crescer ou encolher</td><td><code>realloc</code> (próxima aula) e <a href="array-dinamico.html">Array que Cresce</a></td></tr>
+<tr><td>O tamanho no <code>malloc</code></td><td><code>n * sizeof *p</code> (o tipo aparece uma vez só)</td></tr>
+<tr><td><code>(int *)</code> na frente do <code>malloc</code></td><td>Em C, não precisa. Só em C++.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘malloc’</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semstdlib.c -o semstdlib
+semstdlib.c: In function ‘main’:
+semstdlib.c:4:19: error: implicit declaration of function ‘malloc’ [-Wimplicit-function-declaration]
+    4 |     int *pontos = malloc(sizeof *pontos);
+      |                   ^~~~~~
+semstdlib.c:2:1: note: include ‘&lt;stdlib.h&gt;’ or provide a declaration of ‘malloc’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;stdlib.h&gt;
+    2 |
+«… o mesmo para o free …»</pre>
+<p><strong>O que significa:</strong> "declaração implícita da função <code>malloc</code>": o programa usa <code>malloc</code> sem ter incluído o cabeçalho que a declara. A <code>note</code> já mostra o conserto, com um <code>+</code> na linha que falta. No editor, o Clang diz <code>error: call to undeclared library function 'malloc' with type 'void *(__size_t)' (aka 'void *(unsigned long)'); ISO C99 and later do not support implicit function declarations</code> e <code>note: include the header &lt;stdlib.h&gt; or explicitly provide a declaration for 'malloc'</code>.</p>
+<p><strong>Como consertar:</strong> <code>#include &lt;stdlib.h&gt;</code> no começo do arquivo.</p>
+</div>
+
+<div class="cenario">
+<strong><code>malloc(): corrupted top size</code>, <code>free(): invalid next size</code> e parecidos</strong>
+<p><strong>O que significa:</strong> o programa escreveu além do fim de um bloco e estragou as anotações do <code>malloc</code>. A mensagem aparece mais tarde, num <code>malloc</code> ou <code>free</code> qualquer, longe do erro de verdade. A causa mais comum é o tamanho errado: <code>malloc(n)</code> em vez de <code>malloc(n * sizeof *p)</code>, ou o <code>+ 1</code> do <code>'\0'</code> esquecido numa string.</p>
+<p><strong>Como consertar:</strong> confira as contas de cada <code>malloc</code> e rode com <code>-g -fsanitize=address</code>: o <code>heap-buffer-overflow</code> aponta a linha que escreveu demais e o tamanho do bloco.</p>
+</div>
+
+<div class="cenario">
+<strong><code>free(): double free detected in tcache 2</code></strong>
+<p><strong>O que significa:</strong> o mesmo bloco foi liberado duas vezes. No editor do guia, passa calado.</p>
+<p><strong>Como consertar:</strong> decida quem é o dono do bloco e libere num lugar só. Depois do <code>free(p)</code>, faça <code>p = NULL;</code>. Para achar os dois <code>free</code>, use o ASan (<code>attempting double-free</code>) ou o Valgrind (<code>Invalid free()</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>free(): invalid pointer</code></strong>
+<p><strong>O que significa:</strong> o <code>free</code> recebeu um endereço que não é o começo de um bloco do <code>malloc</code>: uma variável local (o gcc avisa com <code>-Wfree-nonheap-object</code>), um literal de texto ou um ponteiro que andou (<code>p++</code>). No editor do guia, passa calado.</p>
+<p><strong>Como consertar:</strong> passe ao <code>free</code> exatamente o ponteiro que o <code>malloc</code> devolveu. Para percorrer o bloco, use um índice (<code>notas[i]</code>) ou uma cópia do ponteiro.</p>
+</div>
+
+<div class="cenario">
+<strong>Valores estranhos, que mudam a cada execução</strong>
+<p><strong>O que significa:</strong> duas suspeitas: o programa lê um bloco do <code>malloc</code> antes de dar valor a ele (lixo), ou lê um bloco já liberado (ponteiro pendurado; o gcc às vezes avisa com <code>-Wuse-after-free</code>).</p>
+<p><strong>Como consertar:</strong> dê valor a cada posição antes de ler (ou use <code>calloc</code>), e não use ponteiros depois do <code>free</code>. O Valgrind acha os dois: <code>Conditional jump or move depends on uninitialised value(s)</code> para o lixo e <code>Invalid read</code> para o bloco liberado.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> logo depois de um <code>malloc</code></strong>
+<p><strong>O que significa:</strong> o <code>malloc</code> devolveu <code>NULL</code> e o programa usou o ponteiro sem conferir.</p>
+<p><strong>Como consertar:</strong> um <code>if (p == NULL)</code> logo depois de cada <code>malloc</code>, com uma mensagem e uma saída organizada.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;stdlib.h&gt;</code></td><td>Declara <code>malloc</code>, <code>free</code>, <code>calloc</code>, <code>realloc</code></td></tr>
+<tr><td><code>void *malloc(size_t bytes);</code></td><td>Reserva <code>bytes</code> bytes no heap; devolve o endereço do primeiro, ou <code>NULL</code> se não deu. O conteúdo é lixo.</td></tr>
+<tr><td><code>void free(void *p);</code></td><td>Devolve o bloco que começa em <code>p</code>. <code>free(NULL)</code> não faz nada.</td></tr>
+<tr><td><code>T *p = malloc(sizeof *p);</code></td><td>Um item do tipo <code>T</code></td></tr>
+<tr><td><code>T *v = malloc(n * sizeof *v);</code></td><td>Um array de <code>n</code> itens do tipo <code>T</code>; use <code>v[0]</code> a <code>v[n-1]</code></td></tr>
+<tr><td><code>if (p == NULL) { … }</code></td><td>Logo depois de todo <code>malloc</code></td></tr>
+<tr><td><code>free(p); p = NULL;</code></td><td>Devolver e "esquecer" o endereço</td></tr>
+<tr><td><code>-fsanitize=address</code>, <code>valgrind</code></td><td>Acham estouro, uso depois do <code>free</code>, <code>free</code> duplo e vazamentos (no Linux; não no editor)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O cabeçalho</h3>
+<p>Qual cabeçalho declara o <code>malloc</code> e o <code>free</code>?</p>
+<div class="ex-code">#include &lt;<input data-answer="stdlib.h" aria-label="cabeçalho">&gt;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Espaço para 20 preços</h3>
+<p>Complete para reservar 20 <code>double</code>:</p>
+<div class="ex-code">double *precos = malloc(<input data-answer="20 * sizeof *precos|20*sizeof *precos|20 * sizeof(double)|20*sizeof(double)|20 * sizeof(*precos)|sizeof *precos * 20|sizeof(double) * 20" aria-label="tamanho">);</div>
+</div>
+
+<div class="exercise">
+<h3>3. Sem erro na falha</h3>
+<p>Quando não há memória, o que o <code>malloc</code> devolve?</p>
+<div class="ex-code"><input data-answer="NULL|nullptr|um ponteiro nulo|ponteiro nulo" aria-label="valor"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Depois de <code>int *v = malloc(5 * sizeof *v);</code>, o que há em <code>v[0]</code> antes de qualquer atribuição?</p>
+<label><input type="radio" name="q4"> Sempre 0</label>
+<label><input type="radio" name="q4"> Lixo: qualquer valor, que pode mudar a cada execução</label>
+<label><input type="radio" name="q4"> O número 5</label>
+<label><input type="radio" name="q4"> <code>NULL</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Qual destas linhas é um erro?</p>
+<label><input type="radio" name="q5"> <code>free(NULL);</code></label>
+<label><input type="radio" name="q5"> <code>free(v); v = NULL;</code></label>
+<label><input type="radio" name="q5"> <code>free(v + 1);</code>, com <code>v</code> vindo de um <code>malloc</code></label>
+<label><input type="radio" name="q5"> <code>free(v);</code>, com <code>v</code> vindo de um <code>malloc</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Um programa com <code>free</code> duplo roda no editor do guia sem nenhuma mensagem. O que isso quer dizer?</p>
+<label><input type="radio" name="q6"> Que o <code>free</code> duplo é permitido em C23</label>
+<label><input type="radio" name="q6"> Que o Clang conserta o erro sozinho</label>
+<label><input type="radio" name="q6"> Que o segundo <code>free</code> é ignorado em todo sistema</label>
+<label><input type="radio" name="q6"> Nada de bom: o erro existe, mas o editor não confere; no Linux, a glibc aborta com <code>double free detected</code></label>
+</div>
+
+<h3>Missão final: os preços da lojinha</h3>
+
+<div class="tryc" data-stdin="4\n12.50\n4.99\n19.90\n14.91" data-goal="out:Total: R$ 52.30,out:Mais caro: R$ 19.90,src:malloc\s*\(,src:free\s*\(\s*lista\s*\)">
+<p class="try-task"><strong>Missão:</strong> a função <code>ler_precos</code> ainda não faz nada e devolve <code>NULL</code>. Escreva o corpo dela: reserve <code>n</code> preços com <code>malloc</code>, confira o <code>NULL</code>, leia cada preço com <code>scanf("%lf", …)</code> (se um falhar, libere o bloco e devolva <code>NULL</code>) e devolva o ponteiro. No <code>main</code>, que é o dono do bloco, devolva a memória com <code>free(lista);</code> no fim. A entrada já está na caixa; a saída deve terminar com:</p>
+<pre class="out">Total: R$ 52.30
+Mais caro: R$ 19.90</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+/* Reserva e lê n preços. Quem chamar tem de chamar free. */
+double *ler_precos(int n) {
+    /* escreva aqui */
+    return NULL;
+}
+
+int main(void) {
+    int n;
+    printf("Quantos produtos? ");
+    if (scanf("%d", &amp;n) != 1 || n &lt;= 0) {
+        printf("Número inválido.\n");
+        return 1;
+    }
+
+    double *lista = ler_precos(n);
+    if (lista == NULL) {
+        printf("Não consegui ler os preços.\n");
+        return 1;
+    }
+
+    double total = 0;
+    double maior = lista[0];
+    for (int i = 0; i &lt; n; i++) {
+        total += lista[i];
+        if (lista[i] &gt; maior) {
+            maior = lista[i];
+        }
+    }
+    printf("Total: R$ %.2f\n", total);
+    printf("Mais caro: R$ %.2f\n", maior);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+/* Reserva e lê n preços. Quem chamar tem de chamar free. */
+double *ler_precos(int n) {
+    double *precos = malloc(n * sizeof *precos);
+    if (precos == NULL) {
+        return NULL;
+    }
+    for (int i = 0; i &lt; n; i++) {
+        printf("Preço %d: ", i + 1);
+        if (scanf("%lf", &amp;precos[i]) != 1) {
+            free(precos);
+            return NULL;
+        }
+    }
+    return precos;
+}
+
+int main(void) {
+    int n;
+    printf("Quantos produtos? ");
+    if (scanf("%d", &amp;n) != 1 || n &lt;= 0) {
+        printf("Número inválido.\n");
+        return 1;
+    }
+
+    double *lista = ler_precos(n);
+    if (lista == NULL) {
+        printf("Não consegui ler os preços.\n");
+        return 1;
+    }
+
+    double total = 0;
+    double maior = lista[0];
+    for (int i = 0; i &lt; n; i++) {
+        total += lista[i];
+        if (lista[i] &gt; maior) {
+            maior = lista[i];
+        }
+    }
+    printf("Total: R$ %.2f\n", total);
+    printf("Mais caro: R$ %.2f\n", maior);
+    free(lista);
+    return 0;
+}
+</pre>
+</div>
+
+<p>No seu Linux, rode a solução com <code>valgrind --leak-check=full ./precos &lt; entrada.txt</code> e confira o <code>All heap blocks were freed -- no leaks are possible</code>. Apague o <code>free(lista);</code> e rode de novo: o Valgrind mostra o bloco perdido. É o assunto da aula <a href="vazamentos.html">Vazamentos de Memória</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>malloc(bytes)</code> (de <code>stdlib.h</code>) reserva memória no heap e devolve o endereço, ou <code>NULL</code> se não deu. Confira o <code>NULL</code> logo depois de todo <code>malloc</code>.</li>
+  <li>O tamanho é em bytes: <code>T *v = malloc(n * sizeof *v);</code>. Esquecer o <code>sizeof</code> estoura o bloco, e o erro aparece longe (<code>malloc(): corrupted top size</code>).</li>
+  <li>O ponteiro do <code>malloc</code> funciona como um array: <code>v[i]</code>. E o tamanho pode vir do usuário.</li>
+  <li>O conteúdo de um bloco novo é lixo: dê valor antes de ler, ou use <code>calloc</code>.</li>
+  <li><code>free(p)</code> devolve o bloco. Três regras: não usar depois, liberar uma vez só, e só o endereço exato que veio do <code>malloc</code>. <code>free(NULL)</code> não faz nada; faça <code>p = NULL</code> depois do <code>free</code>.</li>
+  <li>Todo bloco tem um dono, responsável pelo <code>free</code>.</li>
+  <li>No editor do guia, ponteiro pendurado, <code>free</code> duplo e <code>free</code> de endereço errado <strong>passam calados</strong>. No Linux, o gcc aborta em alguns casos, e o <code>-fsanitize=address</code> e o Valgrind mostram todos, com a linha.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
