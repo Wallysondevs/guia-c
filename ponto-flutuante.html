@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C float e double — números com vírgula, precisão e printf | Guia C</title>
+<meta name="description" content="Números com vírgula em C para quem nunca programou: float e double, por que 0.1 + 0.2 não dá 0.3, os formatos %f, %.2f, %g e %e, a diferença de precisão, a divisão inteira 5/2 × 5.0/2 e como comparar com tolerância, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">float e double</span></h1>
+
+<p class="intro">Altura, peso, preço, média de notas, temperatura: muita coisa tem vírgula. Em C, esses números moram nos tipos <code>float</code> e <code>double</code>, chamados de <strong>ponto flutuante</strong>. Eles são práticos, mas guardam uma surpresa que pega todo iniciante (e muito programador experiente): <code>0.1 + 0.2</code> não dá exatamente <code>0.3</code>. Nesta aula você vai ver por quê, como mostrar esses números do jeito certo com o <code>printf</code> e como não cair nas armadilhas da divisão e da comparação.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Os tipos <code>double</code> (o padrão) e <code>float</code>, e quantos dígitos cada um acerta.</li>
+  <li>Por que <code>0.1 + 0.2</code> dá <code>0.30000000000000004</code>.</li>
+  <li>Os formatos do <code>printf</code>: <code>%f</code>, <code>%.2f</code>, <code>%g</code> e <code>%e</code>.</li>
+  <li>A divisão inteira: por que <code>5 / 2</code> dá <code>2</code> e <code>5.0 / 2</code> dá <code>2.5</code>.</li>
+  <li>Por que nunca comparar números com vírgula com <code>==</code>, e como comparar com tolerância.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Todas as saídas desta aula saíram iguais no editor do guia.</p>
+
+<hr>
+
+<h2>A ideia: a dízima que não cabe no papel</h2>
+<p>Tente escrever 1/3 em decimal numa folha: <code>0,33333…</code>. Os 3 não acabam nunca. Em algum momento você para e aceita um valor <strong>quase</strong> certo: <code>0,3333</code>.</p>
+<p>O computador faz contas em <strong>binário</strong> (base 2), e em binário acontece a mesma coisa com números que, para nós, parecem simples: <code>0,1</code> em binário é uma dízima infinita (<code>0,000110011001100…</code>). Como a caixa tem um número fixo de bits, o computador guarda o valor mais próximo que cabe. Na maioria das vezes ninguém percebe; às vezes, a diferença aparece.</p>
+<p>O nome "ponto flutuante" vem do jeito de guardar: um número como <code>384400000</code> vira algo como <code>3,844 × 10<sup>8</sup></code>. A vírgula (o "ponto", em inglês) "flutua" para onde for preciso, e por isso o mesmo tipo guarda números enormes e minúsculos.</p>
+
+<hr>
+
+<h2>1. <code>double</code> e <code>float</code></h2>
+
+<pre class="file" data-file="precisao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    float f = 1234567.891f;
+    double d = 1234567.891;
+    float terco_f = 1.0f / 3.0f;
+    double terco_d = 1.0 / 3.0;
+    printf("float:  %.3f\n", f);
+    printf("double: %.3f\n", d);
+    printf("float:  %.20f\n", terco_f);
+    printf("double: %.20f\n", terco_d);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra precisao.c -o precisao
+$ ./precisao
+float:  1234567.875      « o float errou já na 8ª casa
+double: 1234567.891
+float:  0.33333334326744079590
+double: 0.33333333333333331483</pre>
+
+<dl class="anatomy">
+  <dt>double</dt><dd>"Precisão dupla": 8 bytes, acerta uns <strong>15 a 16 dígitos</strong>. É o tipo padrão para números com vírgula em C: todo literal com ponto, como <code>1234567.891</code>, já é <code>double</code>.</dd>
+  <dt>float … 1234567.891f</dt><dd>"Flutuante", precisão simples: 4 bytes, acerta uns <strong>6 a 7 dígitos</strong>. O <code>f</code> no fim do número pede um literal <code>float</code>. Aqui, <code>1234567.891</code> tem 10 dígitos, e o <code>float</code> só guardou <code>1234567.875</code>.</dd>
+  <dt>1.0 / 3.0</dt><dd>Um terço. O <code>float</code> acerta 7 casas (<code>0.3333333</code>) e erra a partir daí; o <code>double</code> acerta 16. Nenhum dos dois é exato: 1/3 não cabe em binário.</dd>
+  <dt>%.20f</dt><dd>Mostra 20 casas depois do ponto. Bom para "espiar" o valor guardado de verdade.</dd>
+</dl>
+
+<div class="tip">
+<strong>Qual usar: <code>double</code></strong>
+<p>Use <code>double</code> sempre, a não ser que haja um bom motivo para <code>float</code> (milhões de números na memória, placas de vídeo, aparelhos pequenos). A economia de 4 bytes quase nunca compensa a perda de precisão. Existe também o <code>long double</code> (<code>%Lf</code>), com ainda mais precisão, raramente necessário.</p>
+</div>
+
+<h3>Literais de ponto flutuante</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Tipo</th><th>Observação</th></tr>
+<tr><td><code>4.5</code>, <code>0.1</code>, <code>3.0</code></td><td><code>double</code></td><td>Sempre com <strong>ponto</strong>, nunca com vírgula.</td></tr>
+<tr><td><code>3.</code> ou <code>.5</code></td><td><code>double</code></td><td>Válido, mas <code>3.0</code> e <code>0.5</code> são mais fáceis de ler.</td></tr>
+<tr><td><code>4.5f</code></td><td><code>float</code></td><td>O <code>f</code> pede <code>float</code>.</td></tr>
+<tr><td><code>3.844e8</code></td><td><code>double</code></td><td>Notação científica: 3,844 × 10<sup>8</sup> = 384400000.</td></tr>
+<tr><td><code>1e-9</code></td><td><code>double</code></td><td>1 × 10<sup>-9</sup> = 0,000000001. Útil para tolerâncias (seção 5).</td></tr>
+<tr><td><code>3</code></td><td><code>int</code> (!)</td><td>Sem ponto, é inteiro. Isso importa na divisão (seção 4).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>2. O famoso <code>0.1 + 0.2</code></h2>
+
+<pre class="file" data-file="soma.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double a = 0.1;
+    double b = 0.2;
+    double soma = a + b;
+    printf("%f\n", soma);
+    printf("%.2f\n", soma);
+    printf("%.17f\n", soma);
+    printf("%d\n", soma == 0.3);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra soma.c -o soma
+$ ./soma
+0.300000
+0.30
+0.30000000000000004      « o valor guardado de verdade
+0                        « 0 = falso: soma não é igual a 0.3</pre>
+
+<ol class="passo">
+  <li><code>%f</code> mostra 6 casas e arredonda: <code>0.300000</code>. Parece perfeito.</li>
+  <li><code>%.2f</code> mostra 2 casas: <code>0.30</code>.</li>
+  <li><code>%.17f</code> mostra 17 casas e revela o segredo: <code>0.30000000000000004</code>. O <code>0.1</code> e o <code>0.2</code> guardados já eram aproximações, e a soma das aproximações caiu num número vizinho do <code>0.3</code> guardado.</li>
+  <li><code>soma == 0.3</code> pergunta "são iguais?" e o C responde <code>0</code> (falso). O <code>==</code> é explicado em <a href="operadores-comparacao.html">Operadores de Comparação</a>.</li>
+</ol>
+
+<p>Isso <strong>não é defeito do C</strong>. Python, JavaScript, Java e as planilhas fazem a mesma conta e chegam ao mesmo <code>0.30000000000000004</code>, porque todos usam o mesmo padrão de ponto flutuante dos processadores (o IEEE 754).</p>
+
+<div class="warning">
+<strong>E dinheiro?</strong>
+<p>Para aprender, <code>double</code> com <code>%.2f</code> serve bem. Mas sistemas que lidam com dinheiro de verdade guardam <strong>centavos</strong> num inteiro (<code>long long preco_centavos = 499;</code>), justamente para nunca perder um centavo em arredondamentos.</p>
+</div>
+
+<hr>
+
+<h2>3. Mostrar com o <code>printf</code>: <code>%f</code>, <code>%.2f</code>, <code>%g</code>, <code>%e</code></h2>
+
+<pre class="file" data-file="formatos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 4.5;
+    double distancia = 384400000.0;
+    double atomo = 0.0000000001;
+    printf("%%f:   %f | %f | %f\n", preco, distancia, atomo);
+    printf("%%.2f: %.2f | %.2f | %.2f\n", preco, distancia, atomo);
+    printf("%%g:   %g | %g | %g\n", preco, distancia, atomo);
+    printf("%%e:   %e | %e | %e\n", preco, distancia, atomo);
+    printf("[%8.2f]\n", preco);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra formatos.c -o formatos
+$ ./formatos
+%f:   4.500000 | 384400000.000000 | 0.000000
+%.2f: 4.50 | 384400000.00 | 0.00
+%g:   4.5 | 3.844e+08 | 1e-10
+%e:   4.500000e+00 | 3.844000e+08 | 1.000000e-10
+[    4.50]</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>O que faz</th><th>Bom para</th></tr>
+<tr><td><code>%f</code></td><td>Sempre 6 casas depois do ponto. Números muito pequenos viram <code>0.000000</code>.</td><td>Quase nunca sozinho.</td></tr>
+<tr><td><code>%.2f</code></td><td>Exatamente 2 casas, <strong>arredondando</strong>. Troque o 2 por quantas quiser.</td><td>Preços, médias, medidas: o mais usado.</td></tr>
+<tr><td><code>%g</code></td><td>"Geral": tira os zeros inúteis e passa para notação científica quando o número é muito grande ou muito pequeno.</td><td>Mostrar um número sem saber o tamanho dele.</td></tr>
+<tr><td><code>%e</code></td><td>Sempre notação científica: <code>3.844000e+08</code> = 3,844 × 10<sup>8</sup>.</td><td>Ciência e engenharia.</td></tr>
+<tr><td><code>%8.2f</code></td><td>2 casas, ocupando pelo menos 8 colunas (completa com espaços à esquerda).</td><td>Alinhar tabelas.</td></tr>
+<tr><td><code>%%</code></td><td>Mostra um <code>%</code> de verdade.</td><td>O <code>%%f:</code> do exemplo.</td></tr>
+</table>
+</div>
+
+<p>O <code>%f</code> serve tanto para <code>double</code> quanto para <code>float</code> no <code>printf</code> (o <code>float</code> é convertido para <code>double</code> no caminho). Todas as opções de largura e precisão estão em <a href="formatos-printf.html">Formatos do printf</a>.</p>
+
+<div class="note">
+<strong>Ponto, e não vírgula</strong>
+<p>O <code>printf</code> mostra <code>4.50</code>, com ponto, mesmo num computador em português: o C usa o formato americano até que o programa peça outro com <code>setlocale</code>. E na <strong>leitura</strong> com <code>scanf</code> a letra muda: <code>double</code> é <code>%lf</code> (com <code>l</code>), e <code>float</code> é <code>%f</code>. Isso é explicado em <a href="scanf.html">Entrada com scanf</a>.</p>
+</div>
+
+<div class="tryc" data-goal="outre:Preço: 4\.50\n">
+<p class="try-task"><strong>Missão:</strong> o preço do pão de queijo aparece como <code>Preço: 4.500000</code>. Mude só o formato do <code>printf</code> para mostrar duas casas: <code>Preço: 4.50</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 4.5;
+    printf("Preço: %f\n", preco);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double preco = 4.5;
+    printf("Preço: %.2f\n", preco);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Divisão inteira: <code>5 / 2</code> × <code>5.0 / 2</code></h2>
+<p>Em C, o tipo do resultado de uma conta depende do tipo dos números. Se os <strong>dois</strong> lados da divisão são inteiros, o resultado também é inteiro, e a parte depois da vírgula é jogada fora:</p>
+
+<pre class="file" data-file="divisao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("5 / 2     = %d\n", 5 / 2);
+    printf("5.0 / 2   = %f\n", 5.0 / 2);
+    printf("5 / 2.0   = %f\n", 5 / 2.0);
+    int total = 7;
+    int pessoas = 2;
+    double cada = total / pessoas;
+    printf("cada (errado) = %.2f\n", cada);
+    double cada2 = (double) total / pessoas;
+    printf("cada (certo)  = %.2f\n", cada2);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra divisao.c -o divisao
+$ ./divisao
+5 / 2     = 2
+5.0 / 2   = 2.500000
+5 / 2.0   = 2.500000
+cada (errado) = 3.00     « 7 / 2 foi feito em int (3) e só depois guardado no double
+cada (certo)  = 3.50</pre>
+
+<dl class="anatomy">
+  <dt>5 / 2</dt><dd><code>int</code> dividido por <code>int</code>: resultado <code>int</code>, <code>2</code>. O resto (1) é jogado fora; para pegá-lo, existe o <code>%</code> (aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>).</dd>
+  <dt>5.0 / 2 e 5 / 2.0</dt><dd>Basta <strong>um</strong> dos lados ser <code>double</code> para a conta inteira ser feita em <code>double</code>: <code>2.5</code>.</dd>
+  <dt>double cada = total / pessoas;</dt><dd>A armadilha: a caixa é <code>double</code>, mas a conta à direita só tem <code>int</code>. O C calcula primeiro (<code>7 / 2</code> = <code>3</code>) e só depois guarda o <code>3</code> na caixa, como <code>3.0</code>. Nenhum aviso.</dd>
+  <dt>(double) total / pessoas</dt><dd>O <code>(double)</code> na frente é uma <strong>conversão</strong> (<em>cast</em>): "trate <code>total</code> como <code>double</code> nesta conta". Aí a divisão vira <code>7.0 / 2</code> = <code>3.5</code>. Detalhes em <a href="conversao-tipos.html">Conversão de Tipos</a>.</dd>
+</dl>
+
+<div class="tryc" data-goal="out:Cada um paga: 3.50,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana e uma amiga dividiram um açaí de 7 reais. O programa diz que cada uma paga <code>3.00</code>, e alguém está levando 1 real de graça! Conserte para mostrar <code>Cada um paga: 3.50</code>. Você pode mudar o tipo de uma variável ou usar <code>(double)</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int total = 7;
+    int pessoas = 2;
+    double cada = total / pessoas;
+    printf("Cada um paga: %.2f\n", cada);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double total = 7.0;
+    int pessoas = 2;
+    double cada = total / pessoas;
+    printf("Cada um paga: %.2f\n", cada);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>A letra errada no <code>printf</code></h3>
+<p>Como <code>5 / 2</code> é <code>int</code> e <code>5.0 / 2</code> é <code>double</code>, trocar a letra do <code>printf</code> dá lixo. O <code>-Wall</code> avisa:</p>
+
+<pre class="term" data-cwd="~/c">$ cat formato_errado.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%f\n", 5 / 2);
+    printf("%d\n", 5.0 / 2);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra formato_errado.c -o formato_errado
+formato_errado.c: In function ‘main’:
+formato_errado.c:4:14: warning: format ‘%f’ expects argument of type ‘double’, but argument 2 has type ‘int’ [-Wformat=]
+    4 |     printf("%f\n", 5 / 2);
+      |             ~^     ~~~~~
+      |              |     |
+      |              |     int
+      |              double
+      |             %d
+formato_errado.c:5:14: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’ [-Wformat=]
+    5 |     printf("%d\n", 5.0 / 2);
+      |             ~^     ~~~~~~~
+      |              |         |
+      |              int       double
+      |             %f
+$ ./formato_errado
+0.000000                 « nem 2, nem 2.5
+0</pre>
+
+<p>O <code>printf</code> não converte nada: ele procura um <code>double</code> onde você mandou um <code>int</code> (e vice-versa) e lê o lugar errado da memória. Nesta máquina saiu <code>0.000000</code> e <code>0</code>; em outra, pode sair outra coisa. Conserto: a letra combina com o tipo da <strong>conta</strong>, não com o que você queria que ela fosse.</p>
+
+<hr>
+
+<h2>5. Comparar números com vírgula</h2>
+<p>Pequenos erros se acumulam. Somar <code>0.1</code> dez vezes deveria dar <code>1.0</code>:</p>
+
+<pre class="file" data-file="conta.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    double total = 0.0;
+    for (int i = 0; i &lt; 10; i++) {
+        total = total + 0.1;
+    }
+    printf("%.17f\n", total);
+    printf("%d\n", total == 1.0);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra conta.c -o conta
+$ ./conta
+0.99999999999999989
+0                        « total == 1.0 é falso</pre>
+
+<p>(O <code>for</code> repete a soma 10 vezes; aula <a href="for.html">for</a>.) Um programa que esperasse <code>total == 1.0</code> para parar nunca pararia. A solução é perguntar "<strong>estão perto o bastante?</strong>" em vez de "são iguais?": a distância entre os dois números tem de ser menor que uma <strong>tolerância</strong> pequena.</p>
+
+<pre class="file" data-file="compara.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double soma = 0.1 + 0.2;
+    double tolerancia = 1e-9;
+    printf("soma == 0.3: %d\n", soma == 0.3);
+    printf("perto de 0.3: %d\n", fabs(soma - 0.3) &lt; tolerancia);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra compara.c -o compara
+$ ./compara
+soma == 0.3: 0
+perto de 0.3: 1          « 1 = verdadeiro</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;math.h&gt;</dt><dd>Traz as funções de matemática (aula <a href="matematica.html">Matemática</a>). Este exemplo compilou no gcc sem <code>-lm</code>, porque o gcc resolve o <code>fabs</code> sozinho; outras funções, como <code>sqrt</code> de uma variável, podem pedir o <code>-lm</code> no fim da linha do gcc.</dd>
+  <dt>soma - 0.3</dt><dd>A diferença: um número minúsculo, positivo ou negativo.</dd>
+  <dt>fabs(…)</dt><dd><em>Floating absolute</em>, "valor absoluto de ponto flutuante": tira o sinal de menos. A distância entre dois números nunca é negativa.</dd>
+  <dt>&lt; tolerancia</dt><dd>"Menor que 0,000000001?" Se sim, para efeitos práticos são iguais.</dd>
+</dl>
+
+<p>Qual tolerância usar depende do problema: <code>1e-9</code> é bom para números perto de 1; para dinheiro em reais, meio centavo (<code>0.005</code>) já basta. Comparar com <code>&lt;</code> e <code>&gt;</code> (maior, menor) continua valendo normalmente: o problema é só o <code>==</code> e o <code>!=</code>.</p>
+
+<h3>Dividir por zero não trava (com <code>double</code>)</h3>
+<p>Com inteiros, dividir por zero derruba o programa (aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>). Com <code>double</code>, o padrão IEEE 754 tem valores especiais para isso:</p>
+
+<pre class="term" data-cwd="~/c">$ cat zero.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    double x = 1.0;
+    double zero = 0.0;
+    printf("%f %f %f\n", x / zero, -x / zero, zero / zero);
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra zero.c -o zero
+$ ./zero
+inf -inf -nan</pre>
+
+<p><code>inf</code> é "infinito", e <code>nan</code> (<em>not a number</em>) é "não é um número", o resultado de <code>0/0</code>. Um <code>nan</code> contamina todas as contas seguintes e nunca é igual a nada, nem a ele mesmo. Se ele aparecer na sua saída, procure uma divisão por zero ou uma conta impossível, como a raiz de um número negativo.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A média saiu <code>3.00</code> em vez de <code>3.50</code></strong>
+<p><strong>O que significa:</strong> divisão inteira: os dois lados da divisão eram <code>int</code>. O gcc não avisa.</p>
+<p><strong>Como consertar:</strong> faça um dos lados ser <code>double</code>: uma variável <code>double</code>, um literal com ponto (<code>soma / 2.0</code>) ou <code>(double) soma / quantidade</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’</code></strong>
+<p><strong>O que significa:</strong> a letra do <code>printf</code> não combina com o tipo do valor. O programa mostra lixo.</p>
+<p><strong>Como consertar:</strong> <code>double</code> e <code>float</code> usam <code>%f</code> (ou <code>%.2f</code>, <code>%g</code>, <code>%e</code>); <code>int</code> usa <code>%d</code>. O gcc sugere a letra certa na última linha do aviso.</p>
+</div>
+
+<div class="cenario">
+<strong>Um <code>if (x == 0.3)</code> nunca é verdadeiro</strong>
+<p><strong>O que significa:</strong> o valor calculado é vizinho de <code>0.3</code>, mas não exatamente igual.</p>
+<p><strong>Como consertar:</strong> compare com tolerância: <code>fabs(x - 0.3) &lt; 1e-9</code>. Para ver o valor real, mostre com <code>%.17f</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>float</code> mostra <code>1234567.875</code> em vez de <code>1234567.891</code></strong>
+<p><strong>O que significa:</strong> o <code>float</code> só acerta uns 7 dígitos. Com <code>-Wconversion</code>, o gcc até avisa quando um literal <code>double</code> perde valor ao entrar num <code>float</code>: <code>conversion from ‘double’ to ‘float’ changes value from ‘4.9900000000000002e+0’ to ‘4.98999977e+0f’ [-Wfloat-conversion]</code>.</p>
+<p><strong>Como consertar:</strong> use <code>double</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Saiu <code>inf</code> ou <code>nan</code></strong>
+<p><strong>O que significa:</strong> divisão por zero (<code>inf</code>) ou uma conta sem resultado, como <code>0.0 / 0.0</code> (<code>nan</code>).</p>
+<p><strong>Como consertar:</strong> confira o divisor antes de dividir.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>double x = 4.5;</code></td><td>Número com vírgula, ~15 dígitos certos (o padrão)</td></tr>
+<tr><td><code>float y = 4.5f;</code></td><td>Precisão simples, ~7 dígitos certos</td></tr>
+<tr><td><code>3.844e8</code>, <code>1e-9</code></td><td>Notação científica</td></tr>
+<tr><td><code>printf("%f", x)</code></td><td>6 casas: <code>4.500000</code></td></tr>
+<tr><td><code>printf("%.2f", x)</code></td><td>2 casas, arredondando: <code>4.50</code></td></tr>
+<tr><td><code>printf("%g", x)</code></td><td>Sem zeros inúteis: <code>4.5</code>, <code>3.844e+08</code></td></tr>
+<tr><td><code>printf("%e", x)</code></td><td>Científica: <code>4.500000e+00</code></td></tr>
+<tr><td><code>printf("%8.2f", x)</code></td><td>2 casas, pelo menos 8 colunas</td></tr>
+<tr><td><code>5 / 2</code></td><td><code>2</code> (divisão inteira)</td></tr>
+<tr><td><code>5.0 / 2</code>, <code>(double) a / b</code></td><td>Divisão com vírgula: <code>2.5</code></td></tr>
+<tr><td><code>fabs(a - b) &lt; 1e-9</code></td><td>"<code>a</code> e <code>b</code> são praticamente iguais" (<code>math.h</code>)</td></tr>
+<tr><td><code>scanf("%lf", &amp;x)</code></td><td>Ler um <code>double</code> (com <code>l</code>!)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Duas casas</h3>
+<p>Complete o formato para mostrar <code>media</code> com duas casas depois do ponto:</p>
+<div class="ex-code">printf("Média: <input data-answer="%.2f|%.2lf" aria-label="formato">\n", media);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Divisão inteira</h3>
+<p>Quanto vale <code>9 / 2</code> em C?</p>
+<div class="ex-code"><input data-answer="4" aria-label="resultado"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. O que <code>printf("%d", 0.1 + 0.2 == 0.3);</code> mostra?</p>
+<label><input type="radio" name="q3"> 1</label>
+<label><input type="radio" name="q3"> 0.3</label>
+<label><input type="radio" name="q3"> 0, porque a soma guardada é 0.30000000000000004</label>
+<label><input type="radio" name="q3"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com <code>int a = 7, b = 2;</code>, qual expressão dá <code>3.5</code>?</p>
+<label><input type="radio" name="q4"> <code>a / b</code></label>
+<label><input type="radio" name="q4"> <code>(double) a / b</code></label>
+<label><input type="radio" name="q4"> <code>(double) (a / b)</code></label>
+<label><input type="radio" name="q4"> <code>a / b * 1.0</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Qual tipo você deve usar, na dúvida, para números com vírgula?</p>
+<label><input type="radio" name="q5"> <code>double</code></label>
+<label><input type="radio" name="q5"> <code>float</code></label>
+<label><input type="radio" name="q5"> <code>int</code></label>
+<label><input type="radio" name="q5"> <code>long</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. O que <code>printf("%g\n", 384400000.0);</code> mostra?</p>
+<label><input type="radio" name="q6"> <code>384400000.000000</code></label>
+<label><input type="radio" name="q6"> <code>384400000</code></label>
+<label><input type="radio" name="q6"> <code>3.844000e+08</code></label>
+<label><input type="radio" name="q6"> <code>3.844e+08</code></label>
+</div>
+
+<h3>Missão final: dez moedas de dez centavos</h3>
+
+<div class="tryc" data-goal="out:Total: 1.00,out:Igual a 1 real: 1,semaviso,src:fabs\s*\(">
+<p class="try-task"><strong>Missão:</strong> a Ana juntou dez moedas de 10 centavos. O programa soma tudo, mostra <code>Total: 1.00</code>, mas diz que o total <strong>não</strong> é igual a 1 real (<code>Igual a 1 real: 0</code>). Troque a comparação com <code>==</code> por uma comparação com tolerância, usando <code>fabs</code> (já incluímos o <code>math.h</code>), para mostrar <code>Igual a 1 real: 1</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double total = 0.0;
+    for (int i = 0; i &lt; 10; i++) {
+        total = total + 0.1;
+    }
+    printf("Total: %.2f\n", total);
+    printf("Igual a 1 real: %d\n", total == 1.0);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double total = 0.0;
+    for (int i = 0; i &lt; 10; i++) {
+        total = total + 0.1;
+    }
+    printf("Total: %.2f\n", total);
+    printf("Igual a 1 real: %d\n", fabs(total - 1.0) &lt; 1e-9);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que o <code>%.2f</code> mostrou <code>1.00</code> o tempo todo: o arredondamento da tela esconde a diferença. Por isso o que vale é a comparação, não o que aparece na tela.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>double</code> (8 bytes, ~15 dígitos) é o tipo padrão para números com vírgula; <code>float</code> (4 bytes, ~7 dígitos) só quando houver motivo. Literal com ponto é <code>double</code>; com <code>f</code>, <code>float</code>.</li>
+  <li>Muitos números, como 0,1, não cabem exatos em binário: <code>0.1 + 0.2</code> dá <code>0.30000000000000004</code> em qualquer linguagem.</li>
+  <li><code>printf</code>: <code>%f</code> (6 casas), <code>%.2f</code> (2 casas, arredondando), <code>%g</code> (sem zeros inúteis), <code>%e</code> (científica). No <code>scanf</code>, <code>double</code> é <code>%lf</code>.</li>
+  <li><code>int / int</code> é divisão inteira (<code>5 / 2</code> = <code>2</code>), mesmo que o resultado vá para um <code>double</code>. Um lado <code>double</code> basta: <code>5.0 / 2</code> ou <code>(double) a / b</code>.</li>
+  <li>Nunca compare com <code>==</code>: use <code>fabs(a - b) &lt; tolerancia</code>.</li>
+  <li>Dividir <code>double</code> por zero dá <code>inf</code> ou <code>nan</code>, sem travar.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
