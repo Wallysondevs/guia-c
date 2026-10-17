@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Compilar com gcc — as opções -o, -std=c23, -Wall, -Wextra, -g, -O2 e -c | Guia C</title>
+<meta name="description" content="Compilar programas em C com o gcc, opção por opção: -o (e o a.out), -std=c23, -Wall, -Wextra, -g, -O2 e -c, o comando padrão do guia (gcc -std=c23 -Wall -Wextra arquivo.c -o programa), compilar e rodar com &&, recompilar depois de mudar o código e o clang como alternativa, com saídas reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Compilar com gcc</span></h1>
+
+<p class="intro">Na aula anterior você compilou o Olá, mundo com o comando mínimo, <code>gcc ola.c -o ola</code>. Ele funciona, mas deixa de lado duas ajudas valiosas: escolher a <strong>versão do C</strong> e pedir ao compilador que <strong>avise</strong> quando o código tem cara de erro. Nesta aula você conhece, uma de cada vez, as opções do <code>gcc</code> que vai usar no dia a dia, e monta o comando que o guia usa em todas as aulas daqui para a frente.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>, parte por parte.</li>
+  <li><code>-o</code>: o nome do programa, e o <code>a.out</code> quando ele falta.</li>
+  <li><code>-std=c23</code>: escolher a versão do C, e o que muda com <code>-std=c17</code>.</li>
+  <li><code>-Wall</code> e <code>-Wextra</code>: ligar os avisos.</li>
+  <li>Compilar e rodar numa linha só, com <code>&amp;&amp;</code>, e por que é preciso recompilar depois de cada mudança.</li>
+  <li><code>-g</code> (para depurar), <code>-O2</code> (para otimizar) e <code>-c</code> (só compilar, sem montar o programa).</li>
+  <li>O <code>clang</code>, o outro compilador de C, que é o do editor do guia.</li>
+</ul>
+</div>
+
+<p>Os comandos foram executados na máquina fictícia da Ana, com o <strong>gcc 15.2</strong> e o <strong>clang 21.1</strong> do Ubuntu 26.04, na pasta <code>~/c</code>. As saídas foram copiadas da tela.</p>
+
+<hr>
+
+<h2>A ideia: os botões do forno</h2>
+<p>Na aula anterior, o compilador era a cozinheira que transforma a receita (o código) em bolo (o programa). Agora pense no forno que ela usa. Dá para assar um bolo só ligando o forno, mas os botões fazem diferença: a temperatura, o timer, a luz para espiar lá dentro. As <strong>opções</strong> do <code>gcc</code> são esses botões. Cada uma começa com um hífen (<code>-</code>) e muda um detalhe do trabalho:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Botão do forno</th><th>O que faz</th></tr>
+<tr><td><code>-o nome</code></td><td>A etiqueta na forma</td><td>Dá nome ao programa</td></tr>
+<tr><td><code>-std=c23</code></td><td>Qual livro de receitas seguir</td><td>Escolhe a versão do C</td></tr>
+<tr><td><code>-Wall -Wextra</code></td><td>O alarme de fumaça</td><td>Liga os avisos sobre código suspeito</td></tr>
+<tr><td><code>-g</code></td><td>A luz para espiar o forno</td><td>Guarda informações para depurar</td></tr>
+<tr><td><code>-O2</code></td><td>O modo turbo</td><td>Otimiza: o programa fica mais rápido</td></tr>
+<tr><td><code>-c</code></td><td>Preparar a massa sem assar</td><td>Só compila, sem montar o programa</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O comando padrão do guia</h2>
+<p>De agora em diante, todo programa do guia é compilado assim:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ola.c -o ola
+$ ./ola
+Olá, mundo!</pre>
+
+<dl class="anatomy">
+  <dt>gcc</dt><dd>O compilador de C do projeto GNU.</dd>
+  <dt>-std=c23</dt><dd><em>standard</em> = "padrão": compile seguindo o C23, a versão mais nova do C (seção 3).</dd>
+  <dt>-Wall</dt><dd><em>Warnings: all</em>, "avisos: todos" (o nome engana: são os principais, não todos). Liga os avisos sobre código que compila, mas provavelmente está errado (seção 4).</dd>
+  <dt>-Wextra</dt><dd>"Avisos extras": mais um grupo de avisos, além dos do <code>-Wall</code>.</dd>
+  <dt>ola.c</dt><dd>O arquivo de código.</dd>
+  <dt>-o ola</dt><dd>O nome do programa que vai ser criado (seção 2).</dd>
+</dl>
+
+<p>Parece muita coisa para digitar, mas logo vira costume, e a seta para cima <kbd>↑</kbd> do terminal repete o último comando. O editor do guia usa exatamente essas opções, com o Clang no lugar do <code>gcc</code>: <code>clang -std=c23 -Wall -Wextra programa.c -o programa</code>.</p>
+
+<div class="tip">
+<strong>A ordem não importa (quase nunca)</strong>
+<p>O <code>gcc</code> aceita as opções em qualquer ordem: <code>gcc -o ola ola.c -std=c23 -Wextra -Wall</code> faz o mesmo que o comando acima. O que precisa ficar junto é o <code>-o</code> e o nome que vem logo depois dele. O guia usa sempre a mesma ordem para facilitar a leitura: opções, arquivo, <code>-o</code> e nome.</p>
+</div>
+
+<hr>
+
+<h2>2. <code>-o</code>: o nome do programa</h2>
+<p>Você já conhece o <code>-o</code> (de <em>output</em>, "saída") da aula anterior. Recapitulando:</p>
+
+<ul>
+  <li><code>gcc … ola.c -o ola</code> cria o programa <code>ola</code>.</li>
+  <li>Sem <code>-o</code>, o programa se chama <strong><code>a.out</code></strong>, e cada compilação sem <code>-o</code> sobrescreve o <code>a.out</code> anterior.</li>
+  <li>O nome depois do <code>-o</code> é o do <strong>programa</strong>, nunca o do arquivo <code>.c</code>. O <code>gcc</code> se recusa a apagar o seu código (<code>input file ‘ola.c’ is the same as output file</code>, veja <a href="primeiro-programa.html">Olá, Mundo</a>).</li>
+</ul>
+
+<pre class="term" data-cwd="~/c">$ gcc ola.c
+$ ls
+a.out  ola  ola.c        « sem -o: a.out</pre>
+
+<p>E se você escrever o <code>-o</code> mas esquecer o nome?</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra recado.c -o
+gcc: error: missing filename after ‘-o’</pre>
+
+<p>"Falta o nome do arquivo depois do <code>-o</code>". Nada foi compilado.</p>
+
+<hr>
+
+<h2>3. <code>-std=c23</code>: qual C usar</h2>
+<p>O C existe desde os anos 1970 e ganhou várias versões oficiais, chamadas de <strong>padrões</strong>: C89, C99, C11, C17 e C23 (o número é o ano). Cada versão acrescenta recursos novos (a história completa está em <a href="versoes.html">Versões do C</a>). A opção <code>-std=</code> escolhe qual delas o compilador segue.</p>
+
+<p>Dá para ver qual versão está valendo: o compilador guarda o número dela num nome especial, <code>__STDC_VERSION__</code>. Não se preocupe com o <code>%ld</code> por enquanto (ele encaixa um número no texto; aula <a href="formatos-printf.html">Formatos do printf</a>):</p>
+
+<pre class="file" data-file="versao.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%ld\n", __STDC_VERSION__);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc versao.c -o versao &amp;&amp; ./versao
+202311                   « sem -std: o gcc 15 já usa o C23 (ano 2023, mês 11)
+$ gcc -std=c23 versao.c -o versao &amp;&amp; ./versao
+202311
+$ gcc -std=c17 versao.c -o versao &amp;&amp; ./versao
+201710
+$ gcc -std=c11 versao.c -o versao &amp;&amp; ./versao
+201112
+$ gcc -std=c99 versao.c -o versao &amp;&amp; ./versao
+199901</pre>
+
+<p>(O <code>&amp;&amp;</code> no meio do comando quer dizer "se compilar, rode". Ele é explicado na seção 5.)</p>
+
+<p>Repare na primeira linha: sem <code>-std</code>, o gcc 15 já usa o C23. Então por que escrever <code>-std=c23</code>? Por três motivos:</p>
+<ul>
+  <li><strong>Outros compiladores têm outro padrão.</strong> Um gcc mais antigo (o 13, por exemplo) usa o C17 quando você não diz nada. Com <code>-std=c23</code>, o seu comando faz a mesma coisa em qualquer computador.</li>
+  <li><strong>Sem <code>-std</code>, o gcc usa o "C23 com extras do GNU"</strong> (chamado <code>gnu23</code>), que aceita algumas coisas que não são C padrão. Com <code>-std=c23</code>, ele fica mais perto do C oficial.</li>
+  <li><strong>Fica escrito</strong> qual C o programa usa. Quem ler o comando sabe.</li>
+</ul>
+
+<h3>O que muda entre as versões</h3>
+<p>Um exemplo concreto. No <span class="versao">C23</span>, <code>bool</code>, <code>true</code> e <code>false</code> (o tipo "verdadeiro ou falso", aula <a href="bool.html">Booleanos</a>) fazem parte da linguagem. Nas versões anteriores, era preciso incluir o cabeçalho <code>stdbool.h</code>:</p>
+
+<pre class="file" data-file="ligado.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool ligado = true;
+    if (ligado)
+        printf("A luz está acesa.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ligado.c -o ligado &amp;&amp; ./ligado
+A luz está acesa.
+$ gcc -std=c17 -Wall -Wextra ligado.c -o ligado
+ligado.c: In function ‘main’:
+ligado.c:4:5: error: unknown type name ‘bool’
+    4 |     bool ligado = true;
+      |     ^~~~
+ligado.c:2:1: note: ‘bool’ is defined in header ‘&lt;stdbool.h&gt;’; this is probably fixable by adding ‘#include &lt;stdbool.h&gt;’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;stdbool.h&gt;
+    2 |
+ligado.c:4:19: error: ‘true’ undeclared (first use in this function)
+    4 |     bool ligado = true;
+      |                   ^~~~
+ligado.c:4:19: note: ‘true’ is defined in header ‘&lt;stdbool.h&gt;’; this is probably fixable by adding ‘#include &lt;stdbool.h&gt;’
+ligado.c:4:19: note: each undeclared identifier is reported only once for each function it appears in</pre>
+
+<p>Com <code>-std=c17</code>, o mesmo arquivo não compila: "nome de tipo desconhecido: <code>bool</code>". E a nota já ensina o conserto: <em>this is probably fixable by adding ‘#include &lt;stdbool.h&gt;’</em>, "provavelmente se resolve acrescentando o <code>#include &lt;stdbool.h&gt;</code>". Muito código e muitos cursos ainda usam o C99 ou o C11, e por isso o guia sempre mostra o jeito antigo quando ele existe.</p>
+
+<p>No editor abaixo, a caixa foi configurada para compilar com <code>-std=c17</code> (veja a primeira linha da saída).</p>
+
+<div class="tryc" data-flags="-std=c17 -Wall -Wextra" data-goal="compila,out:A luz está acesa.">
+<p class="try-task"><strong>Missão:</strong> rode e leia o erro. Depois faça o programa compilar no C17 sem mudar a linha do <code>bool</code>: acrescente o cabeçalho que a mensagem do compilador sugere.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool ligado = true;
+    if (ligado)
+        printf("A luz está acesa.\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdbool.h&gt;
+
+int main(void) {
+    bool ligado = true;
+    if (ligado)
+        printf("A luz está acesa.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que o Clang do editor diz o problema de outro jeito: <code>error: use of undeclared identifier 'bool'</code> ("uso de identificador não declarado"), sem a sugestão do cabeçalho. Os dois compiladores concordam no essencial: no C17, <code>bool</code> não existe sem o <code>stdbool.h</code>.</p>
+
+<hr>
+
+<h2>4. <code>-Wall</code> e <code>-Wextra</code>: peça para ser avisado</h2>
+<p>O compilador separa os problemas em dois tipos:</p>
+<ul>
+  <li><strong>Erro</strong> (<code>error:</code>): o código está fora das regras do C. O programa <strong>não</strong> é criado.</li>
+  <li><strong>Aviso</strong> (<code>warning:</code>): o código segue as regras, mas tem cara de engano. O programa <strong>é</strong> criado, e o compilador só chama a sua atenção.</li>
+</ul>
+
+<p>A maioria dos avisos vem <strong>desligada</strong>. Veja este programa, em que a Ana guardou a idade e esqueceu de usá-la:</p>
+
+<pre class="file" data-file="idade.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("Olá, Ana!\n");
+    return 0;
+}
+</pre>
+
+<p>(A linha <code>int idade = 29;</code> cria uma <strong>variável</strong>, uma caixinha com nome que guarda um número. Elas têm aula própria: <a href="variaveis.html">Variáveis</a>.)</p>
+
+<pre class="term" data-cwd="~/c">$ gcc idade.c -o idade
+$                        « silêncio: compilou sem dizer nada
+$ gcc -Wall idade.c -o idade
+idade.c: In function ‘main’:
+idade.c:4:9: warning: unused variable ‘idade’ [-Wunused-variable]
+    4 |     int idade = 29;
+      |         ^~~~~</pre>
+
+<p>Com <code>-Wall</code>, o <code>gcc</code> avisa: <em>unused variable ‘idade’</em>, "variável <code>idade</code> não usada". Aqui é inofensivo, mas muitas vezes uma variável esquecida é sinal de que você queria mostrá-la e se esqueceu. No fim da mensagem, <code>[-Wunused-variable]</code> é o nome do aviso, que o <code>-Wall</code> ligou.</p>
+
+<p>O <code>-Wextra</code> liga mais avisos. Neste programa, a Ana tirou nota 5 e mesmo assim aparece "Aprovada!". Repare no <code>;</code> perdido no fim da linha do <code>if</code> ("se"; aula <a href="if-else.html">if e else</a>):</p>
+
+<pre class="file" data-file="nota.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nota = 5;
+    if (nota &gt;= 7);
+        printf("Aprovada!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -Wall nota.c -o nota
+nota.c: In function ‘main’:
+nota.c:5:5: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+    5 |     if (nota &gt;= 7);
+      |     ^~
+nota.c:6:9: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+    6 |         printf("Aprovada!\n");
+      |         ^~~~~~
+$ gcc -Wall -Wextra nota.c -o nota
+nota.c: In function ‘main’:
+nota.c:5:19: warning: suggest braces around empty body in an ‘if’ statement [-Wempty-body]
+    5 |     if (nota &gt;= 7);
+      |                   ^
+nota.c:5:5: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+    5 |     if (nota &gt;= 7);
+      |     ^~
+nota.c:6:9: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+    6 |         printf("Aprovada!\n");
+      |         ^~~~~~
+$ ./nota
+Aprovada!                « o programa foi criado e roda... errado</pre>
+
+<ul>
+  <li>O <code>-Wall</code> percebeu que o recuo engana: "este <code>if</code> não protege… esta instrução, mas ela está recuada como se estivesse protegida".</li>
+  <li>O <code>-Wextra</code> acrescentou um aviso mais direto: "sugiro chaves em volta do corpo vazio do <code>if</code>". O <code>;</code> logo depois do <code>if</code> é um "corpo vazio": o <code>if</code> termina ali, e o <code>printf</code> roda sempre.</li>
+</ul>
+
+<p>Sem as duas opções, o <code>gcc</code> não diria nada, e a Ana ficaria procurando o erro sozinha. É por isso que o guia sempre compila com <code>-Wall -Wextra</code>, e você deve fazer o mesmo: <strong>os avisos são o compilador ajudando você de graça</strong>. Os avisos mais comuns, e o <code>-Werror</code> (que transforma avisos em erros), estão na aula <a href="avisos.html">Avisos (-Wall -Wextra)</a>.</p>
+
+<div class="tryc" data-goal="semaviso,out:Olá\, Ana!">
+<p class="try-task"><strong>Missão:</strong> o editor compila com <code>-Wall -Wextra</code>. Rode e leia o aviso. Depois resolva: o programa tem de mostrar <code>Olá, Ana!</code> e compilar <strong>sem nenhum aviso</strong>. (O jeito mais simples é apagar a variável que ninguém usa.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("Olá, Ana!\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, Ana!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Compilar e rodar numa linha: <code>&amp;&amp;</code></h2>
+<p>Compilar e depois rodar são dois comandos. Para não digitar duas vezes, junte-os com <code>&amp;&amp;</code> ("e então"):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra recado.c -o recado &amp;&amp; ./recado
+Reunião às 14h.</pre>
+
+<p>O <code>&amp;&amp;</code> é do terminal, não do C: ele roda o segundo comando <strong>só se o primeiro deu certo</strong> (código de saída 0, lembra do <code>echo $?</code>?). Se a compilação falhar, o programa não roda:</p>
+
+<pre class="term" data-cwd="~/c">$ cat recado.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Reunião às 16h.\n")
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra recado.c -o recado &amp;&amp; ./recado
+recado.c: In function ‘main’:
+recado.c:4:32: error: expected ‘;’ before ‘return’
+    4 |     printf("Reunião às 16h.\n")
+      |                                ^
+      |                                ;
+    5 |     return 0;
+      |     ~~~~~~
+$                        « o ./recado nem foi tentado</pre>
+
+<p>Isso protege você de uma armadilha, que a próxima seção mostra.</p>
+
+<hr>
+
+<h2>6. Mudou o código? Compile de novo</h2>
+<p>O programa é o bolo, não a receita. Mudar o arquivo <code>.c</code> <strong>não muda</strong> o programa que já existe. Veja a Ana trocando o horário da reunião de 10h para 14h:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra recado.c -o recado
+$ ./recado
+Reunião às 10h.
+$ cat recado.c             « a Ana editou o arquivo e trocou 10h por 14h
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Reunião às 14h.\n");
+    return 0;
+}
+$ ./recado
+Reunião às 10h.            « o programa ainda é o antigo!
+$ gcc -std=c23 -Wall -Wextra recado.c -o recado &amp;&amp; ./recado
+Reunião às 14h.            « agora sim</pre>
+
+<p>E tem mais: quando a compilação <strong>falha</strong>, o <code>gcc</code> não cria um programa novo, mas também <strong>não apaga</strong> o antigo. Depois do erro da seção 5 (o <code>;</code> que faltou no "16h"), o programa velho continua lá:</p>
+
+<pre class="term" data-cwd="~/c">$ ./recado
+Reunião às 14h.            « a versão de antes do erro</pre>
+
+<p>Quem compila num comando e roda em outro pode não ver o erro, rodar o programa velho e achar que a mudança "não funcionou". Com o <code>&amp;&amp;</code>, isso não acontece. Regra de ouro: <strong>mudou, salvou, compilou, rodou</strong>. O editor do guia faz isso sozinho: cada clique em Rodar compila de novo.</p>
+
+<hr>
+
+<h2>7. Duas opções para depois: <code>-g</code> e <code>-O2</code></h2>
+<p>Você ainda não vai precisar delas no começo, mas vai vê-las em todo lugar.</p>
+
+<h3><code>-g</code>: informações para depurar</h3>
+<p><code>-g</code> guarda dentro do programa um "mapa" que liga cada pedaço do programa à linha do código-fonte de onde ele veio. Quem usa esse mapa são as ferramentas que procuram erros, como o <strong>gdb</strong> (o depurador, aula <a href="depuracao-gdb.html">Depurar com gdb</a>) e o <strong>valgrind</strong> (aula <a href="valgrind.html">Valgrind</a>): com ele, elas dizem "o problema está em <code>ola.c</code>, linha 4" em vez de mostrar só endereços de memória. O mapa ocupa espaço:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ola.c -o ola
+$ gcc -std=c23 -Wall -Wextra -g ola.c -o ola-g
+$ gcc -std=c23 -Wall -Wextra -O2 ola.c -o ola-o2
+$ ls -l
+total 56
+-rwxrwxr-x 1 ana ana 15952 out 17 10:31 ola
+-rw-rw-r-- 1 ana ana    83 out 17 10:31 ola.c
+-rwxrwxr-x 1 ana ana 17040 out 17 10:31 ola-g      « com -g: cerca de 1 KB a mais
+-rwxrwxr-x 1 ana ana 15960 out 17 10:31 ola-o2
+$ ./ola-g
+Olá, mundo!                « roda igualzinho</pre>
+
+<h3><code>-O2</code>: otimizar</h3>
+<p><code>-O2</code> (letra O maiúscula, de <em>optimize</em>, e o número 2) pede ao compilador para caprichar: ele reorganiza o programa para rodar mais rápido, sem mudar o resultado. Sem nenhum <code>-O</code>, o <code>gcc</code> traduz o código do jeito mais direto, o que compila mais rápido e facilita a depuração. Num programa que faz muitas contas, a diferença aparece. Este faz um bilhão de contas (você vai entender o <code>for</code> na aula <a href="for.html">for</a>); o comando <code>time</code> do terminal mede quanto tempo um programa leva:</p>
+
+<pre class="file" data-file="conta.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    long long soma = 0;
+    for (long long i = 1; i &lt;= 1000000000; i++) {
+        soma = soma + i % 7;
+    }
+    printf("Soma: %lld\n", soma);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra conta.c -o conta
+$ gcc -std=c23 -Wall -Wextra -O2 conta.c -o conta-rapido
+$ time ./conta
+Soma: 3000000003
+
+real	0m4,219s           « cerca de 4 segundos
+user	0m4,218s
+sys	0m0,001s
+$ time ./conta-rapido
+Soma: 3000000003           « o mesmo resultado...
+
+real	0m2,076s           « ...na metade do tempo
+user	0m2,074s
+sys	0m0,001s</pre>
+
+<p>Os tempos mudam de um computador para outro, mas a proporção costuma ser parecida. Também existem <code>-O0</code> (sem otimização, o normal), <code>-O1</code>, <code>-O3</code> e <code>-Os</code> (programa menor). No dia a dia, use <code>-g</code> enquanto escreve e procura erros, e <code>-O2</code> na versão final.</p>
+
+<hr>
+
+<h2>8. <code>-c</code>: só compilar, sem montar o programa</h2>
+<p>Até aqui, o <code>gcc</code> fez tudo de uma vez. Na verdade, ele trabalha em etapas (veja <a href="como-funciona.html">Como o C Vira Programa</a>): primeiro <strong>compila</strong> o código, criando um <strong>arquivo objeto</strong> (<code>.o</code>), e depois o <strong>ligador</strong> junta esse objeto com a biblioteca padrão e monta o programa. A opção <code>-c</code> manda parar no meio do caminho:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -c ola.c
+$ ls ola*
+ola  ola.c  ola.o          « apareceu o ola.o
+$ gcc -std=c23 -Wall -Wextra ola.o -o ola     « segunda etapa: ligar
+$ ./ola
+Olá, mundo!</pre>
+
+<ul>
+  <li>Com <code>-c</code>, o nome do objeto é o do arquivo, trocando <code>.c</code> por <code>.o</code>.</li>
+  <li>O <code>ola.o</code> já tem o código traduzido para a linguagem do processador, mas ainda não é um programa: falta a parte que o ligador acrescenta, como o próprio <code>printf</code>.</li>
+</ul>
+
+<p>Se tentar rodar o objeto, o sistema recusa:</p>
+
+<pre class="term" data-cwd="~/c">$ ./ola.o
+bash: ./ola.o: Permissão negada</pre>
+
+<p>Para que serve isso? Em programas grandes, divididos em muitos arquivos <code>.c</code>, você compila cada um separadamente e só recompila o que mudou. Esse é o assunto das aulas <a href="multiplos-arquivos.html">Vários Arquivos</a> e <a href="make.html">Makefile</a>. Por enquanto, guarde só que <code>-c</code> cria um <code>.o</code>.</p>
+
+<hr>
+
+<h2>9. A alternativa: <code>clang</code></h2>
+<p>O <code>gcc</code> não é o único compilador de C. O <strong>Clang</strong> (do projeto LLVM) é o outro grande compilador gratuito, padrão no macOS e no Android, e é o que roda no editor do guia. Ele aceita as mesmas opções:</p>
+
+<pre class="term" data-cwd="~/c">$ clang --version
+Ubuntu clang version 21.1.8 (6ubuntu1)
+Target: x86_64-pc-linux-gnu
+Thread model: posix
+InstalledDir: /usr/lib/llvm-21/bin
+$ clang -std=c23 -Wall -Wextra ola.c -o ola-clang
+$ ./ola-clang
+Olá, mundo!</pre>
+
+<p>A diferença está no texto das mensagens. O mesmo aviso do <code>idade.c</code> nos dois:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra idade.c -o idade
+idade.c: In function ‘main’:
+idade.c:4:9: warning: unused variable ‘idade’ [-Wunused-variable]
+    4 |     int idade = 29;
+      |         ^~~~~
+$ clang -std=c23 -Wall -Wextra idade.c -o idade
+idade.c:4:9: warning: unused variable 'idade' [-Wunused-variable]
+    4 |     int idade = 29;
+      |         ^~~~~
+1 warning generated.</pre>
+
+<ul>
+  <li>O <code>gcc</code> começa dizendo em qual função está (<code>In function ‘main’</code>) e usa aspas tortas (<code>‘idade’</code>).</li>
+  <li>O Clang usa aspas retas (<code>'idade'</code>) e termina com um placar: <code>1 warning generated</code> ("1 aviso gerado").</li>
+</ul>
+
+<p>Neste aviso as palavras coincidiram; em muitos outros, não. A aula <a href="erros-compilacao.html">Lendo Erros do Compilador</a> mostra os dois lado a lado. Instalar o Clang no Ubuntu: <code>sudo apt install clang</code>.</p>
+
+<h3>Formas de compilar, e qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Quando usar</th></tr>
+<tr><td><code>gcc -std=c23 -Wall -Wextra ola.c -o ola</code></td><td><strong>Sempre</strong>, nas aulas do guia e nos seus programas</td></tr>
+<tr><td><code>gcc -std=c23 -Wall -Wextra ola.c -o ola &amp;&amp; ./ola</code></td><td>Para compilar e já testar, sem risco de rodar o programa velho</td></tr>
+<tr><td><code>gcc -std=c23 -Wall -Wextra -g ola.c -o ola</code></td><td>Quando for usar o gdb ou o valgrind</td></tr>
+<tr><td><code>gcc -std=c23 -Wall -Wextra -O2 ola.c -o ola</code></td><td>Na versão final de um programa que precisa ser rápido</td></tr>
+<tr><td><code>gcc -std=c17 …</code> ou <code>-std=c99 …</code></td><td>Quando o projeto (ou o professor) exigir uma versão mais antiga</td></tr>
+<tr><td><code>clang -std=c23 -Wall -Wextra ola.c -o ola</code></td><td>Para comparar mensagens, ou num computador que só tem o Clang (macOS)</td></tr>
+<tr><td><code>gcc ola.c -o ola</code></td><td>Só para um teste rápido: sem avisos, você perde ajuda</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>unrecognized command-line option ‘-wall’</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -wall ola.c -o ola
+gcc: error: unrecognized command-line option ‘-wall’; did you mean ‘-Wall’?</pre>
+<p><strong>O que significa:</strong> "opção de linha de comando não reconhecida". As opções diferenciam maiúsculas de minúsculas: o certo é <code>-Wall</code>, com <code>W</code> maiúsculo. O <code>gcc</code> até sugere: <em>did you mean</em>, "você quis dizer".</p>
+<p><strong>Como consertar:</strong> <code>-Wall</code> e <code>-Wextra</code>, com <code>W</code> maiúsculo. O mesmo vale para <code>-O2</code> (letra O maiúscula, não zero).</p>
+</div>
+
+<div class="cenario">
+<strong><code>unrecognized command-line option ‘-std=c24’</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c24 ola.c -o ola
+gcc: error: unrecognized command-line option ‘-std=c24’; did you mean ‘-std=c23’?</pre>
+<p><strong>O que significa:</strong> não existe C24. As versões são <code>c89</code>, <code>c99</code>, <code>c11</code>, <code>c17</code> e <code>c23</code> (e as variantes <code>gnu89</code>, <code>gnu99</code>… com extras do GNU).</p>
+<p><strong>Como consertar:</strong> <code>-std=c23</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Mudei o código, mas o programa continua igual</strong>
+<p><strong>O que significa:</strong> você rodou o programa sem compilar de novo, ou a compilação falhou e você não viu (o programa antigo continua na pasta, seção 6).</p>
+<p><strong>Como consertar:</strong> compile e rode juntos: <code>gcc -std=c23 -Wall -Wextra recado.c -o recado &amp;&amp; ./recado</code>. Se aparecer um <code>error:</code>, o programa não roda e você vê na hora o que corrigir.</p>
+</div>
+
+<div class="cenario">
+<strong><code>bash: ./ola.o: Permissão negada</code></strong>
+<p><strong>O que significa:</strong> você tentou rodar o arquivo objeto, que é criado pelo <code>-c</code> e não é um programa completo.</p>
+<p><strong>Como consertar:</strong> ligue o objeto (<code>gcc ola.o -o ola</code>) ou compile sem <code>-c</code>, e rode <code>./ola</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>missing filename after ‘-o’</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra recado.c -o
+gcc: error: missing filename after ‘-o’</pre>
+<p><strong>O que significa:</strong> o <code>-o</code> precisa do nome do programa logo depois dele.</p>
+<p><strong>Como consertar:</strong> <code>… recado.c -o recado</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>O que faz</th></tr>
+<tr><td><code>-o nome</code></td><td>Dá nome ao programa (sem ela: <code>a.out</code>)</td></tr>
+<tr><td><code>-std=c23</code></td><td>Segue o C23. Outras: <code>c17</code>, <code>c11</code>, <code>c99</code>, <code>c89</code> (sem <code>-std</code>, o gcc 15 usa <code>gnu23</code>)</td></tr>
+<tr><td><code>-Wall</code></td><td>Liga os principais avisos</td></tr>
+<tr><td><code>-Wextra</code></td><td>Liga mais avisos, além dos do <code>-Wall</code></td></tr>
+<tr><td><code>-Werror</code></td><td>Trata avisos como erros (aula <a href="avisos.html">Avisos</a>)</td></tr>
+<tr><td><code>-g</code></td><td>Guarda informações para o gdb e o valgrind</td></tr>
+<tr><td><code>-O2</code></td><td>Otimiza o programa (também <code>-O0</code>, <code>-O1</code>, <code>-O3</code>, <code>-Os</code>)</td></tr>
+<tr><td><code>-c</code></td><td>Só compila: cria <code>arquivo.o</code>, sem montar o programa</td></tr>
+<tr><td><code>cmd1 &amp;&amp; cmd2</code></td><td>(terminal) roda <code>cmd2</code> só se <code>cmd1</code> deu certo</td></tr>
+<tr><td><code>clang …</code></td><td>O outro compilador; aceita as mesmas opções</td></tr>
+</table>
+</div>
+
+<p><strong>O comando padrão do guia:</strong> <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A versão</h3>
+<p>Complete o comando para compilar seguindo o C23:</p>
+<div class="ex-code">gcc <input data-answer="-std=c23" aria-label="opção"> -Wall -Wextra jogo.c -o jogo</div>
+</div>
+
+<div class="exercise">
+<h3>2. Os avisos</h3>
+<p>Complete com as duas opções que ligam os avisos, na ordem do guia:</p>
+<div class="ex-code">gcc -std=c23 <input data-answer="-Wall -Wextra" aria-label="opções"> jogo.c -o jogo</div>
+</div>
+
+<div class="exercise">
+<h3>3. Compilar e rodar</h3>
+<p>Complete para rodar o <code>jogo</code> só se a compilação der certo:</p>
+<div class="ex-code">gcc -std=c23 -Wall -Wextra jogo.c -o jogo <input data-answer="&amp;&amp; ./jogo" aria-label="resto do comando"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que acontece quando o código tem um <strong>aviso</strong> (<code>warning:</code>), mas nenhum erro?</p>
+<label><input type="radio" name="q4"> O programa não é criado</label>
+<label><input type="radio" name="q4"> O programa é criado, mas não roda</label>
+<label><input type="radio" name="q4"> O programa é criado e roda, mas o compilador desconfia de algo e vale a pena olhar</label>
+<label><input type="radio" name="q4"> O <code>gcc</code> corrige o código sozinho</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Para que serve a opção <code>-g</code>?</p>
+<label><input type="radio" name="q5"> Deixa o programa mais rápido</label>
+<label><input type="radio" name="q5"> Guarda informações para ferramentas de depuração, como o gdb</label>
+<label><input type="radio" name="q5"> Liga os avisos</label>
+<label><input type="radio" name="q5"> Escolhe a versão do C</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Você rodou <code>gcc -std=c23 -Wall -Wextra -c conta.c</code>. O que aparece na pasta?</p>
+<label><input type="radio" name="q6"> O programa <code>conta</code></label>
+<label><input type="radio" name="q6"> O programa <code>a.out</code></label>
+<label><input type="radio" name="q6"> Nada: <code>-c</code> só confere o código</label>
+<label><input type="radio" name="q6"> O arquivo objeto <code>conta.o</code>, que ainda precisa ser ligado</label>
+</div>
+
+<h3>Missão final: o convite da festa</h3>
+
+<div class="tryc" data-goal="out:Festa da Ana,out:Sábado\, às 19h,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana escreveu o convite da festa, mas o programa tem um <strong>erro</strong> e, depois que você corrigir o erro, vai aparecer um <strong>aviso</strong>. Conserte os dois: o programa tem de mostrar as duas linhas do convite e compilar sem nenhum aviso.</p>
+<pre class="out">Festa da Ana
+Sábado, às 19h</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int convidados = 12;
+    printf("Festa da Ana\n")
+    printf("Sábado, às 19h\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Festa da Ana\n");
+    printf("Sábado, às 19h\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O comando padrão do guia é <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</li>
+  <li><code>-o</code> dá nome ao programa; sem ele, o nome é <code>a.out</code>.</li>
+  <li><code>-std=c23</code> escolhe a versão do C. O gcc 15 já usa o C23 (com extras do GNU) sem ela, mas escrever deixa o comando igual em qualquer computador. Com <code>-std=c17</code>, por exemplo, <code>bool</code> precisa do <code>stdbool.h</code>.</li>
+  <li><code>-Wall -Wextra</code> ligam os avisos: o programa é criado mesmo assim, mas o compilador aponta código suspeito. Use sempre.</li>
+  <li><code>&amp;&amp;</code> roda o programa só se compilou. Mudou o código? Compile de novo: o programa antigo não muda sozinho, e uma compilação que falha não o apaga.</li>
+  <li><code>-g</code> serve para depurar, <code>-O2</code> para otimizar e <code>-c</code> para criar só o arquivo objeto <code>.o</code>.</li>
+  <li>O <code>clang</code> aceita as mesmas opções e é o compilador do editor do guia; as mensagens dizem o mesmo com outras palavras.</li>
+  <li>Próximo passo: <a href="sintaxe.html">Sintaxe</a>, as regras de escrita do C.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
