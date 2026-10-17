@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C break e continue — sair do laço ou pular uma volta | Guia C</title>
+<meta name="description" content="break e continue em C para quem nunca programou: procurar e parar ao achar, while (1) com break, senha com 3 tentativas, pular números pares com continue, por que o break só sai de um laço, e os erros reais do gcc 15, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">break</span> e <span class="hl">continue</span></h1>
+
+<p class="intro">Até aqui, um laço só terminava quando a condição ficava falsa, e cada volta rodava o corpo inteiro, do começo ao fim. Às vezes você quer mais controle: <strong>parar no meio</strong>, porque já achou o que procurava, ou <strong>pular o resto de uma volta</strong>, porque aquele item não interessa. Para isso existem duas palavras: <code>break</code> ("quebrar", sair do laço) e <code>continue</code> ("continuar", ir direto para a próxima volta).</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como usar <code>break</code> para <strong>procurar e parar</strong> assim que achar.</li>
+  <li>O laço infinito de propósito, <code>while (1)</code>, com a saída no meio.</li>
+  <li>Como saber, depois do laço, <strong>por que</strong> ele parou (com uma variável "bandeira").</li>
+  <li>Como usar <code>continue</code> para <strong>pular</strong> uma volta (os números pares, um valor inválido).</li>
+  <li>Por que o <code>break</code> sai de <strong>um laço só</strong>, mesmo quando há um laço dentro de outro.</li>
+  <li>Os erros reais: <code>break</code> fora de laço e o <code>continue</code> que trava o <code>while</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15</strong> na máquina fictícia da Ana, na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: procurar as chaves e separar a roupa</h2>
+<p>Duas situações do dia a dia:</p>
+<ul>
+  <li><strong>Procurando as chaves</strong> nas gavetas, uma por uma. Achou na terceira? Você <strong>para</strong> de procurar: não abre a quarta, a quinta… Isso é o <code>break</code>: sai do laço na hora.</li>
+  <li><strong>Separando a roupa</strong> para lavar, peça por peça. Uma peça é de lã e não vai na máquina? Você a <strong>pula</strong> e passa para a próxima, mas continua separando as outras. Isso é o <code>continue</code>: abandona só a volta atual.</li>
+</ul>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Para onde o programa vai</th></tr>
+<tr><td><code>break</code></td><td>Termina o laço inteiro</td><td>Para a primeira linha <strong>depois</strong> da <code>}</code> do laço</td></tr>
+<tr><td><code>continue</code></td><td>Termina só a volta atual</td><td>Para o teste da condição (no <code>for</code>, primeiro roda o passo)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. <code>break</code>: procurar e parar</h2>
+<p>A Ana quer o primeiro número, a partir de 50, que seja divisível por 7. Ela não sabe qual é, mas sabe que, ao achar, não precisa testar mais nada:</p>
+
+<pre class="file" data-file="procurar.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int n = 50; n &lt;= 100; n++) {
+        printf("Testando %d\n", n);
+        if (n % 7 == 0) {
+            printf("Achei: %d\n", n);
+            break;
+        }
+    }
+    printf("Fim da busca.\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra procurar.c -o procurar
+$ ./procurar
+Testando 50
+Testando 51
+Testando 52
+Testando 53
+Testando 54
+Testando 55
+Testando 56
+Achei: 56
+Fim da busca.</pre>
+
+<dl class="anatomy">
+  <dt>for (int n = 50; n &lt;= 100; n++)</dt><dd>O laço poderia ir até 100 (51 voltas).</dd>
+  <dt>n % 7 == 0</dt><dd>"O resto da divisão por 7 é zero", ou seja, <code>n</code> é divisível por 7 (o <code>%</code> está em <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>).</dd>
+  <dt>break;</dt><dd>Sai do <code>for</code> <strong>na hora</strong>. O passo <code>n++</code> não roda, a condição não é testada de novo e o programa pula para <code>Fim da busca.</code>.</dd>
+</dl>
+
+<p>Foram só 7 voltas em vez de 51. Repare que o <code>break</code> está dentro de um <code>if</code>, mas sai do <strong>laço</strong>: o <code>break</code> não liga para o <code>if</code>, ele procura o laço (ou <code>switch</code>) mais próximo em volta dele.</p>
+
+<div class="tryc" data-goal="out:Achei: 104,src:break">
+<p class="try-task"><strong>Missão:</strong> mude a busca para achar o primeiro número <strong>a partir de 100</strong> que seja divisível por <strong>13</strong> (e aumente o fim do laço para 200). A saída deve terminar com <code>Achei: 104</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int n = 50; n &lt;= 100; n++) {
+        printf("Testando %d\n", n);
+        if (n % 7 == 0) {
+            printf("Achei: %d\n", n);
+            break;
+        }
+    }
+    printf("Fim da busca.\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int n = 100; n &lt;= 200; n++) {
+        printf("Testando %d\n", n);
+        if (n % 13 == 0) {
+            printf("Achei: %d\n", n);
+            break;
+        }
+    }
+    printf("Fim da busca.\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. <code>while (1)</code> com <code>break</code>: a saída no meio</h2>
+<p>Na aula do <a href="while.html">while</a>, o programa que soma até o 0 precisava ler o número antes do laço e de novo no fim do corpo. Com um laço <strong>infinito de propósito</strong> e um <code>break</code>, a leitura aparece uma vez só, no lugar natural: no começo de cada volta.</p>
+
+<pre class="file" data-file="soma_break.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int numero = 0;
+    int soma = 0;
+    while (1) {
+        printf("Digite um número (0 para parar): ");
+        if (scanf("%d", &amp;numero) != 1 || numero == 0) {
+            break;
+        }
+        soma += numero;
+    }
+    printf("Soma: %d\n", soma);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra soma_break.c -o soma_break
+$ ./soma_break
+Digite um número (0 para parar): 10
+Digite um número (0 para parar): 25
+Digite um número (0 para parar): 7
+Digite um número (0 para parar): 0
+Soma: 42</pre>
+
+<dl class="anatomy">
+  <dt>while (1)</dt><dd>Em C, qualquer número diferente de 0 é verdadeiro: a condição nunca fica falsa. No C23 também dá para escrever <code>while (true)</code> <span class="versao">C23</span>, e outra forma clássica é <code>for (;;)</code>.</dd>
+  <dt>scanf(…) != 1 || numero == 0</dt><dd>"A leitura falhou <strong>ou</strong> o número é 0". Qualquer um dos dois encerra a soma.</dd>
+  <dt>break;</dt><dd>A <strong>única saída</strong> do laço. Todo <code>while (1)</code> precisa de pelo menos um <code>break</code> alcançável, senão é um laço infinito de verdade.</dd>
+</dl>
+
+<div class="tip">
+<strong>Quando vale a pena</strong>
+<p><code>while (1)</code> com <code>break</code> é ótimo quando a decisão de parar fica <strong>no meio</strong> da volta (depois de ler, antes de processar). Quando dá para escrever a condição no topo de forma clara, prefira o <code>while (condição)</code> comum: quem lê entende o laço sem procurar o <code>break</code>.</p>
+</div>
+
+<hr>
+
+<h2>3. Por que o laço parou? A variável bandeira</h2>
+<p>Um laço com <code>break</code> pode terminar de <strong>dois jeitos</strong>: pelo <code>break</code> ou porque a condição ficou falsa. Muitas vezes você precisa saber qual foi. No caixa eletrônico, a Ana tem 3 tentativas para acertar a senha:</p>
+
+<pre class="file" data-file="senha.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int senha = 0;
+    int acertou = 0;
+    for (int tentativa = 1; tentativa &lt;= 3; tentativa++) {
+        printf("Senha (tentativa %d de 3): ", tentativa);
+        if (scanf("%d", &amp;senha) != 1) {
+            break;
+        }
+        if (senha == 1234) {
+            acertou = 1;
+            break;
+        }
+        printf("Senha errada.\n");
+    }
+    if (acertou) {
+        printf("Acesso liberado!\n");
+    } else {
+        printf("Cartão bloqueado.\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra senha.c -o senha
+$ ./senha
+Senha (tentativa 1 de 3): 1111
+Senha errada.
+Senha (tentativa 2 de 3): 1234
+Acesso liberado!
+$ ./senha
+Senha (tentativa 1 de 3): 1
+Senha errada.
+Senha (tentativa 2 de 3): 2
+Senha errada.
+Senha (tentativa 3 de 3): 3
+Senha errada.
+Cartão bloqueado.</pre>
+
+<dl class="anatomy">
+  <dt>int acertou = 0;</dt><dd>Uma <strong>bandeira</strong> (em inglês, <em>flag</em>): uma variável que começa "abaixada" (0) e é "levantada" (1) quando algo acontece. Com C23 você pode usar <code>bool acertou = false;</code> (veja <a href="bool.html">Booleanos</a>).</dd>
+  <dt>acertou = 1; break;</dt><dd>Levanta a bandeira <strong>antes</strong> de sair. Depois do laço, ela conta a história.</dd>
+  <dt>printf("Senha errada.\n");</dt><dd>Só roda quando a senha não bateu: se bateu, o <code>break</code> saiu antes de chegar aqui.</dd>
+  <dt>if (acertou)</dt><dd>Depois do laço, a bandeira diz se saímos pelo <code>break</code> (acertou) ou porque as 3 tentativas acabaram.</dd>
+</dl>
+
+<hr>
+
+<h2>4. <code>continue</code>: pular uma volta</h2>
+<p>O <code>continue</code> abandona o resto do corpo <strong>só nesta volta</strong> e vai para a próxima. Para mostrar só os ímpares de 1 a 10, pule os pares:</p>
+
+<pre class="file" data-file="impares.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 1; i &lt;= 10; i++) {
+        if (i % 2 == 0) {
+            continue;
+        }
+        printf("%d ", i);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra impares.c -o impares
+$ ./impares
+1 3 5 7 9 </pre>
+
+<dl class="anatomy">
+  <dt>if (i % 2 == 0)</dt><dd>"<code>i</code> é par" (resto da divisão por 2 é zero).</dd>
+  <dt>continue;</dt><dd>Pula o <code>printf</code> desta volta. Num <code>for</code>, o programa vai para o <strong>passo</strong> (<code>i++</code>) e depois testa a condição, como numa volta normal.</dd>
+</dl>
+
+<p>Claro, aqui daria para usar <code>i += 2</code> começando do 1. O <code>continue</code> brilha quando o "pular" depende de algo que só se sabe <strong>durante</strong> a volta, como o valor que a pessoa digitou. A Ana lança as 5 vendas do dia; um valor negativo foi erro de digitação e deve ser ignorado:</p>
+
+<pre class="file" data-file="positivos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int valor = 0;
+    int soma = 0;
+    for (int i = 1; i &lt;= 5; i++) {
+        printf("Venda %d: ", i);
+        if (scanf("%d", &amp;valor) != 1) {
+            break;
+        }
+        if (valor &lt; 0) {
+            printf("  (valor negativo ignorado)\n");
+            continue;
+        }
+        soma += valor;
+    }
+    printf("Total das vendas: %d\n", soma);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra positivos.c -o positivos
+$ ./positivos
+Venda 1: 30
+Venda 2: -5
+  (valor negativo ignorado)
+Venda 3: 20
+Venda 4: 15
+Venda 5: -1
+  (valor negativo ignorado)
+Total das vendas: 65</pre>
+
+<p>Os dois negativos não entraram na soma (30 + 20 + 15 = 65), mas o laço continuou até a venda 5. O mesmo programa usa os dois: <code>break</code> quando a leitura falha (não adianta continuar) e <code>continue</code> quando só aquele valor é ruim.</p>
+
+<div class="tryc" data-goal="outre:^1 2 4 5 7 8 10 11 13 14 16 17 19 20 \n$,src:continue">
+<p class="try-task"><strong>Missão:</strong> mude o programa para mostrar os números de <strong>1 a 20</strong>, pulando os <strong>múltiplos de 3</strong> (3, 6, 9…) com <code>continue</code>. A saída deve ser <code>1 2 4 5 7 8 10 11 13 14 16 17 19 20</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 1; i &lt;= 10; i++) {
+        if (i % 2 == 0) {
+            continue;
+        }
+        printf("%d ", i);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int i = 1; i &lt;= 20; i++) {
+        if (i % 3 == 0) {
+            continue;
+        }
+        printf("%d ", i);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. O <code>break</code> só sai de um laço</h2>
+<p>Quando há um laço dentro de outro (assunto da próxima aula, <a href="lacos-aninhados.html">Laços Aninhados</a>), o <code>break</code> sai <strong>só do laço mais de dentro</strong>, aquele que o envolve diretamente. O de fora continua:</p>
+
+<pre class="file" data-file="umlaco.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (int linha = 1; linha &lt;= 3; linha++) {
+        for (int coluna = 1; coluna &lt;= 5; coluna++) {
+            if (coluna == 3) {
+                break;
+            }
+            printf("(%d,%d) ", linha, coluna);
+        }
+        printf("&lt;- fim da linha %d\n", linha);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra umlaco.c -o umlaco
+$ ./umlaco
+(1,1) (1,2) &lt;- fim da linha 1
+(2,1) (2,2) &lt;- fim da linha 2
+(3,1) (3,2) &lt;- fim da linha 3</pre>
+
+<p>Em cada linha, o <code>break</code> interrompeu as colunas na 3, mas o laço das linhas seguiu: as três linhas apareceram. Para sair dos <strong>dois</strong> laços de uma vez, use uma bandeira ou, em casos especiais, um <code>goto</code>; os dois jeitos estão em <a href="lacos-aninhados.html">Laços Aninhados</a>. O <code>continue</code> segue a mesma regra: ele pula a volta do laço mais de dentro.</p>
+
+<div class="note">
+<strong><code>break</code> dentro de <code>switch</code></strong>
+<p>O <code>break</code> também sai de um <a href="switch.html">switch</a>. Por isso, num menu com <code>switch</code> dentro de um laço (como o da aula <a href="do-while.html">do while</a>), o <code>break</code> de cada <code>case</code> sai <strong>só do switch</strong>: o laço continua e o menu aparece de novo. Já o <code>continue</code> não tem nada a ver com <code>switch</code>: dentro dele, vale para o laço em volta.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de escrever</h2>
+
+<h3>O mesmo laço com e sem <code>break</code></h3>
+<p>A busca do começo da aula poderia colocar o "achei" na própria condição, usando uma bandeira:</p>
+<pre class="file" data-file="trecho.c">int achou = 0;
+for (int n = 50; n &lt;= 100 &amp;&amp; !achou; n++) {
+    if (n % 7 == 0) {
+        printf("Achei: %d\n", n);
+        achou = 1;
+    }
+}
+</pre>
+<p>Funciona, mas a condição ficou mais difícil de ler. Com <code>break</code>, a regra de parada fica bem onde a coisa acontece. Os dois estilos são corretos; use o que deixar o código mais claro.</p>
+
+<h3><code>continue</code> ou <code>if</code> ao contrário?</h3>
+<p>Todo <code>continue</code> pode virar um <code>if</code> com a condição invertida:</p>
+<pre class="file" data-file="trecho2.c">for (int i = 1; i &lt;= 10; i++) {
+    if (i % 2 != 0) {
+        printf("%d ", i);
+    }
+}
+</pre>
+<p>Com um teste só, o <code>if</code> invertido é mais simples. O <code>continue</code> ganha quando há <strong>vários</strong> motivos para pular no começo da volta ("se for negativo, pula; se for maior que 1000, pula…"): cada um vira uma linha, e o código "bom" não fica enterrado dentro de vários <code>if</code>.</p>
+
+<hr>
+
+<h2 id="erros">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"break statement not within loop or switch"</strong>
+<pre class="file" data-file="foraloop.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 15;
+    if (idade &lt; 18) {
+        printf("Menor de idade.\n");
+        break;
+    }
+    printf("Fim\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra foraloop.c -o foraloop
+foraloop.c: In function ‘main’:
+foraloop.c:7:9: error: break statement not within loop or switch
+    7 |         break;
+      |         ^~~~~</pre>
+<p><strong>O que significa:</strong> "instrução break fora de um laço ou switch". O <code>break</code> não serve para sair de um <code>if</code>. O Clang do editor diz <code>error: 'break' statement not in loop or switch statement</code>.</p>
+<p><strong>Como consertar:</strong> se a ideia era parar o resto do <code>if</code>, use <code>else</code> (veja <a href="if-else.html">if e else</a>). Se era encerrar o programa, use <code>return 0;</code> (dentro do <code>main</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"continue statement not within a loop"</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra foraloop2.c -o foraloop2
+foraloop2.c: In function ‘main’:
+foraloop2.c:6:9: error: continue statement not within a loop
+    6 |         continue;
+      |         ^~~~~~~~</pre>
+<p><strong>O que significa:</strong> "instrução continue fora de um laço". Mesmo caso: o <code>continue</code> estava num <code>if</code> sem laço em volta. Repare que a mensagem não cita o <code>switch</code>: o <code>continue</code> só existe para laços. No Clang: <code>error: 'continue' statement not in loop statement</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>continue</code> trava o <code>while</code></strong>
+<pre class="file" data-file="continue_while.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i = 1;
+    while (i &lt;= 10) {
+        if (i % 2 == 0) {
+            continue;
+        }
+        printf("%d\n", i);
+        i++;
+    }
+    printf("Fim\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra continue_while.c -o continue_while
+$ timeout 3 ./continue_while
+1
+$ echo $?
+124</pre>
+<p><strong>O que aconteceu:</strong> mostrou <code>1</code>, somou 1 (<code>i</code> vira 2) e travou. Com <code>i</code> valendo 2, o <code>continue</code> pula o resto do corpo, <strong>inclusive o <code>i++</code></strong>. No <code>while</code> não existe "passo" separado: o <code>i</code> fica em 2 para sempre. Num <code>for</code> isso não acontece, porque o <code>continue</code> do <code>for</code> sempre roda o passo.</p>
+<p><strong>Como consertar:</strong> troque por um <code>for (int i = 1; i &lt;= 10; i++)</code>, ou faça o <code>i++</code> antes do <code>continue</code> (por exemplo, logo no começo do corpo, ajustando o resto).</p>
+</div>
+
+<div class="cenario">
+<strong>Esperava sair dos dois laços, mas só saiu de um</strong>
+<p><strong>O que aconteceu:</strong> o <code>break</code> estava no laço de dentro e o de fora continuou rodando, como no exemplo <code>umlaco.c</code>. O compilador não avisa: é o comportamento normal do C.</p>
+<p><strong>Como consertar:</strong> use uma bandeira testada no laço de fora (ou um <code>goto</code>), como em <a href="lacos-aninhados.html">Laços Aninhados</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>O que faz</th></tr>
+<tr><td><code>break;</code></td><td>Sai do laço (<code>for</code>, <code>while</code>, <code>do while</code>) ou <code>switch</code> mais próximo. Vai para a linha depois da <code>}</code>.</td></tr>
+<tr><td><code>continue;</code></td><td>Pula o resto da volta. No <code>for</code>, roda o passo e testa; no <code>while</code>/<code>do while</code>, vai direto ao teste.</td></tr>
+<tr><td><code>while (1) { … if (…) break; … }</code></td><td>Laço com a saída no meio. Também: <code>for (;;)</code> e, no C23, <code>while (true)</code>.</td></tr>
+<tr><td><code>int achou = 0; … achou = 1; break;</code></td><td>Bandeira: diz depois do laço se ele parou pelo <code>break</code>.</td></tr>
+<tr><td><code>if (ruim) continue;</code></td><td>Ignorar um item e seguir com os outros.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Sair do laço</h3>
+<p>Complete para o laço parar quando <code>i</code> chegar a 5:</p>
+<div class="ex-code">for (int i = 1; i &lt;= 10; i++) { if (i == 5) { <input data-answer="break;|break" aria-label="palavra"> } printf("%d\n", i); }</div>
+</div>
+
+<div class="exercise">
+<h3>2. Quantos números aparecem?</h3>
+<p>No laço do exercício 1, quantos números são mostrados?</p>
+<div class="ex-code"><input data-answer="4|quatro" aria-label="quantos números"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Pular uma volta</h3>
+<p>Complete para não mostrar o número 3:</p>
+<div class="ex-code">for (int i = 1; i &lt;= 5; i++) { if (i == 3) { <input data-answer="continue;|continue" aria-label="palavra"> } printf("%d\n", i); }</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Há um <code>for</code> dentro de outro <code>for</code>, e um <code>break</code> no de dentro. O que acontece quando ele roda?</p>
+<label><input type="radio" name="q4"> Os dois laços terminam</label>
+<label><input type="radio" name="q4"> Só o laço de dentro termina; o de fora continua</label>
+<label><input type="radio" name="q4"> O programa inteiro termina</label>
+<label><input type="radio" name="q4"> Erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que <code>while (i &lt;= 10) { if (i % 2 == 0) continue; printf(…); i++; }</code> trava?</p>
+<label><input type="radio" name="q5"> Porque <code>continue</code> não pode ser usado em <code>while</code></label>
+<label><input type="radio" name="q5"> Porque falta um <code>break</code></label>
+<label><input type="radio" name="q5"> Porque o <code>continue</code> pula o <code>i++</code>, e <code>i</code> fica parado num número par</label>
+<label><input type="radio" name="q5"> Porque a condição deveria usar <code>&lt;</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O gcc deu <code>error: break statement not within loop or switch</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q6"> Há um <code>break</code> que não está dentro de nenhum laço nem <code>switch</code> (por exemplo, só dentro de um <code>if</code>)</label>
+<label><input type="radio" name="q6"> Faltou o <code>;</code> depois do <code>break</code></label>
+<label><input type="radio" name="q6"> O <code>break</code> só funciona em <code>while</code></label>
+<label><input type="radio" name="q6"> O laço não tem condição</label>
+</div>
+
+<h3>Missão final: a senha com 3 tentativas</h3>
+<div class="tryc" data-stdin="1111&#10;4321&#10;1234" data-goal="out:Acesso liberado na tentativa 3!,src:break">
+<p class="try-task"><strong>Missão:</strong> este programa lê as 3 tentativas, mas nunca libera o acesso. Quando a senha for <code>1234</code>, mostre <code>Acesso liberado na tentativa N!</code> (com o número da tentativa) e saia do laço com <code>break</code>. A entrada já traz <code>1111</code>, <code>4321</code> e <code>1234</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int senha = 0;
+    for (int tentativa = 1; tentativa &lt;= 3; tentativa++) {
+        printf("Senha (tentativa %d de 3): ", tentativa);
+        if (scanf("%d", &amp;senha) != 1) {
+            break;
+        }
+        printf("Senha errada.\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int senha = 0;
+    for (int tentativa = 1; tentativa &lt;= 3; tentativa++) {
+        printf("Senha (tentativa %d de 3): ", tentativa);
+        if (scanf("%d", &amp;senha) != 1) {
+            break;
+        }
+        if (senha == 1234) {
+            printf("Acesso liberado na tentativa %d!\n", tentativa);
+            break;
+        }
+        printf("Senha errada.\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>break</code> sai do laço (ou <code>switch</code>) na hora; o programa segue depois da <code>}</code>.</li>
+  <li><code>continue</code> pula o resto da volta atual; no <code>for</code>, o passo ainda roda.</li>
+  <li><code>while (1)</code> (ou <code>for (;;)</code>, ou <code>while (true)</code> no C23) com <code>break</code> serve quando a decisão de parar fica no meio da volta.</li>
+  <li>Uma <strong>bandeira</strong> (<code>int achou = 0;</code>) conta, depois do laço, se ele parou pelo <code>break</code>.</li>
+  <li>Os dois agem só sobre o laço <strong>mais de dentro</strong>.</li>
+  <li><code>continue</code> num <code>while</code> pode pular o passo e travar o laço; <code>break</code>/<code>continue</code> fora de laço é erro de compilação.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
