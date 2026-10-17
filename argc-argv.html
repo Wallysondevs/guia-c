@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C argc e argv — argumentos da linha de comando | Guia C</title>
+<meta name="description" content="Argumentos da linha de comando em C para iniciantes: int main(int argc, char *argv[]), argv[0], converter um argumento em número com strtol, mensagem de uso, aspas e asterisco no shell, e data-args no editor do guia, com saídas reais do gcc 15 e missões.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Argumentos da Linha de Comando</span></h1>
+
+<p class="intro">Quando você digita <code>gcc ola.c -o ola</code>, o <code>gcc</code> fica sabendo, sem perguntar nada, qual arquivo compilar e qual nome dar ao programa. Essas palavras depois do nome do programa são os <strong>argumentos da linha de comando</strong>. Seus programas também podem recebê-los: em vez de pedir "Digite um número:" com <code>scanf</code>, a Ana vai poder escrever <code>./tabuada 7</code> e pronto. Nesta aula você vai conhecer a outra forma do <code>main</code>, <code>int main(int argc, char *argv[])</code>, transformar argumentos em números, escrever a mensagem de uso que todo programa de terminal tem e entender o que o shell faz com aspas e asteriscos antes de o seu programa ver qualquer coisa.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são <code>argc</code> e <code>argv</code> e o que há em cada posição de <code>argv</code>.</li>
+  <li>Por que <code>argv[0]</code> é o nome do próprio programa.</li>
+  <li>Como converter um argumento em número com <code>strtol</code> (e por que o <code>atoi</code> engana).</li>
+  <li>Como escrever uma <strong>mensagem de uso</strong> quando faltam argumentos.</li>
+  <li>O que o shell faz com espaços, aspas, <code>$</code> e <code>*</code> antes de chamar o programa.</li>
+  <li>Como passar argumentos no editor do guia (o campo <strong>Argumentos</strong> e o <code>data-args</code>).</li>
+</ul>
+</div>
+
+<p>Você vai precisar de <a href="arrays.html">Arrays</a>, <a href="strings.html">Strings</a> e, para a parte de números, <a href="string-numero.html">Texto ↔ Número</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o pedido escrito no balcão</h2>
+<p>Numa padaria, a atendente pode <strong>perguntar</strong> "O que vai ser?" e esperar você responder (isso é o <code>scanf</code>: o programa pergunta depois de começar). Ou você pode chegar com um <strong>papel escrito</strong>: "6 pães, 1 leite". A atendente lê o papel e já começa a trabalhar. Os argumentos da linha de comando são o papel: vão junto com o pedido para o programa rodar.</p>
+<p>Vantagens do papel: dá para repetir o mesmo pedido sem digitar de novo (a seta para cima do terminal), dá para colocar o comando num script e dá para o programa rodar sem ninguém olhando. É assim que quase todo comando do Linux funciona: <code>ls -l</code>, <code>cp a.txt b.txt</code>, <code>gcc ola.c</code>.</p>
+
+<hr>
+
+<h2>1. A outra forma do main</h2>
+<p>Até aqui o guia usou <code>int main(void)</code>: "o <code>main</code> não recebe nada". Para receber os argumentos, o <code>main</code> ganha dois parâmetros:</p>
+
+<pre class="file" data-file="args.c">#include &lt;stdio.h&gt;
+
+int main(int argc, char *argv[]) {
+    printf("argc = %d\n", argc);
+    for (int i = 0; i &lt; argc; i++) {
+        printf("argv[%d] = \"%s\"\n", i, argv[i]);
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>int argc</dt><dd>"argument count", <strong>quantos</strong> argumentos chegaram, contando o nome do programa. Nunca é menor que 1 num sistema normal.</dd>
+  <dt>char *argv[]</dt><dd>"argument vector", a <strong>lista</strong> dos argumentos: um array de strings (cada <code>char *</code> aponta para um texto terminado em <code>'\0'</code>; veja <a href="ponteiros-strings.html">Ponteiros e Strings</a>).</dd>
+  <dt>argv[0]</dt><dd>O nome com que o programa foi chamado.</dd>
+  <dt>argv[1] … argv[argc - 1]</dt><dd>Os argumentos que vieram depois, na ordem em que foram digitados.</dd>
+  <dt>for (int i = 0; i &lt; argc; i++)</dt><dd>O laço de sempre para percorrer um array, com <code>argc</code> como tamanho.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra args.c -o args
+$ ./args
+argc = 1
+argv[0] = "./args"
+$ ./args Ana 29
+argc = 3
+argv[0] = "./args"
+argv[1] = "Ana"
+argv[2] = "29"</pre>
+
+<p>Sem argumentos, <code>argc</code> vale 1: só o nome do programa. Com <code>Ana 29</code>, vale 3. E repare: o <code>29</code> chegou como o <strong>texto</strong> <code>"29"</code>, e não como número. Todo argumento é uma string; a seção 3 mostra como converter.</p>
+
+<figure>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Posição</th><th><code>argv[0]</code></th><th><code>argv[1]</code></th><th><code>argv[2]</code></th><th><code>argv[3]</code></th></tr>
+<tr><td>Conteúdo para <code>./args Ana 29</code></td><td><code>"./args"</code></td><td><code>"Ana"</code></td><td><code>"29"</code></td><td><code>NULL</code></td></tr>
+</table>
+</div>
+<figcaption>Depois do último argumento, <code>argv[argc]</code> é sempre <code>NULL</code> (o padrão C garante).</figcaption>
+</figure>
+
+<div class="note">
+<strong>Nomes e formas.</strong> <code>argc</code> e <code>argv</code> são só costume: o C aceitaria <code>int main(int n, char *lista[])</code>, mas todo programador reconhece os nomes clássicos, então use-os. <code>char *argv[]</code> e <code>char **argv</code> são a mesma coisa num parâmetro (aula <a href="ponteiro-ponteiro.html">Ponteiro para Ponteiro</a>). Só existem essas duas formas padrão do <code>main</code>: sem parâmetros (<code>void</code>) e com <code>argc</code> e <code>argv</code>.
+</div>
+
+<div class="tryc" data-args="Ana 29 &quot;São Paulo&quot;">
+<p class="try-task"><strong>Experimente:</strong> no editor, os argumentos vão no campo <strong>Argumentos</strong> da caixa. Esta caixa já começa com <code>Ana 29 "São Paulo"</code>. Rode e conte: quantos argumentos chegaram? Depois apague as aspas de <code>"São Paulo"</code> e rode de novo. Por fim, deixe o campo vazio.</p>
+<pre class="script" data-file="args.c">#include &lt;stdio.h&gt;
+
+int main(int argc, char *argv[]) {
+    printf("argc = %d\n", argc);
+    for (int i = 0; i &lt; argc; i++) {
+        printf("argv[%d] = \"%s\"\n", i, argv[i]);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Mensagem de uso e argv[0]</h2>
+<p>Um programa que precisa de argumentos deve conferir <code>argc</code> <strong>antes</strong> de tocar em <code>argv[1]</code>. Se faltar alguma coisa, o costume dos programas de terminal é mostrar uma <strong>mensagem de uso</strong> (em inglês, <em>usage</em>), que ensina como chamar o programa, e terminar com código de erro:</p>
+
+<pre class="file" data-file="saudar.c">#include &lt;stdio.h&gt;
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Uso: %s NOME\n", argv[0]);
+        return 1;
+    }
+    printf("Olá, %s!\n", argv[1]);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>if (argc != 2)</dt><dd>O programa quer exatamente um argumento: o nome do programa e mais um, total 2.</dd>
+  <dt>fprintf(stderr, …)</dt><dd>A mensagem de uso é um aviso de erro, então vai para a saída de erros (aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>).</dd>
+  <dt>"Uso: %s NOME\n", argv[0]</dt><dd>Mostra o nome <strong>como o usuário digitou</strong>. Se ele renomear o executável, a mensagem acompanha. <code>NOME</code> em maiúsculas é a convenção para "troque por um valor seu".</dd>
+  <dt>return 1;</dt><dd>Código de saída diferente de 0: falhou (aula <a href="exit.html">exit e atexit</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra saudar.c -o saudar
+$ ./saudar
+Uso: ./saudar NOME
+$ ./saudar Ana
+Olá, Ana!
+$ /home/ana/c/saudar
+Uso: /home/ana/c/saudar NOME             « argv[0] é o que foi digitado</pre>
+
+<p>Com o caminho completo, o <code>argv[0]</code> virou o caminho completo. Por isso ele serve para mensagens, mas não para descobrir onde o executável está: o padrão C nem garante o que vem nele (pode até ser uma string vazia). No Linux e no editor do guia, vem o que foi digitado.</p>
+
+<hr>
+
+<h2>3. Converter um argumento em número</h2>
+<p>Argumento é texto. Para fazer conta, converta com <code>strtol</code>, conferindo os três jeitos de dar errado (aulas <a href="string-numero.html">Texto ↔ Número</a> e <a href="errno.html">errno</a>):</p>
+
+<pre class="file" data-file="tabuada.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;errno.h&gt;
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Uso: %s NÚMERO\n", argv[0]);
+        return 1;
+    }
+
+    char *fim;
+    errno = 0;
+    long n = strtol(argv[1], &amp;fim, 10);
+    if (fim == argv[1] || *fim != '\0' || errno == ERANGE) {
+        fprintf(stderr, "%s: \"%s\" não é um número inteiro\n", argv[0], argv[1]);
+        return 1;
+    }
+
+    for (int i = 1; i &lt;= 10; i++) {
+        printf("%ld x %2d = %ld\n", n, i, n * i);
+    }
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Teste</th><th>Pega o caso</th></tr>
+<tr><td><code>fim == argv[1]</code></td><td>Nenhum algarismo: <code>sete</code>, ou uma string vazia</td></tr>
+<tr><td><code>*fim != '\0'</code></td><td>Sobrou texto depois do número: <code>7x</code>, <code>7.5</code></td></tr>
+<tr><td><code>errno == ERANGE</code></td><td>Número grande demais para um <code>long</code></td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tabuada.c -o tabuada
+$ ./tabuada 7
+7 x  1 = 7
+7 x  2 = 14
+7 x  3 = 21
+7 x  4 = 28
+7 x  5 = 35
+7 x  6 = 42
+7 x  7 = 49
+7 x  8 = 56
+7 x  9 = 63
+7 x 10 = 70
+$ ./tabuada sete
+./tabuada: "sete" não é um número inteiro
+$ ./tabuada 7x
+./tabuada: "7x" não é um número inteiro
+$ ./tabuada
+Uso: ./tabuada NÚMERO</pre>
+
+<h3>E o atoi?</h3>
+<p>Você vai ver muito código com <code>atoi(argv[1])</code> ("ASCII to integer"). Ele é mais curto, mas não tem como avisar que o texto não era número: devolve 0 e segue em frente.</p>
+
+<pre class="file" data-file="atoi.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Uso: %s NÚMERO\n", argv[0]);
+        return 1;
+    }
+    int n = atoi(argv[1]);
+    printf("O dobro de %d é %d\n", n, 2 * n);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra atoi.c -o atoi
+$ ./atoi 21
+O dobro de 21 é 42
+$ ./atoi sete
+O dobro de 0 é 0                « nenhum aviso: "sete" virou 0</pre>
+
+<p>Para o programa, "sete" e "0" são iguais. Em programas de verdade, prefira <code>strtol</code> (inteiros) e <code>strtod</code> (números com vírgula).</p>
+
+<hr>
+
+<h2>4. O shell mexe nos argumentos antes do programa</h2>
+<p>Quem separa a linha digitada em argumentos não é o seu programa: é o <strong>shell</strong> (o Bash, no terminal da Ana). Quando o <code>main</code> começa, o trabalho já foi feito. Por isso, o mesmo programa <code>args</code> recebe coisas bem diferentes conforme você escreve:</p>
+
+<pre class="term" data-cwd="~/c">$ ./args "Ana Maria" 29
+argc = 3
+argv[0] = "./args"
+argv[1] = "Ana Maria"
+argv[2] = "29"
+$ ./args a\ b
+argc = 2
+argv[0] = "./args"
+argv[1] = "a b"
+$ ./args 'preço: $5' "$HOME"
+argc = 3
+argv[0] = "./args"
+argv[1] = "preço: $5"
+argv[2] = "/home/ana"</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você digita</th><th>O programa recebe</th><th>Por quê</th></tr>
+<tr><td><code>Ana Maria</code></td><td>dois argumentos</td><td>O espaço separa argumentos</td></tr>
+<tr><td><code>"Ana Maria"</code> ou <code>a\ b</code></td><td>um argumento, com espaço</td><td>Aspas (ou a barra invertida) juntam</td></tr>
+<tr><td><code>'preço: $5'</code></td><td><code>preço: $5</code></td><td>Aspas simples: nada dentro é interpretado</td></tr>
+<tr><td><code>"$HOME"</code></td><td><code>/home/ana</code></td><td>Aspas duplas deixam o shell trocar variáveis (aula <a href="getenv.html">Variáveis de Ambiente</a>)</td></tr>
+<tr><td><code>*.jpg</code></td><td>a lista de arquivos <code>.jpg</code></td><td>O shell expande o <code>*</code> antes (veja abaixo)</td></tr>
+</table>
+</div>
+
+<p>As aspas <strong>não chegam</strong> ao programa: elas são instruções para o shell. E o asterisco é o caso mais surpreendente. Na pasta <code>fotos</code> da Ana há três imagens:</p>
+
+<pre class="term" data-cwd="~/c/fotos">$ ../args *.jpg
+argc = 4
+argv[0] = "../args"
+argv[1] = "bolo.jpg"
+argv[2] = "gato.jpg"
+argv[3] = "praia.jpg"
+$ ../args "*.jpg"
+argc = 2
+argv[0] = "../args"
+argv[1] = "*.jpg"
+$ ../args *.png
+argc = 2
+argv[0] = "../args"
+argv[1] = "*.png"                « nenhum .png: o Bash passa o texto como está</pre>
+
+<p>O programa nunca viu o <code>*</code> na primeira chamada: o Bash trocou <code>*.jpg</code> pelos nomes dos arquivos, em ordem alfabética. É por isso que <code>rm *.txt</code> funciona sem que o <code>rm</code> saiba o que é asterisco. (O Guia Bash explica isso em detalhes; aqui basta saber que o seu programa recebe a lista pronta.)</p>
+
+<div class="note">
+<strong>No editor do guia,</strong> o campo <strong>Argumentos</strong> entende espaços, aspas simples, aspas duplas e a barra invertida como o Bash, mas não troca <code>$HOME</code> nem expande <code>*</code>: não há um shell de verdade por trás. Nas páginas do guia, o valor inicial do campo vem do atributo <code>data-args</code> da caixa.
+</div>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> esta caixa começa com o campo <strong>Argumentos</strong> vazio. Rode e veja a mensagem de uso e o código de saída 1. Depois escreva <code>Ana</code> no campo e rode; em seguida <code>Ana Maria</code> (sem aspas) e <code>"Ana Maria"</code> (com aspas). Qual delas recebe a saudação?</p>
+<pre class="script" data-file="saudar.c">#include &lt;stdio.h&gt;
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Uso: %s NOME\n", argv[0]);
+        return 1;
+    }
+    printf("Olá, %s!\n", argv[1]);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes, e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>int main(void)</code></td><td>O programa não usa argumentos</td></tr>
+<tr><td><code>int main(int argc, char *argv[])</code></td><td>A forma mais comum quando usa (a deste guia)</td></tr>
+<tr><td><code>int main(int argc, char **argv)</code></td><td>Exatamente igual; aparece muito em código antigo e em projetos grandes</td></tr>
+<tr><td><code>int main([[maybe_unused]] int argc, char **argv)</code> <span class="versao">C23</span></td><td>Usa só o <code>argv</code> e quer calar o aviso <code>unused parameter</code></td></tr>
+<tr><td><code>for (char **p = argv; *p != NULL; p++)</code></td><td>Percorrer sem <code>argc</code>, aproveitando o <code>NULL</code> do fim</td></tr>
+</table>
+</div>
+
+<p>E, entre perguntar com <code>scanf</code>/<code>fgets</code> e receber por argumento: argumentos são melhores para o que o usuário <strong>já sabe</strong> ao chamar o programa (um nome de arquivo, uma opção, um número) e para o que vai rodar em scripts; perguntar é melhor para conversas (um jogo, um menu). Muitos programas fazem os dois: usam o argumento se ele veio e perguntam se não veio.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>Falha de segmentação (imagem do núcleo gravada)</code> quando roda sem argumentos</strong>
+<pre class="file" data-file="semteste.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(int argc, char *argv[]) {
+    int n = atoi(argv[1]);
+    printf("Você digitou %d\n", n);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semteste.c -o semteste
+semteste.c: In function ‘main’:
+semteste.c:4:14: warning: unused parameter ‘argc’ [-Wunused-parameter]
+    4 | int main(int argc, char *argv[]) {
+      |          ~~~~^~~~
+$ ./semteste 5
+Você digitou 5
+$ ./semteste
+Falha de segmentação     (imagem do núcleo gravada) ./semteste</pre>
+<p><strong>O que significa:</strong> sem argumentos, <code>argc</code> é 1 e <code>argv[1]</code> é o <code>NULL</code> do fim da lista. O <code>atoi</code> tentou ler um texto no endereço nulo. O próprio aviso deu a pista: "o parâmetro <code>argc</code> não foi usado", ou seja, ninguém conferiu quantos argumentos chegaram. No editor do guia, ler o endereço nulo nem sempre derruba o programa: este aqui mostra <code>Você digitou 0</code>, o que esconde o erro ainda mais.</p>
+<p><strong>Como consertar:</strong> confira <code>argc</code> antes de usar qualquer <code>argv[i]</code>, com uma mensagem de uso.</p>
+</div>
+
+<div class="cenario">
+<strong>"Uso: ./saudar NOME" mesmo passando o nome</strong>
+<pre class="term" data-cwd="~/c">$ ./saudar Ana Maria
+Uso: ./saudar NOME
+$ ./saudar "Ana Maria"
+Olá, Ana Maria!</pre>
+<p><strong>O que significa:</strong> sem aspas, o shell separou em dois argumentos e <code>argc</code> virou 3.</p>
+<p><strong>Como consertar:</strong> para o usuário, use aspas em valores com espaço. Para o programador, decida se faz sentido aceitar vários argumentos (e juntá-los) ou exigir as aspas.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: second argument of ‘main’ should be ‘char **’ [-Wmain]</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipo.c -o tipo
+tipo.c:3:5: warning: second argument of ‘main’ should be ‘char **’ [-Wmain]
+    3 | int main(int argc, char argv[]) {
+      |     ^~~~
+tipo.c: In function ‘main’:
+tipo.c:3:25: warning: unused parameter ‘argv’ [-Wunused-parameter]
+    3 | int main(int argc, char argv[]) {
+      |                    ~~~~~^~~~~~</pre>
+<p><strong>O que significa:</strong> faltou o <code>*</code>: <code>char argv[]</code> seria <strong>um</strong> texto, e não uma lista de textos.</p>
+<p><strong>Como consertar:</strong> <code>char *argv[]</code> (ou <code>char **argv</code>). Os tipos dos dois parâmetros do <code>main</code> são fixos.</p>
+</div>
+
+<div class="cenario">
+<strong>O número veio 0 (ou errado) sem nenhum aviso</strong>
+<p><strong>O que significa:</strong> o programa usou <code>atoi</code>, que transforma qualquer coisa que não começa com algarismo em 0 (<code>./atoi sete</code> deu "O dobro de 0 é 0"), e <code>"12abc"</code> em 12.</p>
+<p><strong>Como consertar:</strong> use <code>strtol</code> com as três conferências da seção 3.</p>
+</div>
+
+<div class="cenario">
+<strong>Comparei o argumento com <code>==</code> e nunca dá igual</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra opcao.c -o opcao
+opcao.c: In function ‘main’:
+opcao.c:4:29: warning: comparison with string literal results in unspecified behavior [-Waddress]
+    4 |     if (argc &gt; 1 &amp;&amp; argv[1] == "-v") {
+      |                             ^~
+$ ./opcao -v                               « não mostrou a versão</pre>
+<p><strong>O que significa:</strong> <code>argv[1] == "-v"</code> compara <strong>endereços</strong> (onde cada texto está na memória), e não as letras (aula <a href="funcoes-string.html">Funções de String</a>). Os dois textos estão em lugares diferentes, então nunca são "iguais".</p>
+<p><strong>Como consertar:</strong> <code>if (strcmp(argv[1], "-v") == 0)</code>, com <code>#include &lt;string.h&gt;</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>int main(int argc, char *argv[])</code></td><td>Recebe os argumentos da linha de comando</td></tr>
+<tr><td><code>argc</code></td><td>Quantos argumentos, contando o nome do programa (mínimo 1)</td></tr>
+<tr><td><code>argv[0]</code></td><td>O nome com que o programa foi chamado</td></tr>
+<tr><td><code>argv[1]</code> … <code>argv[argc - 1]</code></td><td>Os argumentos, sempre como strings</td></tr>
+<tr><td><code>argv[argc]</code></td><td><code>NULL</code></td></tr>
+<tr><td><code>if (argc != 2) { fprintf(stderr, "Uso: %s X\n", argv[0]); return 1; }</code></td><td>Mensagem de uso</td></tr>
+<tr><td><code>strtol(argv[i], &amp;fim, 10)</code></td><td>Converte para inteiro (conferindo <code>fim</code> e <code>errno</code>)</td></tr>
+<tr><td><code>strcmp(argv[i], "-v") == 0</code></td><td>Compara um argumento com um texto</td></tr>
+<tr><td><code>./prog "dois termos"</code></td><td>No shell: um argumento com espaço</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Quantos?</h3>
+<p>Quanto vale <code>argc</code> em <code>./copiar foto.jpg backup/foto.jpg</code>?</p>
+<div class="ex-code">argc = <input data-answer="3" aria-label="argc"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O primeiro argumento de verdade</h3>
+<p>Complete para mostrar o primeiro argumento depois do nome do programa:</p>
+<div class="ex-code">printf("%s\n", argv[<input data-answer="1" aria-label="índice">]);</div>
+</div>
+
+<div class="exercise">
+<h3>3. Com espaço</h3>
+<p>Em <code>./saudar "Ana Maria" Souza</code>, qual é o texto de <code>argv[1]</code>?</p>
+<div class="ex-code"><input data-answer="Ana Maria" aria-label="texto"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A pasta tem <code>a.txt</code> e <code>b.txt</code>. Em <code>./args *.txt</code>, o que o programa recebe?</p>
+<label><input type="radio" name="q4"> Um argumento: <code>*.txt</code></label>
+<label><input type="radio" name="q4"> Dois argumentos: <code>a.txt</code> e <code>b.txt</code></label>
+<label><input type="radio" name="q4"> Nada: o <code>*</code> é proibido</label>
+<label><input type="radio" name="q4"> O conteúdo dos dois arquivos</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. O que <code>atoi("doze")</code> devolve?</p>
+<label><input type="radio" name="q5"> 12</label>
+<label><input type="radio" name="q5"> -1</label>
+<label><input type="radio" name="q5"> Um erro de compilação</label>
+<label><input type="radio" name="q5"> 0, sem avisar nada</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que conferir <code>argc</code> antes de usar <code>argv[1]</code>?</p>
+<label><input type="radio" name="q6"> Porque, sem argumentos, <code>argv[1]</code> é <code>NULL</code>, e usá-lo derruba o programa</label>
+<label><input type="radio" name="q6"> Porque <code>argv[1]</code> é sempre o nome do programa</label>
+<label><input type="radio" name="q6"> Porque o compilador exige</label>
+<label><input type="radio" name="q6"> Não precisa: <code>argv[1]</code> vale <code>""</code> quando falta</label>
+</div>
+
+<h3>Missão final: somar os argumentos</h3>
+
+<div class="tryc" data-args="10 20 30 5" data-goal="out:Soma: 65,src:strtol\s*\(,src:argc">
+<p class="try-task"><strong>Missão:</strong> o programa deve somar <strong>todos</strong> os números passados como argumentos. A mensagem de uso já está pronta. Complete o laço: percorra de <code>argv[1]</code> até <code>argv[argc - 1]</code>, converta cada um com <code>strtol</code> e, se algum não for número, mostre <code>"X" não é um número</code> no <code>stderr</code> e termine com 1. Com os argumentos <code>10 20 30 5</code>, a saída deve ser:</p>
+<pre class="out">Soma: 65</pre>
+<pre class="script" data-file="somar.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;errno.h&gt;
+
+int main(int argc, char *argv[]) {
+    if (argc &lt; 2) {
+        fprintf(stderr, "Uso: %s NÚMERO...\n", argv[0]);
+        return 1;
+    }
+
+    long soma = 0;
+    // percorra os argumentos, converta e some
+
+    printf("Soma: %ld\n", soma);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="somar.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;errno.h&gt;
+
+int main(int argc, char *argv[]) {
+    if (argc &lt; 2) {
+        fprintf(stderr, "Uso: %s NÚMERO...\n", argv[0]);
+        return 1;
+    }
+
+    long soma = 0;
+    // percorra os argumentos, converta e some
+    for (int i = 1; i &lt; argc; i++) {
+        char *fim;
+        errno = 0;
+        long v = strtol(argv[i], &amp;fim, 10);
+        if (fim == argv[i] || *fim != '\0' || errno == ERANGE) {
+            fprintf(stderr, "%s: \"%s\" não é um número\n", argv[0], argv[i]);
+            return 1;
+        }
+        soma += v;
+    }
+
+    printf("Soma: %ld\n", soma);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Depois de cumprir a missão, teste no campo <strong>Argumentos</strong>: <code>10 vinte</code> (deve reclamar do "vinte" e terminar com 1) e nada (a mensagem de uso). No laboratório, o mesmo programa dá:</p>
+
+<pre class="term" data-cwd="~/c">$ ./somar 10 20 30 5
+Soma: 65
+$ ./somar 10 vinte
+./somar: "vinte" não é um número
+$ ./somar
+Uso: ./somar NÚMERO...
+$ echo $?
+1</pre>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Para receber argumentos: <code>int main(int argc, char *argv[])</code>. <code>argc</code> conta, <code>argv</code> lista.</li>
+  <li><code>argv[0]</code> é o nome do programa como foi digitado; os argumentos vão de <code>argv[1]</code> a <code>argv[argc - 1]</code>; <code>argv[argc]</code> é <code>NULL</code>.</li>
+  <li>Todo argumento é texto. Converta com <code>strtol</code> e confira <code>fim</code> e <code>errno</code>; o <code>atoi</code> transforma lixo em 0 calado.</li>
+  <li>Confira <code>argc</code> antes de usar <code>argv[i]</code> e mostre uma mensagem de uso no <code>stderr</code>, com <code>return 1</code>.</li>
+  <li>O shell separa os argumentos antes: espaços separam, aspas juntam, <code>$VAR</code> e <code>*</code> são trocados. No editor, o campo <strong>Argumentos</strong> (e o <code>data-args</code>) entende aspas, mas não expande <code>$</code> nem <code>*</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
