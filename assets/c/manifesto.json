@@ -1,0 +1,17 @@
+{
+ "versao": "3d5c026fa8",
+ "pacote": "22.0.0-git20542-10",
+ "wasm": {
+  "arquivo": "llvm.core.wasm",
+  "bytes": 75532134,
+  "bytesGz": 22804749,
+  "sha1": "ccbbb88fc9a1"
+ },
+ "sysroot": {
+  "arquivo": "sysroot.tar",
+  "bytes": 2134016,
+  "bytesGz": 578076,
+  "sha1": "2190c01adb61"
+ },
+ "pchs": []
+}
