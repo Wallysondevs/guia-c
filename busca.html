@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Busca (bsearch) — busca linear, busca binária e bsearch | Guia C</title>
+<meta name="description" content="Busca em C para quem nunca programou: a busca linear com for, a busca binária à mão (ini, fim e meio), quantos passos ela economiza, o bsearch de stdlib.h com números, textos e structs (a chave vem primeiro), achar o primeiro de vários iguais, e os erros reais (array fora de ordem, NULL sem conferir, esquecer o & da chave, laço infinito), com saídas do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Busca (bsearch)</span></h1>
+
+<p class="intro">Procurar é tão comum quanto ordenar: o caixa da lojinha procura o produto pelo código de barras, a professora procura o aluno na chamada, o programa procura uma palavra no dicionário. Se os dados estão bagunçados, o único jeito é olhar um por um. Se estão <a href="ordenacao.html">em ordem</a>, dá para fazer como num dicionário de papel: abrir no meio e descartar metade a cada olhada. Nesta aula você vai escrever os dois jeitos à mão e depois usar o <code>bsearch</code>, a busca binária pronta da biblioteca padrão.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A <strong>busca linear</strong>: olhar um por um, com um <code>for</code>.</li>
+  <li>A <strong>busca binária</strong>: as variáveis <code>ini</code>, <code>fim</code> e <code>meio</code>, e por que ela precisa do array ordenado.</li>
+  <li>Quantos passos cada uma leva, com 15, mil ou um milhão de itens.</li>
+  <li>Como usar o <code>bsearch</code> com números, textos e structs, e o que ele devolve.</li>
+  <li>Por que a função de comparação do <code>bsearch</code> recebe a <strong>chave</strong> primeiro.</li>
+  <li>Como achar o <strong>primeiro</strong> de vários itens iguais, ou o lugar onde um item novo entraria.</li>
+  <li>Os erros clássicos: array fora de ordem, <code>NULL</code> sem conferir, esquecer o <code>&amp;</code> da chave, laço infinito.</li>
+</ul>
+</div>
+
+<p>Esta aula usa <a href="ordenacao.html">Ordenação (qsort)</a> e <a href="ponteiros-funcao.html">Ponteiros para Funções</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o dicionário de papel</h2>
+<p>Para achar "pêssego" num dicionário, ninguém lê desde a primeira página. Você abre mais ou menos no meio, vê que caiu no "l", e sabe que "pêssego" está <strong>depois</strong>: a primeira metade inteira foi descartada sem ser lida. Abre no meio do que sobrou, e assim por diante. Isso só funciona porque o dicionário está em <strong>ordem alfabética</strong>. Numa pilha de fichas bagunçadas, você teria de olhar ficha por ficha.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Busca linear</th><th>Busca binária</th></tr>
+<tr><td>Como faz</td><td>Olha o primeiro, o segundo, o terceiro… até achar ou acabar</td><td>Olha o do meio e descarta a metade onde o item não pode estar</td></tr>
+<tr><td>Precisa de ordem?</td><td>Não</td><td><strong>Sim</strong></td></tr>
+<tr><td>No dia a dia</td><td>Procurar a chave nos bolsos</td><td>Procurar uma palavra no dicionário, um nome na lista de chamada</td></tr>
+<tr><td>Em C</td><td>Um <code>for</code></td><td>Um <code>while</code> com <code>ini</code>, <code>fim</code> e <code>meio</code>, ou o <code>bsearch</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Busca linear: um por um</h2>
+<p>A busca mais simples olha cada item, do primeiro ao último, e para quando acha. Ela funciona com qualquer array, ordenado ou não:</p>
+
+<pre class="file" data-file="linear.c">#include &lt;stdio.h&gt;
+
+int buscar(const int *v, int n, int procurado) {
+    for (int i = 0; i &lt; n; i++) {
+        if (v[i] == procurado) {
+            printf("  achou depois de olhar %d números\n", i + 1);
+            return i;
+        }
+    }
+    printf("  olhou os %d números e não achou\n", n);
+    return -1;
+}
+
+int main(void) {
+    int senhas[] = {42, 7, 93, 15, 61, 28, 84, 3, 50, 77};
+    int n = sizeof senhas / sizeof senhas[0];
+
+    printf("Procurando 28:\n");
+    int pos = buscar(senhas, n, 28);
+    printf("  posição: %d\n", pos);
+
+    printf("Procurando 99:\n");
+    pos = buscar(senhas, n, 99);
+    printf("  posição: %d\n", pos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra linear.c -o linear
+$ ./linear
+Procurando 28:
+  achou depois de olhar 6 números
+  posição: 5
+Procurando 99:
+  olhou os 10 números e não achou
+  posição: -1</pre>
+
+<dl class="anatomy">
+  <dt>int buscar(const int *v, int n, int procurado)</dt><dd>Recebe o array (o <code>const</code> promete só ler), quantos itens ele tem e o valor procurado. Devolve a <strong>posição</strong> onde achou.</dd>
+  <dt>if (v[i] == procurado) return i;</dt><dd>Achou: devolve a posição e sai da função na hora, sem olhar o resto.</dd>
+  <dt>return -1;</dt><dd>Se o laço acabou, olhou tudo e não achou. -1 nunca é uma posição válida, então serve de aviso "não está" (como o <code>EOF</code> do <code>getchar</code>).</dd>
+</dl>
+
+<p>Quando o item <strong>não está</strong>, a busca linear olha <strong>todos</strong>. Com 10 números, tudo bem. Com um milhão de produtos e um caixa que procura um código a cada segundo, é um milhão de comparações por cliente.</p>
+
+<hr>
+
+<h2>2. Busca binária à mão</h2>
+<p>Se o array estiver <strong>em ordem crescente</strong>, dá para fazer o jogo do dicionário. Duas variáveis marcam o pedaço do array onde o item ainda pode estar: <code>ini</code> (o começo) e <code>fim</code> (o fim). A cada passo, olha-se o item do <code>meio</code>:</p>
+<ul>
+  <li>se for o procurado, acabou;</li>
+  <li>se for <strong>menor</strong> que o procurado, o procurado só pode estar à direita: <code>ini = meio + 1</code>;</li>
+  <li>se for <strong>maior</strong>, só pode estar à esquerda: <code>fim = meio - 1</code>.</li>
+</ul>
+<p>Se <code>ini</code> passar de <code>fim</code>, o pedaço ficou vazio: o item não está no array.</p>
+
+<pre class="file" data-file="binaria.c">#include &lt;stdio.h&gt;
+
+int buscar(const int *v, int n, int procurado) {
+    int ini = 0;
+    int fim = n - 1;
+    while (ini &lt;= fim) {
+        int meio = ini + (fim - ini) / 2;
+        printf("  ini=%2d fim=%2d meio=%2d: v[meio] = %d\n", ini, fim, meio, v[meio]);
+        if (v[meio] == procurado) {
+            return meio;
+        }
+        if (v[meio] &lt; procurado) {
+            ini = meio + 1;
+        } else {
+            fim = meio - 1;
+        }
+    }
+    return -1;
+}
+
+int main(void) {
+    int v[] = {3, 7, 15, 28, 33, 37, 42, 50, 61, 64, 77, 84, 88, 93, 99};
+    int n = sizeof v / sizeof v[0];
+
+    printf("Procurando 37:\n");
+    printf("  posição: %d\n", buscar(v, n, 37));
+    printf("Procurando 40:\n");
+    printf("  posição: %d\n", buscar(v, n, 40));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra binaria.c -o binaria
+$ ./binaria
+Procurando 37:
+  ini= 0 fim=14 meio= 7: v[meio] = 50
+  ini= 0 fim= 6 meio= 3: v[meio] = 28
+  ini= 4 fim= 6 meio= 5: v[meio] = 37
+  posição: 5
+Procurando 40:
+  ini= 0 fim=14 meio= 7: v[meio] = 50
+  ini= 0 fim= 6 meio= 3: v[meio] = 28
+  ini= 4 fim= 6 meio= 5: v[meio] = 37
+  ini= 6 fim= 6 meio= 6: v[meio] = 42
+  posição: -1</pre>
+
+<figure>
+<svg viewBox="0 0 628 266" role="img" aria-label="Busca binária pelo 37: em 3 passos o intervalo cai de 15 números para 7, depois 3, e acha o 37" style="width:100%;max-width:628px;height:auto;display:block">
+<title>Busca binária pelo 37: em 3 passos o intervalo cai de 15 números para 7, depois 3, e acha o 37</title>
+<text x="14" y="18" style="fill:var(--text);font-family:system-ui,sans-serif;font-size:13px">1º passo: 37 &lt; 50, descarta a direita</text><rect x="14" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="34.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">3</text><text x="34.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">0</text><rect x="54" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="74.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">7</text><text x="74.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">1</text><rect x="94" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="114.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">15</text><text x="114.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">2</text><rect x="134" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="154.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">28</text><text x="154.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">3</text><rect x="174" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="194.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">33</text><text x="194.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">4</text><rect x="214" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="234.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">37</text><text x="234.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">5</text><rect x="254" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="274.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">42</text><text x="274.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">6</text><rect x="294" y="26" width="40" height="30" style="fill:var(--note-bg);stroke:var(--accent);stroke-width:2"/><text x="314.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">50</text><text x="314.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">7</text><rect x="334" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="354.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">61</text><text x="354.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">8</text><rect x="374" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="394.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">64</text><text x="394.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">9</text><rect x="414" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="434.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">77</text><text x="434.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">10</text><rect x="454" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="474.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">84</text><text x="474.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">11</text><rect x="494" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="514.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">88</text><text x="514.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">12</text><rect x="534" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="554.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">93</text><text x="554.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">13</text><rect x="574" y="26" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="594.0" y="46" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">99</text><text x="594.0" y="70" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:11px;text-anchor:middle">14</text><text x="314.0" y="84" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:12px;text-anchor:middle">meio</text><text x="14" y="104" style="fill:var(--text);font-family:system-ui,sans-serif;font-size:13px">2º passo: 37 &gt; 28, descarta a esquerda</text><rect x="14" y="112" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="34.0" y="132" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">3</text><rect x="54" y="112" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="74.0" y="132" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">7</text><rect x="94" y="112" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="114.0" y="132" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">15</text><rect x="134" y="112" width="40" height="30" style="fill:var(--note-bg);stroke:var(--accent);stroke-width:2"/><text x="154.0" y="132" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">28</text><rect x="174" y="112" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="194.0" y="132" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">33</text><rect x="214" y="112" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="234.0" y="132" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">37</text><rect x="254" y="112" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="274.0" y="132" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">42</text><rect x="294" y="112" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="314.0" y="132" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">50</text><rect x="334" y="112" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="354.0" y="132" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">61</text><rect x="374" y="112" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="394.0" y="132" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">64</text><rect x="414" y="112" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="434.0" y="132" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">77</text><rect x="454" y="112" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="474.0" y="132" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">84</text><rect x="494" y="112" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="514.0" y="132" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">88</text><rect x="534" y="112" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="554.0" y="132" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">93</text><rect x="574" y="112" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="594.0" y="132" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">99</text><text x="34.0" y="158" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:12px;text-anchor:middle">ini</text><text x="274.0" y="158" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:12px;text-anchor:middle">fim</text><text x="154.0" y="158" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:12px;text-anchor:middle">meio</text><text x="14" y="190" style="fill:var(--text);font-family:system-ui,sans-serif;font-size:13px">3º passo: achou o 37 na posição 5</text><rect x="14" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="34.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">3</text><rect x="54" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="74.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">7</text><rect x="94" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="114.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">15</text><rect x="134" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="154.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">28</text><rect x="174" y="198" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="194.0" y="218" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">33</text><rect x="214" y="198" width="40" height="30" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:2"/><text x="234.0" y="218" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">37</text><rect x="254" y="198" width="40" height="30" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.2"/><text x="274.0" y="218" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">42</text><rect x="294" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="314.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">50</text><rect x="334" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="354.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">61</text><rect x="374" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="394.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">64</text><rect x="414" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="434.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">77</text><rect x="454" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="474.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">84</text><rect x="494" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="514.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">88</text><rect x="534" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="554.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">93</text><rect x="574" y="198" width="40" height="30" style="fill:var(--example-bg);stroke:var(--border);stroke-width:1"/><text x="594.0" y="218" style="fill:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;text-anchor:middle">99</text><text x="194.0" y="244" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:12px;text-anchor:middle">ini</text><text x="274.0" y="244" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:12px;text-anchor:middle">fim</text><text x="234.0" y="244" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:12px;text-anchor:middle">meio</text>
+</svg>
+<figcaption>A busca pelo 37 nos 15 números. Em cada passo, só a parte em branco ainda está em jogo; o cinza já foi descartado. O item do meio (em destaque) decide para que lado ir. No terceiro passo, o meio é o 37 (verde).</figcaption>
+</figure>
+
+<dl class="anatomy">
+  <dt>int ini = 0; int fim = n - 1;</dt><dd>No começo, o array todo está em jogo: da posição 0 à última.</dd>
+  <dt>while (ini &lt;= fim)</dt><dd>Enquanto o pedaço tiver pelo menos um item. Com <code>ini == fim</code>, sobra um item só, e ele ainda precisa ser olhado (foi o 42 na busca pelo 40).</dd>
+  <dt>int meio = ini + (fim - ini) / 2;</dt><dd>A posição do meio do pedaço. A divisão inteira joga fora a fração: de 0 a 14, o meio é 7; de 4 a 6, é 5. Por que não <code>(ini + fim) / 2</code>? Com arrays enormes, <code>ini + fim</code> pode passar do máximo do <code>int</code>; <code>fim - ini</code> nunca passa.</dd>
+  <dt>ini = meio + 1; / fim = meio - 1;</dt><dd>O <code>+ 1</code> e o <code>- 1</code> tiram do jogo o próprio <code>meio</code>, que já foi olhado. Sem eles, o pedaço pode parar de encolher (veja <a href="#errado">Quando dá errado</a>).</dd>
+  <dt>return -1;</dt><dd>Na busca pelo 40: depois do 42, <code>fim</code> virou 5 e ficou menor que <code>ini</code> (6). Não sobrou onde procurar.</dd>
+</dl>
+
+<div class="tryc" data-goal="out:37 está na posição 5,out:40 não está,out:3 está na posição 0,out:99 está na posição 14">
+<p class="try-task"><strong>Missão:</strong> o laço da busca binária perdeu as linhas que descartam metade do array, e no lugar delas ficou um <code>break</code>. Complete: se <code>v[meio]</code> for menor que o procurado, <code>ini = meio + 1</code>; senão, <code>fim = meio - 1</code>. Depois apague o <code>break</code>. A saída deve ser:</p>
+<pre class="out">37 está na posição 5
+40 não está
+3 está na posição 0
+99 está na posição 14</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int buscar(const int *v, int n, int procurado) {
+    int ini = 0;
+    int fim = n - 1;
+    while (ini &lt;= fim) {
+        int meio = ini + (fim - ini) / 2;
+        if (v[meio] == procurado) {
+            return meio;
+        }
+        // COMPLETE: se v[meio] for menor que o procurado, descarte a metade
+        // da esquerda (ini = meio + 1); senão, descarte a da direita
+        // (fim = meio - 1). Depois, apague o break.
+        break;
+    }
+    return -1;
+}
+
+int main(void) {
+    int v[] = {3, 7, 15, 28, 33, 37, 42, 50, 61, 64, 77, 84, 88, 93, 99};
+    int n = sizeof v / sizeof v[0];
+    int procurados[] = {37, 40, 3, 99};
+    for (int i = 0; i &lt; 4; i++) {
+        int pos = buscar(v, n, procurados[i]);
+        if (pos &gt;= 0) {
+            printf("%d está na posição %d\n", procurados[i], pos);
+        } else {
+            printf("%d não está\n", procurados[i]);
+        }
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int buscar(const int *v, int n, int procurado) {
+    int ini = 0;
+    int fim = n - 1;
+    while (ini &lt;= fim) {
+        int meio = ini + (fim - ini) / 2;
+        if (v[meio] == procurado) {
+            return meio;
+        }
+        if (v[meio] &lt; procurado) {
+            ini = meio + 1;
+        } else {
+            fim = meio - 1;
+        }
+    }
+    return -1;
+}
+
+int main(void) {
+    int v[] = {3, 7, 15, 28, 33, 37, 42, 50, 61, 64, 77, 84, 88, 93, 99};
+    int n = sizeof v / sizeof v[0];
+    int procurados[] = {37, 40, 3, 99};
+    for (int i = 0; i &lt; 4; i++) {
+        int pos = buscar(v, n, procurados[i]);
+        if (pos &gt;= 0) {
+            printf("%d está na posição %d\n", procurados[i], pos);
+        } else {
+            printf("%d não está\n", procurados[i]);
+        }
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Quantos passos?</h3>
+<p>Cada passo da busca binária corta o pedaço pela metade. Por isso o número de passos cresce muito devagar: quando o array dobra de tamanho, ela precisa de só <strong>um</strong> passo a mais.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Itens no array</th><th>Busca linear (pior caso)</th><th>Busca binária (pior caso)</th></tr>
+<tr><td>15</td><td>15</td><td>4</td></tr>
+<tr><td>1.000</td><td>1.000</td><td>10</td></tr>
+<tr><td>1.000.000</td><td>1.000.000</td><td>20</td></tr>
+<tr><td>1.000.000.000</td><td>1.000.000.000</td><td>30</td></tr>
+</table>
+</div>
+
+<p>(Os números da busca binária são quantas vezes dá para dividir o tamanho por 2 até sobrar 1, mais o último passo: o logaritmo de base 2, para quem já viu na escola.) Um bilhão de itens em 30 olhadas: é por isso que vale a pena manter os dados ordenados.</p>
+
+<hr>
+
+<h2>3. O <code>bsearch</code>: a busca binária pronta</h2>
+<p>A biblioteca padrão traz a busca binária pronta em <code>&lt;stdlib.h&gt;</code>: o <code>bsearch</code> (<em>binary search</em>, busca binária). Ele funciona com arrays de qualquer tipo, do mesmo jeito que o <a href="ordenacao.html">qsort</a>, e usa o mesmo tipo de função de comparação:</p>
+
+<pre class="file" data-file="bsearch_int.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int comparar(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    return (x &gt; y) - (x &lt; y);
+}
+
+int main(void) {
+    int v[] = {3, 7, 15, 28, 33, 37, 42, 50, 61, 64, 77, 84, 88, 93, 99};
+    size_t n = sizeof v / sizeof v[0];
+    int procurados[] = {37, 40};
+
+    for (int i = 0; i &lt; 2; i++) {
+        int *achado = bsearch(&amp;procurados[i], v, n, sizeof v[0], comparar);
+        if (achado != NULL) {
+            printf("%d está na posição %td\n", *achado, achado - v);
+        } else {
+            printf("%d não está no array\n", procurados[i]);
+        }
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra bsearch_int.c -o bsearch_int
+$ ./bsearch_int
+37 está na posição 5
+40 não está no array</pre>
+
+<p>O protótipo é: <code>void *bsearch(const void *chave, const void *base, size_t n, size_t tamanho, int (*comparar)(const void *, const void *));</code></p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Argumento</th><th>Na chamada</th><th>O que é</th></tr>
+<tr><td><code>chave</code></td><td><code>&amp;procurados[i]</code></td><td>O <strong>endereço</strong> do valor procurado, não o valor. O <code>bsearch</code> passa esse endereço para a sua função de comparação.</td></tr>
+<tr><td><code>base</code>, <code>n</code>, <code>tamanho</code></td><td><code>v, n, sizeof v[0]</code></td><td>O array, quantos itens e o tamanho de cada um, como no <code>qsort</code>.</td></tr>
+<tr><td><code>comparar</code></td><td><code>comparar</code></td><td>A mesma regra do <code>qsort</code>: negativo, zero ou positivo. O array precisa estar ordenado <strong>pelo mesmo critério</strong>.</td></tr>
+<tr><td>(retorno)</td><td><code>int *achado</code></td><td>Um ponteiro para o item encontrado <strong>dentro do array</strong>, ou <code>NULL</code> se não achou. Confira sempre.</td></tr>
+</table>
+</div>
+
+<dl class="anatomy">
+  <dt>int *achado = bsearch(…);</dt><dd>O <code>bsearch</code> devolve <code>void *</code>, que vira <code>int *</code> sozinho na atribuição (aula <a href="void-ponteiro.html">Ponteiro void*</a>).</dd>
+  <dt>if (achado != NULL)</dt><dd>Usar o resultado sem esta conferência é o erro mais comum com o <code>bsearch</code>.</dd>
+  <dt>achado - v</dt><dd>Subtrair dois ponteiros do mesmo array dá a <strong>distância</strong> entre eles em itens: a posição (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>). O resultado tem o tipo <code>ptrdiff_t</code>, que se imprime com <code>%td</code>.</dd>
+  <dt>*achado</dt><dd>O próprio item do array. Como é um ponteiro para dentro do array, dá até para mudar o item por ele.</dd>
+</dl>
+
+<hr>
+
+<h2>4. Buscar em structs: a chave vem primeiro</h2>
+<p>O caixa da lojinha recebe um <strong>código</strong> e precisa do produto inteiro. O array é de <code>Produto</code>, mas a chave é só um <code>int</code>. Isso é permitido: o padrão do C garante que o <code>bsearch</code> chama a comparação sempre com a <strong>chave no primeiro parâmetro</strong> e um item do array no segundo. Então os dois parâmetros podem ser de tipos diferentes:</p>
+
+<pre class="file" data-file="codigos.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct {
+    int codigo;
+    char nome[20];
+    int preco;
+} Produto;
+
+int por_codigo(const void *chave, const void *item) {
+    int c = *(const int *)chave;
+    const Produto *p = item;
+    return (c &gt; p-&gt;codigo) - (c &lt; p-&gt;codigo);
+}
+
+int main(void) {
+    const Produto loja[] = {
+        {101, "arroz", 2590}, {105, "feijao", 899}, {230, "leite", 599},
+        {231, "queijo", 4290}, {310, "cafe", 1890}, {402, "pao", 75},
+    };
+    size_t n = sizeof loja / sizeof loja[0];
+    int pedidos[] = {230, 402, 999};
+
+    for (int i = 0; i &lt; 3; i++) {
+        const Produto *p = bsearch(&amp;pedidos[i], loja, n, sizeof loja[0], por_codigo);
+        if (p != NULL) {
+            printf("%d: %s, R$ %d,%02d\n", pedidos[i], p-&gt;nome, p-&gt;preco / 100, p-&gt;preco % 100);
+        } else {
+            printf("%d: não cadastrado\n", pedidos[i]);
+        }
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra codigos.c -o codigos
+$ ./codigos
+230: leite, R$ 5,99
+402: pao, R$ 0,75
+999: não cadastrado</pre>
+
+<dl class="anatomy">
+  <dt>int por_codigo(const void *chave, const void *item)</dt><dd>Os nomes dos parâmetros já dizem o que é cada um. O tipo continua o exigido (<code>const void *</code> nos dois).</dd>
+  <dt>int c = *(const int *)chave;</dt><dd>O primeiro é a chave: um <code>int</code>.</dd>
+  <dt>const Produto *p = item;</dt><dd>O segundo é um item do array: um <code>Produto</code>.</dd>
+  <dt>(c &gt; p-&gt;codigo) - (c &lt; p-&gt;codigo)</dt><dd>Compara o código procurado com o do produto. O array <code>loja</code> está em ordem crescente de código, o mesmo critério.</dd>
+  <dt>const Produto loja[]</dt><dd>Com <code>const</code>, o resultado também é <code>const Produto *</code>: só para ler.</dd>
+</dl>
+
+<div class="note">
+<strong>E se eu também quiser ordenar com essa função?</strong>
+<p>Não dá: o <code>qsort</code> compara dois <strong>itens</strong> do array (dois <code>Produto</code>), e a <code>por_codigo</code> espera um <code>int</code> no primeiro. Se você quer uma função só para os dois, monte a chave como um <code>Produto</code> com só o código preenchido: <code>Produto chave = {.codigo = 230};</code>, passe <code>&amp;chave</code> ao <code>bsearch</code> e use uma comparação de dois <code>Produto</code>, a mesma do <code>qsort</code>.</p>
+</div>
+
+<h3>Buscar textos: o <code>&amp;</code> que todo mundo esquece</h3>
+<p>Num array de <code>const char *</code>, cada item é um ponteiro, e a função de comparação do <code>qsort</code> recebe ponteiros para esses ponteiros (aula <a href="ordenacao.html">Ordenação</a>). Para usar a <strong>mesma</strong> função no <code>bsearch</code>, a chave precisa ter a mesma forma: o endereço de um <code>const char *</code>, ou seja, <code>&amp;procurado</code>:</p>
+
+<pre class="file" data-file="nomes_busca.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int por_nome(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+int main(void) {
+    const char *turma[] = {"Rui", "Ana", "Lia", "Bruno", "Davi", "Bia", "Caio"};
+    size_t n = sizeof turma / sizeof turma[0];
+
+    qsort(turma, n, sizeof turma[0], por_nome);
+
+    const char *procurados[] = {"Davi", "Zeca"};
+    for (int i = 0; i &lt; 2; i++) {
+        const char **achado = bsearch(&amp;procurados[i], turma, n, sizeof turma[0], por_nome);
+        if (achado != NULL) {
+            printf("%s está na chamada, número %td\n", *achado, achado - turma + 1);
+        } else {
+            printf("%s não é desta turma\n", procurados[i]);
+        }
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nomes_busca.c -o nomes_busca
+$ ./nomes_busca
+Davi está na chamada, número 5
+Zeca não é desta turma</pre>
+
+<p>Depois do <code>qsort</code>, a turma fica <code>Ana, Bia, Bruno, Caio, Davi, Lia, Rui</code>, e o Davi é o número 5 da chamada (a posição 4, mais 1). O resultado do <code>bsearch</code> é um <code>const char **</code>: um ponteiro para o item do array, que por sua vez aponta para o nome; por isso <code>*achado</code> é o nome.</p>
+
+<hr>
+
+<h2>5. Itens repetidos: qual deles o <code>bsearch</code> acha?</h2>
+<p>Se o valor aparece várias vezes, o padrão do C diz que o <code>bsearch</code> pode devolver <strong>qualquer um</strong> deles. Para saber onde começam os repetidos (ou quantos são), escreva uma busca binária que procura a <strong>primeira posição com um valor maior ou igual</strong> ao procurado:</p>
+
+<pre class="file" data-file="primeiro.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int comparar(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    return (x &gt; y) - (x &lt; y);
+}
+
+// Devolve a posição do primeiro item que é &gt;= procurado (ou n, se não houver)
+size_t primeiro_maior_igual(const int *v, size_t n, int procurado) {
+    size_t ini = 0;
+    size_t fim = n;
+    while (ini &lt; fim) {
+        size_t meio = ini + (fim - ini) / 2;
+        if (v[meio] &lt; procurado) {
+            ini = meio + 1;
+        } else {
+            fim = meio;
+        }
+    }
+    return ini;
+}
+
+int main(void) {
+    int notas[] = {5, 6, 7, 7, 7, 7, 8, 9, 10};
+    size_t n = sizeof notas / sizeof notas[0];
+    int sete = 7;
+
+    int *qualquer = bsearch(&amp;sete, notas, n, sizeof notas[0], comparar);
+    printf("bsearch achou um 7 na posição %td\n", qualquer - notas);
+
+    size_t ini = primeiro_maior_igual(notas, n, 7);
+    size_t fim = primeiro_maior_igual(notas, n, 8);
+    printf("os 7 vão da posição %zu à %zu: %zu notas 7\n", ini, fim - 1, fim - ini);
+    printf("um 6 novo entraria na posição %zu\n", primeiro_maior_igual(notas, n, 6));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra primeiro.c -o primeiro
+$ ./primeiro
+bsearch achou um 7 na posição 4
+os 7 vão da posição 2 à 5: 4 notas 7
+um 6 novo entraria na posição 1</pre>
+
+<dl class="anatomy">
+  <dt>size_t fim = n;</dt><dd>Aqui o pedaço em jogo é de <code>ini</code> até <code>fim - 1</code> (o <code>fim</code> fica <strong>fora</strong>). Assim, a resposta pode ser <code>n</code>: "todos são menores; o lugar é depois do último".</dd>
+  <dt>if (v[meio] &lt; procurado) ini = meio + 1;</dt><dd>O meio é pequeno demais: a resposta está à direita dele.</dd>
+  <dt>else fim = meio;</dt><dd>O meio já serve (é maior ou igual), mas pode haver um anterior que também sirva: guarda o <code>meio</code> como fim e continua procurando à esquerda. Não há <code>return</code> no meio do laço: ele só para quando <code>ini == fim</code>.</dd>
+  <dt>primeiro_maior_igual(notas, n, 8) - primeiro_maior_igual(notas, n, 7)</dt><dd>O primeiro 8 menos o primeiro 7: quantos 7 existem. Sem olhar um por um.</dd>
+  <dt>um 6 novo entraria na posição 1</dt><dd>A mesma função diz <strong>onde inserir</strong> um valor para o array continuar ordenado.</dd>
+</dl>
+
+<p>O <code>bsearch</code> achou o 7 da posição 4, que é um dos do meio, não o primeiro. Essa posição pode mudar de uma biblioteca para outra: não escreva programas que dependam dela.</p>
+
+<hr>
+
+<h2>Formas diferentes e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Prefira</th></tr>
+<tr><td>Poucos itens, ou uma busca só, ou dados fora de ordem</td><td>Busca linear com <code>for</code>. Ordenar só para buscar uma vez dá mais trabalho que olhar tudo.</td></tr>
+<tr><td>Muitas buscas num array que muda pouco</td><td>Ordene uma vez com <code>qsort</code> e busque com <code>bsearch</code>.</td></tr>
+<tr><td>Precisa do primeiro de vários iguais, ou do lugar de inserir</td><td>A busca binária à mão (<code>primeiro_maior_igual</code>).</td></tr>
+<tr><td>Itens entrando e saindo o tempo todo</td><td>Uma <a href="arvores-binarias.html">árvore de busca</a> (inserir num array ordenado obriga a empurrar os itens).</td></tr>
+<tr><td>Só procurar pela chave exata, com muitos itens</td><td>Uma <a href="tabela-hash.html">tabela hash</a>: vai direto ao balde, sem ordenar.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"Não está", mas está: o array não estava ordenado</strong>
+<pre class="file" data-file="nao_ordenado.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int comparar(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    return (x &gt; y) - (x &lt; y);
+}
+
+int main(void) {
+    int senhas[] = {42, 7, 93, 15, 61, 28, 84, 3, 50, 77};
+    size_t n = sizeof senhas / sizeof senhas[0];
+    int procurado = 3;
+
+    int *achado = bsearch(&amp;procurado, senhas, n, sizeof senhas[0], comparar);
+    printf("3: %s\n", achado != NULL ? "achei" : "não está");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nao_ordenado.c -o nao_ordenado
+$ ./nao_ordenado
+3: não está</pre>
+<p><strong>O que significa:</strong> o 3 está lá (na posição 7), mas o <code>bsearch</code> não achou, e não há erro nem aviso. Ele olhou o meio (o 28), viu que 3 é menor e descartou toda a metade da direita, onde o 3 estava. A busca binária <strong>confia</strong> que o array está em ordem; ninguém confere. O mesmo acontece se o array foi ordenado por um critério (do maior para o menor) e buscado com outro (do menor para o maior).</p>
+<p><strong>Como consertar:</strong> ordene antes, com <code>qsort</code> e a <strong>mesma</strong> função de comparação: <code>qsort(senhas, n, sizeof senhas[0], comparar);</code> e só então o <code>bsearch</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code>: o <code>NULL</code> não foi conferido</strong>
+<pre class="file" data-file="sem_null.c">    int procurado = 40;
+    int *achado = bsearch(&amp;procurado, v, n, sizeof v[0], comparar);
+    printf("Achei o %d\n", *achado);
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sem_null.c -o sem_null
+$ ./sem_null
+Falha de segmentação     (imagem do núcleo gravada) ./sem_null</pre>
+<p><strong>O que significa:</strong> o 40 não está no array, o <code>bsearch</code> devolveu <code>NULL</code>, e <code>*achado</code> tentou ler o endereço zero (aula <a href="ponteiro-nulo.html">Ponteiro Nulo</a>). O programa morreu com o código 139. No editor do guia acontece o mesmo.</p>
+<p><strong>Como consertar:</strong> <code>if (achado != NULL) { … } else { … }</code> antes de usar o <code>*achado</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esquecer o <code>&amp;</code> da chave num array de textos</strong>
+<pre class="file" data-file="sem_endereco.c">    const char *procurado = "Davi";
+    const char **achado = bsearch(procurado, turma, n, sizeof turma[0], por_nome);
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sem_endereco.c -o sem_endereco
+$ ./sem_endereco
+Falha de segmentação     (imagem do núcleo gravada) ./sem_endereco</pre>
+<p><strong>O que significa:</strong> nenhum aviso, porque qualquer ponteiro vira <code>const void *</code>. A função <code>por_nome</code> espera receber o <strong>endereço de um ponteiro</strong> e faz <code>*(const char *const *)a</code>. Mas recebeu o endereço das letras de "Davi": ela leu os bytes <code>D</code>, <code>a</code>, <code>v</code>, <code>i</code>… como se fossem um endereço, e o <code>strcmp</code> foi procurar texto num lugar da memória que não existe. No editor, mesma coisa: código 139.</p>
+<p><strong>Como consertar:</strong> a chave tem de ter a mesma forma que os itens do array: <code>bsearch(&amp;procurado, …)</code>. Regra prática: o <code>bsearch</code> sempre recebe o <strong>endereço</strong> da chave, como o <code>scanf</code> recebe o endereço da variável.</p>
+</div>
+
+<div class="cenario">
+<strong>Laço infinito: <code>ini = meio</code> sem o <code>+ 1</code></strong>
+<pre class="file" data-file="infinito.c">        if (v[meio] &lt; procurado) {
+            ini = meio;          // faltou o + 1
+        } else {
+            fim = meio;          // faltou o - 1
+        }
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra infinito.c -o infinito
+$ timeout 3 ./infinito; echo "código: $?"
+37 está na posição 5
+código: 124</pre>
+<p><strong>O que significa:</strong> o 37 foi achado, mas a busca pelo 40 nunca terminou: o <code>timeout 3</code> interrompeu o programa depois de 3 segundos (o código 124 é o aviso do <code>timeout</code>; sem ele, o programa rodaria para sempre, e você pararia com Ctrl+C). Acompanhe a busca pelo 40: o pedaço encolhe até <code>ini = 5</code> e <code>fim = 6</code>. O meio é 5; como <code>v[5]</code> (37) é menor que 40, <code>ini = meio</code> deixa <code>ini</code> em 5. Nada mudou, o meio é 5 de novo, e o laço repete o mesmo passo para sempre: o pedaço nunca fica vazio. No editor, o programa seria parado depois de 15 segundos.</p>
+<p><strong>Como consertar:</strong> na versão com <code>while (ini &lt;= fim)</code>, use sempre <code>ini = meio + 1</code> e <code>fim = meio - 1</code>: o meio, já olhado, sai do jogo, e o pedaço encolhe a cada passo. (A versão <code>primeiro_maior_igual</code> usa <code>fim = meio</code> de propósito, mas com <code>while (ini &lt; fim)</code>.)</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que</th><th>Código</th></tr>
+<tr><td>Busca linear</td><td><code>for (int i = 0; i &lt; n; i++) if (v[i] == x) return i; return -1;</code></td></tr>
+<tr><td>Busca binária (achar)</td><td><code>ini = 0, fim = n - 1; while (ini &lt;= fim) { meio = ini + (fim - ini) / 2; … ini = meio + 1 / fim = meio - 1 }</code></td></tr>
+<tr><td>Primeiro <code>&gt;=</code> x</td><td><code>ini = 0, fim = n; while (ini &lt; fim) { meio…; if (v[meio] &lt; x) ini = meio + 1; else fim = meio; } return ini;</code></td></tr>
+<tr><td><code>bsearch</code></td><td><code>T *p = bsearch(&amp;chave, v, n, sizeof v[0], comparar);</code> (<code>&lt;stdlib.h&gt;</code>)</td></tr>
+<tr><td>Não achou</td><td><code>p == NULL</code></td></tr>
+<tr><td>Posição do achado</td><td><code>p - v</code> (tipo <code>ptrdiff_t</code>, formato <code>%td</code>)</td></tr>
+<tr><td>Comparação com chave de outro tipo</td><td><code>int cmp(const void *chave, const void *item)</code>: a chave sempre vem primeiro</td></tr>
+<tr><td>Array de <code>const char *</code></td><td>Chave: <code>&amp;procurado</code>; comparação: <code>strcmp(*(const char *const *)a, *(const char *const *)b)</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O meio</h3>
+<p>Numa busca binária, <code>ini</code> vale 4 e <code>fim</code> vale 10. Qual é o <code>meio</code>? (<code>4 + (10 - 4) / 2</code>)</p>
+<div class="ex-code"><input data-answer="7" aria-label="meio"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Descartar a esquerda</h3>
+<p>O item do meio é menor que o procurado. Complete:</p>
+<div class="ex-code">ini = <input data-answer="meio + 1|meio+1|1 + meio" aria-label="novo ini">;</div>
+</div>
+
+<div class="exercise">
+<h3>3. Não achou</h3>
+<p>O que o <code>bsearch</code> devolve quando não acha a chave?</p>
+<div class="ex-code"><input data-answer="NULL|nullptr|um ponteiro nulo|ponteiro nulo" aria-label="retorno"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Quantos passos, no máximo, a busca binária precisa num array ordenado de um milhão de itens?</p>
+<label><input type="radio" name="q4"> 1.000.000</label>
+<label><input type="radio" name="q4"> 500.000</label>
+<label><input type="radio" name="q4"> Cerca de 20</label>
+<label><input type="radio" name="q4"> 2</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que acontece se você usar o <code>bsearch</code> num array fora de ordem?</p>
+<label><input type="radio" name="q5"> Ele pode dizer que não achou um item que está lá, sem nenhum aviso</label>
+<label><input type="radio" name="q5"> Ele ordena o array antes de procurar</label>
+<label><input type="radio" name="q5"> O programa não compila</label>
+<label><input type="radio" name="q5"> Ele faz uma busca linear no lugar</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Na função de comparação do <code>bsearch</code>, o que vem no primeiro parâmetro?</p>
+<label><input type="radio" name="q6"> Um item qualquer do array</label>
+<label><input type="radio" name="q6"> O endereço da chave procurada</label>
+<label><input type="radio" name="q6"> O tamanho do array</label>
+<label><input type="radio" name="q6"> A posição do meio</label>
+</div>
+
+<h3>Missão final: o leitor de código de barras</h3>
+
+<div class="tryc" data-stdin="230\n402\n999" data-goal="out:230: leite\, R$ 5\,99,out:402: pao\, R$ 0\,75,out:999: não cadastrado,src:bsearch\s*\(">
+<p class="try-task"><strong>Missão:</strong> o caixa da lojinha lê os códigos (já preparados no campo de entrada: 230, 402 e 999) e mostra o produto de cada um. A loja já está em ordem de código. Faça duas coisas: complete a função <code>por_codigo</code> (a chave é um <code>int</code>, o item é um <code>Produto</code>) e troque o <code>NULL</code> do <code>main</code> por uma chamada ao <code>bsearch</code> com <code>&amp;codigo</code>. A saída deve ter:</p>
+<pre class="out">Loja com 6 produtos
+230: leite, R$ 5,99
+402: pao, R$ 0,75
+999: não cadastrado</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct {
+    int codigo;
+    char nome[20];
+    int preco;
+} Produto;
+
+int por_codigo(const void *chave, const void *item) {
+    // COMPLETE: chave aponta para um int (o código procurado) e item
+    // aponta para um Produto do array. Compare o código procurado com
+    // p-&gt;codigo e devolva negativo, zero ou positivo.
+    (void)chave;
+    (void)item;
+    return 0;
+}
+
+int main(void) {
+    // A loja está em ordem crescente de código: o bsearch precisa disso
+    const Produto loja[] = {
+        {101, "arroz", 2590}, {105, "feijao", 899}, {230, "leite", 599},
+        {231, "queijo", 4290}, {310, "cafe", 1890}, {402, "pao", 75},
+    };
+    size_t n = sizeof loja / sizeof loja[0];
+    printf("Loja com %zu produtos\n", n);
+    int codigo;
+
+    while (scanf("%d", &amp;codigo) == 1) {
+        const Produto *p = NULL; // COMPLETE: procure o código na loja com bsearch
+        if (p != NULL) {
+            printf("%d: %s, R$ %d,%02d\n", codigo, p-&gt;nome, p-&gt;preco / 100, p-&gt;preco % 100);
+        } else {
+            printf("%d: não cadastrado\n", codigo);
+        }
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct {
+    int codigo;
+    char nome[20];
+    int preco;
+} Produto;
+
+int por_codigo(const void *chave, const void *item) {
+    int c = *(const int *)chave;
+    const Produto *p = item;
+    return (c &gt; p-&gt;codigo) - (c &lt; p-&gt;codigo);
+}
+
+int main(void) {
+    // A loja está em ordem crescente de código: o bsearch precisa disso
+    const Produto loja[] = {
+        {101, "arroz", 2590}, {105, "feijao", 899}, {230, "leite", 599},
+        {231, "queijo", 4290}, {310, "cafe", 1890}, {402, "pao", 75},
+    };
+    size_t n = sizeof loja / sizeof loja[0];
+    printf("Loja com %zu produtos\n", n);
+    int codigo;
+
+    while (scanf("%d", &amp;codigo) == 1) {
+        const Produto *p = bsearch(&amp;codigo, loja, n, sizeof loja[0], por_codigo);
+        if (p != NULL) {
+            printf("%d: %s, R$ %d,%02d\n", codigo, p-&gt;nome, p-&gt;preco / 100, p-&gt;preco % 100);
+        } else {
+            printf("%d: não cadastrado\n", codigo);
+        }
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<p>Depois de cumprir a missão, troque a entrada por outros códigos (101, 310, 231) e veja o caixa achar cada um em no máximo 3 passos. Com uma loja de 1 milhão de produtos, seriam 20.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>A <strong>busca linear</strong> olha um por um; funciona com qualquer array, mas, quando o item não está, olha todos.</li>
+  <li>A <strong>busca binária</strong> precisa do array <strong>ordenado</strong>: olha o meio e descarta metade a cada passo (<code>ini = meio + 1</code> ou <code>fim = meio - 1</code>). Um milhão de itens em 20 passos.</li>
+  <li><code>bsearch(&amp;chave, v, n, sizeof v[0], comparar)</code> é a busca binária pronta: devolve um ponteiro para o item achado ou <code>NULL</code>. Confira sempre o <code>NULL</code>; a posição é <code>p - v</code>.</li>
+  <li>A comparação do <code>bsearch</code> recebe a <strong>chave primeiro</strong>, e ela pode ser de outro tipo (um código, para achar um <code>Produto</code>). O array precisa estar ordenado pelo mesmo critério.</li>
+  <li>Num array de <code>const char *</code>, passe <code>&amp;procurado</code>, para a chave ter a mesma forma dos itens.</li>
+  <li>Com repetidos, o <code>bsearch</code> acha um qualquer; para o primeiro, ou para o lugar de inserir, use a busca "primeiro maior ou igual".</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
