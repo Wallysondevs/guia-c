@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Instalar no Linux — gcc, make e gdb | Guia C</title>
+<meta name="description" content="Como instalar o compilador C no Linux: build-essential no Ubuntu e no Debian, dnf no Fedora, pacman no Arch. Conferir com gcc --version, make --version e gdb --version, testar o C23 e resolver os erros mais comuns da instalação.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Instalar no Linux</span></h1>
+
+<p class="intro">As caixas Experimente do guia compilam C no navegador, mas, para programar de verdade, você vai querer o compilador no seu computador. No Linux, isso é fácil: o <strong>gcc</strong> está a um comando de distância, e em muitas distribuições ele já vem instalado. Nesta aula você vai conferir se ele já está aí, instalar o <code>gcc</code>, o <code>make</code> e o <code>gdb</code> no Ubuntu, no Debian, no Fedora ou no Arch, e fazer o teste final com um programa em C23.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um <strong>gerenciador de pacotes</strong> e por que ele facilita tudo.</li>
+  <li>Como descobrir se o <code>gcc</code> já está instalado.</li>
+  <li>Como instalar o kit <code>build-essential</code> (e o <code>gdb</code>) no Ubuntu e no Debian.</li>
+  <li>Os comandos equivalentes no Fedora (<code>dnf</code>), no Arch (<code>pacman</code>) e no openSUSE.</li>
+  <li>Como instalar o <strong>Clang</strong>, o compilador do editor do guia.</li>
+  <li>Como conferir a instalação com <code>gcc --version</code>, <code>make --version</code> e <code>gdb --version</code>, e testar o C23.</li>
+</ul>
+</div>
+
+<p>Esta aula é para quem usa Linux. No Windows ou no macOS, veja <a href="instalar-windows-mac.html">Instalar no Windows e macOS</a>. As saídas de terminal foram produzidas na máquina da Ana, que usa <strong>Ubuntu 26.04</strong>. Os comandos que instalam de verdade não puderam ser rodados lá (a Ana já tinha tudo instalado), por isso, nesses pontos, a aula mostra a <strong>simulação</strong> que o próprio <code>apt</code> faz, e marca como <strong>ilustrativo</strong> o que não foi rodado.</p>
+
+<hr>
+
+<h2>A ideia: a loja de aplicativos do Linux</h2>
+<p>No celular, você não procura aplicativos em sites aleatórios: abre a loja, procura pelo nome e toca em "Instalar". A loja baixa o aplicativo, instala, e depois avisa quando há atualização. O Linux tem isso há muito mais tempo que os celulares: é o <strong>gerenciador de pacotes</strong>. Cada programa vem num <strong>pacote</strong>, e o gerenciador baixa os pacotes de um <strong>repositório</strong> oficial da sua distribuição, com tudo de que o programa precisa para funcionar (as <strong>dependências</strong>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Distribuição</th><th>Gerenciador de pacotes</th></tr>
+<tr><td>Ubuntu, Debian, Linux Mint, Pop!_OS</td><td><code>apt</code></td></tr>
+<tr><td>Fedora, Red Hat, Rocky Linux, AlmaLinux</td><td><code>dnf</code></td></tr>
+<tr><td>Arch, Manjaro, EndeavourOS</td><td><code>pacman</code></td></tr>
+<tr><td>openSUSE</td><td><code>zypper</code></td></tr>
+</table>
+</div>
+
+<p>Para programar em C, você vai precisar de três ferramentas: o <strong>gcc</strong> (o compilador), o <strong>make</strong> (que automatiza a compilação de projetos com vários arquivos, aula <a href="make.html">Makefile</a>) e o <strong>gdb</strong> (o depurador, que deixa você rodar o programa passo a passo, aula <a href="depuracao-gdb.html">Depurar com gdb</a>). E junto com o gcc vem uma peça escondida, mas essencial: os arquivos <code>.h</code> da biblioteca padrão, como o <code>stdio.h</code>.</p>
+
+<hr>
+
+<h2>1. O gcc já está instalado?</h2>
+<p>Em muitas distribuições, o compilador já vem instalado ou entra junto com outros programas. Antes de instalar, pergunte. Abra o terminal (no Ubuntu: <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd>) e digite:</p>
+
+<pre class="term">$ gcc --version
+gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0                « está instalado: versão 15.2
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+</pre>
+
+<p>Se apareceu uma versão, o gcc já está aí. Se ela for <strong>14 ou mais nova</strong>, você tem tudo de que o guia precisa para o compilador; pule para a <a href="#conferir">seção 5</a> para conferir o <code>make</code> e o <code>gdb</code>. Se o gcc não estiver instalado, a resposta é esta:</p>
+
+<pre class="term">$ gcc --version
+bash: gcc: comando não encontrado                  « o terminal não achou nenhum programa chamado gcc</pre>
+
+<p>(No Ubuntu, logo abaixo pode aparecer uma sugestão do pacote que tem o comando.) Nesse caso, siga a seção da sua distribuição.</p>
+
+<hr>
+
+<h2>2. Ubuntu e Debian: <code>build-essential</code></h2>
+<p>No Ubuntu, no Debian e nos derivados (Linux Mint, Pop!_OS, elementary), instale o pacote <strong><code>build-essential</code></strong>. Ele é um "pacote-kit": não tem programa nenhum dentro, só uma lista do que é <strong>essencial para construir</strong> (<em>build</em>) programas. O comando <code>apt-cache depends</code> mostra essa lista:</p>
+
+<pre class="term">$ apt-cache depends build-essential
+build-essential
+ |Depende: libc6-dev                                « os .h e as bibliotecas do C para compilar
+  Depende: &lt;libc-dev&gt;
+    libc6-dev
+  Depende: gcc                                       « o compilador de C
+  Depende: g++                                       « o compilador de C++ (vem junto)
+  Depende: make                                      « o make
+    make-guile
+  Depende: dpkg-dev
+  Depende: libcrypt-dev
+  Depende: coreutils-from-uutils</pre>
+
+<p>Repare no <code>libc6-dev</code>: é ele que traz o <code>stdio.h</code> e os outros arquivos <code>.h</code> da biblioteca do C. Sem ele, nem o "Olá, mundo" compila (veja <a href="#quando-errado">Quando dá errado</a>). O pacote <code>gcc</code> sozinho só <strong>recomenda</strong> o <code>libc6-dev</code> e apenas <strong>sugere</strong> o <code>make</code>; o <code>build-essential</code> <strong>exige</strong> os dois, e por isso é a recomendação oficial do Ubuntu e do Debian. O <code>gdb</code> não faz parte do kit: peça junto.</p>
+
+<h3>Instalando</h3>
+<p>São dois comandos. O primeiro atualiza a lista de pacotes (o "catálogo da loja"); o segundo instala:</p>
+
+<pre class="file" data-file="no terminal">sudo apt update
+sudo apt install build-essential gdb</pre>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>"Faça como administrador" (<em>superuser do</em>). Instalar programas mexe no sistema todo, então é preciso permissão de administrador. O <code>sudo</code> pede a <strong>sua</strong> senha, que não aparece enquanto você digita (nem bolinhas): é normal, digite e tecle Enter.</dd>
+  <dt>apt</dt><dd>O gerenciador de pacotes do Ubuntu e do Debian.</dd>
+  <dt>install</dt><dd>A ação: instalar. (<code>update</code>, no primeiro comando, atualiza o catálogo.)</dd>
+  <dt>build-essential gdb</dt><dd>Os nomes dos pacotes, separados por espaço. Você pode pedir quantos quiser de uma vez.</dd>
+</dl>
+
+<p>O <code>apt</code> mostra a lista do que vai instalar, quanto vai baixar e pergunta <code>Continuar? [S/n]</code>. Tecle Enter (o <code>S</code> maiúsculo é a resposta padrão) e espere. Em uma conexão comum, leva um ou dois minutos.</p>
+
+<p>Dá para ver o que <strong>aconteceria</strong>, sem instalar nada, com a opção <code>-s</code> (<em>simulate</em>, "simular"). A simulação nem precisa de <code>sudo</code>. A Ana já tem o <code>build-essential</code>, então simulou a instalação de um compilador que ela <strong>não</strong> tem, o <code>gcc-16</code> (uma versão extra, mais nova, que o Ubuntu 26.04 oferece ao lado do gcc 15):</p>
+
+<pre class="term">$ apt install -s gcc-16
+NOTA: Esta é apenas uma simulação!
+      apt precisa de privilégios de root para execução real.
+      Lembre-se também de que a trava está desativada e,
+      portanto, não dependa da relevância para a situação real atual!
+
+Instalando:                                          « o que você pediu
+  gcc-16
+
+Instalando dependências:                             « o que vem junto, automaticamente
+  cpp-16  cpp-16-x86-64-linux-gnu  gcc-16-x86-64-linux-gnu  libgcc-16-dev
+
+Pacotes sugeridos:                                   « opcionais: NÃO serão instalados
+  gcc-16-locales  cpp-16-doc  gcc-16-multilib  gcc-16-doc
+
+Resumo:
+  Atualizando: 0, Instalando: 5, Removendo: 0, Não atualizando: 12   « depois vêm linhas Inst e Conf, uma de cada por pacote</pre>
+
+<p>Você pediu um pacote, e o <code>apt</code> traria cinco: o <code>cpp-16</code> é o pré-processador (lembra da etapa 1 da aula <a href="como-funciona.html">Como o C Vira Programa</a>?), o <code>libgcc-16-dev</code> é uma biblioteca de apoio do compilador, e assim por diante. Esse é o trabalho do gerenciador: resolver as dependências por você. Pedir para instalar algo que já está instalado também não faz mal nenhum: o <code>apt</code> só diz <code>build-essential já é a versão mais nova</code> e não muda nada.</p>
+
+<p>Numa instalação de verdade, com <code>sudo</code>, o <code>Resumo</code> ganha mais duas linhas (o tamanho do download e o espaço em disco necessário; na versão do <code>apt</code> da Ana, curiosamente, essas duas linhas ainda saem em inglês, <code>Download size</code> e <code>Space needed</code>, porque a tradução está incompleta), e vêm a pergunta <code>Continuar? [S/n]</code>, as linhas <code>Obter:</code> do download e as linhas <code>Desempacotando …</code> e <code>Configurando …</code> de cada pacote.</p>
+
+<h3>Qual versão vou receber?</h3>
+<p>Cada versão de distribuição "congela" uma versão do compilador. O comando <code>apt-cache policy</code> mostra a versão instalada e a que está disponível:</p>
+
+<pre class="term">$ apt-cache policy gcc
+gcc:
+  Instalado: 4:15.2.0-5ubuntu1                      « a instalada
+  Candidato: 4:15.2.0-5ubuntu1                      « a que o apt instalaria (a mesma: está em dia)
+  Tabela de versão:
+ *** 4:15.2.0-5ubuntu1 500
+        500 http://archive.ubuntu.com/ubuntu resolute/main amd64 Packages   « do repositório principal do Ubuntu 26.04
+        100 /var/lib/dpkg/status</pre>
+
+<p>Como ler <code>4:15.2.0-5ubuntu1</code>: o <code>4:</code> é um número interno do empacotamento (pode ignorar), <code>15.2.0</code> é a versão do GCC, e <code>-5ubuntu1</code> é a revisão do pacote feita pelo Ubuntu. Se o gcc não estiver instalado, a linha <code>Instalado</code> diz <code>(nenhum)</code>. O <code>resolute</code> é o apelido do Ubuntu 26.04.</p>
+
+<p>O guia ensina C23, e a opção <code>-std=c23</code> do comando padrão exige o <strong>gcc 14 ou mais novo</strong>. Versões que as distribuições mais usadas trazem:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Distribuição</th><th>gcc padrão</th><th>Serve para o guia?</th></tr>
+<tr><td>Ubuntu 26.04 LTS</td><td>15</td><td>Sim, é a do guia</td></tr>
+<tr><td>Debian 13 (trixie)</td><td>14</td><td>Sim</td></tr>
+<tr><td>Ubuntu 24.04 LTS, Linux Mint 22</td><td>13</td><td>Quase tudo. O gcc 13 não aceita <code>-std=c23</code>: escreva <code>-std=c2x</code> no lugar (o nome antigo), que traz quase todo o C23. Ou instale também o <code>gcc-14</code> (veja abaixo).</td></tr>
+<tr><td>Debian 12 (bookworm)</td><td>12</td><td>Os Níveis 1 e 2 quase inteiros, com <code>-std=c2x</code> ou <code>-std=c17</code>. Faltam várias novidades do C23 (como <code>nullptr</code> e <code>constexpr</code>); quando uma aula usar uma delas, ela diz a alternativa antiga.</td></tr>
+</table>
+</div>
+
+<p>Se a sua distribuição traz um gcc mais velho, procure uma versão extra com número no nome, como o <code>gcc-16</code> que a Ana simulou. No Ubuntu 24.04, por exemplo (ilustrativo):</p>
+
+<pre class="file" data-file="no terminal (Ubuntu 24.04)">sudo apt install gcc-14
+gcc-14 --version</pre>
+
+<p>As duas versões convivem: <code>gcc</code> continua sendo o 13, e <code>gcc-14</code> é o novo. Nesse caso, nos comandos do guia, digite <code>gcc-14</code> no lugar de <code>gcc</code>.</p>
+
+<hr>
+
+<h2>3. Fedora, Arch e openSUSE</h2>
+<p>Nas outras famílias de distribuição, os pacotes têm outros nomes. Os comandos abaixo seguem a documentação oficial de cada uma. Eles não foram executados na máquina da Ana (que é Ubuntu), por isso a tabela é <strong>ilustrativa</strong>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Distribuição</th><th>Comando</th><th>Observação</th></tr>
+<tr><td><strong>Fedora</strong> (e Red Hat, Rocky, AlmaLinux)</td><td><code>sudo dnf install gcc make gdb</code></td><td>No Fedora, o pacote <code>gcc</code> já puxa os arquivos <code>.h</code> da biblioteca do C (<code>glibc-devel</code>). Para o kit completo de desenvolvimento, existe o grupo <code>sudo dnf group install development-tools</code>.</td></tr>
+<tr><td><strong>Arch</strong> (e Manjaro, EndeavourOS)</td><td><code>sudo pacman -S base-devel gdb</code></td><td>O <code>base-devel</code> é o kit (gcc, make e companhia), como o <code>build-essential</code> do Ubuntu.</td></tr>
+<tr><td><strong>openSUSE</strong></td><td><code>sudo zypper install gcc make gdb</code></td><td>Também existe o padrão <code>sudo zypper install -t pattern devel_basis</code>, com o kit completo.</td></tr>
+</table>
+</div>
+
+<p>O Fedora e o Arch costumam trazer versões mais novas do GCC que o Ubuntu e o Debian, o que é ótimo para o guia. Como o comando das aulas sempre diz <code>-std=c23</code>, a versão que cada gcc usa "sozinho" não faz diferença (aula <a href="versoes.html">Versões do C</a>).</p>
+
+<hr>
+
+<h2>4. O Clang, a alternativa</h2>
+<p>O <strong>Clang</strong> é o outro grande compilador de C livre, do projeto <strong>LLVM</strong>. Ele entende o mesmo C que o gcc, gera programas tão rápidos quanto, e é conhecido pelas mensagens de erro claras. O <strong>editor do guia usa o Clang</strong>, então tê-lo no computador ajuda a ver exatamente as mesmas mensagens das caixas Experimente. No Ubuntu e no Debian:</p>
+
+<pre class="file" data-file="no terminal">sudo apt install clang</pre>
+
+<p>(No Fedora, <code>sudo dnf install clang</code>; no Arch, <code>sudo pacman -S clang</code>.) O comando se chama <code>clang</code> e aceita as mesmas opções principais do gcc:</p>
+
+<pre class="term">$ clang --version
+Ubuntu clang version 21.1.8 (6ubuntu1)              « Clang 21.1.8
+Target: x86_64-pc-linux-gnu
+Thread model: posix
+InstalledDir: /usr/lib/llvm-21/bin
+$ apt-cache policy clang | head -3
+clang:
+  Instalado: 1:21.1.6-71                            « o pacote "clang" é um atalho para o clang-21
+  Candidato: 1:21.1.6-71</pre>
+
+<p>Os números diferentes (<code>21.1.6</code> no pacote <code>clang</code>, <code>21.1.8</code> no programa) não são erro: o pacote <code>clang</code> é só um "atalho" que aponta para o pacote <code>clang-21</code>, que tem o compilador de verdade e foi atualizado separadamente.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>gcc (GCC)</th><th>clang (LLVM)</th></tr>
+<tr><td>Instalar no Ubuntu/Debian</td><td><code>sudo apt install build-essential</code></td><td><code>sudo apt install clang</code></td></tr>
+<tr><td>Compilar</td><td><code>gcc -std=c23 -Wall -Wextra ola.c -o ola</code></td><td><code>clang -std=c23 -Wall -Wextra ola.c -o ola</code></td></tr>
+<tr><td>Biblioteca do C no Linux</td><td>glibc (pacote <code>libc6-dev</code>)</td><td>a mesma glibc</td></tr>
+<tr><td>Versão do C sem <code>-std=</code></td><td>gcc 15: <code>gnu23</code></td><td>Clang 21: <code>gnu17</code></td></tr>
+<tr><td>Usado</td><td>nas saídas de terminal do guia</td><td>no editor do guia; é o <code>gcc</code> do macOS</td></tr>
+<tr><td>Qual usar?</td><td colspan="2">Os dois. O guia usa o gcc nos exemplos de terminal porque é o padrão do Linux. Quando uma mensagem de erro não fizer sentido num, compile no outro: às vezes a explicação do outro é mais clara.</td></tr>
+</table>
+</div>
+
+<p>Repare que o Clang no Linux usa a <strong>mesma</strong> biblioteca do C que o gcc (a glibc, com os <code>.h</code> do <code>libc6-dev</code>). Por isso o <code>build-essential</code> é útil mesmo para quem prefere o Clang.</p>
+
+<hr>
+
+<h2 id="conferir">5. Conferindo a instalação</h2>
+<p>Depois de instalar, confira as três ferramentas. Cada uma responde ao <code>--version</code>:</p>
+
+<pre class="term">$ gcc --version
+gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0                « o compilador
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+$ make --version
+GNU Make 4.4.1                                      « o make
+Compilado para x86_64-pc-linux-gnu
+Copyright (C) 1988-2023 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later &lt;https://gnu.org/licenses/gpl.html&gt;
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+$ gdb --version
+GNU gdb (Ubuntu 17.1-2ubuntu1) 17.1                 « o depurador
+Copyright (C) 2025 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later &lt;http://gnu.org/licenses/gpl.html&gt;
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.</pre>
+
+<p>O que importa é a primeira linha de cada um: o nome e a versão. O resto é o aviso de licença: os três são <strong>software livre</strong> do projeto GNU (licença GPL), que você pode usar, estudar e redistribuir. Repare que o <code>make</code> respondeu "Compilado para" em português: ele tem tradução, o gcc não (as mensagens do gcc saem sempre em inglês).</p>
+
+<p>Também dá para ver onde os programas estão:</p>
+
+<pre class="term">$ which gcc                                         « onde está o programa
+/usr/bin/gcc
+$ readlink /usr/bin/gcc                             « para onde aponta o atalho
+gcc-15
+$ which make gdb
+/usr/bin/make
+/usr/bin/gdb</pre>
+
+<p>O <code>which</code> mostra a pasta do programa, e o <code>readlink</code> revela que <code>/usr/bin/gcc</code> é um <strong>atalho</strong> (um link simbólico) para o <code>gcc-15</code>. É assim que várias versões convivem: o atalho <code>gcc</code> aponta para a versão padrão, e as outras são chamadas pelo nome com número (<code>gcc-16</code>).</p>
+
+<hr>
+
+<h2>6. O teste final: o primeiro programa</h2>
+<p>Agora o teste de verdade: escrever, compilar e rodar. Crie uma pasta para os seus programas e entre nela:</p>
+
+<pre class="term">$ mkdir c                                           « cria a pasta c na sua pasta pessoal
+$ cd c                                              « entra nela</pre>
+
+<p>Abra um editor de texto e crie o arquivo <code>ola.c</code> dentro dessa pasta. Pode ser o editor de textos do seu sistema, o <code>nano</code> no terminal (<code>nano ola.c</code>; para salvar, <kbd>Ctrl</kbd>+<kbd>O</kbd> e Enter; para sair, <kbd>Ctrl</kbd>+<kbd>X</kbd>) ou um editor de programação (aula <a href="editores.html">Editores e IDEs</a>). Digite:</p>
+
+<pre class="file" data-file="ola.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n");
+    return 0;
+}
+</pre>
+
+<p>Salve, volte ao terminal, compile com o comando padrão do guia e rode:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ola.c -o ola
+$ ./ola
+Olá, mundo!</pre>
+
+<p>Se apareceu <code>Olá, mundo!</code>, o compilador, os arquivos <code>.h</code> e o ligador estão funcionando. Falta conferir o C23. Este programa usa duas novidades (<code>bool</code> sem <code>#include</code> e <code>nullptr</code>) e mostra o <code>__STDC_VERSION__</code> (aula <a href="versoes.html">Versões do C</a>):</p>
+
+<pre class="file" data-file="teste23.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool pronto = true;
+    int *nada = nullptr;
+    printf("C23 funcionando: %ld\n", __STDC_VERSION__);
+    printf("pronto = %d, nada é nulo = %d\n", pronto, nada == nullptr);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra teste23.c -o teste23
+$ ./teste23
+C23 funcionando: 202311                             « 202311 = C23: tudo certo
+pronto = 1, nada é nulo = 1
+$ clang -std=c23 -Wall -Wextra teste23.c -o teste23 « se instalou o Clang, ele também
+$ ./teste23
+C23 funcionando: 202311
+pronto = 1, nada é nulo = 1</pre>
+
+<p>Se apareceu <code>202311</code>, o seu computador está pronto para o guia inteiro. O mesmo programa roda aqui no editor, que também compila com <code>-std=c23</code>:</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e compare com a saída do terminal da Ana. Depois troque <code>true</code> por <code>false</code> e rode de novo: o <code>pronto</code> vira <code>0</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    bool pronto = true;
+    int *nada = nullptr;
+    printf("C23 funcionando: %ld\n", __STDC_VERSION__);
+    printf("pronto = %d, nada é nulo = %d\n", pronto, nada == nullptr);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>Atualizando</h3>
+<p>O gerenciador de pacotes também cuida das atualizações. De tempos em tempos, rode (ilustrativo):</p>
+
+<pre class="file" data-file="no terminal">sudo apt update
+sudo apt upgrade</pre>
+
+<p>O <code>upgrade</code> atualiza todos os programas instalados, incluindo o gcc, para a última revisão da sua distribuição. Ele não troca o gcc 15 por um gcc 16: versões novas do compilador chegam com versões novas da distribuição, ou como pacotes extras com número no nome.</p>
+
+<hr>
+
+<h2 id="quando-errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>gcc: comando não encontrado</code></strong>
+<pre class="term">$ gcc --version
+bash: gcc: comando não encontrado</pre>
+<p><strong>O que aconteceu:</strong> o compilador não está instalado (ou foi instalado com outro nome, como <code>gcc-14</code>).</p>
+<p><strong>Como consertar:</strong> instale com <code>sudo apt install build-essential</code> (ou o comando da sua distribuição, na seção 3). Se instalou uma versão com número, use o nome completo: <code>gcc-14 --version</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>sudo</code>: <code>você é root?</code></strong>
+<pre class="term">$ apt install gcc-16
+Erro: Não foi possível abrir arquivo de trava /var/lib/dpkg/lock-frontend - open (13: Permissão negada)
+Erro: Não é possível adquirir a trava da interface do dpkg (/var/lib/dpkg/lock-frontend), você é root?</pre>
+<p><strong>O que aconteceu:</strong> instalar programas mexe no sistema todo, e só o administrador (o <code>root</code>) pode fazer isso. A "trava" (<em>lock</em>) é um arquivo que garante que só um programa instale pacotes por vez; um usuário comum não tem permissão nem de abri-lo.</p>
+<p><strong>Como consertar:</strong> repita o comando com <code>sudo</code> na frente. Um atalho do terminal: <code>sudo !!</code> repete o último comando com <code>sudo</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Instalou só o <code>gcc</code> e o <code>stdio.h</code> não existe (ilustrativo)</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ola.c -o ola
+ola.c:1:10: fatal error: stdio.h: Arquivo ou diretório inexistente
+    1 | #include &lt;stdio.h&gt;
+      |          ^~~~~~~~~
+compilation terminated.</pre>
+<p><strong>O que aconteceu:</strong> o compilador está lá, mas os arquivos <code>.h</code> da biblioteca do C não. No Ubuntu e no Debian, eles ficam no pacote <code>libc6-dev</code>, que o <code>build-essential</code> sempre traz. O pacote <code>gcc</code> sozinho só o recomenda, e ele fica de fora quando a instalação pula os recomendados (com <code>--no-install-recommends</code>, comum em servidores e contêineres). Na máquina da Ana, o <code>dpkg -S</code> mostra de que pacote veio o arquivo:</p>
+<pre class="term">$ dpkg -S /usr/include/stdio.h
+libc6-dev:amd64: /usr/include/stdio.h</pre>
+<p><strong>Como consertar:</strong> <code>sudo apt install build-essential</code>. (A tela de erro acima é ilustrativa: na máquina da Ana o <code>stdio.h</code> existe. Ela segue o formato real do gcc, o mesmo do <code>#include &lt;stdoi.h&gt;</code> da aula <a href="como-funciona.html">Como o C Vira Programa</a>.)</p>
+</div>
+
+<div class="cenario">
+<strong>gcc antigo: <code>unrecognized command-line option ‘-std=c23’</code> (ilustrativo)</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ola.c -o ola
+gcc: error: unrecognized command-line option ‘-std=c23’; did you mean ‘-std=c2x’?</pre>
+<p><strong>O que aconteceu:</strong> o gcc é anterior ao 14 e não conhece o nome <code>c23</code> ("opção de linha de comando não reconhecida"). Ele mesmo sugere o nome antigo, <code>c2x</code>, de quando ainda não se sabia o ano da versão. (Tela ilustrativa, no formato do gcc 13: a máquina da Ana tem o gcc 15.)</p>
+<p><strong>Como consertar:</strong> use <code>-std=c2x</code> nos comandos do guia, ou instale um gcc mais novo (<code>gcc-14</code>), como na seção 2.</p>
+</div>
+
+<div class="cenario">
+<strong><code>ola: comando não encontrado</code> ao rodar o programa</strong>
+<pre class="term" data-cwd="~/c">$ ola
+bash: ola: comando não encontrado</pre>
+<p><strong>O que aconteceu:</strong> o programa existe, mas o terminal só procura comandos em algumas pastas do sistema (como <code>/usr/bin</code>), e não na pasta em que você está. Isso é proposital, por segurança.</p>
+<p><strong>Como consertar:</strong> diga onde ele está: <code>./ola</code>. O <code>./</code> quer dizer "nesta pasta aqui".</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Distribuição</th><th>Instalar gcc, make e gdb</th><th>Instalar o Clang</th></tr>
+<tr><td>Ubuntu, Debian, Mint</td><td><code>sudo apt update</code> e <code>sudo apt install build-essential gdb</code></td><td><code>sudo apt install clang</code></td></tr>
+<tr><td>Fedora, Red Hat</td><td><code>sudo dnf install gcc make gdb</code></td><td><code>sudo dnf install clang</code></td></tr>
+<tr><td>Arch, Manjaro</td><td><code>sudo pacman -S base-devel gdb</code></td><td><code>sudo pacman -S clang</code></td></tr>
+<tr><td>openSUSE</td><td><code>sudo zypper install gcc make gdb</code></td><td><code>sudo zypper install clang</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Para quê</th></tr>
+<tr><td><code>gcc --version</code>, <code>make --version</code>, <code>gdb --version</code></td><td>Conferir se está instalado e a versão</td></tr>
+<tr><td><code>which gcc</code></td><td>Onde está o programa</td></tr>
+<tr><td><code>apt-cache policy gcc</code></td><td>Versão instalada e disponível (Ubuntu/Debian)</td></tr>
+<tr><td><code>apt-cache depends build-essential</code></td><td>O que um pacote traz junto</td></tr>
+<tr><td><code>apt install -s pacote</code></td><td>Simular uma instalação, sem instalar</td></tr>
+<tr><td><code>dpkg -S /caminho/do/arquivo</code></td><td>De que pacote veio um arquivo</td></tr>
+<tr><td><code>sudo apt update</code> e <code>sudo apt upgrade</code></td><td>Atualizar o catálogo e os programas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Instalar no Ubuntu</h3>
+<p>Complete o comando que instala o kit de compilação no Ubuntu:</p>
+<div class="ex-code">sudo apt install <input data-answer="build-essential" aria-label="pacote"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Instalar no Arch</h3>
+<p>Complete o comando que instala o kit de compilação no Arch:</p>
+<div class="ex-code">sudo <input data-answer="pacman" aria-label="gerenciador"> -S base-devel</div>
+</div>
+
+<div class="exercise">
+<h3>3. Conferir o depurador</h3>
+<p>Complete o comando que mostra a versão do depurador:</p>
+<div class="ex-code"><input data-answer="gdb" aria-label="programa"> --version</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Por que o guia recomenda o <code>build-essential</code> em vez de só o pacote <code>gcc</code>?</p>
+<label><input type="radio" name="q4"> Porque o pacote <code>gcc</code> não tem compilador.</label>
+<label><input type="radio" name="q4"> Porque o <code>build-essential</code> é mais rápido.</label>
+<label><input type="radio" name="q4"> Porque ele traz junto o <code>make</code> e o <code>libc6-dev</code>, com os arquivos <code>.h</code> como o <code>stdio.h</code>.</label>
+<label><input type="radio" name="q4"> Porque ele traz o editor de código.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. O <code>gcc --version</code> mostrou <code>13.3.0</code>. O que fazer para seguir o guia?</p>
+<label><input type="radio" name="q5"> Nada: o gcc 13 aceita <code>-std=c23</code>.</label>
+<label><input type="radio" name="q5"> Usar <code>-std=c2x</code> no lugar de <code>-std=c23</code>, ou instalar o <code>gcc-14</code>.</label>
+<label><input type="radio" name="q5"> Desinstalar o Linux.</label>
+<label><input type="radio" name="q5"> Usar só o Clang, porque o gcc 13 não compila C.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O <code>apt install</code> respondeu <code>você é root?</code>. O que faltou?</p>
+<label><input type="radio" name="q6"> O <code>sudo</code> antes do comando.</label>
+<label><input type="radio" name="q6"> Internet.</label>
+<label><input type="radio" name="q6"> O <code>-s</code> no fim.</label>
+<label><input type="radio" name="q6"> Reiniciar o computador.</label>
+</div>
+
+<h3>Missão final: o cartão de boas-vindas</h3>
+<p>Para comemorar a instalação, um programa que mostra as ferramentas da Ana. Faça a missão aqui no editor e, depois, repita no seu terminal.</p>
+
+<div class="tryc" data-goal="outre:gcc 15\ngdb 17\nmake 4\n?$">
+<p class="try-task"><strong>Missão:</strong> o cartão da Ana está incompleto. Acrescente uma linha <code>printf</code> para o <code>make 4</code>, logo depois da do <code>gdb</code>, para a saída terminar com as três ferramentas, uma por linha: <code>gcc 15</code>, <code>gdb 17</code> e <code>make 4</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Ferramentas instaladas no notebook da Ana:\n");
+    printf("gcc 15\n");
+    printf("gdb 17\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Ferramentas instaladas no notebook da Ana:\n");
+    printf("gcc 15\n");
+    printf("gdb 17\n");
+    printf("make 4\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O Linux instala programas pelo <strong>gerenciador de pacotes</strong>: <code>apt</code> (Ubuntu/Debian), <code>dnf</code> (Fedora), <code>pacman</code> (Arch), <code>zypper</code> (openSUSE).</li>
+  <li>Antes de instalar, pergunte: <code>gcc --version</code>. Para o guia, o ideal é o <strong>gcc 14 ou mais novo</strong> (no 13, use <code>-std=c2x</code>).</li>
+  <li>No Ubuntu e no Debian: <code>sudo apt update</code> e <code>sudo apt install build-essential gdb</code>. O kit traz o gcc, o make e o <code>libc6-dev</code> (os <code>.h</code> como o <code>stdio.h</code>).</li>
+  <li>O <code>sudo</code> pede a sua senha, que não aparece enquanto você digita. Sem ele, o <code>apt</code> pergunta "você é root?".</li>
+  <li>O <strong>Clang</strong> (<code>sudo apt install clang</code>) é a alternativa ao gcc e o compilador do editor do guia.</li>
+  <li>Confira com <code>gcc --version</code>, <code>make --version</code> e <code>gdb --version</code>, e faça o teste final: um programa com <code>__STDC_VERSION__</code> que mostre <code>202311</code>.</li>
+  <li>Próximo passo: escolher onde escrever o código, em <a href="editores.html">Editores e IDEs</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
