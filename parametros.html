@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Parâmetros — passar valores para uma função | Guia C</title>
+<meta name="description" content="Parâmetros em C para quem nunca programou: parâmetro e argumento, vários parâmetros, passagem por valor (a função recebe uma cópia), arrays como parâmetro (viram ponteiro e precisam do tamanho), const, por que C não tem sobrecarga e os erros reais do gcc 15 (too few arguments, makes integer from pointer, conflicting types), com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Parâmetros</span></h1>
+
+<p class="intro">Na aula <a href="funcoes.html">Funções</a>, todas as funções faziam sempre a mesma coisa: <code>linha()</code> desenhava sempre a mesma linha. Uma função fica muito mais útil quando você pode <strong>entregar informações</strong> para ela trabalhar: "mostre o dobro <em>deste</em> número", "calcule o total <em>desta</em> compra". Essas informações chegam pelos <strong>parâmetros</strong>. Nesta aula você vai criar funções que recebem valores, entender por que a função recebe uma <strong>cópia</strong> (e não a variável original), ver o caso especial dos arrays e descobrir que, em C, dois nomes de função iguais não convivem.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre <strong>parâmetro</strong> (na definição) e <strong>argumento</strong> (na chamada).</li>
+  <li>Como escrever funções com um ou vários parâmetros, cada um com o seu tipo.</li>
+  <li>Por que a ordem dos argumentos importa e o que acontece quando o tipo não bate.</li>
+  <li>A <strong>passagem por valor</strong>: a função recebe uma cópia, e mudar o parâmetro não muda a variável de quem chamou.</li>
+  <li>Arrays como parâmetro: por que é preciso passar o tamanho junto, e por que aqui a função <em>consegue</em> mudar o original.</li>
+  <li>Por que C não tem sobrecarga (duas funções com o mesmo nome) e o erro <code>conflicting types</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana, na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o formulário e o que você preenche</h2>
+<p>Pense num formulário de pedido da lojinha da Ana. O papel impresso tem campos com nome: <strong>Produto: ____</strong>, <strong>Quantidade: ____</strong>. Cada cliente preenche os campos com valores diferentes, mas o formulário é sempre o mesmo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No formulário</th><th>Em C</th><th>Nome técnico</th></tr>
+<tr><td>O campo impresso, "Quantidade: ____"</td><td>A variável declarada entre os parênteses da <strong>definição</strong>: <code>void pedir(int quantidade)</code></td><td><strong>parâmetro</strong></td></tr>
+<tr><td>O que o cliente escreve no campo, "3"</td><td>O valor entre os parênteses da <strong>chamada</strong>: <code>pedir(3);</code></td><td><strong>argumento</strong></td></tr>
+</table>
+</div>
+
+<p>Muita gente (e muito livro) usa as duas palavras como se fossem a mesma coisa. Não tem problema; mas, quando o compilador fala em <em>argument</em>, ele quer dizer o valor da chamada.</p>
+
+<hr>
+
+<h2>1. Uma função com um parâmetro</h2>
+
+<pre class="file" data-file="dobro.c">#include &lt;stdio.h&gt;
+
+void mostrar_dobro(int n) {
+    printf("O dobro de %d é %d\n", n, n * 2);
+}
+
+int main(void) {
+    mostrar_dobro(5);
+    mostrar_dobro(21);
+    int idade = 29;
+    mostrar_dobro(idade);
+    mostrar_dobro(idade + 1);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>(int n)</dt><dd>O <strong>parâmetro</strong>: uma variável <code>int</code> chamada <code>n</code>, que só existe dentro da função. Ela não tem valor fixo: recebe um novo valor a cada chamada.</dd>
+  <dt>n * 2</dt><dd>Dentro do corpo, <code>n</code> é usado como qualquer variável.</dd>
+  <dt>mostrar_dobro(5);</dt><dd>O <strong>argumento</strong> <code>5</code> é copiado para <code>n</code>, e o corpo roda com <code>n</code> valendo 5.</dd>
+  <dt>mostrar_dobro(idade);</dt><dd>O argumento pode ser uma variável: o <strong>valor</strong> dela (29) é copiado para <code>n</code>. Os nomes não precisam combinar.</dd>
+  <dt>mostrar_dobro(idade + 1);</dt><dd>Pode ser também uma conta: o C calcula <code>idade + 1</code> (30) primeiro e passa o resultado.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra dobro.c -o dobro
+$ ./dobro
+O dobro de 5 é 10
+O dobro de 21 é 42
+O dobro de 29 é 58
+O dobro de 30 é 60</pre>
+
+<p>Uma única função, quatro resultados diferentes. É isso que os parâmetros trazem: a mesma receita, com ingredientes diferentes a cada vez.</p>
+
+<hr>
+
+<h2>2. Vários parâmetros</h2>
+<p>Para entregar mais de uma informação, separe os parâmetros por vírgula. Cada um tem o <strong>seu</strong> tipo:</p>
+
+<pre class="file" data-file="total.c">#include &lt;stdio.h&gt;
+
+void mostrar_total(int quantidade, double preco) {
+    printf("%d x R$ %.2f = R$ %.2f\n", quantidade, preco, quantidade * preco);
+}
+
+int main(void) {
+    mostrar_total(3, 2.50);
+    mostrar_total(10, 0.75);
+    mostrar_total(2.50, 3);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra total.c -o total
+$ ./total
+3 x R$ 2.50 = R$ 7.50
+10 x R$ 0.75 = R$ 7.50
+2 x R$ 3.00 = R$ 6.00          « argumentos na ordem errada: nenhum aviso do gcc</pre>
+
+<dl class="anatomy">
+  <dt>int quantidade, double preco</dt><dd>Dois parâmetros, separados por vírgula, cada um com seu tipo. O primeiro argumento vai para o primeiro parâmetro, o segundo para o segundo.</dd>
+  <dt>mostrar_total(3, 2.50);</dt><dd><code>quantidade</code> recebe 3 e <code>preco</code> recebe 2.50.</dd>
+  <dt>mostrar_total(2.50, 3);</dt><dd>A <strong>ordem</strong> é que manda, não o nome nem a intenção. O 2.50 foi para <code>quantidade</code> (que é <code>int</code>, então virou 2, cortando o .50) e o 3 foi para <code>preco</code> (virou 3.00).</dd>
+</dl>
+
+<p>A terceira linha mostra um erro que o gcc deixou passar calado: ele <strong>converte</strong> o número para o tipo do parâmetro, sem perguntar (as conversões têm aula própria, <a href="conversao-tipos.html">Conversão de Tipos</a>). O Clang do editor é mais atento quando o número está escrito direto no código e avisa: <code>implicit conversion from 'double' to 'int' changes value from 2.5 to 2 [-Wliteral-conversion]</code>. No gcc, quem avisa é a opção <code>-Wconversion</code>, que não faz parte do <code>-Wall</code> (veja <a href="avisos.html">Avisos</a>).</p>
+
+<h3>Cada parâmetro precisa do seu tipo</h3>
+<p>Nas variáveis, <code>int largura, altura;</code> cria as duas como <code>int</code>. Nos parâmetros, <strong>não</strong>: cada um repete o tipo.</p>
+
+<pre class="file" data-file="tipojunto.c">#include &lt;stdio.h&gt;
+
+void mostrar_area(int largura, altura) {
+    printf("Área: %d\n", largura * altura);
+}
+
+int main(void) {
+    mostrar_area(3, 4);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipojunto.c -o tipojunto
+tipojunto.c:3:32: error: unknown type name ‘altura’
+    3 | void mostrar_area(int largura, altura) {
+      |                                ^~~~~~
+tipojunto.c: In function ‘main’:
+tipojunto.c:8:5: error: implicit declaration of function ‘mostrar_area’ [-Wimplicit-function-declaration]
+    8 |     mostrar_area(3, 4);
+      |     ^~~~~~~~~~~~</pre>
+
+<p><em>Unknown type name ‘altura’</em> = "nome de tipo desconhecido: <code>altura</code>". Depois da vírgula, o gcc esperava um <strong>tipo</strong> e achou um nome que não conhece. Como a definição inteira falhou, a função "não existe", e o segundo erro aparece no <code>main</code>. Conserte o primeiro e o segundo some: <code>void mostrar_area(int largura, int altura)</code>.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e confira as três linhas. Depois acrescente uma chamada sua, por exemplo <code>mostrar_total(4, 1.25);</code>. Por fim, troque a ordem dos argumentos de uma chamada e leia o aviso que o Clang mostra.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void mostrar_total(int quantidade, double preco) {
+    printf("%d x R$ %.2f = R$ %.2f\n", quantidade, preco, quantidade * preco);
+}
+
+int main(void) {
+    mostrar_total(3, 2.50);
+    mostrar_total(10, 0.75);
+    mostrar_total(1, 12.90);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Passagem por valor: a função recebe uma cópia</h2>
+<p>Esta é a ideia mais importante da aula. Quando você chama uma função, o C <strong>copia</strong> o valor de cada argumento para o parâmetro. A função trabalha com a cópia. Veja:</p>
+
+<pre class="file" data-file="copia.c">#include &lt;stdio.h&gt;
+
+void zerar(int x) {
+    x = 0;
+    printf("Dentro de zerar: x = %d\n", x);
+}
+
+int main(void) {
+    int pontos = 50;
+    zerar(pontos);
+    printf("No main: pontos = %d\n", pontos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra copia.c -o copia
+$ ./copia
+Dentro de zerar: x = 0
+No main: pontos = 50            « a variável do main não mudou</pre>
+
+<ol class="passo">
+  <li>O <code>main</code> cria <code>pontos</code> valendo 50.</li>
+  <li>A chamada <code>zerar(pontos)</code> lê o valor de <code>pontos</code> (50) e o <strong>copia</strong> para uma variável nova, <code>x</code>, que pertence à função.</li>
+  <li>Dentro de <code>zerar</code>, <code>x = 0;</code> muda a cópia. A tela confirma: <code>x = 0</code>.</li>
+  <li>A função termina e <code>x</code> deixa de existir. A variável <code>pontos</code> do <code>main</code> nunca foi tocada: continua 50.</li>
+</ol>
+
+<p>É como tirar uma <strong>xerox</strong> de um documento e entregar a cópia: a pessoa pode rabiscar a xerox à vontade, e o original continua limpo na sua gaveta. Isso se chama <strong>passagem por valor</strong>, e em C <em>todo</em> argumento é passado assim.</p>
+
+<p>E se o parâmetro tiver o <strong>mesmo nome</strong> da variável? Não muda nada: são duas variáveis diferentes, em lugares diferentes, que só têm o nome igual (a aula <a href="escopo.html">Escopo</a> explica por quê). Nesse caso o gcc ainda dá uma dica valiosa:</p>
+
+<pre class="file" data-file="mesmonome.c">#include &lt;stdio.h&gt;
+
+void zerar(int pontos) {
+    pontos = 0;
+}
+
+int main(void) {
+    int pontos = 50;
+    zerar(pontos);
+    printf("pontos = %d\n", pontos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra mesmonome.c -o mesmonome
+mesmonome.c: In function ‘zerar’:
+mesmonome.c:3:16: warning: parameter ‘pontos’ set but not used [-Wunused-but-set-parameter]
+    3 | void zerar(int pontos) {
+      |            ~~~~^~~~~~
+$ ./mesmonome
+pontos = 50</pre>
+
+<p><em>Parameter ‘pontos’ set but not used</em> = "o parâmetro <code>pontos</code> recebe um valor, mas nunca é usado". O gcc percebeu que guardar 0 numa cópia que ninguém mais lê é inútil: um forte sinal de que você esperava mudar a variável de fora.</p>
+
+<div class="note">
+<strong>E se eu quiser que a função mude a variável de quem chamou?</strong>
+<p>Há dois caminhos. O mais simples é a função <strong>devolver</strong> o novo valor, e quem chamou guarda: <code>pontos = zerado();</code> (aula <a href="retorno.html">Valor de Retorno</a>). O outro é entregar à função o <strong>endereço</strong> da variável, em vez de uma cópia do valor: é a passagem por ponteiro, aula <a href="passagem-ponteiro.html">Passar por Ponteiro</a>, do Nível 2. É assim que o <code>scanf("%d", &amp;idade)</code> consegue mudar a sua variável: o <code>&amp;</code> entrega o endereço.</p>
+</div>
+
+<div class="tryc" data-goal="outre:^Área: 12\nÁrea: 50\n$,src:void\s+mostrar_area\s*\(\s*int\s+\w+\s*\,\s*int\s+\w+\s*\),semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana quer calcular a área de dois canteiros retangulares. Escreva a função <code>mostrar_area</code> com <strong>dois</strong> parâmetros <code>int</code> (a largura e a altura) que mostra <code>Área: </code> seguido de largura vezes altura. O <code>main</code> já chama a função com (3, 4) e (5, 10).</p>
+<pre class="out">Área: 12
+Área: 50</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+// escreva aqui a função mostrar_area
+
+int main(void) {
+    mostrar_area(3, 4);
+    mostrar_area(5, 10);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void mostrar_area(int largura, int altura) {
+    printf("Área: %d\n", largura * altura);
+}
+
+int main(void) {
+    mostrar_area(3, 4);
+    mostrar_area(5, 10);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Número errado de argumentos e tipo errado</h2>
+<p>O compilador confere a chamada com o cabeçalho da função. Faltou argumento? Erro:</p>
+
+<pre class="file" data-file="poucos.c">#include &lt;stdio.h&gt;
+
+void media(double a, double b) {
+    printf("Média: %.1f\n", (a + b) / 2);
+}
+
+int main(void) {
+    media(7.5);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra poucos.c -o poucos
+poucos.c: In function ‘main’:
+poucos.c:8:5: error: too few arguments to function ‘media’; expected 2, have 1
+    8 |     media(7.5);
+      |     ^~~~~
+poucos.c:3:6: note: declared here
+    3 | void media(double a, double b) {
+      |      ^~~~~</pre>
+
+<p><em>Too few arguments</em> = "argumentos de menos"; <em>expected 2, have 1</em> = "esperava 2, recebeu 1". Com argumentos de mais, a mensagem é <em>too many arguments</em>. O Clang do editor escreve <code>too few arguments to function call, expected 2, have 1</code>. Em C, todo parâmetro precisa receber um argumento: não existe "valor padrão" para o parâmetro que faltou.</p>
+
+<p>E um argumento do tipo errado? Depende de quão errado ele é:</p>
+
+<pre class="file" data-file="tipo.c">#include &lt;stdio.h&gt;
+
+void mostrar_dobro(int n) {
+    printf("O dobro de %d é %d\n", n, n * 2);
+}
+
+int main(void) {
+    mostrar_dobro(2.9);
+    mostrar_dobro("dez");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipo.c -o tipo
+tipo.c: In function ‘main’:
+tipo.c:9:19: error: passing argument 1 of ‘mostrar_dobro’ makes integer from pointer without a cast [-Wint-conversion]
+    9 |     mostrar_dobro("dez");
+      |                   ^~~~~
+      |                   |
+      |                   char *
+tipo.c:3:24: note: expected ‘int’ but argument is of type ‘char *’
+    3 | void mostrar_dobro(int n) {
+      |                    ~~~~^</pre>
+
+<dl class="anatomy">
+  <dt>mostrar_dobro(2.9)</dt><dd>Número com vírgula num parâmetro <code>int</code>: o gcc <strong>converte</strong> em silêncio (vira 2). Nenhuma linha da saída fala da linha 8.</dd>
+  <dt>passing argument 1 of ‘mostrar_dobro’</dt><dd>"Passando o argumento 1 de <code>mostrar_dobro</code>…"</dd>
+  <dt>makes integer from pointer without a cast</dt><dd>"…cria um inteiro a partir de um ponteiro sem conversão explícita". Um texto entre aspas, para o C, é o <strong>endereço</strong> de onde as letras estão guardadas (um ponteiro, <code>char *</code>), e não um número. Transformar texto em número é outra coisa: veja <a href="string-numero.html">Texto ↔ Número</a>.</dd>
+  <dt>[-Wint-conversion]</dt><dd>No gcc 14 em diante, isso é <strong>erro</strong>. Em gcc mais antigos era só aviso, e o programa rodava com um número sem sentido.</dd>
+  <dt>note: expected ‘int’ but argument is of type ‘char *’</dt><dd>"Esperava <code>int</code>, mas o argumento é do tipo <code>char *</code>", apontando o parâmetro.</dd>
+</dl>
+
+<hr>
+
+<h2>5. Arrays como parâmetro</h2>
+<p>Arrays (aula <a href="arrays.html">Arrays</a>) também podem ir para uma função, e aqui o C tem duas surpresas. A primeira: a função <strong>não sabe o tamanho</strong> do array.</p>
+
+<pre class="file" data-file="arrsize.c">#include &lt;stdio.h&gt;
+
+void mostrar(int notas[]) {
+    int n = sizeof(notas) / sizeof(notas[0]);
+    printf("Dentro da função: %d notas\n", n);
+}
+
+int main(void) {
+    int notas[5] = {7, 9, 6, 10, 8};
+    printf("No main: %zu notas\n", sizeof(notas) / sizeof(notas[0]));
+    mostrar(notas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra arrsize.c -o arrsize
+arrsize.c: In function ‘mostrar’:
+arrsize.c:4:19: warning: ‘sizeof’ on array function parameter ‘notas’ will return size of ‘int *’ [-Wsizeof-array-argument]
+    4 |     int n = sizeof(notas) / sizeof(notas[0]);
+      |                   ^
+arrsize.c:3:18: note: declared here
+    3 | void mostrar(int notas[]) {
+      |              ~~~~^~~~~~~
+$ ./arrsize
+No main: 5 notas
+Dentro da função: 2 notas       « errado: o array tem 5</pre>
+
+<p>No <code>main</code>, o truque <code>sizeof(notas) / sizeof(notas[0])</code> (aula <a href="sizeof.html">sizeof</a>) dá 5. Dentro da função, deu 2, e o gcc explicou: <em>‘sizeof’ on array function parameter ‘notas’ will return size of ‘int *’</em>, "o <code>sizeof</code> de um parâmetro array vai devolver o tamanho de um <code>int *</code>".</p>
+
+<p>O que acontece é que o array <strong>não é copiado</strong> para a função. Copiar um array de mil números a cada chamada seria lento, então o C entrega só o <strong>endereço</strong> do primeiro elemento, um <strong>ponteiro</strong> (<code>int *</code>). Dizemos que o array <strong>decai</strong> para ponteiro. Para a função, <code>int notas[]</code> é só outro jeito de escrever <code>int *notas</code>. O <code>sizeof</code> mediu o ponteiro (8 bytes neste computador) dividido por um <code>int</code> (4 bytes): 2. No editor do guia, onde um ponteiro tem 4 bytes, o mesmo programa mostra <code>1 notas</code>. Os dois estão errados do mesmo jeito. (Ponteiros e arrays têm aula própria: <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>.)</p>
+
+<p>O conserto é o padrão de todo programa C: <strong>passe o tamanho junto</strong>, num segundo parâmetro.</p>
+
+<pre class="file" data-file="media.c">#include &lt;stdio.h&gt;
+
+void mostrar_media(const int notas[], int n) {
+    int soma = 0;
+    for (int i = 0; i &lt; n; i++) {
+        soma = soma + notas[i];
+    }
+    printf("Média de %d notas: %.1f\n", n, (double) soma / n);
+}
+
+int main(void) {
+    int turma_a[5] = {7, 9, 6, 10, 8};
+    int turma_b[3] = {5, 6, 10};
+    mostrar_media(turma_a, 5);
+    mostrar_media(turma_b, 3);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra media.c -o media
+$ ./media
+Média de 5 notas: 8.0
+Média de 3 notas: 7.0</pre>
+
+<dl class="anatomy">
+  <dt>const int notas[]</dt><dd>O parâmetro array, sem tamanho entre os colchetes (se você escrever um número ali, o C ignora). O <code>const</code> é uma promessa: "esta função só <strong>lê</strong> o array". A próxima seção mostra por que ele é útil.</dd>
+  <dt>int n</dt><dd>Quantos elementos o array tem. Quem chama sabe o tamanho; a função, não. Por isso o tamanho viaja junto.</dd>
+  <dt>mostrar_media(turma_a, 5)</dt><dd>Na chamada, o array vai só com o nome, <strong>sem</strong> colchetes.</dd>
+  <dt>(double) soma / n</dt><dd>Converte a soma para <code>double</code> antes de dividir, para não perder a parte decimal (aula <a href="conversao-tipos.html">Conversão de Tipos</a>).</dd>
+</dl>
+
+<h3>A segunda surpresa: com array, a função mexe no original</h3>
+<p>Na seção 3, a função recebia uma cópia e não conseguia mudar a variável de fora. Com array é diferente: a função recebe o endereço, e portanto trabalha nos <strong>mesmos</strong> elementos.</p>
+
+<pre class="file" data-file="arrmuda.c">#include &lt;stdio.h&gt;
+
+void dar_bonus(int notas[], int n) {
+    for (int i = 0; i &lt; n; i++) {
+        notas[i] = notas[i] + 1;
+    }
+}
+
+int main(void) {
+    int notas[3] = {7, 9, 6};
+    dar_bonus(notas, 3);
+    for (int i = 0; i &lt; 3; i++) {
+        printf("%d ", notas[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra arrmuda.c -o arrmuda
+$ ./arrmuda
+8 10 7                          « as notas do main ganharam o bônus</pre>
+
+<p>Continua sendo passagem por valor: o que foi copiado é o <strong>endereço</strong>. Mas uma cópia do endereço aponta para o mesmo lugar, como entregar a alguém uma cópia da chave da sua casa. Às vezes é exatamente o que você quer (como aqui); às vezes é um acidente. Para impedir o acidente, use <code>const</code>:</p>
+
+<pre class="file" data-file="constarr.c">#include &lt;stdio.h&gt;
+
+void mostrar(const int notas[], int n) {
+    for (int i = 0; i &lt; n; i++) {
+        printf("%d ", notas[i]);
+    }
+    printf("\n");
+    notas[0] = 0;
+}
+
+int main(void) {
+    int notas[3] = {7, 9, 6};
+    mostrar(notas, 3);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra constarr.c -o constarr
+constarr.c: In function ‘mostrar’:
+constarr.c:8:14: error: assignment of read-only location ‘*notas’
+    8 |     notas[0] = 0;
+      |              ^</pre>
+
+<p><em>Assignment of read-only location</em> = "atribuição a um lugar somente leitura". O <code>*notas</code> da mensagem é o jeito de escrever "o que está no endereço <code>notas</code>" (você vai ver essa notação em <a href="ponteiros.html">Ponteiros</a>). Regra prática: se a função só lê o array, escreva <code>const</code>; quem lê o cabeçalho já sabe que os dados estão seguros (mais em <a href="const-ponteiros.html">const e Ponteiros</a>).</p>
+
+<hr>
+
+<h2>6. C não tem sobrecarga</h2>
+<p>Em algumas linguagens (como C++ e Java), você pode ter duas funções com o mesmo nome, desde que recebam coisas diferentes. Isso se chama <strong>sobrecarga</strong>. Em C, não:</p>
+
+<pre class="file" data-file="sobrecarga.c">#include &lt;stdio.h&gt;
+
+int area(int lado) {
+    return lado * lado;
+}
+
+double area(double largura, double altura) {
+    return largura * altura;
+}
+
+int main(void) {
+    printf("%d\n", area(3));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sobrecarga.c -o sobrecarga
+sobrecarga.c:7:8: error: conflicting types for ‘area’; have ‘double(double,  double)’
+    7 | double area(double largura, double altura) {
+      |        ^~~~
+sobrecarga.c:3:5: note: previous definition of ‘area’ with type ‘int(int)’
+    3 | int area(int lado) {
+      |     ^~~~
+sobrecarga.c: In function ‘main’:
+sobrecarga.c:12:20: error: too few arguments to function ‘area’; expected 2, have 1
+   12 |     printf("%d\n", area(3));
+      |                    ^~~~
+sobrecarga.c:7:8: note: declared here
+    7 | double area(double largura, double altura) {
+      |        ^~~~</pre>
+
+<dl class="anatomy">
+  <dt>int area(int lado) { return … }</dt><dd>As duas funções usam <code>return</code> para devolver um resultado; isso é assunto da próxima aula, <a href="retorno.html">Valor de Retorno</a>. Aqui, o que importa é o nome repetido.</dd>
+  <dt>conflicting types for ‘area’</dt><dd>"Tipos em conflito para <code>area</code>". Para o C, um nome = uma função. Ao ver a segunda, com outro tipo (<code>double(double, double)</code>), ele acusa o conflito com a primeira (<code>int(int)</code>).</dd>
+  <dt>too few arguments to function ‘area’</dt><dd>Um efeito colateral: o gcc ficou com a segunda <code>area</code> na cabeça, que pede dois argumentos, e estranhou a chamada com um. Conserte o primeiro erro e este some.</dd>
+</dl>
+
+<p>O conserto em C é dar <strong>nomes diferentes</strong>, que digam a diferença: <code>area_quadrado(int lado)</code> e <code>area_retangulo(double largura, double altura)</code>. A própria biblioteca do C faz isso: <code>abs</code> (inteiro), <code>labs</code> (<code>long</code>) e <code>fabs</code> (<code>double</code>) são três funções para o mesmo cálculo (aula <a href="matematica.html">Matemática</a>). Para quem quer muito "um nome só", o C11 trouxe o <code>_Generic</code>, um recurso avançado (aula <a href="generic.html">_Generic</a>).</p>
+
+<hr>
+
+<h2>Qual tipo usar no parâmetro</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer entregar…</th><th>Parâmetro</th><th>Observação</th></tr>
+<tr><td>Um número inteiro (quantidade, idade)</td><td><code>int n</code></td><td>A função recebe uma cópia</td></tr>
+<tr><td>Um número com vírgula (preço, nota)</td><td><code>double x</code></td><td>Um <code>int</code> passado aqui vira <code>double</code> sem perda</td></tr>
+<tr><td>Uma letra</td><td><code>char c</code></td><td>Cópia, como qualquer número</td></tr>
+<tr><td>Um array que a função só lê</td><td><code>const int v[], int n</code></td><td>Sempre com o tamanho; o <code>const</code> protege os dados</td></tr>
+<tr><td>Um array que a função muda</td><td><code>int v[], int n</code></td><td>As mudanças valem para o array de quem chamou</td></tr>
+<tr><td>Uma variável comum que a função deve mudar</td><td><code>int *p</code></td><td>Passagem por ponteiro: <a href="passagem-ponteiro.html">Passar por Ponteiro</a></td></tr>
+<tr><td>Nada</td><td><code>(void)</code></td><td>Veja <a href="funcoes.html">Funções</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: too few arguments to function ‘media’; expected 2, have 1</code></strong>
+<p><strong>O que significa:</strong> a chamada tem menos valores do que a função tem parâmetros (com <em>too many</em>, mais).</p>
+<p><strong>Como consertar:</strong> olhe a <code>note: declared here</code>, que mostra o cabeçalho, e passe um argumento para cada parâmetro, na mesma ordem.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: passing argument 1 of ‘f’ makes integer from pointer without a cast [-Wint-conversion]</code></strong>
+<p><strong>O que significa:</strong> você passou um texto (ou outro endereço) onde a função espera um número. No editor, o Clang escreve <code>incompatible pointer to integer conversion passing 'char[4]' to parameter of type 'int'</code>.</p>
+<p><strong>Como consertar:</strong> passe um número (<code>10</code>, não <code>"10"</code>). Se o número está dentro de um texto, converta antes com <code>strtol</code> (<a href="string-numero.html">Texto ↔ Número</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>A função mudou o parâmetro, mas a variável continuou igual</strong>
+<p><strong>O que significa:</strong> passagem por valor. A função mudou a cópia. O gcc às vezes avisa com <code>parameter ‘x’ set but not used</code>.</p>
+<p><strong>Como consertar:</strong> faça a função devolver o novo valor (<a href="retorno.html">Valor de Retorno</a>) ou receber um ponteiro (<a href="passagem-ponteiro.html">Passar por Ponteiro</a>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘sizeof’ on array function parameter ‘v’ will return size of ‘int *’</code></strong>
+<p><strong>O que significa:</strong> dentro da função, o array virou ponteiro, e o <code>sizeof</code> mede o ponteiro, não o array. O número de elementos calculado assim sai errado.</p>
+<p><strong>Como consertar:</strong> receba o tamanho num parâmetro (<code>int n</code>) e calcule o <code>sizeof</code> só onde o array foi criado.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: unknown type name ‘altura’</code> no cabeçalho</strong>
+<p><strong>O que significa:</strong> faltou o tipo de um parâmetro: <code>(int largura, altura)</code>.</p>
+<p><strong>Como consertar:</strong> repita o tipo em cada parâmetro: <code>(int largura, int altura)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: unused parameter ‘vezes’ [-Wunused-parameter]</code></strong>
+<p><strong>O que significa:</strong> a função recebe um parâmetro e nunca o usa. Esse aviso vem do <code>-Wextra</code>. Quase sempre é um esquecimento: por exemplo, <code>void saudar(int vezes)</code> que mostra <code>Olá!</code> uma vez só, em vez de repetir <code>vezes</code> vezes.</p>
+<p><strong>Como consertar:</strong> use o parâmetro (aqui, com um <code>for</code>) ou, se ele realmente sobra, tire-o do cabeçalho e das chamadas.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: conflicting types for ‘area’</code></strong>
+<p><strong>O que significa:</strong> duas funções com o mesmo nome e tipos diferentes. Em C não existe sobrecarga.</p>
+<p><strong>Como consertar:</strong> dê um nome diferente para cada uma (<code>area_quadrado</code>, <code>area_retangulo</code>). Esse erro também aparece quando o protótipo não bate com a definição: veja <a href="prototipos.html">Protótipos</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>void f(int n) { … }</code></td><td>Define <code>f</code> com um parâmetro <code>int</code></td></tr>
+<tr><td><code>void f(int a, double b)</code></td><td>Dois parâmetros, cada um com o seu tipo, separados por vírgula</td></tr>
+<tr><td><code>f(5);</code> / <code>f(x);</code> / <code>f(x + 1);</code></td><td>Chamadas: o valor do argumento é copiado para o parâmetro</td></tr>
+<tr><td><code>f(3, 2.5);</code></td><td>Os argumentos vão para os parâmetros na ordem</td></tr>
+<tr><td><code>void f(int v[], int n)</code></td><td>Recebe um array (na verdade, o endereço dele) e o tamanho</td></tr>
+<tr><td><code>void f(const int v[], int n)</code></td><td>O mesmo, prometendo não mudar o array</td></tr>
+<tr><td><code>f(notas, 5);</code></td><td>Passa o array (sem colchetes) e o tamanho</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O parâmetro</h3>
+<p>Complete o cabeçalho de uma função que recebe um número inteiro chamado <code>idade</code>:</p>
+<div class="ex-code">void mostrar_idade(<input data-answer="int idade" aria-label="parâmetro">) {</div>
+</div>
+
+<div class="exercise">
+<h3>2. A chamada</h3>
+<p>A função é <code>void mostrar_total(int quantidade, double preco)</code>. Complete a chamada para 4 unidades a 2.5 cada:</p>
+<div class="ex-code">mostrar_total(<input data-answer="4, 2.5|4,2.5|4, 2.50|4,2.50" aria-label="argumentos">);</div>
+</div>
+
+<div class="exercise">
+<h3>3. O tamanho junto</h3>
+<p>Complete o segundo parâmetro, que recebe quantos elementos o array tem:</p>
+<div class="ex-code">void mostrar(const int v[], <input data-answer="int n|int tamanho|int tam|int quantidade" aria-label="segundo parâmetro">) {</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com <code>void dobrar(int x) { x = x * 2; }</code>, o que o <code>main</code> mostra depois de <code>int v = 5; dobrar(v); printf("%d", v);</code>?</p>
+<label><input type="radio" name="q4"> 10</label>
+<label><input type="radio" name="q4"> 5: a função dobrou uma cópia</label>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Com <code>void bonus(int v[], int n)</code> somando 1 a cada elemento, o que acontece com o array de quem chamou?</p>
+<label><input type="radio" name="q5"> Nada: a função recebeu uma cópia do array inteiro</label>
+<label><input type="radio" name="q5"> Não compila: array não pode ser parâmetro</label>
+<label><input type="radio" name="q5"> Os elementos mudam: a função recebeu o endereço do array</label>
+<label><input type="radio" name="q5"> Só o primeiro elemento muda</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Um arquivo tem <code>int maior(int a, int b)</code> e <code>double maior(double a, double b)</code>. O que o gcc diz?</p>
+<label><input type="radio" name="q6"> <code>conflicting types for ‘maior’</code>: C não tem sobrecarga</label>
+<label><input type="radio" name="q6"> Nada: ele escolhe a função certa pelo tipo</label>
+<label><input type="radio" name="q6"> <code>too few arguments</code></label>
+<label><input type="radio" name="q6"> Só um aviso</label>
+</div>
+
+<h3>Missão final: o boletim da Ana</h3>
+
+<div class="tryc" data-goal="outre:^Maior nota: 10\nMaior nota: 9\n$,src:void\s+mostrar_maior\s*\(,semaviso">
+<p class="try-task"><strong>Missão:</strong> escreva a função <code>mostrar_maior</code>, que recebe um array de <code>int</code> e o tamanho dele (<code>int</code>) e mostra <code>Maior nota: </code> seguido da maior nota do array. Dica: guarde a primeira nota numa variável <code>maior</code> e percorra o resto com um <code>for</code>, trocando <code>maior</code> sempre que achar uma nota maior. Use <code>const</code> no array, já que a função só lê.</p>
+<pre class="out">Maior nota: 10
+Maior nota: 9</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+// escreva aqui a função mostrar_maior
+
+int main(void) {
+    int turma_a[5] = {7, 9, 6, 10, 8};
+    int turma_b[4] = {5, 9, 3, 8};
+    mostrar_maior(turma_a, 5);
+    mostrar_maior(turma_b, 4);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+void mostrar_maior(const int notas[], int n) {
+    int maior = notas[0];
+    for (int i = 1; i &lt; n; i++) {
+        if (notas[i] &gt; maior) {
+            maior = notas[i];
+        }
+    }
+    printf("Maior nota: %d\n", maior);
+}
+
+int main(void) {
+    int turma_a[5] = {7, 9, 6, 10, 8};
+    int turma_b[4] = {5, 9, 3, 8};
+    mostrar_maior(turma_a, 5);
+    mostrar_maior(turma_b, 4);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que a mesma função serviu para turmas de tamanhos diferentes. É por isso que o tamanho vai no parâmetro, e não escrito dentro da função.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Parâmetro</strong> é a variável do cabeçalho (<code>int n</code>); <strong>argumento</strong> é o valor da chamada (<code>5</code>, <code>idade</code>, <code>idade + 1</code>).</li>
+  <li>Vários parâmetros: separados por vírgula, <strong>cada um com o seu tipo</strong>. Os argumentos vão na ordem; trocar a ordem passa calado no gcc.</li>
+  <li><strong>Passagem por valor:</strong> a função recebe uma cópia. Mudar o parâmetro não muda a variável de quem chamou. Para mudar, devolva o valor ou use um ponteiro.</li>
+  <li>Número errado de argumentos é erro (<code>too few</code>/<code>too many arguments</code>). Texto num parâmetro <code>int</code> é erro (<code>-Wint-conversion</code>); <code>double</code> num <code>int</code> é cortado em silêncio.</li>
+  <li><strong>Array</strong> como parâmetro decai para ponteiro: a função não sabe o tamanho (passe <code>int n</code> junto) e mexe no array original. Use <code>const</code> quando só for ler.</li>
+  <li>C não tem sobrecarga: dois nomes iguais dão <code>conflicting types</code>. Use nomes diferentes.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
