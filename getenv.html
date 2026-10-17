@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C getenv — variáveis de ambiente | Guia C</title>
+<meta name="description" content="Variáveis de ambiente em C para iniciantes: o que é o ambiente (HOME, USER, PATH, LANG), ler com getenv e conferir o NULL, valor padrão, definir no terminal com NOME=valor e export, converter e validar números, montar caminhos com snprintf, setenv e unsetenv (POSIX) e listar tudo com environ, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Variáveis de Ambiente: getenv</span></h1>
+
+<p class="intro">Como um programa sabe qual é a pasta pessoal de quem o está usando, ou em que idioma falar, sem perguntar nada? Ele lê o <strong>ambiente</strong>: uma lista de pares <code>NOME=valor</code> que todo programa recebe ao começar, como <code>HOME=/home/ana</code> e <code>LANG=pt_BR.UTF-8</code>. Nesta aula você vai ler essas variáveis com <code>getenv</code>, tratar a que não existe, usar o ambiente para configurar a lojinha da Ana sem mudar o código, e ver o que um programa pode (e não pode) mudar nele.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são as variáveis de ambiente e como vê-las no terminal (<code>env</code>, <code>echo $HOME</code>).</li>
+  <li>Como ler uma com <code>getenv</code> e por que <strong>sempre</strong> conferir o <code>NULL</code>.</li>
+  <li>Como dar um valor padrão e como definir uma variável só para uma execução (<code>NOME=valor ./prog</code>) ou para todas (<code>export</code>).</li>
+  <li>Como converter e validar uma variável numérica.</li>
+  <li>Como montar um caminho a partir do <code>HOME</code>.</li>
+  <li><code>setenv</code>, <code>unsetenv</code> e <code>environ</code>, do POSIX, e até onde vai uma mudança no ambiente.</li>
+</ul>
+</div>
+
+<p>Você vai precisar de <a href="ponteiro-nulo.html">Ponteiro Nulo</a>, <a href="string-numero.html">Texto ↔ Número</a> e <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o quadro de avisos da cozinha</h2>
+<p>Na parede da cozinha da lojinha há um quadro de avisos: "forno: 180 graus", "cliente do dia: dona Maria", "hoje fecha às 18h". Todo funcionário que chega dá uma olhada no quadro e trabalha de acordo, sem que a Ana precise repetir para cada um. E, se a Ana quiser que só o confeiteiro de hoje use 200 graus, ela entrega a ele uma <strong>cópia</strong> do quadro com essa linha trocada.</p>
+<p>O ambiente funciona assim. O terminal tem o seu quadro de avisos e, quando roda um programa, entrega a ele uma <strong>cópia</strong>. O programa lê o que quiser da cópia, pode até rabiscá-la, mas o quadro da parede (o do terminal) continua igual.</p>
+
+<hr>
+
+<h2>1. O ambiente da Ana</h2>
+<p>No terminal, o comando <code>env</code> mostra o ambiente inteiro:</p>
+
+<pre class="term">$ env
+SHELL=/bin/bash
+LANGUAGE=pt_BR:pt:en
+EDITOR=nano
+PWD=/home/ana
+LOGNAME=ana
+TZ=America/Sao_Paulo
+HOME=/home/ana
+LANG=pt_BR.UTF-8
+TERM=xterm-256color
+TERMINFO=/usr/share/terminfo
+USER=ana
+SHLVL=1
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+_=/usr/bin/env</pre>
+
+<p>Cada linha é uma variável: o nome (em maiúsculas, por costume), um <code>=</code> e o valor, que é sempre <strong>texto</strong>. As mais úteis:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Variável</th><th>Na máquina da Ana</th><th>O que é</th></tr>
+<tr><td><code>HOME</code></td><td><code>/home/ana</code></td><td>A pasta pessoal de quem está usando</td></tr>
+<tr><td><code>USER</code></td><td><code>ana</code></td><td>O nome da usuária</td></tr>
+<tr><td><code>PATH</code></td><td><code>/usr/local/sbin:…:/bin</code></td><td>As pastas onde o shell procura os comandos, separadas por <code>:</code></td></tr>
+<tr><td><code>LANG</code></td><td><code>pt_BR.UTF-8</code></td><td>Idioma e codificação (o <code>setlocale(LC_ALL, "")</code> da aula <a href="errno.html">errno</a> lê esta)</td></tr>
+<tr><td><code>PWD</code></td><td><code>/home/ana</code></td><td>A pasta atual (quando o terminal abriu)</td></tr>
+<tr><td><code>EDITOR</code></td><td><code>nano</code></td><td>O editor de texto preferido</td></tr>
+<tr><td><code>TZ</code></td><td><code>America/Sao_Paulo</code></td><td>O fuso horário</td></tr>
+</table>
+</div>
+
+<p>Para ver uma só, use <code>echo $NOME</code> (o <code>$</code> pede ao shell o valor) ou <code>printenv NOME</code>:</p>
+
+<pre class="term" data-cwd="~/c">$ echo $HOME
+/home/ana
+$ printenv USER
+ana
+$ printenv LOJA_MOEDA; echo $?
+1                    « não existe: nada impresso, código 1</pre>
+
+<hr>
+
+<h2>2. <code>getenv</code>: ler uma variável</h2>
+<p><code>getenv</code> = "get environment", pegar do ambiente. Você passa o nome e recebe o valor, ou <code>NULL</code> se a variável não existe:</p>
+
+<pre class="file" data-file="ambiente.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    const char *casa = getenv("HOME");
+    const char *usuaria = getenv("USER");
+    const char *moeda = getenv("LOJA_MOEDA");
+
+    printf("HOME = %s\n", casa != NULL ? casa : "(não existe)");
+    printf("USER = %s\n", usuaria != NULL ? usuaria : "(não existe)");
+    printf("LOJA_MOEDA = %s\n", moeda != NULL ? moeda : "(não existe)");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;stdlib.h&gt;</dt><dd>Onde mora o <code>getenv</code>. Ele existe desde o primeiro padrão do C (C89).</dd>
+  <dt>getenv("HOME")</dt><dd>Procura <code>HOME</code> no ambiente. O nome é exato: <code>"home"</code>, em minúsculas, é outra variável (que não existe).</dd>
+  <dt>const char *casa</dt><dd>O <code>getenv</code> devolve um ponteiro para o texto do valor, que mora no ambiente do programa. O <code>const</code> é uma promessa sua: "não vou mudar esse texto" (seção 5).</dd>
+  <dt>casa != NULL ? casa : "(não existe)"</dt><dd>O <a href="ternario.html">operador ternário</a>: se a variável existe, mostra o valor; senão, um texto no lugar. Nunca passe um possível <code>NULL</code> direto para o <code>printf</code> (veja em <a href="#erros">Quando dá errado</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ambiente.c -o ambiente
+$ ./ambiente
+HOME = /home/ana
+USER = ana
+LOJA_MOEDA = (não existe)
+$ LOJA_MOEDA=BRL ./ambiente
+HOME = /home/ana
+USER = ana
+LOJA_MOEDA = BRL</pre>
+
+<p>Na segunda vez, o <code>LOJA_MOEDA=BRL</code> antes do nome do programa acrescentou uma linha à cópia do quadro, só para aquela execução. É assim que se configura um programa pelo ambiente (seção 3).</p>
+
+<div class="note">
+<strong>No editor do guia,</strong> o programa recebe um ambiente parecido com o da Ana: <code>HOME=/home/ana</code>, <code>USER=ana</code>, <code>LANG=pt_BR.UTF-8</code>, <code>PATH</code> etc. Não há como acrescentar variáveis antes de rodar (não existe o <code>NOME=valor</code> do terminal), então as caixas desta aula usam as que já estão lá, ou o <code>setenv</code> da seção 6.
+</div>
+
+<div class="tryc" data-goal="out:Olá\, ana!,src:getenv\s*\(\s*&quot;USER&quot;\s*\)">
+<p class="try-task"><strong>Missão:</strong> o programa cumprimenta sempre um "visitante". Faça-o cumprimentar quem está usando o computador: leia a variável <code>USER</code> com <code>getenv</code> e, se ela não existir (<code>NULL</code>), continue usando <code>"visitante"</code>. No editor, a saída deve ser <code>Olá, ana!</code>.</p>
+<pre class="script" data-file="ola.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    const char *nome = "visitante";
+    // leia USER aqui
+
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="ola.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    const char *nome = "visitante";
+    const char *usuario = getenv("USER");
+    if (usuario != NULL) {
+        nome = usuario;
+    }
+
+    printf("Olá, %s!\n", nome);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Valor padrão e <code>NOME=valor ./programa</code></h2>
+<p>O uso mais comum: uma <strong>configuração opcional</strong>. Se a variável existe, o programa a usa; se não, usa um valor padrão. Assim, a Ana pode mudar o nome da loja que aparece na tela sem recompilar nada:</p>
+
+<pre class="file" data-file="boasvindas.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    const char *nome = getenv("LOJA_NOME");
+    if (nome == NULL || nome[0] == '\0') {
+        nome = "Lojinha";
+    }
+    printf("Bem-vindo à %s!\n", nome);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>nome == NULL</dt><dd>A variável não existe.</dd>
+  <dt>|| nome[0] == '\0'</dt><dd>Ou existe, mas está vazia (<code>LOJA_NOME= ./boasvindas</code>). O <code>||</code> só olha o <code>nome[0]</code> se o <code>nome</code> não for <code>NULL</code>, então é seguro.</dd>
+  <dt>nome = "Lojinha";</dt><dd>O valor padrão. Ele é um texto fixo do programa, por isso o <code>nome</code> é <code>const char *</code>: tanto o texto do <code>getenv</code> quanto o padrão não devem ser alterados.</dd>
+</dl>
+
+<p>No terminal, há três jeitos de entregar a variável ao programa:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra boasvindas.c -o boasvindas
+$ ./boasvindas
+Bem-vindo à Lojinha!
+$ LOJA_NOME="Padaria da Ana" ./boasvindas
+Bem-vindo à Padaria da Ana!
+$ echo "[$LOJA_NOME]"
+[]                                « valeu só para aquela execução
+$ LOJA_NOME="Doceria"
+$ ./boasvindas
+Bem-vindo à Lojinha!              « variável do shell, sem export: não chega
+$ export LOJA_NOME
+$ ./boasvindas
+Bem-vindo à Doceria!              « com export: chega a todo programa daqui em diante
+$ unset LOJA_NOME
+$ ./boasvindas
+Bem-vindo à Lojinha!</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No terminal</th><th>Efeito</th></tr>
+<tr><td><code>NOME=valor ./prog</code></td><td>Só esta execução do <code>prog</code> recebe a variável</td></tr>
+<tr><td><code>NOME=valor</code> (sozinho)</td><td>Cria uma variável do <strong>shell</strong>, que os programas <strong>não</strong> recebem</td></tr>
+<tr><td><code>export NOME</code> ou <code>export NOME=valor</code></td><td>Põe a variável no ambiente: todos os programas rodados depois, neste terminal, a recebem</td></tr>
+<tr><td><code>unset NOME</code></td><td>Apaga a variável</td></tr>
+</table>
+</div>
+
+<p>Para a variável valer sempre, em todo terminal novo, a Ana escreveria o <code>export</code> no arquivo <code>~/.bashrc</code> (o Guia Bash explica). E, quando você escolher nomes para as variáveis do seu programa, use um prefixo (<code>LOJA_</code>), para não se confundir com as do sistema.</p>
+
+<hr>
+
+<h2>4. Números no ambiente: converter e validar</h2>
+<p>O valor de uma variável é sempre texto, e quem o escreveu foi uma pessoa: pode estar errado. Trate-o como qualquer entrada (aula <a href="validar-entrada.html">Validar a Entrada</a>): converta com <code>strtol</code>, confira, e, se não servir, avise no <code>stderr</code> e use o padrão.</p>
+
+<pre class="file" data-file="desconto.c">#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    long desconto = 0;
+    const char *texto = getenv("LOJA_DESCONTO");
+    if (texto != NULL) {
+        char *fim;
+        errno = 0;
+        long n = strtol(texto, &amp;fim, 10);
+        if (fim == texto || *fim != '\0' || errno == ERANGE || n &lt; 0 || n &gt; 50) {
+            fprintf(stderr, "aviso: LOJA_DESCONTO=\"%s\" não vale (use 0 a 50); sem desconto\n", texto);
+        } else {
+            desconto = n;
+        }
+    }
+    double preco = 20.0;
+    printf("Bolo: R$ %.2f\n", preco * (100 - desconto) / 100);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>long desconto = 0;</dt><dd>Começa com o padrão. Só muda se a variável existir <strong>e</strong> for válida.</dd>
+  <dt>if (texto != NULL)</dt><dd>Variável ausente não é erro: é o caso normal, e o padrão vale.</dd>
+  <dt>fim == texto || *fim != '\0' || errno == ERANGE || n &lt; 0 || n &gt; 50</dt><dd>As conferências de sempre: nenhum dígito, sobra de texto, número grande demais, fora da faixa.</dd>
+  <dt>fprintf(stderr, "aviso: …")</dt><dd>Avisa, mas não para o programa: uma configuração errada não deve impedir a loja de abrir. Mostrar o valor recebido (<code>"%s"</code>) ajuda a pessoa a achar o erro de digitação.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra desconto.c -o desconto
+$ ./desconto
+Bolo: R$ 20.00
+$ LOJA_DESCONTO=10 ./desconto
+Bolo: R$ 18.00
+$ LOJA_DESCONTO=dez ./desconto
+aviso: LOJA_DESCONTO="dez" não vale (use 0 a 50); sem desconto
+Bolo: R$ 20.00
+$ LOJA_DESCONTO=80 ./desconto
+aviso: LOJA_DESCONTO="80" não vale (use 0 a 50); sem desconto
+Bolo: R$ 20.00</pre>
+
+<hr>
+
+<h2>5. O texto devolvido: não mude, copie se for guardar</h2>
+<p>O ponteiro do <code>getenv</code> aponta para dentro do ambiente do programa. Duas regras:</p>
+<ul>
+  <li><strong>Não escreva nele.</strong> Mudar o texto é comportamento indefinido. Por isso, guarde-o num <code>const char *</code>: se você tentar mudá-lo sem querer, o compilador reclama.</li>
+  <li><strong>Copie, se for usar muito depois.</strong> O padrão C permite que uma nova chamada ao <code>getenv</code> (ou um <code>setenv</code>) mude o texto. Se você precisa montar algo com o valor, monte a sua própria string.</li>
+</ul>
+
+<p>O caso típico é montar o caminho de um arquivo na pasta pessoal, como fazem os programas que guardam configurações em <code>~/.algumacoisa</code>:</p>
+
+<pre class="file" data-file="caminho.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    const char *casa = getenv("HOME");
+    if (casa == NULL) {
+        fprintf(stderr, "HOME não está definida\n");
+        return 1;
+    }
+    char caminho[256];
+    int tam = snprintf(caminho, sizeof caminho, "%s/vendas.txt", casa);
+    if (tam &lt; 0 || tam &gt;= (int)sizeof caminho) {
+        fprintf(stderr, "caminho comprido demais\n");
+        return 1;
+    }
+    printf("Vou gravar em %s\n", caminho);
+    FILE *f = fopen(caminho, "a");
+    if (f == NULL) {
+        perror(caminho);
+        return 1;
+    }
+    fprintf(f, "3 pães\n");
+    fclose(f);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>snprintf(caminho, sizeof caminho, "%s/vendas.txt", casa)</dt><dd>Monta <code>/home/ana/vendas.txt</code> numa string <strong>sua</strong>, com limite de tamanho (aula <a href="funcoes-string.html">Funções de String</a>). Nunca use <code>strcat</code> direto no texto do <code>getenv</code>: ele não é seu e não tem espaço sobrando.</dd>
+  <dt>tam &gt;= (int)sizeof caminho</dt><dd>O <code>snprintf</code> devolve o tamanho que o texto <strong>teria</strong>. Se não coube, ele foi cortado: melhor parar do que gravar no lugar errado. O <code>HOME</code> vem de fora e pode ser enorme.</dd>
+  <dt>fopen(caminho, "a")</dt><dd>"a" de <em>append</em>: acrescenta no fim do arquivo (aula <a href="escrever-arquivos.html">Escrever Arquivos</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra caminho.c -o caminho
+$ ./caminho
+Vou gravar em /home/ana/vendas.txt
+$ cat ~/vendas.txt
+3 pães
+$ HOME=/tmp ./caminho
+Vou gravar em /tmp/vendas.txt
+$ env -u HOME ./caminho
+HOME não está definida</pre>
+
+<p>O <code>env -u HOME</code> roda o programa com uma cópia do ambiente <strong>sem</strong> o <code>HOME</code>, para testar o caminho do erro. O <code>HOME=/tmp</code> mostra que o programa obedece ao ambiente: é exatamente o que se quer (e também o motivo para nunca confiar cegamente nele num programa que roda com permissões especiais).</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e veja o ambiente do editor. Depois troque os nomes: <code>"PATH"</code>, <code>"LANG"</code>, <code>"SHELL"</code>, <code>"home"</code> (minúsculo) e um nome inventado.</p>
+<pre class="script" data-file="ambiente.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    const char *casa = getenv("HOME");
+    const char *usuaria = getenv("USER");
+    const char *moeda = getenv("LOJA_MOEDA");
+
+    printf("HOME = %s\n", casa != NULL ? casa : "(não existe)");
+    printf("USER = %s\n", usuaria != NULL ? usuaria : "(não existe)");
+    printf("LOJA_MOEDA = %s\n", moeda != NULL ? moeda : "(não existe)");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>6. <code>setenv</code>, <code>unsetenv</code> e <code>environ</code> (POSIX)</h2>
+<p>O C padrão só tem o <code>getenv</code>: ler. Para <strong>mudar</strong> o ambiente, o Linux e o macOS oferecem funções do <strong>POSIX</strong> (o padrão dos sistemas do tipo Unix): <code>setenv</code> e <code>unsetenv</code>. Como não são do C, com <code>-std=c23</code> elas só aparecem se você pedir, com <code>#define _POSIX_C_SOURCE 200809L</code> <strong>antes</strong> dos <code>#include</code> (como o <code>getline</code> da aula <a href="fgets.html">Ler uma Linha</a>):</p>
+
+<pre class="file" data-file="muda.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    printf("antes: %s\n", getenv("LOJA_NOME") != NULL ? getenv("LOJA_NOME") : "(não existe)");
+    if (setenv("LOJA_NOME", "Padaria da Ana", 1) != 0) {
+        perror("setenv");
+        return 1;
+    }
+    printf("depois do setenv: %s\n", getenv("LOJA_NOME"));
+    unsetenv("LOJA_NOME");
+    printf("depois do unsetenv: %s\n", getenv("LOJA_NOME") != NULL ? getenv("LOJA_NOME") : "(não existe)");
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#define _POSIX_C_SOURCE 200809L</dt><dd>"Quero também as funções do POSIX de 2008." Tem de vir antes de qualquer <code>#include</code>.</dd>
+  <dt>setenv("LOJA_NOME", "Padaria da Ana", 1)</dt><dd>Cria ou troca a variável. O <code>1</code> final quer dizer "se já existir, substitua"; com <code>0</code>, uma variável que já existe fica como está. Devolve 0 se deu certo.</dd>
+  <dt>unsetenv("LOJA_NOME")</dt><dd>Apaga a variável.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra muda.c -o muda
+$ ./muda
+antes: (não existe)
+depois do setenv: Padaria da Ana
+depois do unsetenv: (não existe)
+$ echo "[$LOJA_NOME]"
+[]                                « o terminal não mudou</pre>
+
+<p>O <code>setenv</code> rabiscou a <strong>cópia</strong> do quadro: vale para o próprio programa e para os programas que ele iniciar depois, mas o terminal que o chamou não fica sabendo. Não existe jeito de um programa mudar o ambiente do shell que o rodou. (É por isso que o <code>cd</code> e o <code>export</code> são comandos do próprio shell, e não programas separados.)</p>
+
+<p>Para ver o ambiente inteiro de dentro do programa, o POSIX oferece a variável global <code>environ</code>: um array de strings <code>"NOME=valor"</code> terminado em <code>NULL</code>, como o <code>argv</code> (aula <a href="argc-argv.html">Argumentos</a>):</p>
+
+<pre class="file" data-file="listar.c">#include &lt;stdio.h&gt;
+
+extern char **environ;
+
+int main(void) {
+    for (char **p = environ; *p != NULL; p++) {
+        printf("%s\n", *p);
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra listar.c -o listar
+$ env -i LOJA_NOME=Doceria LOJA_DESCONTO=10 ./listar
+LOJA_NOME=Doceria
+LOJA_DESCONTO=10
+$ ./listar | wc -l
+15</pre>
+
+<dl class="anatomy">
+  <dt>extern char **environ;</dt><dd>"Existe uma variável <code>environ</code>, definida em outro lugar" (na biblioteca C; aula <a href="static-extern.html">static e extern</a>). Ela não está em nenhum cabeçalho do C padrão, por isso a declaração.</dd>
+  <dt>env -i …</dt><dd>No terminal: roda o programa com um ambiente <strong>vazio</strong> (<code>-i</code>, "ignore"), mais as variáveis escritas depois. Útil para testar.</dd>
+</dl>
+
+<p>Você também pode encontrar <code>int main(int argc, char *argv[], char *envp[])</code>, com um terceiro parâmetro que é o mesmo array. Ele funciona no Linux, no macOS e no Windows, mas não faz parte do padrão C; prefira <code>getenv</code> para ler uma variável e <code>environ</code> para listar.</p>
+
+<hr>
+
+<h2>Formas diferentes, e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para configurar…</th><th>Use</th><th>Exemplo</th></tr>
+<tr><td>Algo que muda a cada execução</td><td><a href="argc-argv.html">Argumento</a></td><td><code>./tabuada 7</code></td></tr>
+<tr><td>Uma preferência que vale para vários programas ou várias execuções</td><td>Variável de ambiente</td><td><code>EDITOR=nano</code>, <code>LANG=pt_BR.UTF-8</code></td></tr>
+<tr><td>Muitas opções, guardadas entre execuções</td><td>Um arquivo de configuração (o caminho, muitas vezes, a partir do <code>HOME</code>)</td><td><code>~/.lojinha.conf</code></td></tr>
+<tr><td>Uma resposta da pessoa, na hora</td><td>Perguntar (<a href="validar-entrada.html">Validar a Entrada</a>)</td><td><code>Quantos pães? </code></td></tr>
+</table>
+</div>
+
+<p>Muitos programas combinam os três primeiros, nesta ordem de força: o argumento ganha da variável de ambiente, que ganha do arquivo, que ganha do padrão escrito no código.</p>
+
+<hr>
+
+<h2 id="erros">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>Falha de segmentação</code> (ou <code>(null)</code>) ao mostrar uma variável que não existe</strong>
+<pre class="file" data-file="nulo2.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    char *moeda = getenv("LOJA_MOEDA");
+    printf("%s\n", moeda);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nulo2.c -o nulo2
+$ ./nulo2
+Falha de segmentação     (imagem do núcleo gravada) ./nulo2
+$ ./nulo
+Moeda: (null)
+A moeda é (null).</pre>
+<p><strong>O que significa:</strong> o <code>getenv</code> devolveu <code>NULL</code>, e o programa o passou para o <code>printf</code> sem conferir. Passar <code>NULL</code> para um <code>%s</code> é comportamento indefinido, e o resultado varia: o <code>nulo.c</code>, com <code>printf("Moeda: %s\n", getenv("LOJA_MOEDA"))</code>, mostra <code>(null)</code>; o <code>nulo2.c</code> morre, porque o gcc troca o <code>printf("%s\n", moeda)</code> por um <code>puts(moeda)</code>, mais rápido, que não tolera o <code>NULL</code>. No editor do guia, o <code>nulo2.c</code> mostra <code>(null)</code> e termina com 0, o que esconde o erro.</p>
+<p><strong>Como consertar:</strong> confira o <code>NULL</code> antes de usar, e dê um valor padrão (seção 3).</p>
+</div>
+
+<div class="cenario">
+<strong>Defini a variável no terminal, mas o programa não a vê</strong>
+<pre class="term" data-cwd="~/c">$ LOJA_NOME="Doceria"
+$ ./boasvindas
+Bem-vindo à Lojinha!</pre>
+<p><strong>O que significa:</strong> <code>NOME=valor</code> sozinho numa linha cria uma variável do <strong>shell</strong>, que fica só no terminal. Os programas recebem só as variáveis <strong>exportadas</strong>.</p>
+<p><strong>Como consertar:</strong> <code>export LOJA_NOME</code> (ou <code>export LOJA_NOME="Doceria"</code>), ou <code>LOJA_NOME="Doceria" ./boasvindas</code> na mesma linha.</p>
+</div>
+
+<div class="cenario">
+<strong><code>bash: LOJA_NOME: comando não encontrado</code></strong>
+<pre class="term" data-cwd="~/c">$ LOJA_NOME = Ana ./boasvindas
+bash: LOJA_NOME: comando não encontrado</pre>
+<p><strong>O que significa:</strong> com espaços em volta do <code>=</code>, o shell entendeu <code>LOJA_NOME</code> como o nome de um programa, com os argumentos <code>=</code>, <code>Ana</code> e <code>./boasvindas</code>.</p>
+<p><strong>Como consertar:</strong> sem espaços: <code>LOJA_NOME=Ana ./boasvindas</code>. Para um valor com espaço, use aspas: <code>LOJA_NOME="Padaria da Ana"</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘setenv’; did you mean ‘getenv’?</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semposix.c -o semposix
+semposix.c: In function ‘main’:
+semposix.c:5:5: error: implicit declaration of function ‘setenv’; did you mean ‘getenv’? [-Wimplicit-function-declaration]
+    5 |     setenv("LOJA_NOME", "Padaria da Ana", 1);
+      |     ^~~~~~
+      |     getenv</pre>
+<p><strong>O que significa:</strong> o <code>setenv</code> é do POSIX, e não do C. Com <code>-std=c23</code>, o <code>stdlib.h</code> só mostra o que é do C. No editor, o Clang diz <code>use of undeclared identifier 'setenv'; did you mean 'getenv'?</code>.</p>
+<p><strong>Como consertar:</strong> <code>#define _POSIX_C_SOURCE 200809L</code> na primeira linha, antes dos <code>#include</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O programa mudou a variável com <code>setenv</code>, mas no terminal ela continua igual</strong>
+<p><strong>O que significa:</strong> nada de errado: o programa tem a sua própria cópia do ambiente (seção 6). Mudanças valem para ele e para os programas que ele iniciar.</p>
+<p><strong>Como consertar:</strong> para mudar o ambiente do terminal, use <code>export</code> no próprio terminal. Um programa pode, no máximo, <strong>escrever</strong> um comando <code>export …</code> no <code>stdout</code> para o shell executar, mas isso é coisa do Guia Bash.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Onde</th><th>O que faz</th></tr>
+<tr><td><code>const char *v = getenv("NOME");</code></td><td>C (<code>stdlib.h</code>)</td><td>O valor da variável, ou <code>NULL</code> se não existe</td></tr>
+<tr><td><code>if (v == NULL) v = "padrão";</code></td><td>C</td><td>Valor padrão</td></tr>
+<tr><td><code>setenv("NOME", "valor", 1)</code></td><td>POSIX (<code>stdlib.h</code> + <code>_POSIX_C_SOURCE</code>)</td><td>Cria ou troca; 0 = deu certo</td></tr>
+<tr><td><code>unsetenv("NOME")</code></td><td>POSIX</td><td>Apaga</td></tr>
+<tr><td><code>extern char **environ;</code></td><td>POSIX</td><td>A lista inteira, terminada em <code>NULL</code></td></tr>
+<tr><td><code>env</code>, <code>printenv NOME</code>, <code>echo $NOME</code></td><td>Terminal</td><td>Mostram o ambiente / uma variável</td></tr>
+<tr><td><code>NOME=valor ./prog</code></td><td>Terminal</td><td>Só para esta execução</td></tr>
+<tr><td><code>export NOME=valor</code>, <code>unset NOME</code></td><td>Terminal</td><td>Para todos os programas seguintes / apaga</td></tr>
+<tr><td><code>env -i A=1 ./prog</code>, <code>env -u NOME ./prog</code></td><td>Terminal</td><td>Ambiente vazio (mais <code>A</code>) / sem <code>NOME</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A pasta pessoal</h3>
+<p>Complete para ler a pasta pessoal de quem está usando:</p>
+<div class="ex-code">const char *casa = getenv("<input data-answer="HOME" aria-label="nome">");</div>
+</div>
+
+<div class="exercise">
+<h3>2. Não existe</h3>
+<p>O que o <code>getenv</code> devolve quando a variável não existe?</p>
+<div class="ex-code"><input data-answer="NULL|nullptr" aria-label="valor"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Para todos os programas</h3>
+<p>Complete o comando do terminal que faz todos os programas seguintes receberem <code>LOJA_NOME</code>:</p>
+<div class="ex-code"><input data-answer="export" aria-label="comando"> LOJA_NOME="Doceria"</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O programa da Ana chama <code>setenv("LOJA_NOME", "X", 1)</code> e termina. Depois, no mesmo terminal, ela digita <code>echo $LOJA_NOME</code>. O que aparece?</p>
+<label><input type="radio" name="q4"> <code>X</code></label>
+<label><input type="radio" name="q4"> Um erro</label>
+<label><input type="radio" name="q4"> O valor que havia antes no terminal (ou nada): o programa só mudou a cópia dele</label>
+<label><input type="radio" name="q4"> <code>LOJA_NOME=X</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Qual é o jeito certo de usar o valor de <code>getenv("LOJA_MOEDA")</code> num <code>printf</code>?</p>
+<label><input type="radio" name="q5"> Guardar num <code>const char *</code>, conferir se é <code>NULL</code> e, se for, usar um padrão</label>
+<label><input type="radio" name="q5"> Passar direto: o <code>printf</code> trata o <code>NULL</code></label>
+<label><input type="radio" name="q5"> Usar <code>%d</code> no lugar de <code>%s</code></label>
+<label><input type="radio" name="q5"> Chamar <code>getenv</code> duas vezes para garantir</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. <code>LOJA_DESCONTO=dez ./desconto</code>. O que um programa bem-feito faz?</p>
+<label><input type="radio" name="q6"> Usa 0 sem avisar ninguém</label>
+<label><input type="radio" name="q6"> Avisa no <code>stderr</code> que o valor não vale e segue com o padrão</label>
+<label><input type="radio" name="q6"> Usa 10, porque "dez" é 10</label>
+<label><input type="radio" name="q6"> Apaga a variável do terminal</label>
+</div>
+
+<h3>Missão final: a configuração da lojinha</h3>
+
+<div class="tryc" data-goal="out:Desconto: 15%,out:aviso: LOJA_CAIXAS,out:Caixas: 1,out:Mesas: 4,src:getenv\s*\(\s*nome\s*\)">
+<p class="try-task"><strong>Missão:</strong> complete a função <code>ler_numero_env</code>: ela lê a variável <code>nome</code> com <code>getenv(nome)</code> e devolve o número, se ele for válido e estiver entre <code>min</code> e <code>max</code>. Se a variável não existe, devolve <code>padrao</code> calada; se existe mas não vale, mostra no <code>stderr</code> <code>aviso: LOJA_CAIXAS="muitos" não vale; usando 1</code> (com o nome, o valor e o padrão) e devolve <code>padrao</code>. Como o editor não deixa definir variáveis antes de rodar, o <code>main</code> começa com dois <code>setenv</code>, no lugar do <code>LOJA_DESCONTO=15 LOJA_CAIXAS=muitos ./loja</code> do terminal. A saída deve ser:</p>
+<pre class="out">Desconto: 15%
+aviso: LOJA_CAIXAS="muitos" não vale; usando 1
+Caixas: 1
+Mesas: 4</pre>
+<pre class="script" data-file="loja.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+// Lê a variável "nome" como um número de min a max.
+// Ausente: devolve padrao. Inválida: avisa no stderr e devolve padrao.
+long ler_numero_env(const char *nome, long padrao, long min, long max) {
+    // complete aqui
+    return padrao;
+}
+
+int main(void) {
+    // no terminal seria: LOJA_DESCONTO=15 LOJA_CAIXAS=muitos ./loja
+    setenv("LOJA_DESCONTO", "15", 1);
+    setenv("LOJA_CAIXAS", "muitos", 1);
+
+    printf("Desconto: %ld%%\n", ler_numero_env("LOJA_DESCONTO", 0, 0, 50));
+    printf("Caixas: %ld\n", ler_numero_env("LOJA_CAIXAS", 1, 1, 5));
+    printf("Mesas: %ld\n", ler_numero_env("LOJA_MESAS", 4, 1, 20));
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="loja.c">#define _POSIX_C_SOURCE 200809L
+#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+// Lê a variável "nome" como um número de min a max.
+// Ausente: devolve padrao. Inválida: avisa no stderr e devolve padrao.
+long ler_numero_env(const char *nome, long padrao, long min, long max) {
+    const char *texto = getenv(nome);
+    if (texto == NULL) {
+        return padrao;
+    }
+    char *fim;
+    errno = 0;
+    long n = strtol(texto, &amp;fim, 10);
+    if (fim == texto || *fim != '\0' || errno == ERANGE || n &lt; min || n &gt; max) {
+        fprintf(stderr, "aviso: %s=\"%s\" não vale; usando %ld\n", nome, texto, padrao);
+        return padrao;
+    }
+    return n;
+}
+
+int main(void) {
+    // no terminal seria: LOJA_DESCONTO=15 LOJA_CAIXAS=muitos ./loja
+    setenv("LOJA_DESCONTO", "15", 1);
+    setenv("LOJA_CAIXAS", "muitos", 1);
+
+    printf("Desconto: %ld%%\n", ler_numero_env("LOJA_DESCONTO", 0, 0, 50));
+    printf("Caixas: %ld\n", ler_numero_env("LOJA_CAIXAS", 1, 1, 5));
+    printf("Mesas: %ld\n", ler_numero_env("LOJA_MESAS", 4, 1, 20));
+    return 0;
+}
+</pre>
+</div>
+
+<p>O <code>%%</code> no <code>printf</code> escreve um <code>%</code> de verdade (aula <a href="formatos-printf.html">Formatos do printf</a>). No laboratório, sem os <code>setenv</code> e com as variáveis vindas do terminal, o programa se comporta igual:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra loja.c -o loja
+$ LOJA_DESCONTO=15 LOJA_CAIXAS=muitos ./loja
+Desconto: 15%
+aviso: LOJA_CAIXAS="muitos" não vale; usando 1
+Caixas: 1
+Mesas: 4
+$ ./loja
+Desconto: 0%                    « nenhuma variável: todos os padrões
+Caixas: 1
+Mesas: 4</pre>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <strong>ambiente</strong> é uma lista de <code>NOME=valor</code> (sempre texto) que cada programa recebe, em cópia, de quem o chamou: <code>HOME</code>, <code>USER</code>, <code>PATH</code>, <code>LANG</code>…</li>
+  <li><code>getenv("NOME")</code> (do <code>stdlib.h</code>) devolve o valor ou <code>NULL</code>. Confira sempre o <code>NULL</code> e tenha um valor padrão.</li>
+  <li>No terminal: <code>NOME=valor ./prog</code> vale para uma execução; <code>export</code> vale para os programas seguintes; uma variável do shell sem <code>export</code> não chega ao programa.</li>
+  <li>O valor veio de uma pessoa: converta com <code>strtol</code>, valide e, se não servir, avise no <code>stderr</code> e use o padrão.</li>
+  <li>Não altere o texto do <code>getenv</code>: guarde num <code>const char *</code> e monte as suas strings com <code>snprintf</code>.</li>
+  <li><code>setenv</code>/<code>unsetenv</code>/<code>environ</code> são do POSIX (<code>#define _POSIX_C_SOURCE 200809L</code>) e mudam só a cópia do próprio programa, nunca o terminal.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
