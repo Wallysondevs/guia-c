@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Bibliotecas — .a e .so, ar, -shared, -L, -l e ldd | Guia C</title>
+<meta name="description" content="Bibliotecas em C, para quem nunca fez uma: a estática (.a) com ar rcs, a compartilhada (.so) com -fPIC e -shared, como ligar com -I, -L e -l, por que a ordem no comando importa, ldd, LD_LIBRARY_PATH e -Wl,-rpath, atualizar uma .so sem recompilar o programa, e os erros reais do ligador e do carregador (não foi possível localizar -lloja, error while loading shared libraries, recompilar com -fPIC), com saídas do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Bibliotecas (.a e .so)</span></h1>
+
+<p class="intro">Uma <strong>biblioteca</strong> é um pacote de funções já compiladas, pronto para ser usado por outros programas. Você usa bibliotecas desde o primeiro <code>printf</code>, que mora na biblioteca C do sistema, e desde o primeiro <code>-lm</code>, que liga a biblioteca de matemática. Nesta aula, a Ana transforma o código da lojinha numa biblioteca dela, nos dois formatos do Linux: a <strong>estática</strong> (<code>.a</code>), copiada para dentro do programa, e a <strong>compartilhada</strong> (<code>.so</code>), carregada quando o programa roda.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são <code>libc</code> e <code>libm</code>, e como o <code>ldd</code> mostra as bibliotecas de um programa.</li>
+  <li>A criar uma biblioteca estática com <code>ar rcs libloja.a</code>.</li>
+  <li>A ligar com <code>-I</code> (onde estão os <code>.h</code>), <code>-L</code> (onde está a biblioteca) e <code>-l</code> (qual biblioteca), e por que a ordem no comando importa.</li>
+  <li>A criar uma biblioteca compartilhada com <code>-fPIC</code> e <code>-shared</code>.</li>
+  <li>A fazer o programa achar a <code>.so</code>: <code>LD_LIBRARY_PATH</code> e <code>-Wl,-rpath</code>.</li>
+  <li>Os erros reais: <code>não foi possível localizar -lloja</code>, <code>error while loading shared libraries</code> e <code>recompilar com -fPIC</code>.</li>
+</ul>
+</div>
+
+<p>Esta aula usa o que você viu em <a href="multiplos-arquivos.html">Vários Arquivos</a> (<code>gcc -c</code>, arquivos <code>.o</code>, <code>nm</code>) e em <a href="static-extern.html">static e extern</a>. Todos os comandos rodaram na máquina fictícia da Ana, na pasta <code>~/c/biblio</code>, com o <strong>gcc 15.2</strong> e a <strong>glibc 2.43</strong>. O ligador (<code>ld</code>) fala português no sistema dela; o inglês vai citado ao lado. O editor do guia não cria bibliotecas (lá, todas as abas são compiladas e ligadas juntas a cada Rodar), mas você vai praticar nele o código e os erros de uma.</p>
+
+<hr>
+
+<h2>A ideia: a fotocópia e o empréstimo</h2>
+<p>A Ana precisa de três capítulos de um livro da biblioteca da escola. Ela tem dois jeitos de usá-los:</p>
+<ul>
+  <li><strong>Tirar fotocópia</strong> e colar no caderno. O caderno fica um pouco mais grosso, mas funciona em qualquer lugar, mesmo se a biblioteca fechar. Se o livro ganhar uma edição corrigida, a cópia dela continua com os erros antigos.</li>
+  <li><strong>Pegar emprestado</strong> toda vez que precisa. O caderno fica fino, e ela sempre lê a edição mais nova. Mas, se o livro não estiver na estante, ela fica sem.</li>
+</ul>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Estática (<code>.a</code>): a fotocópia</th><th>Compartilhada (<code>.so</code>): o empréstimo</th></tr>
+<tr><td>Quando o código entra no programa</td><td>Na ligação: o ligador <strong>copia</strong> as funções para dentro do executável</td><td>Quando o programa roda: o <strong>carregador</strong> do sistema abre a <code>.so</code></td></tr>
+<tr><td>Depois de ligar, a biblioteca precisa existir?</td><td>Não</td><td>Sim, em todo computador onde o programa rodar</td></tr>
+<tr><td>Corrigir um erro na biblioteca</td><td>Ligar o programa de novo</td><td>Trocar a <code>.so</code>; o programa usa a nova na próxima vez que rodar</td></tr>
+<tr><td>Nome do arquivo</td><td><code>lib<em>nome</em>.a</code> (de <em>archive</em>, "arquivo")</td><td><code>lib<em>nome</em>.so</code> (de <em>shared object</em>, "objeto compartilhado")</td></tr>
+</table>
+</div>
+
+<p>No Windows, os nomes são outros (<code>.lib</code> e <code>.dll</code>), mas a ideia é a mesma.</p>
+
+<hr>
+
+<h2>1. Você já usa bibliotecas</h2>
+<p>Este programa usa duas bibliotecas: a biblioteca C (onde moram o <code>printf</code> e o resto do <code>stdio.h</code>) e a de matemática (o <code>sqrt</code>):</p>
+
+<pre class="file" data-file="raiz.c">#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+
+int main(void) {
+    double area = 49.0;
+    printf("Lado do quadrado: %.1f m\n", sqrt(area));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/raiz">$ gcc -std=c23 -Wall -Wextra raiz.c -o raiz -lm
+$ ./raiz
+Lado do quadrado: 7.0 m
+$ ldd ./raiz
+	linux-vdso.so.1 (0x00007f26fc6ff000)
+	libm.so.6 =&gt; /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00007f26fc5cb000)
+	libc.so.6 =&gt; /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00007f26fc200000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f26fc701000)</pre>
+
+<p>O <code>ldd</code> (de <em>list dynamic dependencies</em>, "listar as dependências dinâmicas") mostra as bibliotecas compartilhadas de que um programa precisa para rodar, e onde o sistema as achou:</p>
+
+<dl class="anatomy">
+  <dt>libm.so.6 =&gt; /usr/lib/…/libm.so.6</dt><dd>A biblioteca de matemática, que entrou por causa do <code>-lm</code>. O <code>.6</code> no fim é o número da versão.</dd>
+  <dt>libc.so.6</dt><dd>A biblioteca C (no Linux, a <strong>glibc</strong>). Todo programa C a recebe sem precisar de <code>-l</code>.</dd>
+  <dt>/lib64/ld-linux-x86-64.so.2</dt><dd>O <strong>carregador</strong> (<em>dynamic loader</em>): o programa do sistema que, a cada <code>./raiz</code>, acha e abre as <code>.so</code> antes do <code>main</code> começar.</dd>
+  <dt>linux-vdso.so.1</dt><dd>Um pedacinho do próprio núcleo do Linux, que todo programa recebe. Não é um arquivo; pode ignorar.</dd>
+  <dt>(0x00007f…)</dt><dd>O endereço da memória onde cada biblioteca foi carregada. Muda a cada execução.</dd>
+</dl>
+
+<p>Os arquivos da biblioteca de matemática ficam numa pasta do sistema:</p>
+
+<pre class="term" data-cwd="~/c/raiz">$ ls /usr/lib/x86_64-linux-gnu/libm.*
+/usr/lib/x86_64-linux-gnu/libm.a
+/usr/lib/x86_64-linux-gnu/libm.so
+/usr/lib/x86_64-linux-gnu/libm.so.6</pre>
+
+<p>Repare no padrão dos nomes: <code>lib</code> + <strong>m</strong> + <code>.a</code> ou <code>.so</code>. A opção <code>-lm</code> quer dizer "procure a biblioteca <code>libm</code>": o gcc acrescenta o <code>lib</code> na frente e o <code>.so</code> (ou <code>.a</code>) no fim. Para uma biblioteca chamada <code>libloja</code>, a opção será <code>-lloja</code>.</p>
+
+<hr>
+
+<h2>2. O projeto: a biblioteca da lojinha</h2>
+<p>A Ana quer usar as contas da lojinha em vários programas (o caixa, o site, a planilha de estoque). Ela organizou o código numa pasta com o cabeçalho em <code>include/</code> e as implementações em <code>src/</code>, como fazem as bibliotecas de verdade:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ ls -R
+.:
+include
+main.c
+src
+
+./include:
+loja.h
+
+./src:
+frete.c
+total.c</pre>
+
+<pre class="file" data-file="include/loja.h">#ifndef LOJA_H
+#define LOJA_H
+
+const char *loja_versao(void);
+int loja_total(int preco, int quantidade);
+int loja_frete(int km);
+
+#endif
+</pre>
+
+<pre class="file" data-file="src/total.c">#include "loja.h"
+
+const char *loja_versao(void) {
+    return "1.0";
+}
+
+int loja_total(int preco, int quantidade) {
+    return preco * quantidade;
+}
+</pre>
+
+<pre class="file" data-file="src/frete.c">#include "loja.h"
+
+int loja_frete(int km) {
+    if (km &lt;= 10) {
+        return 0;
+    }
+    return 5 + (km - 10);
+}
+</pre>
+
+<p>O frete é grátis até 10 km; depois, custa R$ 5 mais R$ 1 por quilômetro a mais. Todas as funções públicas começam com <code>loja_</code>: como o C não tem "sobrenome" para funções, o prefixo evita que elas briguem com funções de mesmo nome no programa de quem usa a biblioteca (você vai ver essa briga na seção 3). O programa de teste:</p>
+
+<pre class="file" data-file="main.c">#include &lt;stdio.h&gt;
+#include "loja.h"
+
+int main(void) {
+    printf("Biblioteca da loja, versão %s\n", loja_versao());
+    printf("3 cadernos: R$ %d\n", loja_total(12, 3));
+    printf("Frete (8 km): R$ %d\n", loja_frete(8));
+    printf("Frete (23 km): R$ %d\n", loja_frete(23));
+    return 0;
+}
+</pre>
+
+<h3><code>-I</code>: onde estão os <code>.h</code></h3>
+<p>O <code>main.c</code> está numa pasta, e o <code>loja.h</code> em outra. O <code>#include "loja.h"</code> procura na pasta do próprio arquivo e não acha:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ gcc -std=c23 -Wall -Wextra -c main.c
+main.c:2:10: fatal error: loja.h: Arquivo ou diretório inexistente
+    2 | #include "loja.h"
+      |          ^~~~~~~~
+compilation terminated.</pre>
+
+<p>A opção <code>-I</code> (de <em>include</em>) acrescenta uma pasta à busca dos <code>.h</code> (aula <a href="preprocessador.html">Pré-processador</a>):</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ gcc -std=c23 -Wall -Wextra -Iinclude -c main.c
+$ gcc -std=c23 -Wall -Wextra -Iinclude -c src/total.c src/frete.c
+$ ls
+frete.o
+include
+main.c
+main.o
+src
+total.o</pre>
+
+<p>Os <code>.o</code> saem na pasta onde a Ana está (<code>~/c/biblio</code>), não em <code>src/</code>.</p>
+
+<hr>
+
+<h2>3. A biblioteca estática (<code>.a</code>)</h2>
+<p>Uma biblioteca estática é só uma <strong>caixa de arquivos <code>.o</code></strong>, feita com o programa <code>ar</code> (de <em>archiver</em>, "arquivador"):</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ ar rcs libloja.a total.o frete.o
+$ ar t libloja.a
+total.o
+frete.o
+$ file libloja.a
+libloja.a: current ar archive</pre>
+
+<dl class="anatomy">
+  <dt>ar rcs</dt><dd>Três letras de opções: <code>r</code> (<em>replace</em>) põe os <code>.o</code> na caixa, trocando os que já estiverem lá; <code>c</code> (<em>create</em>) cria a caixa sem reclamar se ela não existe; <code>s</code> grava um índice dos símbolos, que deixa a ligação mais rápida.</dd>
+  <dt>libloja.a</dt><dd>O nome da biblioteca: tem de começar com <code>lib</code> e terminar com <code>.a</code> para o <code>-lloja</code> achá-la.</dd>
+  <dt>ar t</dt><dd>Lista (<em>table</em>) o que há dentro.</dd>
+</dl>
+
+<p>O <code>nm</code> funciona com a caixa inteira, mostrando os símbolos de cada <code>.o</code>:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ nm libloja.a
+
+total.o:
+0000000000000011 T loja_total
+0000000000000000 T loja_versao
+
+frete.o:
+0000000000000000 T loja_frete</pre>
+
+<h3>Ligar: <code>-L</code> e <code>-l</code></h3>
+<pre class="term" data-cwd="~/c/biblio">$ gcc main.o -L. -lloja -o app
+$ ./app
+Biblioteca da loja, versão 1.0
+3 cadernos: R$ 36
+Frete (8 km): R$ 0
+Frete (23 km): R$ 18</pre>
+
+<dl class="anatomy">
+  <dt>main.o</dt><dd>O seu programa. Vem <strong>antes</strong> das bibliotecas (veja abaixo por quê).</dd>
+  <dt>-L.</dt><dd>"Procure bibliotecas <strong>também</strong> nesta pasta" (<code>.</code> é a pasta atual). Sem espaço entre o <code>-L</code> e a pasta. As pastas do sistema, como <code>/usr/lib/x86_64-linux-gnu</code>, já estão na lista; por isso o <code>-lm</code> não precisa de <code>-L</code>.</dd>
+  <dt>-lloja</dt><dd>"Ligue a biblioteca <code>libloja</code>": o gcc procura <code>libloja.so</code> e <code>libloja.a</code> em cada pasta da lista.</dd>
+</dl>
+
+<p>O ligador copiou as três funções para dentro do <code>app</code>. O <code>nm</code> as encontra no executável, e o <code>ldd</code> não lista nenhuma <code>libloja</code>, porque o programa não precisa dela para rodar:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ nm app | grep loja
+000000000000120a T loja_frete
+00000000000011f3 T loja_total
+00000000000011e2 T loja_versao
+$ ldd ./app
+	linux-vdso.so.1 (0x00007f0174d62000)
+	libc.so.6 =&gt; /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00007f0174a00000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f0174d64000)
+$ rm libloja.a
+$ ./app
+Biblioteca da loja, versão 1.0
+3 cadernos: R$ 36
+Frete (8 km): R$ 0
+Frete (23 km): R$ 18</pre>
+
+<p>Mesmo com a <code>libloja.a</code> apagada, o programa roda: ele levou a fotocópia. (O <code>| grep loja</code> filtra a saída do <code>nm</code> e mostra só as linhas que contêm "loja".) Também dá para passar o arquivo direto, sem <code>-L</code> nem <code>-l</code>: <code>gcc main.o libloja.a -o app</code>.</p>
+
+<h3>Os dois erros de ligação mais comuns</h3>
+<p>Sem o <code>-L.</code>, o ligador procura só nas pastas do sistema:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ gcc main.o -lloja -o app
+/usr/bin/x86_64-linux-gnu-ld.bfd: não foi possível localizar -lloja: Arquivo ou diretório inexistente
+collect2: error: ld returned 1 exit status</pre>
+
+<p>(Em inglês: <code>cannot find -lloja: No such file or directory</code>.) E com a biblioteca <strong>antes</strong> do <code>main.o</code>:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ gcc -L. -lloja main.o -o app
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.o: na função "main":
+main.c:(.text+0x9): referência não definida para "loja_versao"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x32): referência não definida para "loja_total"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x54): referência não definida para "loja_frete"
+/usr/bin/x86_64-linux-gnu-ld.bfd: main.c:(.text+0x76): referência não definida para "loja_frete"
+collect2: error: ld returned 1 exit status</pre>
+
+<p>A biblioteca existe, e mesmo assim "referência não definida". O ligador lê o comando <strong>da esquerda para a direita</strong>. Quando chegou na <code>libloja.a</code>, ninguém ainda tinha pedido nenhuma <code>loja_…</code>, e ele não tirou nada da caixa. Depois veio o <code>main.o</code>, pedindo as três, mas a caixa já tinha ficado para trás. A regra: <strong>primeiro os seus arquivos, depois as bibliotecas</strong>. (É por isso que o <code>-lm</code> vai no fim do comando, e o <code>LDLIBS</code> no fim da receita do <a href="make.html">Makefile</a>.)</p>
+
+<h3>Nomes internos da biblioteca</h3>
+<p>Uma biblioteca tem funções públicas (as do <code>.h</code>) e, muitas vezes, auxiliares. Na pasta <code>~/c/biblio2</code>, a Ana pôs no <code>frete.c</code> uma auxiliar <code>arredondar</code>, que arredonda os quilômetros para o múltiplo de 5 de cima, e se esqueceu do <code>static</code>. Um programa que tem a sua própria <code>arredondar</code> (para notas) não liga:</p>
+
+<pre class="term" data-cwd="~/c/biblio2">$ gcc -std=c23 -Wall -Wextra -Iinclude main.c libloja.a -o app_a
+/usr/bin/x86_64-linux-gnu-ld.bfd: libloja.a(frete.o): na função "arredondar":
+frete.c:(.text+0x0): múltiplas definições de "arredondar"; /tmp/ccgh3i4y.o:main.c:(.text+0x0): definido primeiro aqui
+collect2: error: ld returned 1 exit status</pre>
+
+<p>O <code>libloja.a(frete.o)</code> diz: o <code>frete.o</code> de dentro da <code>libloja.a</code>. O conserto é o da aula <a href="static-extern.html">static e extern</a>: tudo o que não está no <code>.h</code> da biblioteca leva <code>static</code>. Quem usa a biblioteca não pode tropeçar nos nomes internos dela.</p>
+
+<div class="tryc" data-goal="compila,out:Frete (23 km): R$ 20,out:Nota 7 vira 10,src:static\s+int\s+arredondar">
+<p class="try-task"><strong>Missão:</strong> no editor, a biblioteca é só mais uma aba, e o ligador junta tudo, como numa biblioteca estática. Rode e leia o erro (<code>duplicate symbol: arredondar</code>). Conserte <strong>só a aba <code>frete.c</code></strong>, da biblioteca: a <code>arredondar</code> dela é um detalhe interno. O programa tem de mostrar <code>Frete (23 km): R$ 20</code> (13 km a mais, arredondados para 15) e <code>Nota 7 vira 10</code>.</p>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "loja.h"
+
+int arredondar(int nota) {
+    return nota &gt;= 5 ? 10 : 0;
+}
+
+int main(void) {
+    printf("Frete (23 km): R$ %d\n", loja_frete(23));
+    printf("Nota 7 vira %d\n", arredondar(7));
+    return 0;
+}
+</pre>
+<pre class="script" data-file="frete.c">#include "loja.h"
+
+int arredondar(int km) {
+    return (km + 4) / 5 * 5;
+}
+
+int loja_frete(int km) {
+    if (km &lt;= 10) {
+        return 0;
+    }
+    return 5 + arredondar(km - 10);
+}
+</pre>
+<pre class="script" data-file="loja.h">#ifndef LOJA_H
+#define LOJA_H
+
+const char *loja_versao(void);
+int loja_total(int preco, int quantidade);
+int loja_frete(int km);
+
+#endif
+</pre>
+<pre class="solucao" data-file="frete.c">#include "loja.h"
+
+static int arredondar(int km) {
+    return (km + 4) / 5 * 5;
+}
+
+int loja_frete(int km) {
+    if (km &lt;= 10) {
+        return 0;
+    }
+    return 5 + arredondar(km - 10);
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. A biblioteca compartilhada (<code>.so</code>)</h2>
+<p>A Ana volta ao <code>frete.c</code> sem a <code>arredondar</code>, na pasta <code>~/c/biblio</code>. Uma <code>.so</code> é feita em dois passos: compilar os <code>.o</code> com <code>-fPIC</code> e juntá-los com <code>-shared</code>:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ gcc -std=c23 -Wall -Wextra -Iinclude -fPIC -c src/total.c src/frete.c
+$ gcc -shared total.o frete.o -o libloja.so
+$ file libloja.so
+libloja.so: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, BuildID[sha1]=438c9650823dbca86e8990b7667bfad3814ff9f3, not stripped</pre>
+
+<dl class="anatomy">
+  <dt>-fPIC</dt><dd><em>Position Independent Code</em>, "código independente de posição". A <code>.so</code> vai ser carregada num endereço diferente em cada programa (você viu os endereços mudando no <code>ldd</code>), e o código tem de funcionar em qualquer um. Vai na etapa de compilar (<code>-c</code>).</dd>
+  <dt>-shared</dt><dd>"Gere uma biblioteca compartilhada em vez de um executável." Vai na etapa de ligar.</dd>
+  <dt>shared object</dt><dd>O que o <code>file</code> diz: um objeto compartilhado. Um executável apareceria como <code>pie executable</code>, e um <code>.o</code> como <code>relocatable</code>.</dd>
+</dl>
+
+<p>Para ver as funções que uma <code>.so</code> oferece, use <code>nm -D</code> (de <em>dynamic</em>):</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ nm -D libloja.so
+                 w __cxa_finalize
+                 w __gmon_start__
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+0000000000001121 T loja_frete
+000000000000110a T loja_total
+00000000000010f9 T loja_versao</pre>
+
+<p>As três <code>T</code> são as da Ana. As linhas com <code>w</code> (<em>weak</em>, "fraco") são ganchos que o gcc põe em toda <code>.so</code>; pode ignorar.</p>
+
+<h3>Ligar funciona; rodar, não</h3>
+<p>O comando de ligação é o mesmo da estática:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ gcc -std=c23 -Wall -Wextra -Iinclude main.c -L. -lloja -o app
+$ ./app
+./app: error while loading shared libraries: libloja.so: cannot open shared object file: No such file or directory
+$ echo $?
+127</pre>
+
+<p>"Erro ao carregar as bibliotecas compartilhadas: não foi possível abrir o arquivo <code>libloja.so</code>." Esta mensagem é do <strong>carregador</strong>, não do gcc, e sai em inglês mesmo no sistema em português. O programa nem começou: o código de saída 127 é o mesmo de um comando que não existe.</p>
+
+<p>O <code>-L.</code> só vale na hora de <strong>ligar</strong>: ele disse ao ligador onde achar a biblioteca para conferir os nomes. O programa gravou só o nome <code>libloja.so</code>. Na hora de <strong>rodar</strong>, o carregador procura esse nome nas pastas do sistema, e não na pasta atual. O <code>ldd</code> mostra o buraco:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ ldd ./app
+	linux-vdso.so.1 (0x00007f8271677000)
+	libloja.so =&gt; not found
+	libc.so.6 =&gt; /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00007f8271400000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f8271679000)</pre>
+
+<h3>Solução 1: <code>LD_LIBRARY_PATH</code></h3>
+<p>A variável de ambiente <code>LD_LIBRARY_PATH</code> (aula <a href="getenv.html">Variáveis de Ambiente</a>) acrescenta pastas à busca do carregador. Escrita antes do comando, ela vale só para ele:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ LD_LIBRARY_PATH=. ./app
+Biblioteca da loja, versão 1.0
+3 cadernos: R$ 36
+Frete (8 km): R$ 0
+Frete (23 km): R$ 18
+$ LD_LIBRARY_PATH=. ldd ./app
+	linux-vdso.so.1 (0x00007efe23cfe000)
+	libloja.so =&gt; ./libloja.so (0x00007efe23cee000)
+	libc.so.6 =&gt; /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00007efe23a00000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007efe23d00000)</pre>
+
+<p>Bom para testar, ruim para o dia a dia: você teria de lembrar dela toda vez.</p>
+
+<h3>Solução 2: gravar a pasta no programa (<code>-Wl,-rpath</code>)</h3>
+<pre class="term" data-cwd="~/c/biblio">$ gcc -std=c23 -Wall -Wextra -Iinclude main.c -L. -lloja -Wl,-rpath,'$ORIGIN' -o app
+$ ./app | head -1
+Biblioteca da loja, versão 1.0
+$ ldd ./app
+	linux-vdso.so.1 (0x00007f73c4df5000)
+	libloja.so =&gt; /home/ana/c/biblio/libloja.so (0x00007f73c4de5000)
+	libc.so.6 =&gt; /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00007f73c4a00000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f73c4df7000)
+$ readelf -d app | grep -i path
+ 0x000000000000001d (RUNPATH)            Biblioteca runpath: [$ORIGIN]</pre>
+
+<dl class="anatomy">
+  <dt>-Wl,…</dt><dd>"Passe isto ao ligador" (o <code>l</code> é de <em>linker</em>). O gcc não entende o <code>-rpath</code>; ele o repassa ao <code>ld</code>. As vírgulas separam as palavras: o ligador recebe <code>-rpath $ORIGIN</code>.</dd>
+  <dt>-rpath</dt><dd><em>Run path</em>, "caminho de execução": uma pasta gravada <strong>dentro</strong> do executável, onde o carregador vai procurar as <code>.so</code>.</dd>
+  <dt>'$ORIGIN'</dt><dd>Quer dizer "a pasta onde está o próprio executável". Assim, a dupla <code>app</code> + <code>libloja.so</code> pode ser copiada junta para qualquer pasta. As aspas simples impedem o Bash de tentar trocar o <code>$ORIGIN</code> por uma variável.</dd>
+  <dt>readelf -d</dt><dd>Mostra a parte "dinâmica" do executável. A linha <code>RUNPATH</code> é o <code>-rpath</code> gravado.</dd>
+</dl>
+
+<div class="note">
+<strong>Solução 3: instalar no sistema.</strong> As bibliotecas que vêm pelo <code>apt</code> ficam em <code>/usr/lib/x86_64-linux-gnu</code>, onde o carregador já procura. As suas costumam ir para <code>/usr/local/lib</code> (copiar a <code>.so</code> para lá e rodar <code>sudo ldconfig</code>, que atualiza o índice do carregador). Isso precisa de permissão de administrador e muda o sistema todo; para estudar, fique com o <code>-rpath</code>.
+</div>
+
+<h3>A vantagem: trocar a biblioteca sem recompilar o programa</h3>
+<p>A Ana lança a versão 2.0: o frete agora é grátis até 15 km. Ela muda o <code>total.c</code> (a versão) e o <code>frete.c</code>, refaz <strong>só</strong> a <code>libloja.so</code> e roda o <code>app</code> antigo, sem recompilá-lo:</p>
+
+<pre class="file" data-file="src/frete.c">#include "loja.h"
+
+int loja_frete(int km) {
+    if (km &lt;= 15) {
+        return 0;
+    }
+    return 5 + (km - 15);
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/biblio">$ ./app
+Biblioteca da loja, versão 1.0
+3 cadernos: R$ 36
+Frete (8 km): R$ 0
+Frete (23 km): R$ 18
+$ gcc -std=c23 -Wall -Wextra -Iinclude -fPIC -c src/total.c src/frete.c
+$ gcc -shared total.o frete.o -o libloja.so
+$ ./app
+Biblioteca da loja, versão 2.0
+3 cadernos: R$ 36
+Frete (8 km): R$ 0
+Frete (23 km): R$ 13</pre>
+
+<p>O mesmo <code>app</code> agora diz 2.0. É assim que uma atualização do sistema corrige um erro na <code>libc</code> de todos os programas de uma vez, sem recompilar nenhum. O cuidado: a <code>.so</code> nova tem de continuar oferecendo as mesmas funções, com os mesmos parâmetros. Se a Ana mudasse o <code>loja_frete</code> para receber um <code>double</code>, os programas antigos passariam um <code>int</code> e receberiam lixo, sem aviso nenhum.</p>
+
+<h3>Com <code>.a</code> e <code>.so</code> na mesma pasta</h3>
+<p>Quando as duas existem, o <code>-lloja</code> escolhe a <strong>compartilhada</strong>. Para usar a estática, passe o arquivo pelo nome:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ ar rcs libloja.a total.o frete.o
+$ gcc -std=c23 -Wall -Wextra -Iinclude main.c -L. -lloja -o app_qual
+$ ldd ./app_qual | grep loja
+	libloja.so =&gt; not found
+$ gcc -std=c23 -Wall -Wextra -Iinclude main.c libloja.a -o app_estatico
+$ ldd ./app_estatico | grep loja
+$ ./app_estatico | head -1
+Biblioteca da loja, versão 2.0</pre>
+
+<p>O <code>app_qual</code> precisa da <code>libloja.so</code> (e, sem <code>-rpath</code>, não a acha); o <code>ldd</code> do <code>app_estatico</code> não mostra nenhuma linha com "loja". Com uma biblioteca tão pequena, os tamanhos quase não mudam:</p>
+
+<pre class="term" data-cwd="~/c/biblio">$ ls -l app app_estatico
+-rwxrwxr-x 1 ana ana 16056 out 17 11:30 app
+-rwxrwxr-x 1 ana ana 16120 out 17 11:30 app_estatico</pre>
+
+<p>Com bibliotecas grandes, a diferença aparece. A opção <code>-static</code> pede a versão estática de <strong>todas</strong> as bibliotecas, até da <code>libc</code> e da <code>libm</code>. O programa da raiz quadrada da seção 1:</p>
+
+<pre class="term" data-cwd="~/c/raiz">$ gcc -std=c23 -Wall -Wextra raiz.c -o raiz -lm
+$ gcc -std=c23 -Wall -Wextra -static raiz.c -o raiz_estatico -lm
+$ ls -l raiz raiz_estatico
+-rwxrwxr-x 1 ana ana  15992 out 17 11:34 raiz
+-rwxrwxr-x 1 ana ana 817064 out 17 11:34 raiz_estatico
+$ ldd ./raiz_estatico
+	não é um executável dinâmico
+$ ./raiz_estatico
+Lado do quadrado: 7.0 m</pre>
+
+<p>De 16 KB para 800 KB, por causa das fotocópias da <code>libc</code> e da <code>libm</code>; em troca, o <code>raiz_estatico</code> roda em qualquer Linux de 64 bits, sem depender das bibliotecas instaladas. "Não é um executável dinâmico" (<code>not a dynamic executable</code>) é o <code>ldd</code> dizendo que não há nenhuma <code>.so</code> para carregar.</p>
+
+<h3>Sem <code>-fPIC</code></h3>
+<p>Com código simples, como o da lojinha, esquecer o <code>-fPIC</code> às vezes passa. Mas basta uma variável global pública na biblioteca para o ligador recusar. Na pasta <code>~/c/fpic</code>:</p>
+
+<pre class="file" data-file="vendas.c">int loja_vendas = 0;
+
+void loja_vender(int valor) {
+    loja_vendas += valor;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/fpic">$ gcc -std=c23 -Wall -Wextra -c vendas.c
+$ gcc -shared vendas.o -o libvendas.so
+/usr/bin/x86_64-linux-gnu-ld.bfd: vendas.o: aviso: relocalização contra "loja_vendas" em secção só de leitura ".text"
+/usr/bin/x86_64-linux-gnu-ld.bfd: vendas.o: relocalização R_X86_64_PC32 contra símbolo "loja_vendas" não pode ser usada ao fazer um objecto partilhado; recompilar com -fPIC
+/usr/bin/x86_64-linux-gnu-ld.bfd: vinculação final falhou: mau valor
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra -fPIC -c vendas.c
+$ gcc -shared vendas.o -o libvendas.so &amp;&amp; echo ok
+ok</pre>
+
+<p>A frase que importa está no fim da segunda linha: "recompilar com <code>-fPIC</code>" (em inglês: <code>relocation R_X86_64_PC32 against symbol `loja_vendas' can not be used when making a shared object; recompile with -fPIC</code>). A tradução do ligador mistura português de Portugal ("objecto partilhado", "secção"), mas o recado é claro. Regra: <strong>todo <code>.o</code> que vai para uma <code>.so</code> é compilado com <code>-fPIC</code></strong>.</p>
+
+<hr>
+
+<h2>Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th><th>Por quê</th></tr>
+<tr><td>Um programa que você vai copiar para outro computador, sem instalar nada</td><td>Estática (<code>.a</code>)</td><td>Tudo vai dentro do executável</td></tr>
+<tr><td>Código seu, dividido em partes, usado por um ou dois programas</td><td>Estática (<code>.a</code>)</td><td>Mais simples: nada de <code>-fPIC</code>, <code>-rpath</code> ou "not found"</td></tr>
+<tr><td>Uma biblioteca usada por muitos programas, que recebe correções</td><td>Compartilhada (<code>.so</code>)</td><td>Uma cópia só no disco e na memória; corrigir a <code>.so</code> corrige todos</td></tr>
+<tr><td>Bibliotecas do sistema (<code>libc</code>, <code>libm</code>, as do <code>apt</code>)</td><td>Compartilhada, que é o padrão</td><td>É o que o gcc escolhe quando as duas existem</td></tr>
+</table>
+</div>
+
+<p><strong>Para começar:</strong> faça a sua primeira biblioteca estática. Quando ela funcionar, a compartilhada é só trocar o <code>ar rcs</code> por <code>-fPIC</code> + <code>-shared</code> e cuidar do <code>-rpath</code>. Em projetos maiores, o <a href="cmake.html">CMake</a> faz as duas com <code>add_library(loja STATIC …)</code> ou <code>add_library(loja SHARED …)</code>.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>fatal error: loja.h: Arquivo ou diretório inexistente</code></strong>
+<p><strong>O que significa:</strong> o compilador não achou o cabeçalho da biblioteca.</p>
+<p><strong>Como consertar:</strong> diga a pasta com <code>-I</code>: <code>-Iinclude</code>, <code>-I../loja/include</code>. Para bibliotecas do sistema, quase sempre falta instalar o pacote de desenvolvimento (no Debian e no Ubuntu, os que terminam em <code>-dev</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>não foi possível localizar -lloja: Arquivo ou diretório inexistente</code> (<code>cannot find -lloja</code>)</strong>
+<p><strong>O que significa:</strong> o ligador não achou <code>libloja.so</code> nem <code>libloja.a</code> nas pastas da lista.</p>
+<p><strong>Como consertar:</strong> acrescente a pasta com <code>-L</code>. Confira também o nome: o <code>-l</code> leva o nome <strong>sem</strong> <code>lib</code> e <strong>sem</strong> extensão. Com <code>-llibloja</code>, o ligador até dá a dica:</p>
+<pre class="term" data-cwd="~/c/biblio">$ gcc -std=c23 -Wall -Wextra -Iinclude main.c -L. -llibloja -o x
+/usr/bin/x86_64-linux-gnu-ld.bfd: não foi possível localizar -llibloja: Arquivo ou diretório inexistente
+/usr/bin/x86_64-linux-gnu-ld.bfd: para vincular com ./libloja.a use -l:libloja.a ou renome-o para a liblibloja.a
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra -Iinclude main.c -L. -lloja.so -o x
+/usr/bin/x86_64-linux-gnu-ld.bfd: não foi possível localizar -lloja.so: Arquivo ou diretório inexistente
+collect2: error: ld returned 1 exit status</pre>
+</div>
+
+<div class="cenario">
+<strong><code>referência não definida para "loja_total"</code>, com a biblioteca no comando</strong>
+<p><strong>O que significa:</strong> quase sempre, a biblioteca veio <strong>antes</strong> dos arquivos que a usam (<code>gcc -L. -lloja main.o</code>). Pode ser também uma função que está no <code>.h</code>, mas não em nenhum <code>.o</code> da biblioteca (confira com <code>nm libloja.a</code>).</p>
+<p><strong>Como consertar:</strong> os seus <code>.c</code> e <code>.o</code> primeiro, as bibliotecas no fim: <code>gcc main.o -L. -lloja -o app</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error while loading shared libraries: libloja.so: cannot open shared object file</code></strong>
+<p><strong>O que significa:</strong> o programa ligou, mas o carregador não acha a <code>.so</code> na hora de rodar. O código de saída é 127. O <code>ldd ./app</code> mostra <code>libloja.so =&gt; not found</code>.</p>
+<p><strong>Como consertar:</strong> para testar, <code>LD_LIBRARY_PATH=. ./app</code>. Para resolver, ligue com <code>-Wl,-rpath,'$ORIGIN'</code> (e deixe a <code>.so</code> ao lado do programa) ou instale a biblioteca no sistema.</p>
+</div>
+
+<div class="cenario">
+<strong><code>relocalização R_X86_64_PC32 … não pode ser usada ao fazer um objecto partilhado; recompilar com -fPIC</code></strong>
+<p><strong>O que significa:</strong> um <code>.o</code> foi compilado sem <code>-fPIC</code> e está indo para uma <code>.so</code>.</p>
+<p><strong>Como consertar:</strong> apague os <code>.o</code> e compile de novo com <code>-fPIC</code>: <code>gcc -fPIC -c …</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Com a <code>.so</code>, liga sem erro, mas a biblioteca calcula errado</strong>
+<p><strong>O que significa:</strong> é o caso da <code>arredondar</code> da seção 3, agora com a biblioteca compartilhada. Com a <code>.a</code>, o ligador reclamou de <code>múltiplas definições</code>. Com a <code>.so</code>, ele <strong>não reclama</strong>: o nome do programa "ganha", e a própria biblioteca passa a chamar a <code>arredondar</code> das notas.</p>
+<pre class="term" data-cwd="~/c/biblio2">$ gcc -std=c23 -Wall -Wextra -Iinclude main.c -L. -lloja -Wl,-rpath,'$ORIGIN' -o app_so
+$ ./app_so
+Frete (23 km): R$ 15
+Nota 7 vira 10</pre>
+<p>O frete deveria ser R$ 20 (5 + 15), e saiu R$ 15 (5 + 10, a "nota arredondada" de 13).</p>
+<p><strong>Como consertar:</strong> <code>static</code> em toda função interna da biblioteca. Com a <code>.so</code> refeita, sem recompilar o programa:</p>
+<pre class="term" data-cwd="~/c/biblio2">$ sed -i 's/^int arredondar/static int arredondar/' src/frete.c
+$ gcc -std=c23 -Wall -Wextra -Iinclude -fPIC -c src/frete.c
+$ gcc -shared total.o frete.o -o libloja.so
+$ ./app_so
+Frete (23 km): R$ 20
+Nota 7 vira 10</pre>
+<p>(O <code>sed -i</code> troca o texto dentro do arquivo: aqui, põe o <code>static</code> antes da <code>int arredondar</code>.)</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>gcc -Iinclude -c src/a.c</code></td><td>Compila, procurando os <code>.h</code> também em <code>include/</code></td></tr>
+<tr><td><code>ar rcs libnome.a a.o b.o</code></td><td>Cria (ou atualiza) a biblioteca estática</td></tr>
+<tr><td><code>ar t libnome.a</code></td><td>Lista os <code>.o</code> de dentro dela</td></tr>
+<tr><td><code>gcc -fPIC -c a.c</code></td><td>Compila um <code>.o</code> que pode ir para uma <code>.so</code></td></tr>
+<tr><td><code>gcc -shared a.o b.o -o libnome.so</code></td><td>Cria a biblioteca compartilhada</td></tr>
+<tr><td><code>gcc main.o -L. -lnome -o app</code></td><td>Liga com a <code>libnome</code> da pasta atual (prefere a <code>.so</code>); bibliotecas depois dos seus arquivos</td></tr>
+<tr><td><code>gcc main.o libnome.a -o app</code></td><td>Liga com a estática, pelo nome do arquivo</td></tr>
+<tr><td><code>-Wl,-rpath,'$ORIGIN'</code></td><td>Grava no programa: "procure as <code>.so</code> na minha pasta"</td></tr>
+<tr><td><code>LD_LIBRARY_PATH=pasta ./app</code></td><td>Roda o programa procurando as <code>.so</code> também na pasta</td></tr>
+<tr><td><code>ldd ./app</code></td><td>Lista as <code>.so</code> de que o programa precisa e onde estão (ou <code>not found</code>)</td></tr>
+<tr><td><code>nm libnome.a</code> / <code>nm -D libnome.so</code></td><td>Os símbolos da biblioteca</td></tr>
+<tr><td><code>file arquivo</code></td><td><code>current ar archive</code> (<code>.a</code>), <code>shared object</code> (<code>.so</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A opção da biblioteca</h3>
+<p>O arquivo se chama <code>libestoque.so</code>. Complete a opção que o liga:</p>
+<div class="ex-code">gcc main.o -L. <input data-answer="-lestoque" aria-label="opção"> -o app</div>
+</div>
+
+<div class="exercise">
+<h3>2. A caixa de <code>.o</code></h3>
+<p>Complete o comando que cria a biblioteca estática <code>libestoque.a</code>:</p>
+<div class="ex-code"><input data-answer="ar rcs|ar crs|ar rsc" aria-label="comando"> libestoque.a produtos.o precos.o</div>
+</div>
+
+<div class="exercise">
+<h3>3. Para uma <code>.so</code></h3>
+<p>Que opção de compilação todo <code>.o</code> de uma biblioteca compartilhada deve receber?</p>
+<div class="ex-code">gcc <input data-answer="-fPIC|-fpic" aria-label="opção"> -c produtos.c</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O comando <code>gcc -L. -lloja main.o -o app</code> dá <code>referência não definida para "loja_total"</code>, mas a <code>libloja.a</code> tem essa função. Por quê?</p>
+<label><input type="radio" name="q4"> Faltou o <code>-I</code></label>
+<label><input type="radio" name="q4"> Faltou o <code>-fPIC</code></label>
+<label><input type="radio" name="q4"> A biblioteca veio antes do <code>main.o</code>, e o ligador lê da esquerda para a direita</label>
+<label><input type="radio" name="q4"> Bibliotecas estáticas não funcionam com <code>-l</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. O programa foi ligado com uma <code>libloja.so</code>, e a Ana apagou a <code>.so</code>. O que acontece no <code>./app</code>?</p>
+<label><input type="radio" name="q5"> Funciona: o código foi copiado para dentro do programa</label>
+<label><input type="radio" name="q5"> <code>error while loading shared libraries</code>, e o programa nem começa</label>
+<label><input type="radio" name="q5"> O programa roda, mas as funções devolvem zero</label>
+<label><input type="radio" name="q5"> O gcc recompila a biblioteca sozinho</label>
+</div>
+
+<h3>Missão final: lance a versão 2.0</h3>
+
+<div class="tryc" data-goal="out:versão 2.0,out:Frete (8 km): R$ 0,out:Frete (23 km): R$ 13,out:Frete (40 km): R$ 30">
+<p class="try-task"><strong>Missão:</strong> a Ana vai lançar a versão 2.0 da biblioteca da lojinha. Mexa <strong>só nas abas da biblioteca</strong> (<code>total.c</code> e <code>frete.c</code>); o <code>main.c</code> é o programa de um cliente e não muda, como com uma <code>.so</code> trocada:</p>
+<ol>
+  <li>a <code>loja_versao</code> passa a devolver <code>"2.0"</code>;</li>
+  <li>o frete fica grátis até <strong>15 km</strong>; acima disso, R$ 5 mais R$ 1 por quilômetro além dos 15.</li>
+</ol>
+<pre class="out">Biblioteca da loja, versão 2.0
+3 cadernos: R$ 36
+Frete (8 km): R$ 0
+Frete (23 km): R$ 13
+Frete (40 km): R$ 30</pre>
+<pre class="script" data-file="main.c">#include &lt;stdio.h&gt;
+#include "loja.h"
+
+int main(void) {
+    printf("Biblioteca da loja, versão %s\n", loja_versao());
+    printf("3 cadernos: R$ %d\n", loja_total(12, 3));
+    printf("Frete (8 km): R$ %d\n", loja_frete(8));
+    printf("Frete (23 km): R$ %d\n", loja_frete(23));
+    printf("Frete (40 km): R$ %d\n", loja_frete(40));
+    return 0;
+}
+</pre>
+<pre class="script" data-file="total.c">#include "loja.h"
+
+const char *loja_versao(void) {
+    return "1.0";
+}
+
+int loja_total(int preco, int quantidade) {
+    return preco * quantidade;
+}
+</pre>
+<pre class="script" data-file="frete.c">#include "loja.h"
+
+int loja_frete(int km) {
+    if (km &lt;= 10) {
+        return 0;
+    }
+    return 5 + (km - 10);
+}
+</pre>
+<pre class="script" data-file="loja.h">#ifndef LOJA_H
+#define LOJA_H
+
+const char *loja_versao(void);
+int loja_total(int preco, int quantidade);
+int loja_frete(int km);
+
+#endif
+</pre>
+<pre class="solucao" data-file="total.c">#include "loja.h"
+
+const char *loja_versao(void) {
+    return "2.0";
+}
+
+int loja_total(int preco, int quantidade) {
+    return preco * quantidade;
+}
+</pre>
+<pre class="solucao" data-file="frete.c">#include "loja.h"
+
+int loja_frete(int km) {
+    if (km &lt;= 15) {
+        return 0;
+    }
+    return 5 + (km - 15);
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma biblioteca é um pacote de funções compiladas. O nome segue o padrão <code>lib<em>nome</em>.a</code> ou <code>lib<em>nome</em>.so</code>, e o <code>-l<em>nome</em></code> a liga. Você já usa a <code>libc</code> (sempre) e a <code>libm</code> (<code>-lm</code>).</li>
+  <li><strong>Estática:</strong> <code>ar rcs libloja.a *.o</code>. O ligador copia as funções para o programa, que depois roda sem ela.</li>
+  <li><strong>Compartilhada:</strong> <code>gcc -fPIC -c</code> e <code>gcc -shared … -o libloja.so</code>. O carregador a abre a cada execução; trocar a <code>.so</code> atualiza todos os programas, sem recompilar.</li>
+  <li><code>-I</code> diz onde estão os <code>.h</code>; <code>-L</code>, onde estão as bibliotecas (na ligação); <code>-l</code>, qual biblioteca. As bibliotecas vão <strong>depois</strong> dos seus arquivos no comando.</li>
+  <li>Na hora de rodar, o <code>-L</code> não vale: use <code>-Wl,-rpath,'$ORIGIN'</code> ou <code>LD_LIBRARY_PATH</code>. O <code>ldd</code> mostra o que o programa precisa e o que está <code>not found</code>.</li>
+  <li>Funções internas da biblioteca levam <code>static</code>, e as públicas, um prefixo (<code>loja_</code>). Com uma <code>.so</code>, um nome repetido não dá erro: dá resultado errado.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
