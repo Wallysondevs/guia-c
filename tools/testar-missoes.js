@@ -60,7 +60,10 @@ function pres(interno, classe) {
   while ((m = re.exec(interno))) {
     const a = attrs(new RegExp("^<pre\\b" + ATTRS + ">", "i").exec(m[0])[0]);
     if (!temClasse(a, classe)) continue;
-    r.push({ arquivo: a["data-file"] || null, bruto: m[1], codigo: Sim.decodificarEntidades(m[1]).replace(/^\n/, "").replace(/\n$/, "") });
+    let codigo = Sim.decodificarEntidades(m[1]).replace(/^\n/, "").replace(/\n$/, "");
+    // aba de dados (.txt, .csv…): termina com Enter, como um arquivo de verdade (igual ao assets/csim.js)
+    if (a["data-file"] && !/\.[ch]$/i.test(a["data-file"]) && codigo !== "" && !codigo.endsWith("\n")) codigo += "\n";
+    r.push({ arquivo: a["data-file"] || null, bruto: m[1], codigo: codigo });
   }
   return r;
 }

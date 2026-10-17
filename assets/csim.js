@@ -359,7 +359,9 @@
     }
     ajustar();
 
-    function arquivos() { salvarAba(); return abas.map(function (a) { return { nome: a.nome, codigo: a.atual }; }); }
+    // aba de dados (.txt, .csv…): termina com Enter, como um arquivo de verdade (o <pre> perde o último \n no lerPre)
+    function comEnter(a) { return !/\.[ch]$/i.test(a.nome) && a.atual !== "" && a.atual.slice(-1) !== "\n" ? a.atual + "\n" : a.atual; }
+    function arquivos() { salvarAba(); return abas.map(function (a) { return { nome: a.nome, codigo: comEnter(a) }; }); }
     function fonte() { return abas.map(function (a) { return a.atual; }).join("\n"); }
     function verificar(ctx) {
       if (!status || cumprida) return;
