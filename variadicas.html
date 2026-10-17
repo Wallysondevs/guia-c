@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Funções Variádicas — stdarg.h, va_list, va_arg e vprintf | Guia C</title>
+<meta name="description" content="Funções variádicas em C para quem está começando: como o printf aceita qualquer quantidade de argumentos, va_list, va_start, va_arg e va_end, somar N números, sentinela NULL, a promoção de float para double e de char para int, o va_start de um argumento do C23 e um log com vprintf. Saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Funções Variádicas</span></h1>
+
+<p class="intro">Você já chamou o <code>printf</code> com um argumento (<code>printf("Olá\n")</code>), com dois (<code>printf("%d\n", idade)</code>) e com cinco. Mas uma função em C tem uma lista fixa de parâmetros (veja <a href="parametros.html">Parâmetros</a>). Como o <code>printf</code> aceita qualquer quantidade? Ele é uma <strong>função variádica</strong>: uma função que recebe um número <strong>variável</strong> de argumentos. Nesta aula você vai escrever as suas, com as ferramentas do cabeçalho <code>stdarg.h</code>, e vai ver por que elas são poderosas e perigosas ao mesmo tempo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que significam as reticências <code>...</code> na lista de parâmetros.</li>
+  <li>As quatro peças do <code>stdarg.h</code>: <code>va_list</code>, <code>va_start</code>, <code>va_arg</code> e <code>va_end</code>.</li>
+  <li>Os três jeitos de a função saber quantos argumentos chegaram: um <strong>contador</strong>, uma <strong>sentinela</strong> e uma <strong>string de formato</strong>.</li>
+  <li>Por que <code>va_arg(args, float)</code> e <code>va_arg(args, char)</code> estão errados (as <strong>promoções</strong>).</li>
+  <li>O <code>va_start</code> de um argumento só, novidade do <span class="versao">C23</span>.</li>
+  <li>Como escrever uma função de log que funciona como o <code>printf</code>, com <code>vprintf</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/variadicas</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> (veja <a href="compilar.html">Compilar com gcc</a>). Você pode repetir cada um no editor do guia, que compila C de verdade no navegador.</p>
+
+<hr>
+
+<h2>A ideia: uma sacola sem etiquetas</h2>
+<p>Imagine que a Ana entrega uma <strong>sacola</strong> de compras para o filho guardar. Dentro há uma quantidade qualquer de coisas, uma atrás da outra. O filho só consegue tirar um item por vez, na ordem em que foram colocados, e <strong>os itens não têm etiqueta</strong>. Para guardar tudo direito, ele precisa de um bilhete da mãe dizendo duas coisas:</p>
+<ol class="passo">
+  <li><strong>O que é cada item</strong> ("primeiro um pacote de arroz, depois uma garrafa de leite…"), para saber como pegar e onde guardar.</li>
+  <li><strong>Quando parar</strong> ("são 3 itens", ou "pare quando achar o papel escrito FIM").</li>
+</ol>
+<p>Uma função variádica é o filho. Os argumentos extras chegam na sacola, sem etiqueta de tipo. O bilhete é o que a função recebe <strong>antes</strong> das reticências: no <code>printf</code>, é o formato. Em <code>printf("%s tem %d anos\n", nome, idade)</code>, o <code>"%s tem %d anos\n"</code> diz: "tire um texto, depois um <code>int</code>, e acabou". Se o bilhete mentir, o filho guarda o leite no armário de panelas, e ninguém avisa.</p>
+
+<hr>
+
+<h2>1. As reticências: <code>...</code></h2>
+<p>Uma função variádica se declara com <code>...</code> (três pontos) no <strong>fim</strong> da lista de parâmetros. É assim que o <code>printf</code> está declarado dentro do <code>stdio.h</code> (simplificado):</p>
+
+<pre class="file" data-file="stdio.h (trecho)">int printf(const char *formato, ...);
+</pre>
+
+<dl class="anatomy">
+  <dt>const char *formato</dt><dd>Um parâmetro <strong>nomeado</strong>, normal: o texto com os <code>%d</code>, <code>%s</code>…. É o "bilhete".</dd>
+  <dt>...</dt><dd>"E mais quantos argumentos você quiser, de qualquer tipo". O nome técnico em português é <strong>reticências</strong>; em inglês, <em>ellipsis</em>. A palavra "variádica" vem do inglês <em>variadic</em>, "de quantidade variável".</dd>
+</dl>
+
+<p>As reticências sempre vêm por último. <code>int f(..., int x)</code> não compila. Até o C17, a função precisava ter pelo menos um parâmetro nomeado antes do <code>...</code>; o C23 liberou isso (seção 5).</p>
+
+<hr>
+
+<h2>2. Sua primeira função variádica: somar N números</h2>
+<p>Para ler os argumentos que vieram nas reticências, use o cabeçalho <code>stdarg.h</code> (<em>standard arguments</em>, "argumentos padrão"). Esta função soma quantos números você passar. O primeiro argumento diz <strong>quantos</strong> vêm depois:</p>
+
+<pre class="file" data-file="soma.c">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+int soma(int quantos, ...) {
+    va_list args;
+    va_start(args, quantos);
+    int total = 0;
+    for (int i = 0; i &lt; quantos; i++) {
+        total += va_arg(args, int);
+    }
+    va_end(args);
+    return total;
+}
+
+int main(void) {
+    printf("%d\n", soma(3, 10, 20, 30));
+    printf("%d\n", soma(5, 1, 2, 3, 4, 5));
+    printf("%d\n", soma(0));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/variadicas">$ gcc -std=c23 -Wall -Wextra soma.c -o soma
+$ ./soma
+60
+15
+0</pre>
+
+<p>A mesma função recebeu 3 números, depois 5, depois nenhum. Linha por linha:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;stdarg.h&gt;</code></td><td>Traz as quatro peças abaixo. Sem ele, nada disso existe.</td></tr>
+<tr><td><code>int soma(int quantos, ...)</code></td><td>Um parâmetro nomeado (<code>quantos</code>, o "bilhete") e as reticências.</td></tr>
+<tr><td><code>va_list args;</code></td><td>Cria a "mão que tira itens da sacola". <code>va_list</code> = <em>variable argument list</em>, "lista de argumentos variáveis". É um tipo especial; você nunca olha dentro dele.</td></tr>
+<tr><td><code>va_start(args, quantos);</code></td><td>Põe a mão na sacola, logo depois do último parâmetro nomeado (<code>quantos</code>). Tem de vir antes de qualquer <code>va_arg</code>.</td></tr>
+<tr><td><code>va_arg(args, int)</code></td><td>Tira o <strong>próximo</strong> argumento, dizendo que ele é um <code>int</code>, e avança. Cada chamada pega um; não dá para voltar.</td></tr>
+<tr><td><code>va_end(args);</code></td><td>Tira a mão da sacola. Todo <code>va_start</code> tem o seu <code>va_end</code>, na mesma função, como todo <code>malloc</code> tem o seu <code>free</code>.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong><code>va_start</code>, <code>va_arg</code> e <code>va_end</code> não são funções</strong>
+<p>São <strong>macros</strong> (veja <a href="macros.html">Macros com Parâmetros</a>): o compilador as troca por um código especial, que sabe onde os argumentos ficaram guardados. É por isso que <code>va_arg(args, int)</code> pode receber um <strong>tipo</strong> (<code>int</code>) como argumento, coisa que uma função normal não aceita.</p>
+</div>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode. Depois acrescente uma chamada <code>soma(4, 2, 4, 6, 8)</code> e mostre o resultado. Tente também <code>soma(1, 99)</code>.</p>
+<pre class="script">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+int soma(int quantos, ...) {
+    va_list args;
+    va_start(args, quantos);
+    int total = 0;
+    for (int i = 0; i &lt; quantos; i++) {
+        total += va_arg(args, int);
+    }
+    va_end(args);
+    return total;
+}
+
+int main(void) {
+    printf("%d\n", soma(3, 10, 20, 30));
+    printf("%d\n", soma(2, 7, 8));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Como a função sabe quando parar</h2>
+<p>Dentro da função, <strong>não existe</strong> jeito de perguntar "quantos argumentos vieram?" nem "de que tipo é o próximo?". Quem chama tem de contar. Há três jeitos de combinar isso:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Jeito</th><th>Como funciona</th><th>Exemplo</th></tr>
+<tr><td><strong>Contador</strong></td><td>Um parâmetro nomeado diz quantos argumentos vêm depois.</td><td><code>soma(3, 10, 20, 30)</code></td></tr>
+<tr><td><strong>Sentinela</strong></td><td>Um valor especial marca o fim, como o <code>'\0'</code> de uma string.</td><td><code>lista("arroz", "café", NULL)</code></td></tr>
+<tr><td><strong>Formato</strong></td><td>Um texto diz quantos argumentos vêm e de que tipo.</td><td><code>printf("%s: %d\n", nome, n)</code></td></tr>
+</table>
+</div>
+
+<h3>A sentinela</h3>
+<p>A palavra vem do soldado que fica de guarda no fim do acampamento. Para uma lista de textos, a sentinela natural é <code>NULL</code> (veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a>), porque nenhum texto de verdade mora no endereço nulo:</p>
+
+<pre class="file" data-file="sentinela.c">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+void lista_compras(const char *primeiro, ...) {
+    va_list args;
+    va_start(args, primeiro);
+    int n = 1;
+    for (const char *item = primeiro; item != NULL; item = va_arg(args, const char *)) {
+        printf("%d. %s\n", n, item);
+        n++;
+    }
+    va_end(args);
+}
+
+int main(void) {
+    lista_compras("arroz", "feijão", "café", NULL);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/variadicas">$ gcc -std=c23 -Wall -Wextra sentinela.c -o sentinela
+$ ./sentinela
+1. arroz
+2. feijão
+3. café</pre>
+
+<dl class="anatomy">
+  <dt>const char *item = primeiro</dt><dd>O laço começa pelo parâmetro nomeado, que já é o primeiro item.</dd>
+  <dt>item != NULL</dt><dd>Continua enquanto não achar a sentinela.</dd>
+  <dt>item = va_arg(args, const char *)</dt><dd>Tira o próximo argumento da sacola, como um texto (um <code>const char *</code>; veja <a href="ponteiros-strings.html">Ponteiros e Strings</a>).</dd>
+  <dt>NULL</dt><dd>Na chamada, o último argumento. Esquecê-lo é um erro grave (veja <a href="#errado">Quando dá errado</a>).</dd>
+</dl>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> acrescente mais dois itens à lista (antes do <code>NULL</code>) e rode.</p>
+<pre class="script">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+void lista_compras(const char *primeiro, ...) {
+    va_list args;
+    va_start(args, primeiro);
+    int n = 1;
+    for (const char *item = primeiro; item != NULL; item = va_arg(args, const char *)) {
+        printf("%d. %s\n", n, item);
+        n++;
+    }
+    va_end(args);
+}
+
+int main(void) {
+    lista_compras("arroz", "feijão", "café", NULL);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>O formato</h3>
+<p>É o jeito do <code>printf</code> e do <code>scanf</code>: a função lê o texto, e cada <code>%</code> diz "tire mais um argumento, deste tipo". O <code>%d</code> vira um <code>va_arg(args, int)</code>; o <code>%s</code>, um <code>va_arg(args, char *)</code>; o <code>%f</code>, um <code>va_arg(args, double)</code>. É o jeito mais flexível, e o <code>printf</code> de verdade é feito assim. Você vai usar esse poder na seção 6, sem precisar reescrever o <code>printf</code>.</p>
+
+<hr>
+
+<h2>4. Os tipos que chegam: as promoções</h2>
+<p>Quando um argumento entra pelas reticências, o C aplica as <strong>promoções padrão de argumentos</strong> (<em>default argument promotions</em>), porque a função não diz que tipo espera:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você passa</th><th>Chega na sacola como</th><th>Então leia com</th></tr>
+<tr><td><code>char</code>, <code>signed char</code>, <code>unsigned char</code></td><td><code>int</code></td><td><code>va_arg(args, int)</code></td></tr>
+<tr><td><code>short</code>, <code>unsigned short</code></td><td><code>int</code></td><td><code>va_arg(args, int)</code></td></tr>
+<tr><td><code>bool</code></td><td><code>int</code></td><td><code>va_arg(args, int)</code></td></tr>
+<tr><td><code>float</code></td><td><code>double</code></td><td><code>va_arg(args, double)</code></td></tr>
+<tr><td><code>int</code>, <code>long</code>, <code>double</code>, ponteiros…</td><td>o mesmo tipo</td><td>o mesmo tipo</td></tr>
+</table>
+</div>
+
+<p>É por isso que o <code>printf</code> usa o mesmo <code>%f</code> para <code>float</code> e para <code>double</code>: os dois chegam como <code>double</code> (veja <a href="formatos-printf.html">Formatos do printf</a>). E é por isso que <code>va_arg(args, float)</code> está <strong>errado</strong>: não existe <code>float</code> na sacola.</p>
+
+<pre class="file" data-file="media.c">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+double media(int quantos, ...) {
+    va_list args;
+    va_start(args, quantos);
+    double total = 0;
+    for (int i = 0; i &lt; quantos; i++) {
+        total += va_arg(args, float);
+    }
+    va_end(args);
+    return total / quantos;
+}
+
+int main(void) {
+    float a = 7.5f, b = 8.5f;
+    printf("Média: %.2f\n", media(2, a, b));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/variadicas">$ gcc -std=c23 -Wall -Wextra media.c -o media
+In file included from media.c:1:
+media.c: In function ‘media’:
+media.c:9:31: warning: ‘float’ is promoted to ‘double’ when passed through ‘...’
+    9 |         total += va_arg(args, float);
+      |                               ^
+media.c:9:31: note: (so you should pass ‘double’ not ‘float’ to ‘va_arg’)
+media.c:9:31: note: if this code is reached, the program will abort
+$ ./media
+Instrução ilegal         (imagem do núcleo gravada) ./media
+$ echo $?
+132</pre>
+
+<p>O gcc foi bem claro, em três frases:</p>
+<dl class="anatomy">
+  <dt>‘float’ is promoted to ‘double’ when passed through ‘...’</dt><dd>"<code>float</code> é promovido a <code>double</code> quando passa pelas reticências".</dd>
+  <dt>(so you should pass ‘double’ not ‘float’ to ‘va_arg’)</dt><dd>"(então você deveria passar <code>double</code>, e não <code>float</code>, para o <code>va_arg</code>)".</dd>
+  <dt>if this code is reached, the program will abort</dt><dd>"se este código for executado, o programa vai abortar". E abortou mesmo: o gcc pôs ali uma instrução proibida de propósito, e o sistema matou o programa com <strong>Instrução ilegal</strong> (sinal <code>SIGILL</code>; código 132 = 128 + 4).</dd>
+</dl>
+
+<p>O Clang (o compilador do editor) avisa com outras palavras e <strong>não</strong> aborta: deixa o programa ler lixo.</p>
+<pre class="term" data-cwd="~/c/variadicas">$ clang -std=c23 -Wall -Wextra media.c -o media-clang
+media.c:9:31: warning: second argument to 'va_arg' is of promotable type 'float'; this va_arg has undefined behavior because arguments will be promoted to 'double' [-Wvarargs]
+    9 |         total += va_arg(args, float);
+      |                               ^~~~~
+1 warning generated.
+$ ./media-clang
+Média: 0.00</pre>
+
+<p><em>Second argument to 'va_arg' is of promotable type 'float'; this va_arg has undefined behavior because arguments will be promoted to 'double'</em> = "o segundo argumento do <code>va_arg</code> é de um tipo promovível, <code>float</code>; este <code>va_arg</code> tem comportamento indefinido, porque os argumentos serão promovidos a <code>double</code>". No laboratório saiu <code>Média: 0.00</code>; no editor do guia sai outro número qualquer. Comportamento indefinido de verdade (veja <a href="comportamento-indefinido.html">Comportamento Indefinido</a>).</p>
+
+<div class="tryc" data-goal="semaviso,out:Média: 8.00">
+<p class="try-task"><strong>Missão:</strong> rode e veja o aviso e a média errada. Conserte o <code>va_arg</code> para a média sair <code>Média: 8.00</code>, sem nenhum aviso. (Não precisa mudar o <code>main</code>: os <code>float</code> continuam chegando como <code>double</code>.)</p>
+<pre class="script">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+double media(int quantos, ...) {
+    va_list args;
+    va_start(args, quantos);
+    double total = 0;
+    for (int i = 0; i &lt; quantos; i++) {
+        total += va_arg(args, float);
+    }
+    va_end(args);
+    return total / quantos;
+}
+
+int main(void) {
+    float a = 7.5f, b = 8.5f;
+    printf("Média: %.2f\n", media(2, a, b));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+double media(int quantos, ...) {
+    va_list args;
+    va_start(args, quantos);
+    double total = 0;
+    for (int i = 0; i &lt; quantos; i++) {
+        total += va_arg(args, double);
+    }
+    va_end(args);
+    return total / quantos;
+}
+
+int main(void) {
+    float a = 7.5f, b = 8.5f;
+    printf("Média: %.2f\n", media(2, a, b));
+    return 0;
+}
+</pre>
+</div>
+
+<p>Com <code>char</code> acontece o mesmo: <code>va_arg(args, char)</code> dá o aviso <code>‘char’ is promoted to ‘int’ when passed through ‘...’</code> no gcc, e o programa também morre com <code>Instrução ilegal</code>. O certo é ler um <code>int</code> e guardar num <code>char</code>: <code>char c = (char) va_arg(args, int);</code>.</p>
+
+<div class="warning">
+<strong>Cuidado com o tipo dos números na chamada</strong>
+<p>A promoção acontece só com os tipos pequenos. Se a função lê <code>va_arg(args, int)</code> e você passa <code>1.5</code> (um <code>double</code>), ou se ela lê <code>double</code> e você passa <code>8</code> (um <code>int</code>), ninguém converte nada: a função lê lixo. Na chamada de uma função que lê <code>double</code>, escreva <code>8.0</code>, e não <code>8</code>.</p>
+</div>
+
+<hr>
+
+<h2>5. <code>va_start</code> com um argumento só <span class="versao">C23</span></h2>
+<p>Até o C17, o <code>va_start</code> precisava de dois argumentos: a <code>va_list</code> e o <strong>nome do último parâmetro nomeado</strong>. O C23 simplificou: o segundo virou opcional.</p>
+
+<pre class="file" data-file="c23.c">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+int soma(int quantos, ...) {
+    va_list args;
+    va_start(args);
+    int total = 0;
+    for (int i = 0; i &lt; quantos; i++) {
+        total += va_arg(args, int);
+    }
+    va_end(args);
+    return total;
+}
+
+int main(void) {
+    printf("%d\n", soma(3, 10, 20, 30));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/variadicas">$ gcc -std=c23 -Wall -Wextra c23.c -o c23
+$ ./c23
+60
+$ gcc -std=c17 -Wall -Wextra c23.c -o c23
+c23.c: In function ‘soma’:
+c23.c:6:18: error: macro ‘va_start’ requires 2 arguments, but only 1 given
+    6 |     va_start(args);
+      |                  ^
+In file included from c23.c:1:
+/usr/lib/gcc/x86_64-linux-gnu/15/include/stdarg.h:50:9: note: macro ‘va_start’ defined here
+   50 | #define va_start(v,l)   __builtin_va_start(v,l)
+      |         ^~~~~~~~
+c23.c:6:5: error: ‘va_start’ undeclared (first use in this function)
+    6 |     va_start(args);
+      |     ^~~~~~~~
+c23.c:6:5: note: each undeclared identifier is reported only once for each function it appears in</pre>
+
+<p>No C23 funciona; com <code>-std=c17</code>, o erro diz <em>macro ‘va_start’ requires 2 arguments, but only 1 given</em> ("a macro <code>va_start</code> exige 2 argumentos, mas só 1 foi dado"). O editor do guia (Clang, <code>-std=c23</code>) também aceita a forma nova. Se o seu código precisa compilar em compiladores antigos, use a forma de dois argumentos, que continua valendo no C23.</p>
+
+<p>O C23 trouxe junto outra novidade: a função pode ter <strong>só</strong> as reticências, sem nenhum parâmetro nomeado, como <code>void mostra(...)</code>. Com o <code>va_start(args)</code> de um argumento, ela consegue ler a sacola mesmo assim. O gcc 15 e o editor aceitam. Mas lembre: sem parâmetro nomeado, não há "bilhete", e a função continua precisando saber quantos argumentos ler (com uma sentinela, por exemplo).</p>
+
+<hr>
+
+<h2>6. <code>vprintf</code>: uma função de log como o <code>printf</code></h2>
+<p>Um uso muito comum de função variádica é o <strong>log</strong> (o "diário de bordo" do programa): uma função que escreve mensagens com um prefixo, como <code>[LOG]</code>, e aceita formatos como o <code>printf</code>. Você não precisa reescrever o <code>printf</code>: existe uma versão dele que recebe a sacola inteira, uma <code>va_list</code>, em vez dos argumentos soltos. É o <code>vprintf</code> (o <code>v</code> é de <code>va_list</code>):</p>
+
+<pre class="file" data-file="log.c">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+void registrar(const char *formato, ...) {
+    va_list args;
+    va_start(args, formato);
+    fprintf(stderr, "[LOG] ");
+    vfprintf(stderr, formato, args);
+    fprintf(stderr, "\n");
+    va_end(args);
+}
+
+int main(void) {
+    int estoque = 12;
+    registrar("programa começou");
+    registrar("estoque de %s: %d unidades", "café", estoque);
+    registrar("preço médio: R$ %.2f", 7.9);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/variadicas">$ gcc -std=c23 -Wall -Wextra log.c -o log
+$ ./log
+[LOG] programa começou
+[LOG] estoque de café: 12 unidades
+[LOG] preço médio: R$ 7.90</pre>
+
+<dl class="anatomy">
+  <dt>registrar(const char *formato, ...)</dt><dd>A mesma "cara" do <code>printf</code>: um formato e as reticências.</dd>
+  <dt>fprintf(stderr, "[LOG] ")</dt><dd>Escreve o prefixo na <strong>saída de erros</strong>, <code>stderr</code>, o lugar certo para mensagens de diagnóstico (veja <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>).</dd>
+  <dt>vfprintf(stderr, formato, args)</dt><dd>Faz o trabalho do <code>printf</code>: lê o formato e tira da sacola <code>args</code> um argumento por <code>%</code>. É a versão <code>v</code> do <code>fprintf</code>.</dd>
+  <dt>va_end(args)</dt><dd>Quem chamou <code>va_start</code> chama <code>va_end</code>. O <code>vfprintf</code> usa a sacola, mas não a fecha.</dd>
+</dl>
+
+<p>Cada função da família <code>printf</code> tem a sua versão <code>v</code>:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Com argumentos soltos</th><th>Com uma <code>va_list</code></th><th>Escreve em</th></tr>
+<tr><td><code>printf(fmt, ...)</code></td><td><code>vprintf(fmt, args)</code></td><td>a tela (<code>stdout</code>)</td></tr>
+<tr><td><code>fprintf(arq, fmt, ...)</code></td><td><code>vfprintf(arq, fmt, args)</code></td><td>um arquivo ou <code>stderr</code></td></tr>
+<tr><td><code>snprintf(buf, n, fmt, ...)</code></td><td><code>vsnprintf(buf, n, fmt, args)</code></td><td>uma string, sem passar de <code>n</code> bytes</td></tr>
+<tr><td><code>scanf(fmt, ...)</code></td><td><code>vscanf(fmt, args)</code></td><td>(lê da entrada)</td></tr>
+</table>
+</div>
+
+<h3>O compilador não confere o seu formato… a menos que você peça</h3>
+<p>O gcc confere os <code>%d</code> e <code>%s</code> de um <code>printf</code> (o aviso <code>-Wformat</code>). Mas na <strong>sua</strong> função ele não sabe que o primeiro parâmetro é um formato. Veja um erro passar calado:</p>
+
+<pre class="file" data-file="logsem.c">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+void registrar(const char *formato, ...) {
+    va_list args;
+    va_start(args, formato);
+    printf("[LOG] ");
+    vprintf(formato, args);
+    printf("\n");
+    va_end(args);
+}
+
+int main(void) {
+    registrar("estoque: %d unidades", "doze");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/variadicas">$ gcc -std=c23 -Wall -Wextra logsem.c -o logsem          « nenhum aviso
+$ ./logsem
+[LOG] estoque: -1248849909 unidades</pre>
+
+<p>O <code>%d</code> pediu um <code>int</code>, mas veio um texto; o <code>vprintf</code> leu lixo. O gcc e o Clang aceitam um <strong>atributo</strong> que diz "esta função funciona como o <code>printf</code>": <code>[[gnu::format(printf, 1, 2)]]</code>. O <code>1</code> é a posição do formato; o <code>2</code>, a posição onde começam as reticências. Ele não faz parte do padrão C (o <code>gnu::</code> avisa que é uma extensão do GNU; veja <a href="atributos.html">Atributos</a>), mas os dois compiladores mais usados entendem:</p>
+
+<pre class="file" data-file="logerro.c">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+[[gnu::format(printf, 1, 2)]]
+void registrar(const char *formato, ...) {
+    va_list args;
+    va_start(args, formato);
+    printf("[LOG] ");
+    vprintf(formato, args);
+    printf("\n");
+    va_end(args);
+}
+
+int main(void) {
+    registrar("estoque: %d unidades", "doze");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/variadicas">$ gcc -std=c23 -Wall -Wextra logerro.c -o logerro
+logerro.c: In function ‘main’:
+logerro.c:15:26: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘char *’ [-Wformat=]
+   15 |     registrar("estoque: %d unidades", "doze");
+      |                         ~^            ~~~~~~
+      |                          |            |
+      |                          int          char *
+      |                         %s</pre>
+
+<p>Agora o erro aparece na hora de compilar, com a sugestão de usar <code>%s</code>. No editor, o Clang avisa <code>format specifies type 'int' but the argument has type 'char *'</code>.</p>
+
+<hr>
+
+<h2>Formas diferentes: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Bom para</th><th>Cuidado</th></tr>
+<tr><td>Contador (<code>soma(3, a, b, c)</code>)</td><td>Argumentos todos do mesmo tipo, em pouca quantidade</td><td>Se o número não bater com os argumentos, a função lê lixo</td></tr>
+<tr><td>Sentinela (<code>..., NULL</code>)</td><td>Listas de ponteiros (textos)</td><td>Esquecer o <code>NULL</code> faz a função ler além do fim</td></tr>
+<tr><td>Formato + <code>vprintf</code></td><td>Mensagens, logs, relatórios</td><td>Use <code>[[gnu::format(printf, …)]]</code> para o compilador conferir</td></tr>
+<tr><td><strong>Array + tamanho</strong> (<code>soma(v, n)</code>)</td><td>Muitos valores do mesmo tipo</td><td>Nenhum dos problemas acima: o compilador confere tudo</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar:</strong> quando todos os valores são do mesmo tipo, prefira um <strong>array</strong> e o tamanho, como <code>int soma(const int v[], int n)</code> (veja <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>). O compilador confere o tipo de cada coisa, e não há sacola sem etiqueta. Guarde as funções variádicas para quando os tipos mudam de chamada para chamada, como num log com formato. É o caso em que elas brilham.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>As funções variádicas são uma das poucas partes do C em que o compilador <strong>não consegue</strong> conferir os tipos. Quase todo erro aqui é comportamento indefinido, sem mensagem.</p>
+
+<div class="cenario">
+<strong>O contador não bate com os argumentos</strong>
+<pre class="file" data-file="faltou.c">int main(void) {
+    printf("%d\n", soma(4, 10, 20, 30));   // diz 4, passa 3
+    printf("%d\n", soma(2, 1.5, 2.5));     // passa double, a função lê int
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/variadicas">$ gcc -std=c23 -Wall -Wextra faltou.c -o faltou     « nenhum aviso
+$ ./faltou
+1931552444
+707198992
+$ ./faltou
+1537287868
+1258110992                     « outro lixo a cada execução</pre>
+<p><strong>O que significa:</strong> a primeira chamada mandou tirar 4 itens de uma sacola com 3; a segunda mandou tirar <code>int</code> onde havia <code>double</code>. Nenhum compilador avisa. No editor do guia, a primeira linha pode até sair <code>60</code>, por sorte.</p>
+<p><strong>Como consertar:</strong> confira cada chamada. Se a função lê <code>int</code>, passe inteiros. Se você se pega errando a contagem, troque por um array e o tamanho.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu a sentinela</strong>
+<pre class="file" data-file="semsent.c">    lista_compras("arroz", "feijão", "café");   // faltou o NULL
+</pre>
+<pre class="term" data-cwd="~/c/variadicas">$ gcc -std=c23 -Wall -Wextra semsent.c -o semsent     « nenhum aviso
+$ ./semsent
+1. arroz
+2. feijão
+3. café
+4. feijão
+5. �?��u
+6.
+7.
+8. ����
+9. �@c��a
+10. ~���
+Falha de segmentação     (imagem do núcleo gravada) ./semsent</pre>
+<p><strong>O que significa:</strong> sem o <code>NULL</code>, a função continuou tirando "textos" da memória depois dos argumentos: lixo, até cair num endereço proibido. No editor do guia, o mesmo código pode parar certinho no item 3, por sorte.</p>
+<p><strong>Como consertar:</strong> ponha o <code>NULL</code> no fim de toda chamada. É fácil esquecer; por isso a sentinela combina melhor com poucas chamadas, ou com uma macro que acrescente o <code>NULL</code> sozinha.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘float’ is promoted to ‘double’ when passed through ‘...’</code> e depois <code>Instrução ilegal</code></strong>
+<p><strong>O que significa:</strong> um <code>va_arg(args, float)</code> (ou <code>char</code>, <code>short</code>, <code>bool</code>). Esses tipos nunca chegam pela sacola: viram <code>double</code> ou <code>int</code>. O gcc troca a linha por uma instrução que derruba o programa (código 132). No Clang: <code>second argument to 'va_arg' is of promotable type</code>.</p>
+<p><strong>Como consertar:</strong> leia o tipo promovido: <code>va_arg(args, double)</code> para <code>float</code>, <code>va_arg(args, int)</code> para <code>char</code>, <code>short</code> e <code>bool</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: unknown type name ‘va_list’</code></strong>
+<pre class="term" data-cwd="~/c/variadicas">$ gcc -std=c23 -Wall -Wextra seminclude.c -o seminclude
+seminclude.c: In function ‘soma’:
+seminclude.c:4:5: error: unknown type name ‘va_list’
+    4 |     va_list args;
+      |     ^~~~~~~
+seminclude.c:2:1: note: ‘va_list’ is defined in header ‘&lt;stdarg.h&gt;’; this is probably fixable by adding ‘#include &lt;stdarg.h&gt;’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;stdarg.h&gt;
+    2 |
+seminclude.c:5:5: error: implicit declaration of function ‘va_start’ [-Wimplicit-function-declaration]
+    5 |     va_start(args, quantos);
+      |     ^~~~~~~~
+…</pre>
+<p><strong>O que significa:</strong> "nome de tipo desconhecido: <code>va_list</code>". Faltou o <code>#include &lt;stdarg.h&gt;</code>, e o próprio gcc sugere a linha (<em>this is probably fixable by adding</em> = "isto provavelmente se conserta acrescentando"). No Clang: <code>use of undeclared identifier 'va_list'</code>.</p>
+<p><strong>Como consertar:</strong> acrescente <code>#include &lt;stdarg.h&gt;</code> no topo.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: ‘va_start’ used in function with fixed arguments</code></strong>
+<p><strong>O que significa:</strong> "<code>va_start</code> usado numa função com argumentos fixos": a função não tem <code>...</code> na lista de parâmetros, então não há sacola para abrir. No Clang: <code>'va_start' used in function with fixed args</code>.</p>
+<p><strong>Como consertar:</strong> acrescente <code>, ...</code> no fim dos parâmetros, ou tire o <code>va_start</code> se a função não precisa de argumentos extras.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: macro ‘va_start’ requires 2 arguments, but only 1 given</code></strong>
+<p><strong>O que significa:</strong> você usou o <code>va_start(args)</code> do C23 compilando com um padrão antigo (<code>-std=c17</code>, <code>-std=c11</code>…).</p>
+<p><strong>Como consertar:</strong> compile com <code>-std=c23</code> ou escreva a forma antiga, <code>va_start(args, ultimo_parametro)</code>, que funciona em todas as versões.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;stdarg.h&gt;</code></td><td>Traz <code>va_list</code> e as macros abaixo</td></tr>
+<tr><td><code>tipo f(tipo ultimo, ...)</code></td><td>Declara uma função variádica (as reticências sempre no fim)</td></tr>
+<tr><td><code>va_list args;</code></td><td>Cria a variável que percorre os argumentos extras</td></tr>
+<tr><td><code>va_start(args, ultimo);</code></td><td>Começa a leitura depois do último parâmetro nomeado</td></tr>
+<tr><td><code>va_start(args);</code> <span class="versao">C23</span></td><td>O mesmo, sem repetir o nome</td></tr>
+<tr><td><code>va_arg(args, tipo)</code></td><td>Devolve o próximo argumento como <code>tipo</code> e avança (use <code>int</code> e <code>double</code>, nunca <code>char</code>, <code>short</code>, <code>bool</code> ou <code>float</code>)</td></tr>
+<tr><td><code>va_end(args);</code></td><td>Termina a leitura; um para cada <code>va_start</code></td></tr>
+<tr><td><code>va_copy(copia, args);</code> <span class="versao">C99</span></td><td>Copia a posição atual, para percorrer a sacola duas vezes (a cópia também precisa de <code>va_end</code>)</td></tr>
+<tr><td><code>vprintf(fmt, args)</code></td><td><code>printf</code> que recebe uma <code>va_list</code> (também <code>vfprintf</code>, <code>vsnprintf</code>, <code>vscanf</code>)</td></tr>
+<tr><td><code>[[gnu::format(printf, 1, 2)]]</code></td><td>Extensão do gcc e do Clang: confere os formatos da sua função como confere os do <code>printf</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Começar a leitura</h3>
+<p>Complete a linha que começa a leitura dos argumentos extras de <code>int maior(int quantos, ...)</code>, na forma que funciona em todas as versões do C:</p>
+<div class="ex-code"><input data-answer="va_start" aria-label="macro">(args, quantos);</div>
+</div>
+
+<div class="exercise">
+<h3>2. O tipo certo</h3>
+<p>A função recebe notas que foram guardadas em variáveis <code>float</code>. Complete o tipo no <code>va_arg</code>:</p>
+<div class="ex-code">double nota = va_arg(args, <input data-answer="double" aria-label="tipo">);</div>
+</div>
+
+<div class="exercise">
+<h3>3. A versão com va_list</h3>
+<p>Qual função faz o trabalho do <code>fprintf</code>, mas recebe uma <code>va_list</code>?</p>
+<div class="ex-code"><input data-answer="vfprintf" aria-label="função">(stderr, formato, args);</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Dentro de uma função variádica, como ela descobre quantos argumentos recebeu?</p>
+<label><input type="radio" name="q4"> Com <code>va_count(args)</code></label>
+<label><input type="radio" name="q4"> Não descobre sozinha: quem chama precisa dizer (contador, sentinela ou formato)</label>
+<label><input type="radio" name="q4"> Com <code>sizeof(args)</code></label>
+<label><input type="radio" name="q4"> O <code>va_arg</code> devolve <code>NULL</code> quando acabam</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Você chama <code>letras(3, 'A', 'n', 'a')</code>. Como a função deve ler cada letra?</p>
+<label><input type="radio" name="q5"> <code>va_arg(args, char)</code></label>
+<label><input type="radio" name="q5"> <code>va_arg(args, char *)</code></label>
+<label><input type="radio" name="q5"> <code>va_arg(args, int)</code>, porque o <code>char</code> chega promovido a <code>int</code></label>
+<label><input type="radio" name="q5"> <code>va_arg(args, double)</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. A função <code>soma(int quantos, ...)</code> lê <code>int</code>. O que acontece com <code>soma(2, 1.5, 2.5)</code>?</p>
+<label><input type="radio" name="q6"> Comportamento indefinido: a função lê lixo, sem aviso</label>
+<label><input type="radio" name="q6"> Os números são convertidos para 1 e 2, e a soma dá 3</label>
+<label><input type="radio" name="q6"> Erro de compilação</label>
+<label><input type="radio" name="q6"> A soma dá 4.0</label>
+</div>
+
+<h3>Missão final: o log da lojinha</h3>
+<div class="tryc" data-goal="out:[LOG] Ana vendeu 3 cafés,out:[LOG] caixa fechou com R$ 23.70,src:vprintf">
+<p class="try-task"><strong>Missão:</strong> a função <code>registrar</code> da lojinha mostra o formato cru, com os <code>%s</code> e <code>%d</code> sem trocar. Reescreva-a com <code>va_list</code>, <code>va_start</code>, <code>vprintf</code> e <code>va_end</code>, para a saída ser <code>[LOG] Ana vendeu 3 cafés</code> e <code>[LOG] caixa fechou com R$ 23.70</code>. Não mude o <code>main</code>.</p>
+<pre class="script">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+void registrar(const char *formato, ...) {
+    printf("[LOG] %s\n", formato);
+}
+
+int main(void) {
+    registrar("%s vendeu %d cafés", "Ana", 3);
+    registrar("caixa fechou com R$ %.2f", 23.7);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+
+void registrar(const char *formato, ...) {
+    va_list args;
+    va_start(args, formato);
+    printf("[LOG] ");
+    vprintf(formato, args);
+    printf("\n");
+    va_end(args);
+}
+
+int main(void) {
+    registrar("%s vendeu %d cafés", "Ana", 3);
+    registrar("caixa fechou com R$ %.2f", 23.7);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma função <strong>variádica</strong> tem <code>...</code> no fim dos parâmetros e aceita qualquer quantidade de argumentos extras. O <code>printf</code> é a mais famosa.</li>
+  <li>Para ler os extras: <code>va_list args;</code>, <code>va_start(args, ultimo);</code>, um <code>va_arg(args, tipo)</code> por argumento e <code>va_end(args);</code> no fim.</li>
+  <li>A função não sabe quantos argumentos vieram nem de que tipo: quem chama diz, com um <strong>contador</strong>, uma <strong>sentinela</strong> (<code>NULL</code>) ou um <strong>formato</strong>. Se a informação mentir, é comportamento indefinido, sem aviso.</li>
+  <li>Pelas reticências, <code>char</code>, <code>short</code> e <code>bool</code> chegam como <code>int</code>, e <code>float</code> chega como <code>double</code>. Nunca use <code>va_arg(args, float)</code>: no gcc, o programa morre com <code>Instrução ilegal</code>.</li>
+  <li>No <span class="versao">C23</span>, <code>va_start(args)</code> aceita um argumento só e a função pode ter só <code>...</code>.</li>
+  <li>Para uma função "tipo <code>printf</code>", passe a <code>va_list</code> para <code>vprintf</code>/<code>vfprintf</code>/<code>vsnprintf</code> e marque-a com <code>[[gnu::format(printf, 1, 2)]]</code> para o compilador conferir os formatos.</li>
+  <li>Quando os valores são todos do mesmo tipo, um array e o tamanho são mais seguros.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
