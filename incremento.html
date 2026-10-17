@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C ++ e -- — incremento e decremento | Guia C</title>
+<meta name="description" content="Os operadores ++ e -- em C para quem nunca programou: somar e tirar 1, pré-incremento (++x) × pós-incremento (x++) dentro de expressões e do printf, char e double, por que i = i++ é comportamento indefinido e o aviso -Wsequence-point, com saídas reais do gcc 15 e do Clang e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">++ e --</span></h1>
+
+<p class="intro">Contar é uma das coisas que um programa mais faz: mais uma pessoa entrou na loja, mais um ponto no jogo, menos uma vida, menos uma vaga. Somar 1 e tirar 1 são tão comuns que o C tem dois operadores só para isso: <code>++</code> (incremento) e <code>--</code> (decremento). O nome da linguagem C++ vem daí: "o C, mais um". Nesta aula você vai usar os dois, entender a diferença entre <code>x++</code> e <code>++x</code> e ver por que linhas como <code>i = i++</code> são proibidas, mesmo compilando.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como somar 1 com <code>++</code> e tirar 1 com <code>--</code>.</li>
+  <li>A diferença entre o <strong>pré</strong> (<code>++x</code>) e o <strong>pós</strong> (<code>x++</code>), que só aparece quando o resultado é usado numa expressão.</li>
+  <li>Como usar <code>++</code> dentro do <code>printf</code> e com <code>char</code> e <code>double</code>.</li>
+  <li>Por que <code>i = i++</code> e <code>printf("%d %d", n++, n++)</code> são <strong>comportamento indefinido</strong>, e o aviso <code>-Wsequence-point</code>.</li>
+  <li>Os erros <code>lvalue required as increment operand</code> e <code>increment of read-only variable</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o contador da porta</h2>
+<p>Na entrada de um show, o segurança segura um <strong>contador de mão</strong>: a cada pessoa que passa, ele aperta o botão e o número sobe 1. Ele não precisa fazer conta nenhuma, só apertar. Se alguém sai, ele usa outro botão, que desce 1.</p>
+<p>O <code>++</code> é o botão "mais um" e o <code>--</code> é o botão "menos um". <code>pessoas++</code> faz a mesma coisa que <code>pessoas = pessoas + 1</code>, só que mais curto.</p>
+
+<hr>
+
+<h2>1. Somar 1 e tirar 1</h2>
+
+<pre class="file" data-file="contador.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pessoas = 0;
+    pessoas++;
+    pessoas++;
+    pessoas++;
+    printf("Entraram: %d\n", pessoas);
+    pessoas--;
+    printf("Ficaram: %d\n", pessoas);
+    ++pessoas;
+    --pessoas;
+    printf("No fim: %d\n", pessoas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra contador.c -o contador
+$ ./contador
+Entraram: 3
+Ficaram: 2
+No fim: 2        « ++pessoas subiu para 3, --pessoas voltou para 2</pre>
+
+<dl class="anatomy">
+  <dt>pessoas++;</dt><dd>Soma 1 em <code>pessoas</code> e guarda o resultado na própria variável. É o mesmo que <code>pessoas = pessoas + 1;</code> ou <code>pessoas += 1;</code> (aula <a href="operadores-atribuicao.html">Operadores de Atribuição</a>).</dd>
+  <dt>pessoas--;</dt><dd>Tira 1. O mesmo que <code>pessoas = pessoas - 1;</code>.</dd>
+  <dt>++pessoas;</dt><dd>O sinal também pode vir <strong>antes</strong> do nome. Numa linha sozinha, <code>++pessoas;</code> e <code>pessoas++;</code> fazem exatamente a mesma coisa.</dd>
+  <dt>sem espaço</dt><dd>Os dois sinais vão grudados: <code>++</code>. Com espaço, <code>+ +</code> são dois "mais" separados: <code>pessoas+ +;</code> nem compila (<code>error: expected expression before ‘;’ token</code>).</dd>
+</dl>
+
+<p>Os nomes: <strong>incremento</strong> é "aumento" e <strong>decremento</strong> é "diminuição". Quando o sinal vem antes (<code>++x</code>), chama-se <strong>pré-incremento</strong>; depois (<code>x++</code>), <strong>pós-incremento</strong>. Você vai ver o <code>++</code> o tempo todo nos laços, como em <code>for (int i = 0; i &lt; 10; i++)</code> (aula <a href="for.html">for</a>).</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> o placar começa em 0. Acrescente mais linhas <code>gols++;</code> e veja o total mudar. Depois anule um gol com <code>gols--;</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int gols = 0;
+    gols++;
+    gols++;
+    printf("Placar: %d gols\n", gols);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Pré × pós: quando o resultado é usado</h2>
+<p>Até aqui, <code>x++</code> e <code>++x</code> pareciam iguais. A diferença aparece quando o <code>++</code> está <strong>dentro</strong> de outra coisa, como uma atribuição ou um <code>printf</code>. Além de mudar a variável, o <code>++</code> produz um valor, e esse valor depende do lado do sinal:</p>
+<ul>
+  <li><code>x++</code> (pós): <strong>entrega o valor antigo</strong>, e depois soma.</li>
+  <li><code>++x</code> (pré): <strong>soma primeiro</strong>, e entrega o valor novo.</li>
+</ul>
+
+<pre class="file" data-file="prepos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int a = 5;
+    int b = a++;
+    printf("depois de b = a++: a = %d, b = %d\n", a, b);
+
+    int c = 5;
+    int d = ++c;
+    printf("depois de d = ++c: c = %d, d = %d\n", c, d);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra prepos.c -o prepos
+$ ./prepos
+depois de b = a++: a = 6, b = 5     « b recebeu o valor ANTIGO de a
+depois de d = ++c: c = 6, d = 6     « d recebeu o valor NOVO de c</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Passo a passo</th><th>Depois</th></tr>
+<tr><td><code>int b = a++;</code></td><td>1) pega o valor de <code>a</code> (5) para entregar; 2) soma 1 em <code>a</code>; 3) <code>b</code> recebe o 5 entregue</td><td><code>a = 6</code>, <code>b = 5</code></td></tr>
+<tr><td><code>int d = ++c;</code></td><td>1) soma 1 em <code>c</code> (vira 6); 2) entrega o 6; 3) <code>d</code> recebe 6</td><td><code>c = 6</code>, <code>d = 6</code></td></tr>
+</table>
+</div>
+
+<p>Um jeito de lembrar: leia da esquerda para a direita. Em <code>a++</code>, o nome vem primeiro: "usa o <code>a</code>, depois soma". Em <code>++c</code>, o <code>++</code> vem primeiro: "soma, depois usa o <code>c</code>". Nos dois casos, <strong>a variável termina com 1 a mais</strong>; o que muda é só o valor entregue.</p>
+
+<h3>Dentro do <code>printf</code></h3>
+<p>Uso típico: a fila de senhas de um banco. O painel mostra a senha atual e já deixa a próxima preparada:</p>
+
+<pre class="file" data-file="senhas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int senha = 41;
+    printf("Chamando a senha %d\n", senha++);
+    printf("Chamando a senha %d\n", senha++);
+    printf("Próxima a ser chamada: %d\n", senha);
+    int vagas = 3;
+    printf("Restam %d vagas\n", --vagas);
+    printf("Restam %d vagas\n", --vagas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra senhas.c -o senhas
+$ ./senhas
+Chamando a senha 41      « mostrou 41, depois senha virou 42
+Chamando a senha 42      « mostrou 42, depois senha virou 43
+Próxima a ser chamada: 43
+Restam 2 vagas           « --vagas: tirou 1 (3 → 2) e depois mostrou
+Restam 1 vagas</pre>
+
+<div class="tryc" data-goal="outre:^Senha 1\nSenha 2\nSenha 3\n$,src:\+\+">
+<p class="try-task"><strong>Missão:</strong> o painel mostra a mesma senha três vezes. Sem acrescentar linhas, use <code>++</code> dentro dos <code>printf</code> para a saída ficar assim (pense: pós ou pré?):</p>
+<pre class="out">Senha 1
+Senha 2
+Senha 3</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int senha = 1;
+    printf("Senha %d\n", senha);
+    printf("Senha %d\n", senha);
+    printf("Senha %d\n", senha);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int senha = 1;
+    printf("Senha %d\n", senha++);
+    printf("Senha %d\n", senha++);
+    printf("Senha %d\n", senha++);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Com <code>senha</code> começando em 1, o certo é o <strong>pós</strong> (<code>senha++</code>): mostra o 1 e só depois soma. Com <code>++senha</code>, a saída começaria em 2.</p>
+
+<hr>
+
+<h2>3. Com <code>char</code> e <code>double</code></h2>
+<p>O <code>++</code> e o <code>--</code> funcionam com qualquer tipo de número. Um <code>char</code> é guardado como o código do caractere (aula <a href="char.html">Caracteres</a>), então somar 1 passa para o próximo caractere da tabela. Um <code>double</code> ganha 1 inteiro, e a parte depois do ponto continua igual:</p>
+
+<pre class="file" data-file="tipos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char letra = 'a';
+    letra++;
+    double preco = 9.75;
+    preco++;
+    printf("letra = %c\n", letra);
+    printf("preco = %.2f\n", preco);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipos.c -o tipos
+$ ./tipos
+letra = b        « 'a' (97) + 1 = 'b' (98)
+preco = 10.75    « soma 1, não 0.01</pre>
+
+<p>Com <code>double</code> funciona, mas é raro: quase sempre você vai usar <code>++</code> com inteiros, para contar.</p>
+
+<hr>
+
+<h2>4. <code>i = i++</code>: comportamento indefinido</h2>
+<p>Agora a parte perigosa. A Ana quis somar 1 nos pontos de um jogo e tirar uma vida, e escreveu "duplicado", achando que ficaria mais garantido:</p>
+
+<pre class="file" data-file="jogo.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 10;
+    int vidas = 3;
+    pontos = pontos++;
+    vidas = --vidas;
+    printf("Pontos: %d\nVidas: %d\n", pontos, vidas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra jogo.c -o jogo
+jogo.c: In function ‘main’:
+jogo.c:6:12: warning: operation on ‘pontos’ may be undefined [-Wsequence-point]
+    6 |     pontos = pontos++;
+      |     ~~~~~~~^~~~~~~~~~
+jogo.c:7:11: warning: operation on ‘vidas’ may be undefined [-Wsequence-point]
+    7 |     vidas = --vidas;
+      |     ~~~~~~^~~~~~~~~
+$ ./jogo
+Pontos: 10       « o ++ "sumiu"!
+Vidas: 2</pre>
+
+<p>O aviso diz: "a operação em <code>pontos</code> pode ser <strong>indefinida</strong>". O problema é que, na mesma linha, <code>pontos</code> é mudado <strong>duas vezes</strong>: uma pelo <code>++</code> e outra pelo <code>=</code>. As regras do C não dizem qual das duas mudanças acontece primeiro. Nesse caso, o padrão da linguagem diz que o programa tem <strong>comportamento indefinido</strong> (<em>undefined behavior</em>): o compilador pode fazer qualquer coisa, e cada compilador faz uma.</p>
+
+<p>Aqui o gcc fez assim: guardou o 10 para entregar, somou 1 (11), e depois o <code>=</code> guardou o 10 entregue por cima do 11. O <code>vidas = --vidas</code> deu 2 "por sorte". Nenhum dos dois resultados é garantido.</p>
+
+<h3>Dois compiladores, duas respostas</h3>
+<p>O mesmo problema acontece quando a variável muda duas vezes dentro dos argumentos de uma função:</p>
+
+<pre class="file" data-file="indefinido.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int i = 5;
+    i = i++;
+    printf("i = %d\n", i);
+    int n = 1;
+    printf("%d %d\n", n++, n++);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra indefinido.c -o indefinido
+indefinido.c: In function ‘main’:
+indefinido.c:5:7: warning: operation on ‘i’ may be undefined [-Wsequence-point]
+    5 |     i = i++;
+      |     ~~^~~~~
+indefinido.c:8:29: warning: operation on ‘n’ may be undefined [-Wsequence-point]
+    8 |     printf("%d %d\n", n++, n++);
+      |                            ~^~
+$ ./indefinido
+i = 5
+2 1              « o gcc calculou o segundo n++ primeiro
+$ clang -std=c23 -Wall -Wextra indefinido.c -o indefinido
+indefinido.c:5:10: warning: multiple unsequenced modifications to 'i' [-Wunsequenced]
+    5 |     i = i++;
+      |       ~  ^
+indefinido.c:8:24: warning: multiple unsequenced modifications to 'n' [-Wunsequenced]
+    8 |     printf("%d %d\n", n++, n++);
+      |                        ^    ~~
+2 warnings generated.
+$ ./indefinido
+i = 5
+1 2              « o Clang, na mesma máquina, deu o contrário</pre>
+
+<p>O mesmo código, na mesma máquina, mostrou <code>2 1</code> com o gcc e <code>1 2</code> com o Clang (o compilador do editor do guia também mostra <code>1 2</code>). O aviso do Clang explica bem: "várias modificações <strong>sem ordem definida</strong> em <code>n</code>". A vírgula que separa os argumentos de uma função <strong>não</strong> define ordem: o C não promete calcular o primeiro argumento antes do segundo.</p>
+
+<p>O nome do aviso do gcc, <code>-Wsequence-point</code>, vem de um termo antigo do padrão: <strong>ponto de sequência</strong>, um ponto do programa em que tudo o que veio antes já terminou (o <code>;</code> no fim de uma instrução é um deles). Desde o C11, o padrão fala em operações "sequenciadas" e "não sequenciadas", que é a palavra do Clang. O aviso vem com o <code>-Wall</code>. A aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a> mostra outros casos.</p>
+
+<div class="warning">
+<strong>A regra prática</strong>
+<p>Numa mesma instrução, <strong>não mude uma variável duas vezes</strong>, nem mude e leia a mesma variável em outro lugar. Use o <code>++</code> sozinho na linha (<code>pontos++;</code>) ou numa expressão em que a variável aparece uma vez só (<code>printf("%d", senha++);</code>). Se o gcc disser <code>may be undefined</code>, reescreva em duas linhas.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de somar 1</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>O que faz</th><th>Quando usar</th></tr>
+<tr><td><code>x = x + 1;</code></td><td>Calcula <code>x + 1</code> e guarda em <code>x</code></td><td>Para quem está começando, é a mais óbvia. Na prática, pouco usada para somar 1.</td></tr>
+<tr><td><code>x += 1;</code></td><td>O mesmo, mais curto</td><td>Quando o passo pode mudar: <code>x += 2;</code>, <code>x += bonus;</code>.</td></tr>
+<tr><td><code>x++;</code></td><td>O mesmo, ainda mais curto</td><td>Para contar de 1 em 1. É a forma mais comum em C, sobretudo nos laços.</td></tr>
+<tr><td><code>++x;</code></td><td>O mesmo, numa linha sozinha</td><td>Igual a <code>x++;</code>. Em C, escolha um e seja consistente; o guia usa <code>x++</code>.</td></tr>
+<tr><td><code>y = x++;</code> / <code>y = ++x;</code></td><td>Muda <code>x</code> e entrega o valor antigo / novo</td><td>Com moderação, e só quando a variável aparece uma vez na instrução. Duas linhas (<code>y = x; x++;</code>) costumam ser mais claras.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: operation on ‘i’ may be undefined [-Wsequence-point]</code></strong>
+<p><strong>O que significa:</strong> a mesma variável é mudada duas vezes (ou mudada e lida) na mesma instrução, como em <code>i = i++</code> ou <code>printf("%d %d", n++, n++)</code>. O resultado é imprevisível. No Clang: <code>multiple unsequenced modifications to 'i' [-Wunsequenced]</code>.</p>
+<p><strong>Como consertar:</strong> separe em linhas. Para somar 1, basta <code>i++;</code>, sem o <code>i =</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: lvalue required as increment operand</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lvalue.c -o lvalue
+lvalue.c: In function ‘main’:
+lvalue.c:5:12: error: lvalue required as increment operand
+    5 |     (x + 1)++;
+      |            ^~
+lvalue.c:6:6: error: lvalue required as increment operand
+    6 |     5++;
+      |      ^~</pre>
+<p><strong>O que significa:</strong> o <code>++</code> precisa de um lugar para guardar o resultado, isto é, uma variável. <code>5</code> e <code>(x + 1)</code> são só valores, não têm onde guardar. <em>lvalue</em> é o nome técnico de "algo que pode ficar do lado esquerdo de um <code>=</code>" (<em>left value</em>). No Clang: <code>expression is not assignable</code> ("a expressão não pode receber valor").</p>
+<p><strong>Como consertar:</strong> aplique o <code>++</code> numa variável. Se você queria "x mais 1" sem mudar <code>x</code>, escreva só <code>x + 1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: increment of read-only variable ‘dias’</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra constante.c -o constante
+constante.c: In function ‘main’:
+constante.c:5:9: error: increment of read-only variable ‘dias’
+    5 |     dias++;
+      |         ^~</pre>
+<p><strong>O que significa:</strong> <code>dias</code> foi declarada com <code>const</code> ("somente leitura"; aula <a href="constantes.html">Constantes</a>) e não pode mudar. No Clang: <code>cannot assign to variable 'dias' with const-qualified type 'const int'</code>.</p>
+<p><strong>Como consertar:</strong> se o valor precisa mudar, tire o <code>const</code>; se não precisa, não use <code>++</code> nela.</p>
+</div>
+
+<div class="cenario">
+<strong>O número saiu 1 a mais (ou a menos) do que você esperava</strong>
+<p><strong>O que significa:</strong> você usou o pré onde queria o pós, ou o contrário. <code>printf("%d", ++senha)</code> mostra o valor <strong>já somado</strong>.</p>
+<p><strong>Como consertar:</strong> lembre: <code>x++</code> entrega o antigo, <code>++x</code> entrega o novo. Na dúvida, faça o <code>++</code> numa linha separada, antes ou depois do <code>printf</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Expressão</th><th>Muda a variável para</th><th>Valor entregue</th><th>Exemplo (<code>x</code> vale 5)</th></tr>
+<tr><td><code>x++</code></td><td><code>x + 1</code></td><td>o antigo</td><td><code>y = x++;</code> → <code>x = 6</code>, <code>y = 5</code></td></tr>
+<tr><td><code>++x</code></td><td><code>x + 1</code></td><td>o novo</td><td><code>y = ++x;</code> → <code>x = 6</code>, <code>y = 6</code></td></tr>
+<tr><td><code>x--</code></td><td><code>x - 1</code></td><td>o antigo</td><td><code>y = x--;</code> → <code>x = 4</code>, <code>y = 5</code></td></tr>
+<tr><td><code>--x</code></td><td><code>x - 1</code></td><td>o novo</td><td><code>y = --x;</code> → <code>x = 4</code>, <code>y = 4</code></td></tr>
+<tr><td><code>x = x++</code></td><td colspan="3">Comportamento indefinido: nunca escreva (<code>-Wsequence-point</code>).</td></tr>
+</table>
+</div>
+<p>Funciona com variáveis de qualquer tipo de número (<code>int</code>, <code>long</code>, <code>char</code>, <code>double</code>…), e com ponteiros (aula <a href="ponteiros-arrays.html">Ponteiros e Arrays</a>). Não funciona com constantes, valores calculados nem variáveis <code>const</code>.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Mais um</h3>
+<p>Complete para somar 1 em <code>visitas</code>:</p>
+<div class="ex-code">visitas<input data-answer="++|++;" aria-label="operador">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Valor entregue</h3>
+<p>Depois de <code>int a = 8; int b = a--;</code>, quanto vale <code>b</code>?</p>
+<div class="ex-code">b vale <input data-answer="8" aria-label="valor de b"></div>
+</div>
+
+<div class="exercise">
+<h3>3. E agora?</h3>
+<p>Depois de <code>int a = 8; int b = --a;</code>, quanto vale <code>b</code>?</p>
+<div class="ex-code">b vale <input data-answer="7" aria-label="valor de b"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que este trecho mostra? <code>int n = 3; printf("%d ", n++); printf("%d", n);</code></p>
+<label><input type="radio" name="q4"> <code>4 4</code></label>
+<label><input type="radio" name="q4"> <code>3 4</code></label>
+<label><input type="radio" name="q4"> <code>3 3</code></label>
+<label><input type="radio" name="q4"> <code>4 5</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que <code>i = i++;</code> é um erro, mesmo compilando?</p>
+<label><input type="radio" name="q5"> Porque <code>++</code> só funciona com <code>double</code></label>
+<label><input type="radio" name="q5"> Porque deveria ser <code>i = ++i;</code>, que é correto</label>
+<label><input type="radio" name="q5"> Porque <code>i</code> é mudado duas vezes na mesma instrução, sem ordem definida: comportamento indefinido</label>
+<label><input type="radio" name="q5"> Porque falta o <code>const</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O que o gcc diz de <code>10++;</code>?</p>
+<label><input type="radio" name="q6"> <code>error: lvalue required as increment operand</code></label>
+<label><input type="radio" name="q6"> Nada: o 10 vira 11</label>
+<label><input type="radio" name="q6"> <code>warning: operation may be undefined</code></label>
+<label><input type="radio" name="q6"> <code>error: increment of read-only variable</code></label>
+</div>
+
+<h3>Missão final: o placar do jogo</h3>
+
+<div class="tryc" data-goal="out:Pontos: 11,out:Vidas: 2,semaviso">
+<p class="try-task"><strong>Missão:</strong> o jogo da Ana deveria dar 1 ponto e tirar 1 vida, mas as linhas 6 e 7 têm comportamento indefinido. Rode, leia os avisos e reescreva essas duas linhas para a saída ficar assim, <strong>sem avisos</strong>:</p>
+<pre class="out">Pontos: 11
+Vidas: 2</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 10;
+    int vidas = 3;
+    pontos = pontos++;
+    vidas = --vidas;
+    printf("Pontos: %d\nVidas: %d\n", pontos, vidas);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int pontos = 10;
+    int vidas = 3;
+    pontos++;
+    vidas--;
+    printf("Pontos: %d\nVidas: %d\n", pontos, vidas);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>x++</code> soma 1 em <code>x</code>; <code>x--</code> tira 1. Numa linha sozinha, <code>++x</code> e <code>x++</code> são iguais.</li>
+  <li>Dentro de uma expressão: <code>x++</code> (pós) entrega o valor antigo e depois soma; <code>++x</code> (pré) soma e entrega o novo.</li>
+  <li>Funciona com <code>int</code>, <code>char</code> (próximo caractere), <code>double</code> (soma 1 inteiro) e outros tipos de número.</li>
+  <li>Mudar a mesma variável duas vezes na mesma instrução (<code>i = i++</code>, <code>printf("%d %d", n++, n++)</code>) é comportamento indefinido. O gcc avisa com <code>-Wsequence-point</code>, o Clang com <code>-Wunsequenced</code>, e cada um pode dar um resultado.</li>
+  <li><code>5++</code> e <code>(x + 1)++</code>: <code>lvalue required as increment operand</code>. Variável <code>const</code>: <code>increment of read-only variable</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
