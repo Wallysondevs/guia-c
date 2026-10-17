@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Inteiros de Tamanho Fixo — stdint.h, size_t e PRId64 | Guia C</title>
+<meta name="description" content="Inteiros de tamanho fixo em C para quem está começando: por que o long tem 8 bytes no gcc e 4 no editor, int8_t a uint64_t, os limites INT32_MAX e UINT8_MAX, como mostrar no printf com PRId64 e PRIu32 do inttypes.h, size_t e o laço que nunca acaba, intptr_t, os tipos least e fast e INT64_C. Saídas reais do gcc 15 e do editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Inteiros de Tamanho Fixo</span></h1>
+
+<p class="intro">Quantos bytes tem um <code>long</code>? A resposta honesta do C é: <strong>depende</strong>. No gcc do laboratório da Ana, 8. No editor deste guia, 4. O mesmo programa pode dar resultados diferentes em computadores diferentes, e isso já derrubou muito software. O cabeçalho <code>&lt;stdint.h&gt;</code> <span class="versao">C99</span> resolve o problema com tipos que têm <strong>o mesmo tamanho em qualquer lugar</strong>: <code>int8_t</code>, <code>int32_t</code>, <code>uint64_t</code> e companhia.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que <code>int</code> e <code>long</code> não têm tamanho garantido, com um exemplo real: o mesmo programa no gcc e no editor.</li>
+  <li>Os tipos de tamanho fixo <code>int8_t</code>, <code>int16_t</code>, <code>int32_t</code>, <code>int64_t</code> e os <code>uint…_t</code>, sem sinal.</li>
+  <li>Os limites <code>INT32_MAX</code>, <code>UINT8_MAX</code>… e o que acontece quando você passa deles.</li>
+  <li>Como mostrar esses tipos no <code>printf</code> sem avisos em nenhum compilador: <code>PRId64</code>, <code>PRIu32</code> (do <code>&lt;inttypes.h&gt;</code>) e <code>SCNd64</code> no <code>scanf</code>.</li>
+  <li><code>size_t</code> (o tipo do <code>sizeof</code> e do <code>strlen</code>) e o laço que nunca termina.</li>
+  <li><code>intptr_t</code>, os tipos <code>least</code> e <code>fast</code>, <code>intmax_t</code> e a macro <code>INT64_C</code>.</li>
+</ul>
+</div>
+
+<p>Antes, é bom conhecer <a href="inteiros.html">Tipos Inteiros</a> e <a href="sizeof.html">sizeof</a>. Os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>, Linux de 64 bits), na pasta <code>~/c</code>, com <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>, e também no editor do guia (Clang em WebAssembly de 32 bits), porque aqui a diferença entre os dois é justamente o assunto.</p>
+
+<hr>
+
+<h2>A ideia: palmo e centímetro</h2>
+<p>Se a Ana pede "uma mesa de 10 palmos", cada marceneiro entrega uma mesa diferente: o palmo depende da mão de quem mede. Se ela pede "uma mesa de 2 metros", todo mundo entrega a mesma.</p>
+
+<p>Os tipos tradicionais do C (<code>short</code>, <code>int</code>, <code>long</code>) são <strong>palmos</strong>: o padrão só garante um tamanho <em>mínimo</em> (<code>int</code> tem pelo menos 16 bits, <code>long</code> pelo menos 32) e deixa cada compilador escolher o resto, para aproveitar melhor cada processador. Os tipos de <code>&lt;stdint.h&gt;</code> são <strong>centímetros</strong>: <code>int32_t</code> tem exatamente 32 bits em qualquer lugar.</p>
+
+<hr>
+
+<h2>1. O problema: o <code>long</code> muda de tamanho</h2>
+
+<pre class="file" data-file="tamanhos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("char:      %zu byte\n", sizeof(char));
+    printf("short:     %zu bytes\n", sizeof(short));
+    printf("int:       %zu bytes\n", sizeof(int));
+    printf("long:      %zu bytes\n", sizeof(long));
+    printf("long long: %zu bytes\n", sizeof(long long));
+    return 0;
+}
+</pre>
+
+<p>No laboratório da Ana (Linux de 64 bits, gcc):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tamanhos.c -o tamanhos
+$ ./tamanhos
+char:      1 byte
+short:     2 bytes
+int:       4 bytes
+long:      8 bytes
+long long: 8 bytes</pre>
+
+<p>Agora rode o <strong>mesmo programa</strong> no editor:</p>
+
+<div class="tryc" data-file="tamanhos.c">
+<p class="try-task"><strong>Experimente:</strong> clique em <strong>Rodar</strong> e compare a linha do <code>long</code> com a saída do laboratório acima.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("char:      %zu byte\n", sizeof(char));
+    printf("short:     %zu bytes\n", sizeof(short));
+    printf("int:       %zu bytes\n", sizeof(int));
+    printf("long:      %zu bytes\n", sizeof(long));
+    printf("long long: %zu bytes\n", sizeof(long long));
+    return 0;
+}
+</pre>
+</div>
+
+<p>No editor, o <code>long</code> tem <strong>4 bytes</strong>. O editor roda em WebAssembly de 32 bits; o laboratório, num Linux de 64 bits. No Windows de 64 bits, o <code>long</code> também tem 4 bytes. Nenhum está errado: o padrão C permite as duas escolhas.</p>
+
+<h3>O que isso quebra</h3>
+<p>A Ana quer saber quantos bytes tem um HD de 4 terabytes (4 × 1000<sup>4</sup>):</p>
+
+<pre class="file" data-file="hd.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    long bytes = 4L * 1000 * 1000 * 1000 * 1000;
+    printf("Um HD de 4 TB tem %ld bytes\n", bytes);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra hd.c -o hd
+$ ./hd
+Um HD de 4 TB tem 4000000000000 bytes</pre>
+
+<p>No laboratório, perfeito. No editor, o mesmo código dá dois avisos e um número sem sentido:</p>
+
+<pre class="term">$ clang -std=c23 -Wall -Wextra hd.c -o hd
+hd.c:4:35: warning: overflow in expression; result is -294'967'296 with type 'long' [-Winteger-overflow]
+    4 |     long bytes = 4L * 1000 * 1000 * 1000 * 1000;
+      |                  ~~~~~~~~~~~~~~~~~^~~~~~
+hd.c:4:42: warning: overflow in expression; result is 1'385'447'424 with type 'long' [-Winteger-overflow]
+    4 |     long bytes = 4L * 1000 * 1000 * 1000 * 1000;
+      |                  ~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~
+2 warnings generated.
+$ ./hd
+Um HD de 4 TB tem 1385447424 bytes</pre>
+
+<p><em>Overflow in expression</em> = "estouro na expressão": 4 trilhões não cabem em 32 bits (o máximo é 2.147.483.647), e a conta "deu a volta". O <code>L</code> em <code>4L</code> pede uma conta em <code>long</code>, mas o <code>long</code> do editor é pequeno demais. O programa estava certo "por sorte" no laboratório. A missão no fim da aula conserta isso.</p>
+
+<hr>
+
+<h2>2. <code>&lt;stdint.h&gt;</code>: tamanho escrito no nome</h2>
+<p>O nome de cada tipo conta tudo:</p>
+
+<dl class="anatomy">
+  <dt>u</dt><dd>Opcional, no começo: <em>unsigned</em>, sem sinal (só zero e positivos).</dd>
+  <dt>int</dt><dd>Inteiro.</dd>
+  <dt>32</dt><dd>Quantos <strong>bits</strong> (não bytes!): 8, 16, 32 ou 64.</dd>
+  <dt>_t</dt><dd>De <em>type</em>, "tipo". É a convenção do C para nomes de tipos criados com <code>typedef</code> (aula <a href="typedef.html">typedef</a>).</dd>
+</dl>
+
+<pre class="file" data-file="fixos.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+int main(void) {
+    printf("int8_t:   %zu byte\n", sizeof(int8_t));
+    printf("int16_t:  %zu bytes\n", sizeof(int16_t));
+    printf("int32_t:  %zu bytes\n", sizeof(int32_t));
+    printf("int64_t:  %zu bytes\n", sizeof(int64_t));
+    printf("uint8_t:  %zu byte\n", sizeof(uint8_t));
+    printf("uint64_t: %zu bytes\n", sizeof(uint64_t));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fixos.c -o fixos
+$ ./fixos
+int8_t:   1 byte
+int16_t:  2 bytes
+int32_t:  4 bytes
+int64_t:  8 bytes
+uint8_t:  1 byte
+uint64_t: 8 bytes</pre>
+
+<p>No editor, a saída é <strong>idêntica</strong>. Esse é o ponto: os nomes são os mesmos em todo lugar, e por trás deles cada compilador escolhe o tipo certo. Na glibc do laboratório, <code>int64_t</code> é um apelido para <code>long</code>; na biblioteca do editor, é um apelido para <code>long long</code>. Você escreve <code>int64_t</code> e não precisa saber.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Bits</th><th>Menor valor</th><th>Maior valor</th><th>Exemplo de uso</th></tr>
+<tr><td><code>int8_t</code></td><td>8</td><td>−128</td><td>127</td><td>temperatura de uma geladeira</td></tr>
+<tr><td><code>uint8_t</code></td><td>8</td><td>0</td><td>255</td><td>um byte; cada cor de um pixel RGB</td></tr>
+<tr><td><code>int16_t</code></td><td>16</td><td>−32.768</td><td>32.767</td><td>amostra de áudio</td></tr>
+<tr><td><code>uint16_t</code></td><td>16</td><td>0</td><td>65.535</td><td>número de porta de rede</td></tr>
+<tr><td><code>int32_t</code></td><td>32</td><td>−2.147.483.648</td><td>2.147.483.647</td><td>uso geral, contadores</td></tr>
+<tr><td><code>uint32_t</code></td><td>32</td><td>0</td><td>4.294.967.295</td><td>endereço IPv4, cores em <code>0xRRGGBB</code></td></tr>
+<tr><td><code>int64_t</code></td><td>64</td><td>≈ −9,2 × 10<sup>18</sup></td><td>9.223.372.036.854.775.807</td><td>dinheiro em centavos, tempo em milissegundos</td></tr>
+<tr><td><code>uint64_t</code></td><td>64</td><td>0</td><td>18.446.744.073.709.551.615</td><td>tamanho de arquivos, contadores enormes</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. Os limites: <code>INT32_MAX</code> e companhia</h2>
+<p>Para cada tipo, <code>&lt;stdint.h&gt;</code> também traz macros com o menor e o maior valor: <code>INT8_MIN</code>, <code>INT8_MAX</code>, <code>UINT8_MAX</code> e assim por diante. (Os sem sinal não têm <code>_MIN</code>: o mínimo é sempre 0.)</p>
+
+<pre class="file" data-file="limites.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+int main(void) {
+    printf("int8_t:   %d a %d\n", INT8_MIN, INT8_MAX);
+    printf("uint8_t:  0 a %d\n", UINT8_MAX);
+    printf("int16_t:  %d a %d\n", INT16_MIN, INT16_MAX);
+    printf("uint16_t: 0 a %d\n", UINT16_MAX);
+    printf("int32_t:  %d a %d\n", INT32_MIN, INT32_MAX);
+    printf("uint32_t: 0 a %u\n", UINT32_MAX);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra limites.c -o limites
+$ ./limites
+int8_t:   -128 a 127
+uint8_t:  0 a 255
+int16_t:  -32768 a 32767
+uint16_t: 0 a 65535
+int32_t:  -2147483648 a 2147483647
+uint32_t: 0 a 4294967295</pre>
+
+<p>Os limites dos tipos tradicionais (<code>INT_MAX</code>, <code>LONG_MAX</code>) moram em outro cabeçalho, <code>&lt;limits.h&gt;</code>, e mudam de compilador para compilador: <code>LONG_MAX</code> é 9223372036854775807 no laboratório e 2147483647 no editor. Os de <code>&lt;stdint.h&gt;</code> são sempre os mesmos.</p>
+
+<h3>Passar do limite</h3>
+<p>O brilho de uma lâmpada inteligente da Ana vai de 0 a 255, um <code>uint8_t</code>. O que acontece se o programa continuar somando?</p>
+
+<pre class="file" data-file="estouro8.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+int main(void) {
+    uint8_t brilho = 250;
+    for (int i = 0; i &lt; 8; i++) {
+        printf("%d ", brilho);
+        brilho = brilho + 1;
+    }
+    printf("\n");
+    int8_t t = 127;
+    t = t + 1;
+    printf("int8_t 127 + 1 = %d\n", t);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra estouro8.c -o estouro8
+$ ./estouro8
+250 251 252 253 254 255 0 1
+int8_t 127 + 1 = -128</pre>
+
+<ul>
+  <li>Os <strong>sem sinal</strong> "dão a volta" de forma garantida: depois de 255 vem 0, como um hodômetro.</li>
+  <li>No <code>int8_t</code>, a conta <code>t + 1</code> é feita em <code>int</code> (dá 128, sem problema) e o 128 é <strong>convertido</strong> de volta para <code>int8_t</code>, onde não cabe. O gcc e o Clang guardam −128. (Já estourar um <code>int</code> ou um <code>int64_t</code> numa conta é <strong>comportamento indefinido</strong>: veja <a href="comportamento-indefinido.html">Comportamento Indefinido</a>.)</li>
+  <li>Nenhum compilador avisou: o valor veio de uma variável. Tipo de tamanho fixo garante o tamanho, não protege contra estouro. Escolha um tipo onde o maior valor possível cabe com folga.</li>
+</ul>
+
+<hr>
+
+<h2>4. Mostrar no <code>printf</code>: o problema do <code>%ld</code></h2>
+<p>Qual letra do <code>printf</code> serve para um <code>int64_t</code>? Como ele é <code>long</code> num lugar e <code>long long</code> em outro, nenhuma letra fixa serve nos dois. Veja o <code>%ld</code>:</p>
+
+<pre class="file" data-file="fmt_ld.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+int main(void) {
+    int64_t populacao = 8000000000;
+    printf("População: %ld\n", populacao);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fmt_ld.c -o fmt_ld
+$ ./fmt_ld
+População: 8000000000</pre>
+
+<p>No laboratório, sem aviso. No editor:</p>
+
+<pre class="term">$ clang -std=c23 -Wall -Wextra fmt_ld.c -o fmt_ld
+fmt_ld.c:6:34: warning: format specifies type 'long' but the argument has type 'int64_t' (aka 'long long') [-Wformat]
+    6 |     printf("População: %ld\n", populacao);
+      |                        ~~~     ^~~~~~~~~
+      |                        %lld
+1 warning generated.
+$ ./fmt_ld
+População: -589934592</pre>
+
+<p>E se você trocar para <code>%lld</code>, como o Clang sugere? Aí o <strong>gcc</strong> é que reclama (o programa funciona, mas o aviso fica):</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fmt_lld.c -o fmt_lld
+fmt_lld.c: In function ‘main’:
+fmt_lld.c:6:27: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 2 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+    6 |     printf("População: %lld\n", populacao);
+      |                        ~~~^     ~~~~~~~~~
+      |                           |     |
+      |                           |     int64_t {aka long int}
+      |                           long long int
+      |                        %ld</pre>
+
+<p>Repare nos apelidos: <em>‘int64_t’ {aka ‘long int’}</em> no gcc, <em>'int64_t' (aka 'long long')</em> no Clang ("aka" = <em>also known as</em>, "também conhecido como"). Cada um quer uma letra diferente.</p>
+
+<h3>A solução: <code>&lt;inttypes.h&gt;</code> e <code>PRId64</code></h3>
+<p>O cabeçalho <code>&lt;inttypes.h&gt;</code> traz macros com a letra certa para o compilador em que o programa está sendo compilado. <code>PRId64</code> vira <code>"ld"</code> no laboratório e <code>"lld"</code> no editor:</p>
+
+<pre class="file" data-file="inttypes.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;inttypes.h&gt;
+
+int main(void) {
+    int64_t populacao = 8000000000;
+    uint32_t visitas = 4000000000u;
+    uint8_t brilho = 200;
+    printf("População: %" PRId64 "\n", populacao);
+    printf("Visitas:   %" PRIu32 "\n", visitas);
+    printf("Brilho:    %" PRIu8 "\n", brilho);
+    printf("Em hexa:   %" PRIX32 "\n", visitas);
+    printf("PRId64 é \"%s\" aqui\n", PRId64);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>#include &lt;inttypes.h&gt;</dt><dd>Traz as macros <code>PRI…</code> e <code>SCN…</code>. Ele já inclui o <code>&lt;stdint.h&gt;</code> sozinho, mas incluir os dois deixa claro o que você usa.</dd>
+  <dt>"%" PRId64 "\n"</dt><dd>Parece estranho, mas são <strong>três textos lado a lado</strong>: <code>"%"</code>, a macro (que vira <code>"ld"</code> ou <code>"lld"</code>) e <code>"\n"</code>. O C <strong>junta textos vizinhos</strong> numa única string: <code>"%" "ld" "\n"</code> é o mesmo que <code>"%ld\n"</code>.</dd>
+  <dt>PRI</dt><dd>De <em>print</em>: para o <code>printf</code>.</dd>
+  <dt>d / u / X</dt><dd>A conversão, como no <code>printf</code>: <code>d</code> com sinal, <code>u</code> sem sinal, <code>x</code>/<code>X</code> hexadecimal.</dd>
+  <dt>64 / 32 / 8</dt><dd>Os bits do tipo: <code>PRId64</code> para <code>int64_t</code>, <code>PRIu32</code> para <code>uint32_t</code>.</dd>
+  <dt>4000000000u</dt><dd>O <code>u</code> no fim diz que o número é sem sinal.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra inttypes.c -o inttypes
+$ ./inttypes
+População: 8000000000
+Visitas:   4000000000
+Brilho:    200
+Em hexa:   EE6B2800
+PRId64 é "ld" aqui</pre>
+
+<p>Nenhum aviso, nem no gcc nem no Clang. No editor, a última linha muda para <code>PRId64 é "lld" aqui</code>, e todas as outras ficam iguais.</p>
+
+<div class="tryc" data-file="populacao.c" data-goal="out:População: 8000000000,semaviso,src:PRId64">
+<p class="try-task"><strong>Missão:</strong> rode e veja o aviso e o número errado. Conserte o <code>printf</code> com <code>PRId64</code> (não esqueça o <code>#include &lt;inttypes.h&gt;</code>) para mostrar <code>População: 8000000000</code> sem nenhum aviso, aqui e em qualquer compilador.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+int main(void) {
+    int64_t populacao = 8000000000;
+    printf("População: %ld\n", populacao);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;inttypes.h&gt;
+
+int main(void) {
+    int64_t populacao = 8000000000;
+    printf("População: %" PRId64 "\n", populacao);
+    return 0;
+}
+</pre>
+</div>
+
+<h3>E para ler: <code>SCNd64</code></h3>
+<p>O <code>scanf</code> tem a mesma família de macros, começando com <code>SCN</code> (de <em>scan</em>): <code>SCNd64</code>, <code>SCNu32</code>…</p>
+
+<div class="tryc" data-file="ler64.c" data-stdin="7300000">
+<p class="try-task"><strong>Experimente:</strong> a entrada já tem o número de passos que a Ana deu no ano. Troque por um número maior que 2 bilhões (que não caberia num <code>int32_t</code>) e rode de novo.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;inttypes.h&gt;
+
+int main(void) {
+    int64_t passos = 0;
+    printf("Passos no ano: ");
+    if (scanf("%" SCNd64, &amp;passos) == 1) {
+        printf("\nVocê digitou %" PRId64 "\n", passos);
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<div class="note">
+<strong><span class="versao">C23</span> O jeito novo: <code>%w64d</code></strong>
+<p>O C23 criou um modificador para dizer os bits direto no <code>printf</code>: <code>%w64d</code> para <code>int64_t</code>, <code>%w8u</code> para <code>uint8_t</code>. A glibc do laboratório já aceita (o gcc 15 mostrou <code>[8000000000] [200]</code>). Mas a biblioteca do editor <strong>ainda não</strong>: o Clang avisa <code>invalid conversion specifier '6'</code> e o <code>printf</code> não mostra nada. Até isso chegar em todo lugar, fique com <code>PRId64</code>.</p>
+</div>
+
+<hr>
+
+<h2>5. <code>size_t</code>: o tipo dos tamanhos</h2>
+<p>Você já usou <code>size_t</code> sem perceber: é o tipo do resultado do <code>sizeof</code> e do <code>strlen</code>, e o que o <code>%zu</code> do <code>printf</code> espera. Ele é <strong>sem sinal</strong> e grande o bastante para o tamanho de qualquer coisa na memória. Por isso também muda: 8 bytes no laboratório, 4 no editor. Ele vem em <code>&lt;stddef.h&gt;</code>, e também aparece quando você inclui <code>&lt;stdio.h&gt;</code>, <code>&lt;string.h&gt;</code> ou <code>&lt;stdlib.h&gt;</code>.</p>
+
+<pre class="file" data-file="sizet.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *nome = "Ana Souza";
+    size_t n = strlen(nome);
+    printf("\"%s\" tem %zu letras\n", nome, n);
+    printf("sizeof(size_t) = %zu\n", sizeof(size_t));
+    printf("SIZE_MAX = %zu\n", SIZE_MAX);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sizet.c -o sizet
+$ ./sizet
+"Ana Souza" tem 9 letras
+sizeof(size_t) = 8
+SIZE_MAX = 18446744073709551615</pre>
+
+<p>O <code>SIZE_MAX</code>, maior valor de um <code>size_t</code>, vem de <code>&lt;stdint.h&gt;</code>. Sem esse <code>#include</code>, o gcc diz <code>error: ‘SIZE_MAX’ undeclared (first use in this function)</code> e ainda ensina o conserto: <code>note: ‘SIZE_MAX’ is defined in header ‘&lt;stdint.h&gt;’; this is probably fixable by adding ‘#include &lt;stdint.h&gt;’</code>. No editor, o <code>SIZE_MAX</code> vale 4294967295.</p>
+
+<h3>A armadilha: contar para trás com <code>size_t</code></h3>
+<p>Como <code>size_t</code> não tem negativos, "zero menos um" dá a volta para o maior valor possível. Um laço que conta para trás até <code>i &gt;= 0</code> <strong>nunca termina</strong> (este tem um freio, <code>voltas</code>, só para a demonstração):</p>
+
+<pre class="file" data-file="contrario.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int voltas = 0;
+    for (size_t i = 2; i &gt;= 0; i--) {
+        printf("i = %zu\n", i);
+        voltas++;
+        if (voltas == 5) break;
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra contrario.c -o contrario
+contrario.c: In function ‘main’:
+contrario.c:5:26: warning: comparison of unsigned expression in ‘&gt;= 0’ is always true [-Wtype-limits]
+    5 |     for (size_t i = 2; i &gt;= 0; i--) {
+      |                          ^~
+$ ./contrario
+i = 2
+i = 1
+i = 0
+i = 18446744073709551615 « 0 - 1 deu a volta
+i = 18446744073709551614</pre>
+
+<p><em>Comparison of unsigned expression in ‘&gt;= 0’ is always true</em> = "comparar uma expressão sem sinal com <code>&gt;= 0</code> é sempre verdadeiro". O aviso vem do <code>-Wextra</code>, mais um motivo para sempre usá-lo. (No editor, o número gigante é 4294967295, e o Clang não avisa.) Para contar para trás com <code>size_t</code>, uma forma segura é <code>for (size_t i = n; i &gt; 0; i--)</code> usando <code>i - 1</code> como índice dentro do laço.</p>
+
+<h3>Misturar com e sem sinal</h3>
+<p>Comparar um <code>size_t</code> com um <code>int</code> negativo dá resultados absurdos, porque o <code>int</code> é convertido para sem sinal antes da comparação:</p>
+
+<pre class="file" data-file="compara.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    const char *nome = "Ana";
+    int limite = -1;
+    if (strlen(nome) &gt; limite) {
+        printf("maior\n");
+    } else {
+        printf("menor ou igual?!\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra compara.c -o compara
+compara.c: In function ‘main’:
+compara.c:7:22: warning: comparison of integer expressions of different signedness: ‘size_t’ {aka ‘long unsigned int’} and ‘int’ [-Wsign-compare]
+    7 |     if (strlen(nome) &gt; limite) {
+      |                      ^
+$ ./compara
+menor ou igual?!         « 3 não é maior que -1?!</pre>
+
+<p><em>Different signedness</em> = "com sinal diferente". O −1 virou 18446744073709551615, e 3 não é maior que isso. O conserto é não misturar: use <code>size_t</code> para tamanhos e índices, e compare com valores do mesmo tipo.</p>
+
+<hr>
+
+<h2>6. <code>intptr_t</code>: um inteiro do tamanho de um ponteiro</h2>
+<p>Um ponteiro guarda um endereço de memória (aula <a href="ponteiros.html">Ponteiros</a>). Às vezes, em código de baixo nível, alguém precisa tratar esse endereço como número: para ver se ele é múltiplo de 16, por exemplo. <code>intptr_t</code> (com sinal) e <code>uintptr_t</code> (sem sinal) são inteiros com espaço garantido para um ponteiro ir e voltar sem perder nada:</p>
+
+<pre class="file" data-file="ptr.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;inttypes.h&gt;
+
+int main(void) {
+    int idade = 29;
+    int *p = &amp;idade;
+    uintptr_t numero = (uintptr_t)p;
+    printf("sizeof(uintptr_t) = %zu\n", sizeof numero);
+    printf("o endereço termina em %" PRIuPTR "\n", numero % 16);
+    int *de_volta = (int *)numero;
+    printf("de volta: %d\n", *de_volta);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ptr.c -o ptr
+$ ./ptr
+sizeof(uintptr_t) = 8
+o endereço termina em 12
+de volta: 29</pre>
+
+<p>No editor, <code>sizeof(uintptr_t)</code> é 4 (ponteiros de 32 bits) e o resto da divisão muda. Guardar um ponteiro num <code>int</code> ou num <code>long</code> pode cortar o endereço em algum computador; num <code>uintptr_t</code>, nunca. Para a maioria dos programas, porém, você não precisa disso: use ponteiros como ponteiros.</p>
+
+<hr>
+
+<h2>7. Mais tipos: <code>least</code>, <code>fast</code> e <code>intmax_t</code></h2>
+<p>O <code>&lt;stdint.h&gt;</code> tem mais três famílias, menos usadas:</p>
+
+<pre class="file" data-file="variantes.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+int main(void) {
+    printf("int_least8_t:  %zu\n", sizeof(int_least8_t));
+    printf("int_least16_t: %zu\n", sizeof(int_least16_t));
+    printf("int_fast8_t:   %zu\n", sizeof(int_fast8_t));
+    printf("int_fast16_t:  %zu\n", sizeof(int_fast16_t));
+    printf("int_fast32_t:  %zu\n", sizeof(int_fast32_t));
+    printf("intmax_t:      %zu\n", sizeof(intmax_t));
+    intmax_t grande = INTMAX_MAX;
+    printf("INTMAX_MAX = %jd\n", grande);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra variantes.c -o variantes
+$ ./variantes
+int_least8_t:  1
+int_least16_t: 2
+int_fast8_t:   1
+int_fast16_t:  8         « no editor: 2
+int_fast32_t:  8         « no editor: 4
+intmax_t:      8
+INTMAX_MAX = 9223372036854775807</pre>
+
+<dl class="anatomy">
+  <dt>int_least16_t</dt><dd>"O <strong>menor</strong> tipo com <em>pelo menos</em> 16 bits". Sempre existe, mesmo num processador estranho que não tenha um tipo de exatamente 16 bits.</dd>
+  <dt>int_fast16_t</dt><dd>"O tipo <strong>mais rápido</strong> com pelo menos 16 bits". A glibc acha que, num processador de 64 bits, o mais rápido é usar 8 bytes; a biblioteca do editor escolheu 2. Mais um "palmo".</dd>
+  <dt>intmax_t / uintmax_t</dt><dd>O maior inteiro que o compilador tem. No <code>printf</code>, <code>%jd</code> e <code>%ju</code> (o <code>j</code> serve só para eles).</dd>
+</dl>
+
+<h3>Números grandes escritos no código: <code>INT64_C</code></h3>
+<p>Um número escrito no código, como <code>3000000</code>, é <code>int</code>. Multiplicar dois <code>int</code> faz a conta em <code>int</code>, <strong>mesmo</strong> que o resultado vá para um <code>int64_t</code>:</p>
+
+<pre class="file" data-file="literais.c">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;inttypes.h&gt;
+
+int main(void) {
+    int64_t a = 3000000 * 1000;
+    int64_t b = INT64_C(3000000) * 1000;
+    printf("a = %" PRId64 "\n", a);
+    printf("b = %" PRId64 "\n", b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra literais.c -o literais
+literais.c: In function ‘main’:
+literais.c:6:25: warning: integer overflow in expression of type ‘int’ results in ‘-1294967296’ [-Woverflow]
+    6 |     int64_t a = 3000000 * 1000;
+      |                         ^
+$ ./literais
+a = -1294967296
+b = 3000000000</pre>
+
+<p>A macro <code>INT64_C(3000000)</code> escreve o número já como <code>int64_t</code> (ela acrescenta o <code>L</code> ou o <code>LL</code> certo para cada compilador), e a conta inteira passa a ser feita em 64 bits. Existem também <code>UINT64_C</code>, <code>INT32_C</code>, <code>UINT32_C</code>… Outra saída é converter: <code>(int64_t)3000000 * 1000</code>.</p>
+
+<hr>
+
+<h2>8. Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th><th>Por quê</th></tr>
+<tr><td>Contas do dia a dia, contadores pequenos</td><td><code>int</code></td><td>Simples, rápido; 32 bits em todos os computadores comuns de hoje</td></tr>
+<tr><td>Tamanhos, índices de arrays, resultado de <code>strlen</code> e <code>sizeof</code></td><td><code>size_t</code></td><td>É o tipo que a biblioteca usa; cabe qualquer tamanho</td></tr>
+<tr><td>Valores que podem passar de 2 bilhões (dinheiro em centavos, milissegundos, bytes de arquivo)</td><td><code>int64_t</code> / <code>uint64_t</code></td><td>64 bits garantidos, ao contrário do <code>long</code></td></tr>
+<tr><td>Dados de arquivos binários, rede, imagens, hardware</td><td><code>uint8_t</code>, <code>uint16_t</code>, <code>uint32_t</code></td><td>O formato exige um tamanho exato (aula <a href="arquivos-binarios.html">Arquivos Binários</a>)</td></tr>
+<tr><td>Bits e máscaras</td><td><code>uint8_t</code>, <code>uint32_t</code></td><td>Sem sinal e com largura conhecida (aula <a href="operadores-bits.html">Operadores de Bits</a>)</td></tr>
+<tr><td>Guardar um ponteiro como número</td><td><code>uintptr_t</code></td><td>Garante espaço para o endereço</td></tr>
+<tr><td>Qualquer coisa que precise de "64 bits"</td><td><strong>Não</strong> <code>long</code></td><td>Tem 4 bytes no editor e no Windows</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 2 has type ‘int64_t’ {aka ‘long int’}</code></strong>
+<p><strong>O que significa:</strong> a letra do <code>printf</code> não combina com o tipo. Com <code>int64_t</code>, <code>%ld</code> acerta num compilador e <code>%lld</code> no outro; no editor o aviso é <code>format specifies type 'long' but the argument has type 'int64_t' (aka 'long long')</code>, e o número sai errado.</p>
+<p><strong>Como consertar:</strong> <code>#include &lt;inttypes.h&gt;</code> e <code>printf("%" PRId64 "\n", x);</code> (ou <code>PRIu64</code>, <code>PRIu32</code>… conforme o tipo).</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: unknown type name ‘uint8_t’</code> ou <code>‘SIZE_MAX’ undeclared</code></strong>
+<p><strong>O que significa:</strong> faltou <code>#include &lt;stdint.h&gt;</code>. O gcc costuma até sugerir: <code>is defined in header ‘&lt;stdint.h&gt;’; this is probably fixable by adding ‘#include &lt;stdint.h&gt;’</code>.</p>
+<p><strong>Como consertar:</strong> acrescente <code>#include &lt;stdint.h&gt;</code> (ou <code>&lt;inttypes.h&gt;</code>, que inclui o primeiro).</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: comparison of unsigned expression in ‘&gt;= 0’ is always true [-Wtype-limits]</code></strong>
+<p><strong>O que significa:</strong> uma variável sem sinal (<code>size_t</code>, <code>uint32_t</code>) é sempre <code>&gt;= 0</code>; um laço que depende disso nunca termina, e o índice vira um número gigante.</p>
+<p><strong>Como consertar:</strong> conte para trás com <code>for (size_t i = n; i &gt; 0; i--)</code> e use <code>i - 1</code> dentro, ou use um tipo com sinal se os valores são pequenos.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: integer overflow in expression of type ‘int’ results in ‘-1294967296’</code></strong>
+<p><strong>O que significa:</strong> a conta foi feita em <code>int</code> (os dois números eram <code>int</code>) e estourou, mesmo que o resultado vá para um tipo grande. No editor, o mesmo acontece com contas em <code>long</code>: <code>overflow in expression; result is … with type 'long'</code>.</p>
+<p><strong>Como consertar:</strong> faça a conta no tipo grande desde o começo: <code>INT64_C(3000000) * 1000</code> ou <code>(int64_t)3000000 * 1000</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: comparison of integer expressions of different signedness</code></strong>
+<p><strong>O que significa:</strong> você comparou um valor sem sinal (<code>size_t</code>) com um com sinal (<code>int</code>). Se o <code>int</code> for negativo, a comparação dá o resultado errado.</p>
+<p><strong>Como consertar:</strong> use o mesmo tipo dos dois lados (geralmente <code>size_t</code> para tamanhos) ou confira o negativo antes.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Cabeçalho</th><th>O que é</th></tr>
+<tr><td><code>int8_t</code> … <code>int64_t</code></td><td><code>&lt;stdint.h&gt;</code></td><td>Inteiro com sinal de exatamente 8, 16, 32 ou 64 bits</td></tr>
+<tr><td><code>uint8_t</code> … <code>uint64_t</code></td><td><code>&lt;stdint.h&gt;</code></td><td>O mesmo, sem sinal</td></tr>
+<tr><td><code>INT32_MIN</code>, <code>INT32_MAX</code>, <code>UINT8_MAX</code>…</td><td><code>&lt;stdint.h&gt;</code></td><td>Limites de cada tipo</td></tr>
+<tr><td><code>INT64_C(n)</code>, <code>UINT32_C(n)</code></td><td><code>&lt;stdint.h&gt;</code></td><td>Escreve o número <code>n</code> já no tipo certo</td></tr>
+<tr><td><code>size_t</code>, <code>SIZE_MAX</code></td><td><code>&lt;stddef.h&gt;</code>, <code>&lt;stdint.h&gt;</code></td><td>Tamanhos (sem sinal); <code>%zu</code> no <code>printf</code></td></tr>
+<tr><td><code>intptr_t</code>, <code>uintptr_t</code></td><td><code>&lt;stdint.h&gt;</code></td><td>Inteiro que guarda um ponteiro</td></tr>
+<tr><td><code>int_least16_t</code>, <code>int_fast16_t</code></td><td><code>&lt;stdint.h&gt;</code></td><td>Menor / mais rápido com pelo menos N bits</td></tr>
+<tr><td><code>intmax_t</code></td><td><code>&lt;stdint.h&gt;</code></td><td>O maior inteiro; <code>%jd</code> no <code>printf</code></td></tr>
+<tr><td><code>PRId64</code>, <code>PRIu32</code>, <code>PRIX32</code>, <code>PRIuPTR</code></td><td><code>&lt;inttypes.h&gt;</code></td><td>Letras do <code>printf</code>: <code>"%" PRId64</code></td></tr>
+<tr><td><code>SCNd64</code>, <code>SCNu32</code></td><td><code>&lt;inttypes.h&gt;</code></td><td>Letras do <code>scanf</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O tipo do pixel</h3>
+<p>Cada cor de um pixel vai de 0 a 255. Complete com o tipo de tamanho fixo certo:</p>
+<div class="ex-code"><input data-answer="uint8_t" aria-label="tipo"> vermelho = 255;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A macro do printf</h3>
+<p>Complete para mostrar um <code>uint32_t</code> chamado <code>visitas</code>:</p>
+<div class="ex-code">printf("%" <input data-answer="PRIu32" aria-label="macro"> "\n", visitas);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Quantos bytes tem um <code>long</code>?</p>
+<label><input type="radio" name="q3"> Sempre 4</label>
+<label><input type="radio" name="q3"> Sempre 8</label>
+<label><input type="radio" name="q3"> Depende do compilador e do sistema: 8 no gcc do laboratório, 4 no editor</label>
+<label><input type="radio" name="q3"> O mesmo que um <code>int</code>, sempre</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Um <code>uint8_t</code> vale 255. Quanto ele vale depois de <code>x = x + 1;</code>?</p>
+<label><input type="radio" name="q4"> 256</label>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> −128</label>
+<label><input type="radio" name="q4"> 255 (não passa do máximo)</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Por que <code>for (size_t i = 5; i &gt;= 0; i--)</code> nunca termina?</p>
+<label><input type="radio" name="q5"> Porque <code>size_t</code> só vai até 5</label>
+<label><input type="radio" name="q5"> Porque falta <code>#include &lt;stdint.h&gt;</code></label>
+<label><input type="radio" name="q5"> Porque o <code>i--</code> não funciona com <code>size_t</code></label>
+<label><input type="radio" name="q5"> Porque <code>size_t</code> não tem negativos: depois de 0 vem o maior valor possível, e <code>i &gt;= 0</code> é sempre verdade</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O que é <code>"%" PRId64 "\n"</code> para o compilador?</p>
+<label><input type="radio" name="q6"> Uma única string, porque o C junta textos vizinhos (vira <code>"%ld\n"</code> ou <code>"%lld\n"</code>)</label>
+<label><input type="radio" name="q6"> Três argumentos separados para o <code>printf</code></label>
+<label><input type="radio" name="q6"> Um erro de sintaxe que o gcc aceita por extensão</label>
+<label><input type="radio" name="q6"> Uma função que descobre o tipo na hora de rodar</label>
+</div>
+
+<h3>Missão final: o HD de 4 TB em qualquer computador</h3>
+
+<div class="tryc" data-file="hd.c" data-goal="out:Um HD de 4 TB tem 4000000000000 bytes,semaviso,src:int64_t,src:PRId64">
+<p class="try-task"><strong>Missão:</strong> este é o programa da seção 1, que funciona no laboratório e quebra aqui. Troque o <code>long</code> por <code>int64_t</code>, faça a conta em 64 bits (com <code>INT64_C(4)</code> no lugar de <code>4L</code>) e mostre com <code>PRId64</code>. Sem avisos. A saída tem que ser:</p>
+<pre class="out">Um HD de 4 TB tem 4000000000000 bytes</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    long bytes = 4L * 1000 * 1000 * 1000 * 1000;
+    printf("Um HD de 4 TB tem %ld bytes\n", bytes);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;inttypes.h&gt;
+
+int main(void) {
+    int64_t bytes = INT64_C(4) * 1000 * 1000 * 1000 * 1000;
+    printf("Um HD de 4 TB tem %" PRId64 " bytes\n", bytes);
+    return 0;
+}
+</pre>
+</div>
+
+<p>A solução mostra a mesma linha no laboratório e no editor. É isso que "portátil" quer dizer: o programa dá o mesmo resultado em qualquer computador.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>int</code> e <code>long</code> só têm tamanho mínimo garantido. O <code>long</code> tem 8 bytes no gcc do laboratório e 4 no editor (e no Windows).</li>
+  <li><code>&lt;stdint.h&gt;</code> <span class="versao">C99</span> traz <code>int8_t</code> a <code>int64_t</code> e <code>uint8_t</code> a <code>uint64_t</code>: o número é a quantidade exata de bits, em qualquer lugar.</li>
+  <li>Limites: <code>INT32_MAX</code>, <code>UINT8_MAX</code>… Os sem sinal dão a volta (255 + 1 = 0); tamanho fixo não impede estouro.</li>
+  <li>No <code>printf</code>, use <code>&lt;inttypes.h&gt;</code>: <code>"%" PRId64</code>, <code>"%" PRIu32</code>. No <code>scanf</code>, <code>SCNd64</code>. O <code>%w64d</code> do C23 ainda não funciona no editor.</li>
+  <li><code>size_t</code> é o tipo dos tamanhos (<code>sizeof</code>, <code>strlen</code>, <code>%zu</code>): sem sinal, então <code>i &gt;= 0</code> é sempre verdade. Não misture com <code>int</code> negativo.</li>
+  <li><code>uintptr_t</code> guarda um ponteiro como número; <code>int_leastN_t</code>, <code>int_fastN_t</code> e <code>intmax_t</code> completam a família; <code>INT64_C(n)</code> faz a conta em 64 bits desde o começo.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
