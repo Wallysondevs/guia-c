@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Pré-processador — #include, #define e gcc -E | Guia C</title>
+<meta name="description" content="O pré-processador do C para quem está começando: o que roda antes do compilador, #include com &lt; &gt; e com aspas, constantes com #define, ver o resultado com gcc -E, __FILE__, __LINE__, __func__, __DATE__, #error e #warning (C23), com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Pré-processador</span></h1>
+
+<p class="intro">Desde o primeiro programa você escreve <code>#include &lt;stdio.h&gt;</code> no topo do arquivo. Essa linha começa com <code>#</code> e não termina com <code>;</code>. Ela é diferente de todas as outras porque <strong>não é para o compilador</strong>: é uma ordem para um programa que trabalha <strong>antes</strong> dele, o <strong>pré-processador</strong>. Nesta aula você vai ver o que ele faz com o seu arquivo, espiar o resultado com <code>gcc -E</code> e conhecer as primeiras ordens que ele entende: <code>#include</code>, <code>#define</code>, <code>#error</code> e <code>#warning</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o pré-processador e em que momento ele roda.</li>
+  <li>O que <code>#include</code> faz de verdade, e a diferença entre <code>&lt;stdio.h&gt;</code> e <code>"loja.h"</code>.</li>
+  <li>Como criar constantes com <code>#define</code>, e por que ali não vai <code>=</code> nem <code>;</code>.</li>
+  <li>Como ver o arquivo que o compilador recebe, com <code>gcc -E</code>.</li>
+  <li>Os nomes prontos <code>__FILE__</code>, <code>__LINE__</code>, <code>__func__</code>, <code>__DATE__</code>, <code>__TIME__</code> e <code>__STDC_VERSION__</code>.</li>
+  <li>Como parar a compilação com <code>#error</code> e deixar um lembrete com <code>#warning</code> <span class="versao">C23</span>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/prepro</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code> (cada opção é explicada em <a href="compilar.html">Compilar com gcc</a>). Nas caixas "Experimente", o editor do guia compila de verdade, com o Clang.</p>
+
+<hr>
+
+<h2>A ideia: o assistente que prepara a receita</h2>
+<p>Imagine uma cozinheira (o <strong>compilador</strong>) que só sabe seguir uma receita escrita por inteiro, do começo ao fim. Antes de o papel chegar até ela, um <strong>assistente</strong> passa pela receita e faz trocas mecânicas:</p>
+<ul>
+  <li>onde está escrito "<em>cole aqui a receita do molho</em>", ele copia o texto inteiro da receita do molho naquele lugar;</li>
+  <li>onde está escrito "<em>XÍCARA</em>", ele troca por "<em>240 ml</em>", porque alguém anotou lá em cima que XÍCARA quer dizer 240 ml;</li>
+  <li>ele risca as anotações a lápis na margem, que a cozinheira não precisa ler.</li>
+</ul>
+<p>O assistente <strong>não sabe cozinhar</strong>. Ele não entende a receita: só copia, troca e apaga texto. Esse assistente é o pré-processador. As ordens para ele são as linhas que começam com <code>#</code>, chamadas <strong>diretivas</strong> (do inglês <em>directive</em>, "instrução"). As anotações a lápis são os seus comentários.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Etapa</th><th>Quem faz</th><th>O que recebe</th><th>O que entrega</th></tr>
+<tr><td>1. Pré-processamento</td><td>o pré-processador</td><td>o seu <code>.c</code>, com as linhas <code>#</code> e os comentários</td><td>um texto C puro: sem diretivas, sem comentários, com os <code>#include</code> já colados</td></tr>
+<tr><td>2. Compilação</td><td>o compilador</td><td>esse texto</td><td>código de máquina (um arquivo <code>.o</code>)</td></tr>
+<tr><td>3. Ligação</td><td>o ligador (<em>linker</em>)</td><td>os <code>.o</code> e as bibliotecas</td><td>o programa pronto</td></tr>
+</table>
+</div>
+
+<p>Quando você digita <code>gcc ola.c -o ola</code>, as três etapas rodam em sequência, sem você ver. A aula <a href="como-funciona.html">Como o C Vira Programa</a> mostra o caminho todo. Aqui vamos olhar só a primeira etapa, e o <code>gcc</code> deixa: com a opção <code>-E</code>, ele faz o pré-processamento e para.</p>
+
+<hr>
+
+<h2>1. Ver o que o pré-processador entrega: <code>gcc -E</code></h2>
+<p>Comece com um arquivo pequeno, sem <code>#include</code>, para dar para ler o resultado inteiro. A Ana anotou o preço do caderno e o nome da loja com <code>#define</code>:</p>
+
+<pre class="file" data-file="mini.c">// Preço do caderno na lojinha da Ana
+#define PRECO 12
+#define LOJA "Lojinha da Ana"
+
+int main(void) {
+    int total = PRECO * 3;   /* três cadernos */
+    const char *nome = LOJA;
+    return total;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -E mini.c
+# 0 "mini.c"
+# 0 "&lt;built-in&gt;"
+# 0 "&lt;command-line&gt;"
+# 1 "/usr/include/stdc-predef.h" 1 3 4
+# 0 "&lt;command-line&gt;" 2
+# 1 "mini.c"
+
+
+
+
+int main(void) {
+    int total = 12 * 3;                     « PRECO virou 12
+    const char *nome = "Lojinha da Ana";    « LOJA virou o texto
+    return total;
+}</pre>
+
+<p>Compare com o arquivo original. Três coisas aconteceram:</p>
+<ol class="passo">
+  <li>As duas linhas <code>#define</code> <strong>sumiram</strong>: o pré-processador cumpriu a ordem e jogou a linha fora. No lugar ficaram linhas vazias.</li>
+  <li>Os <strong>comentários sumiram</strong>, tanto o <code>//</code> quanto o <code>/* */</code>. O compilador nunca vê os seus comentários.</li>
+  <li>Onde estava escrito <code>PRECO</code> agora está <code>12</code>, e onde estava <code>LOJA</code> está <code>"Lojinha da Ana"</code>. Foi uma troca de <strong>texto</strong>: nada foi calculado (a conta <code>12 * 3</code> continua lá, para o compilador fazer).</li>
+</ol>
+
+<dl class="anatomy">
+  <dt>-E</dt><dd>"Pare depois do pré-processamento" (<em>E</em> de <em>expand</em>, expandir). O resultado sai na tela (ou num arquivo, com <code>-o mini.i</code>). Nada é compilado e nenhum programa é criado.</dd>
+  <dt><code># 1 "mini.c"</code></dt><dd>Marcas de linha. O pré-processador as deixa para o compilador saber de que arquivo e de que linha veio cada pedaço. É graças a elas que um erro consegue dizer <code>mini.c:6</code> mesmo depois de tudo ter sido trocado.</dd>
+  <dt><code>stdc-predef.h</code></dt><dd>Um arquivo pequeno do sistema que o gcc inclui sozinho em todo programa. Você pode ignorá-lo.</dd>
+</dl>
+
+<p>Para ver só o código, sem as marcas e sem as linhas vazias, acrescente <code>-P</code>:</p>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -E -P mini.c
+int main(void) {
+    int total = 12 * 3;
+    const char *nome = "Lojinha da Ana";
+    return total;
+}</pre>
+
+<div class="tip">
+<strong>Para que serve isso no dia a dia?</strong> Quando uma macro se comporta de um jeito estranho (você vai ver vários casos na aula <a href="macros.html">Macros com Parâmetros</a>), o <code>gcc -E</code> mostra exatamente o texto que o compilador recebeu. É o "raio X" do pré-processador.
+</div>
+
+<hr>
+
+<h2>2. <code>#include</code>: colar outro arquivo aqui</h2>
+<p>Agora o programa de sempre:</p>
+
+<pre class="file" data-file="ola.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá!\n");
+    return 0;
+}
+</pre>
+
+<p>São 6 linhas. Veja quantas linhas o compilador recebe depois do pré-processamento (o <code>| wc -l</code> conta as linhas da saída, como você viu no Guia Bash):</p>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -E ola.c | wc -l
+844</pre>
+
+<p>Oitocentas e quarenta e quatro linhas! A diretiva <code>#include &lt;stdio.h&gt;</code> mandou o pré-processador <strong>procurar o arquivo <code>stdio.h</code> e colar o conteúdo inteiro</strong> naquele lugar. E o <code>stdio.h</code>, por sua vez, tem os seus próprios <code>#include</code>, que também foram colados. O fim da saída mostra o seu código lá embaixo, depois de tudo o que veio do <code>stdio.h</code>:</p>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -E -P ola.c | tail -8
+extern void funlockfile (FILE *__stream) __attribute__ ((__nothrow__ , __leaf__)) __attribute__ ((__nonnull__ (1)));
+extern int __uflow (FILE *);
+extern int __overflow (FILE *, int);
+
+int main(void) {
+    printf("Olá!\n");
+    return 0;
+}</pre>
+
+<p>As linhas com <code>extern</code> são <strong>declarações</strong> de funções da biblioteca (você aprende a ler isso em <a href="prototipos.html">Protótipos</a> e <a href="static-extern.html">static e extern</a>). Entre as 844 linhas está a declaração do <code>printf</code>: é por isso que, sem o <code>#include</code>, o compilador reclama que não conhece o <code>printf</code>.</p>
+
+<div class="note">
+<strong>O <code>.h</code> não é a biblioteca.</strong> O <code>stdio.h</code> só traz as <strong>declarações</strong> ("existe uma função <code>printf</code> que recebe isto e devolve aquilo"). O código de verdade do <code>printf</code> já vem pronto, compilado, na biblioteca C do sistema, e entra na etapa de ligação. A extensão <code>.h</code> vem de <em>header</em>, "cabeçalho": o arquivo que vai no alto.
+</div>
+
+<h3>Com <code>&lt; &gt;</code> ou com <code>" "</code>?</h3>
+<p>Você também pode escrever os seus próprios arquivos <code>.h</code>. A Ana guardou os dados da loja num arquivo separado:</p>
+
+<pre class="file" data-file="loja.h">#define LOJA "Lojinha da Ana"
+#define PRECO_CADERNO 12
+</pre>
+
+<pre class="file" data-file="usa_loja.c">#include &lt;stdio.h&gt;
+#include "loja.h"
+
+int main(void) {
+    printf("%s: caderno a R$ %d\n", LOJA, PRECO_CADERNO);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra usa_loja.c -o usa_loja
+$ ./usa_loja
+Lojinha da Ana: caderno a R$ 12</pre>
+
+<p>Repare: o <code>stdio.h</code> está entre <code>&lt; &gt;</code> e o <code>loja.h</code> está entre aspas. A diferença é <strong>onde o pré-processador procura</strong>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Onde procura</th><th>Use para</th></tr>
+<tr><td><code>#include &lt;stdio.h&gt;</code></td><td>Só nas pastas do sistema (<code>/usr/include</code> e companhia)</td><td>Arquivos da biblioteca padrão e de bibliotecas instaladas</td></tr>
+<tr><td><code>#include "loja.h"</code></td><td>Primeiro na <strong>pasta do arquivo <code>.c</code></strong>; se não achar, nas pastas do sistema</td><td>Os arquivos <code>.h</code> do seu próprio projeto</td></tr>
+</table>
+</div>
+
+<p>O gcc mostra a lista de pastas com a opção <code>-v</code> (de <em>verbose</em>, "falador"). O comando abaixo pré-processa um arquivo vazio só para ver essa lista:</p>
+
+<pre class="term" data-cwd="~/c/prepro">$ echo | gcc -E -v - 2&gt;&amp;1 | sed -n "/search starts/,/End of/p"
+#include "..." search starts here:
+#include &lt;...&gt; search starts here:
+ /usr/lib/gcc/x86_64-linux-gnu/15/include
+ /usr/local/include
+ /usr/include/x86_64-linux-gnu
+ /usr/include
+End of search list.</pre>
+
+<p>Em português: "a busca do <code>#include "..."</code> começa aqui" (a pasta do próprio arquivo, que não aparece na lista) e "a busca do <code>#include &lt;...&gt;</code> começa aqui", seguida das pastas do sistema. O <code>stdio.h</code> mora em <code>/usr/include/stdio.h</code>.</p>
+
+<p>O que acontece se a Ana escrever <code>#include &lt;loja.h&gt;</code>, com sinais de menor e maior? O pré-processador procura só nas pastas do sistema, e o <code>loja.h</code> não está lá:</p>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra angulo.c -o angulo
+angulo.c:2:10: fatal error: loja.h: Arquivo ou diretório inexistente
+    2 | #include &lt;loja.h&gt;
+      |          ^~~~~~~~
+compilation terminated.</pre>
+
+<dl class="anatomy">
+  <dt>fatal error</dt><dd>"Erro fatal": um erro tão grave que o gcc nem continua. Sem o arquivo, não há o que compilar.</dd>
+  <dt>Arquivo ou diretório inexistente</dt><dd>Esta parte vem do sistema, e o sistema da Ana está em português. Em fóruns você vai ver a versão em inglês: <code>No such file or directory</code>.</dd>
+  <dt>compilation terminated.</dt><dd>"Compilação encerrada."</dd>
+</dl>
+
+<p>Dá para acrescentar uma pasta à lista do sistema com <code>-I</code> (i maiúsculo, de <em>include</em>). <code>-I.</code> quer dizer "procure também na pasta atual" (o ponto é a pasta atual):</p>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra -I. angulo.c -o angulo &amp;&amp; ./angulo
+Lojinha da Ana: caderno a R$ 12</pre>
+
+<p>Funciona, mas a regra continua simples: <strong>arquivos seus, entre aspas; arquivos do sistema, entre <code>&lt; &gt;</code></strong>. O <code>-I</code> é útil em projetos grandes, com os <code>.h</code> numa pasta <code>include/</code> (você vai ver isso em <a href="headers.html">Arquivos .h e .c</a> e <a href="bibliotecas.html">Bibliotecas</a>).</p>
+
+<p>No editor do guia, o Clang dá uma dica ainda mais direta para o mesmo erro:</p>
+<pre class="term">angulo.c:2:10: error: 'loja.h' file not found with &lt;angled&gt; include; use "quotes" instead
+    2 | #include &lt;loja.h&gt;
+      |          ^~~~~~~~
+      |          "loja.h"</pre>
+<p>"<code>loja.h</code> não encontrado com include de sinais angulares; use aspas."</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> esta caixa tem duas abas, <code>usa_loja.c</code> e <code>loja.h</code>. Rode. Depois mude o preço no <code>loja.h</code> e rode de novo. Por último, troque <code>"loja.h"</code> por <code>&lt;loja.h&gt;</code> no <code>usa_loja.c</code> e leia o erro.</p>
+<pre class="script" data-file="usa_loja.c">#include &lt;stdio.h&gt;
+#include "loja.h"
+
+int main(void) {
+    printf("%s: caderno a R$ %d\n", LOJA, PRECO_CADERNO);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="loja.h">#define LOJA "Lojinha da Ana"
+#define PRECO_CADERNO 12
+</pre>
+</div>
+
+<hr>
+
+<h2>3. <code>#define</code>: dar nome a um valor</h2>
+<p>A linha <code>#define PRECO 12</code> ("defina PRECO como 12") cria uma <strong>macro</strong>: um nome que o pré-processador troca por um texto em todo o resto do arquivo, da linha do <code>#define</code> para baixo.</p>
+
+<pre class="file" data-file="trecho">#define PRECO 12</pre>
+
+<dl class="anatomy">
+  <dt>#define</dt><dd>A diretiva. Como toda diretiva, começa com <code>#</code> e ocupa a linha inteira.</dd>
+  <dt>PRECO</dt><dd>O nome da macro. Por costume, macros são escritas EM MAIÚSCULAS, para que quem lê saiba na hora que aquilo não é uma variável.</dd>
+  <dt>12</dt><dd>O texto de troca: tudo o que vem depois do nome, até o fim da linha.</dd>
+  <dt>(sem <code>=</code> e sem <code>;</code>)</dt><dd>Diretivas não são comandos de C. Não levam <code>=</code> nem ponto e vírgula: se você puser, eles entram no texto de troca (veja o que acontece logo abaixo).</dd>
+</dl>
+
+<p>Por que dar nome a um número? Imagine o preço do caderno aparecendo em dez lugares do programa. Quando o preço subir, você muda <strong>uma</strong> linha, e não dez. E <code>PRECO * 3</code> diz muito mais para quem lê do que <code>12 * 3</code>. Um número solto no meio do código, sem nome, é chamado de <strong>número mágico</strong>, e é bom evitar.</p>
+
+<h3>A troca respeita palavras inteiras e textos entre aspas</h3>
+<p>O pré-processador troca só a <strong>palavra inteira</strong> <code>PRECO</code>. Ele não mexe num nome maior que contém <code>PRECO</code>, e nem em textos entre aspas:</p>
+
+<pre class="file" data-file="texto.c">#include &lt;stdio.h&gt;
+
+#define PRECO 12
+
+int main(void) {
+    printf("PRECO custa %d\n", PRECO);
+    int PRECO_TOTAL = 36;
+    printf("%d\n", PRECO_TOTAL);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra texto.c -o texto &amp;&amp; ./texto
+PRECO custa 12          « o PRECO das aspas ficou; o de fora virou 12
+36</pre>
+
+<h3><code>#undef</code>: esquecer uma macro</h3>
+<p><code>#undef TAXA</code> ("undefine") apaga a macro. Daí para baixo, o nome volta a ser desconhecido:</p>
+
+<pre class="file" data-file="undef.c">#include &lt;stdio.h&gt;
+
+#define TAXA 5
+
+int main(void) {
+    printf("Taxa: %d\n", TAXA);
+#undef TAXA
+    printf("Taxa: %d\n", TAXA);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra undef.c -o undef
+undef.c: In function ‘main’:
+undef.c:8:26: error: ‘TAXA’ undeclared (first use in this function)
+    8 |     printf("Taxa: %d\n", TAXA);
+      |                          ^~~~
+undef.c:8:26: note: each undeclared identifier is reported only once for each function it appears in</pre>
+
+<p>Repare que o <code>#undef</code> está no meio do <code>main</code> e funciona assim mesmo: o pré-processador não sabe o que é uma função. Ele lê o arquivo de cima para baixo, como texto. Na linha 8, <code>TAXA</code> não é mais macro, chega intacto ao compilador, e o compilador não conhece nenhuma variável com esse nome.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode. Mude o <code>PRECO</code> para 15 e rode de novo: só uma linha mudou, e as duas contas acompanharam. Depois acrescente <code>#define DESCONTO 2</code> e subtraia o desconto do total.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define LOJA "Lojinha da Ana"
+#define PRECO 12
+
+int main(void) {
+    printf("%s\n", LOJA);
+    printf("3 cadernos: R$ %d\n", PRECO * 3);
+    printf("5 cadernos: R$ %d\n", PRECO * 5);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Nomes que já vêm prontos</h2>
+<p>O pré-processador já conhece alguns nomes, sem você definir nada. Eles começam e terminam com <strong>dois</strong> sublinhados (<code>__</code>):</p>
+
+<pre class="file" data-file="onde.c">#include &lt;stdio.h&gt;
+
+void avisar(void) {
+    printf("Estou em %s, na função %s, linha %d\n", __FILE__, __func__, __LINE__);
+}
+
+int main(void) {
+    printf("Arquivo: %s\n", __FILE__);
+    printf("Linha:   %d\n", __LINE__);
+    printf("Função:  %s\n", __func__);
+    printf("Compilado em %s às %s\n", __DATE__, __TIME__);
+    printf("Versão do C: %ld\n", __STDC_VERSION__);
+    avisar();
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra onde.c -o onde
+$ ./onde
+Arquivo: onde.c
+Linha:   9
+Função:  main
+Compilado em Oct 17 2026 às 10:32:21
+Versão do C: 202311
+Estou em onde.c, na função avisar, linha 4</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nome</th><th>Vira</th><th>Tipo do valor</th></tr>
+<tr><td><code>__FILE__</code></td><td>o nome do arquivo que está sendo compilado</td><td>texto (<code>%s</code>)</td></tr>
+<tr><td><code>__LINE__</code></td><td>o número da linha em que ele aparece</td><td>inteiro (<code>%d</code>)</td></tr>
+<tr><td><code>__func__</code> <span class="versao">C99</span></td><td>o nome da função em que ele aparece</td><td>texto (<code>%s</code>)</td></tr>
+<tr><td><code>__DATE__</code></td><td>a data da <strong>compilação</strong>, em inglês: <code>"Oct 17 2026"</code></td><td>texto</td></tr>
+<tr><td><code>__TIME__</code></td><td>a hora da <strong>compilação</strong>: <code>"10:32:21"</code></td><td>texto</td></tr>
+<tr><td><code>__STDC_VERSION__</code></td><td>a versão do C usada: <code>199901L</code> (C99), <code>201112L</code> (C11), <code>201710L</code> (C17), <code>202311L</code> (C23)</td><td>inteiro <code>long</code> (<code>%ld</code>)</td></tr>
+</table>
+</div>
+
+<p>Três detalhes importantes:</p>
+<ul>
+  <li><strong><code>__DATE__</code> e <code>__TIME__</code> não são o relógio.</strong> São a data e a hora em que o <code>gcc</code> rodou, gravadas no programa como texto. Se você rodar o <code>./onde</code> amanhã, ele vai continuar dizendo "Oct 17 2026". Para a hora atual de verdade, veja <a href="tempo.html">Data e Hora</a>.</li>
+  <li><strong><code>__LINE__</code> é a linha onde ele está escrito.</strong> Na função <code>avisar</code>, deu 4, e não a linha do <code>main</code> que chamou a função.</li>
+  <li><strong><code>__func__</code> não é bem uma macro.</strong> O pré-processador nem sabe o que é uma função; quem resolve o <code>__func__</code> é o compilador, que cria um texto com o nome da função. Por isso ele só funciona <strong>dentro</strong> de uma função. No uso do dia a dia, ele anda junto com os outros dois.</li>
+</ul>
+
+<p>Para que servem? Para mensagens de depuração que dizem <strong>onde</strong> o problema aconteceu. O <code>assert</code> (aula <a href="testes.html">Testes</a>) usa exatamente esses nomes para mostrar o arquivo, a linha e a função de quem falhou. Na aula <a href="macros.html">Macros com Parâmetros</a> você vai criar uma macro <code>LOG</code> que faz o mesmo.</p>
+
+<div class="note">
+<strong>No editor do guia</strong>, o <code>__DATE__</code> e o <code>__TIME__</code> mostram a hora em <strong>UTC</strong> (o horário de Greenwich, 3 horas à frente de Brasília), porque o compilador roda dentro do navegador sem saber o seu fuso. Na máquina da Ana o fuso é o de São Paulo.
+</div>
+
+<hr>
+
+<h2>5. <code>#error</code> e <code>#warning</code>: recados na hora de compilar</h2>
+
+<h3><code>#error</code>: pare tudo</h3>
+<p>Às vezes, um valor de <code>#define</code> não faz sentido, e é melhor descobrir isso <strong>antes</strong> de o programa existir. A Ana divide uma compra de R$ 120 em parcelas. Zero parcelas daria uma divisão por zero. Com <code>#if</code> (o "se" do pré-processador, assunto da aula <a href="compilacao-condicional.html">Compilação Condicional</a>) e <code>#error</code>, ela impede isso:</p>
+
+<pre class="file" data-file="erro.c">#include &lt;stdio.h&gt;
+
+#define PARCELAS 0
+
+#if PARCELAS == 0
+#error "PARCELAS não pode ser zero: escolha 1 ou mais"
+#endif
+
+int main(void) {
+    printf("Cada parcela: %d\n", 120 / PARCELAS);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra erro.c -o erro
+erro.c:6:2: error: #error "PARCELAS não pode ser zero: escolha 1 ou mais"
+    6 | #error "PARCELAS não pode ser zero: escolha 1 ou mais"
+      |  ^~~~~
+erro.c: In function ‘main’:
+erro.c:10:38: warning: division by zero [-Wdiv-by-zero]
+   10 |     printf("Cada parcela: %d\n", 120 / PARCELAS);
+      |                                      ^</pre>
+
+<dl class="anatomy">
+  <dt>#if PARCELAS == 0</dt><dd>"Se PARCELAS for igual a 0". O pré-processador faz essa conta sozinho, antes de compilar.</dd>
+  <dt>#error "…"</dt><dd>"Erro": mostra a sua mensagem como um erro de compilação. O programa <strong>não é criado</strong>.</dd>
+  <dt>#endif</dt><dd>"Fim do if": fecha o bloco que o <code>#if</code> abriu.</dd>
+</dl>
+
+<p>Repare que o gcc mostrou o seu erro e <strong>continuou lendo</strong> o arquivo: por isso também apareceu o aviso de divisão por zero. Mesmo assim, como houve um erro, o programa <code>erro</code> não foi criado. Com <code>#define PARCELAS 3</code>, o <code>#if</code> é falso, a linha do <code>#error</code> é pulada e tudo compila.</p>
+
+<h3><code>#warning</code>: só um lembrete <span class="versao">C23</span></h3>
+<p><code>#warning</code> ("aviso") mostra a mensagem como um <strong>aviso</strong>: o programa é criado normalmente. Serve para lembretes como "falta terminar isto":</p>
+
+<pre class="file" data-file="aviso.c">#include &lt;stdio.h&gt;
+
+#warning "Falta testar o desconto de aniversário"
+
+int main(void) {
+    printf("Lojinha aberta!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra aviso.c -o aviso
+aviso.c:3:2: warning: #warning "Falta testar o desconto de aniversário" [-Wcpp]
+    3 | #warning "Falta testar o desconto de aniversário"
+      |  ^~~~~~~
+$ ./aviso
+Lojinha aberta!</pre>
+
+<p>O <code>#warning</code> existia há décadas no gcc e no Clang, mas só entrou na norma oficial no <strong>C23</strong>. Com um padrão antigo e a opção <code>-pedantic</code> (que reclama de tudo o que não está na norma), o gcc avisa:</p>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c17 -Wall -Wextra -pedantic aviso.c -o aviso
+aviso.c:3:2: warning: ‘#warning’ before C23 is a GCC extension [-Wpedantic]
+    3 | #warning "Falta testar o desconto de aniversário"
+      |  ^~~~~~~
+aviso.c:3:2: warning: #warning "Falta testar o desconto de aniversário" [-Wcpp]</pre>
+
+<p>"<code>#warning</code> antes do C23 é uma extensão do GCC." Funciona do mesmo jeito; o aviso só lembra que um compilador muito estrito poderia não aceitar.</p>
+
+<h3>Exigir uma versão do C</h3>
+<p>Um uso clássico do <code>#error</code>: recusar um padrão antigo demais. Este programa usa <code>bool</code> sem <code>#include</code>, o que só funciona no C23:</p>
+
+<pre class="file" data-file="versao.c">#include &lt;stdio.h&gt;
+
+#if __STDC_VERSION__ &lt; 202311L
+#error "Este programa precisa de C23 (use -std=c23)"
+#endif
+
+int main(void) {
+    bool aberta = true;
+    printf("Aberta? %d\n", aberta);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c17 -Wall -Wextra versao.c -o versao
+versao.c:4:2: error: #error "Este programa precisa de C23 (use -std=c23)"
+    4 | #error "Este programa precisa de C23 (use -std=c23)"
+      |  ^~~~~
+versao.c: In function ‘main’:
+versao.c:8:5: error: unknown type name ‘bool’
+    8 |     bool aberta = true;
+      |     ^~~~
+   «  … mais algumas linhas sobre bool e true …
+$ gcc -std=c23 -Wall -Wextra versao.c -o versao &amp;&amp; ./versao
+Aberta? 1</pre>
+
+<p>A primeira mensagem já explica o que fazer, em português, escrita por quem fez o programa. Os erros seguintes (sobre <code>bool</code>) são consequência.</p>
+
+<div class="tryc" data-goal="erro:PARCELAS não pode ser zero">
+<p class="try-task"><strong>Missão:</strong> o programa compila e mostra as parcelas. Mude <code>PARCELAS</code> para <code>0</code> e rode: o <code>#error</code> deve impedir a compilação.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define TOTAL 120
+#define PARCELAS 3
+
+#if PARCELAS == 0
+#error "PARCELAS não pode ser zero: escolha 1 ou mais"
+#endif
+
+int main(void) {
+    printf("%d parcelas de R$ %d\n", PARCELAS, TOTAL / PARCELAS);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define TOTAL 120
+#define PARCELAS 0
+
+#if PARCELAS == 0
+#error "PARCELAS não pode ser zero: escolha 1 ou mais"
+#endif
+
+int main(void) {
+    printf("%d parcelas de R$ %d\n", PARCELAS, TOTAL / PARCELAS);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes: <code>#define</code>, <code>const</code>, <code>constexpr</code> ou <code>enum</code>?</h2>
+<p>O <code>#define</code> é o jeito mais antigo de dar nome a um valor, e você vai vê-lo em quase todo código C. Mas não é o único. Os quatro abaixo compilam juntos no gcc 15:</p>
+
+<pre class="file" data-file="juntas.c">#include &lt;stdio.h&gt;
+
+#define PRECO 12
+constexpr int QTD = 3;
+enum { DESCONTO = 2 };
+
+int main(void) {
+    printf("Total: %d\n", PRECO * QTD - DESCONTO);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra juntas.c -o juntas &amp;&amp; ./juntas
+Total: 34</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quem cuida</th><th>Tem tipo?</th><th>Quando usar</th></tr>
+<tr><td><code>#define PRECO 12</code></td><td>pré-processador (troca de texto)</td><td>não</td><td>Código que precisa funcionar em qualquer versão do C; valores usados em <code>#if</code>; textos fixos</td></tr>
+<tr><td><code>const int PRECO = 12;</code></td><td>compilador</td><td>sim</td><td>Valores que não devem mudar dentro de uma função</td></tr>
+<tr><td><code>constexpr int PRECO = 12;</code> <span class="versao">C23</span></td><td>compilador</td><td>sim</td><td>Constantes de verdade, com tipo, conhecidas na compilação (servem até para o tamanho de um array)</td></tr>
+<tr><td><code>enum { PRECO = 12 };</code></td><td>compilador</td><td>sim (<code>int</code>)</td><td>Grupos de números inteiros com nome (veja <a href="enums.html">Enums</a>)</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> Em código novo com C23, prefira <code>constexpr</code> para números: o compilador conhece o tipo, mostra o nome nas mensagens de erro e o depurador enxerga a constante. Use <code>#define</code> quando precisar do pré-processador de verdade: valores testados com <code>#if</code>, macros com parâmetros e compilação condicional. A aula <a href="constantes.html">Constantes</a> compara as formas em detalhe.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>fatal error: lojas.h: Arquivo ou diretório inexistente</code></strong>
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra errado.c -o errado
+errado.c:2:10: fatal error: lojas.h: Arquivo ou diretório inexistente
+    2 | #include "lojas.h"
+      |          ^~~~~~~~~
+compilation terminated.</pre>
+<p><strong>O que significa:</strong> o pré-processador não achou o arquivo do <code>#include</code> (em inglês, <code>No such file or directory</code>; no editor, <code>'lojas.h' file not found</code>). Ou o nome está errado (aqui, <code>lojas.h</code> em vez de <code>loja.h</code>), ou o arquivo está em outra pasta, ou você usou <code>&lt; &gt;</code> para um arquivo seu.</p>
+<p><strong>Como consertar:</strong> confira o nome letra por letra (maiúsculas contam no Linux) e veja com <code>ls</code> se o arquivo está na mesma pasta do <code>.c</code>. Arquivo seu vai entre aspas. Se ele está em outra pasta, use <code>-I pasta</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: invalid type argument of unary ‘*’ (have ‘int’)</code></strong>
+<pre class="file" data-file="pv.c">#include &lt;stdio.h&gt;
+#define PRECO 12;
+
+int main(void) {
+    int total = PRECO * 3;
+    printf("Total: %d\n", total);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra pv.c -o pv
+pv.c: In function ‘main’:
+pv.c:5:23: error: invalid type argument of unary ‘*’ (have ‘int’)
+    5 |     int total = PRECO * 3;
+      |                       ^~~</pre>
+<p><strong>O que significa:</strong> o <code>;</code> do <code>#define</code> entrou no texto de troca. A linha 5 virou <code>int total = 12; * 3;</code>. A primeira parte é uma declaração completa; a segunda, <code>* 3;</code>, não faz sentido. O erro aponta uma linha que parece certa, porque o defeito está lá em cima, na linha do <code>#define</code>.</p>
+<p><strong>Como consertar:</strong> tire o <code>;</code> do <code>#define</code>. Quando um erro esquisito aparece numa linha que usa uma macro, rode <code>gcc -E -P</code> e veja o texto de verdade.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: expected expression before ‘=’ token</code> + <code>note: in expansion of macro ‘PRECO’</code></strong>
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra igual.c -o igual
+igual.c: In function ‘main’:
+igual.c:2:15: error: expected expression before ‘=’ token
+    2 | #define PRECO = 12
+      |               ^
+igual.c:5:17: note: in expansion of macro ‘PRECO’
+    5 |     int total = PRECO * 3;
+      |                 ^~~~~</pre>
+<p><strong>O que significa:</strong> foi escrito <code>#define PRECO = 12</code>, como numa variável. O <code>=</code> virou parte do texto e a linha 5 ficou <code>int total = = 12 * 3;</code>. A <code>note</code> ("nota") ajuda: "na expansão da macro PRECO".</p>
+<p><strong>Como consertar:</strong> <code>#define NOME valor</code>, só com espaço entre o nome e o valor.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: invalid preprocessing directive #inclue; did you mean #include?</code></strong>
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra inclue.c -o inclue
+inclue.c:1:2: error: invalid preprocessing directive #inclue; did you mean #include?
+    1 | #inclue &lt;stdio.h&gt;
+      |  ^~~~~~
+      |  include
+inclue.c: In function ‘main’:
+inclue.c:4:5: error: implicit declaration of function ‘printf’ [-Wimplicit-function-declaration]
+   «  … mais linhas sobre o printf …</pre>
+<p><strong>O que significa:</strong> "diretiva de pré-processamento inválida <code>#inclue</code>; você quis dizer <code>#include</code>?". Uma letra faltando. Como o <code>stdio.h</code> não foi incluído, vêm depois os erros do <code>printf</code>.</p>
+<p><strong>Como consertar:</strong> corrija a diretiva. Regra geral: conserte sempre o <strong>primeiro</strong> erro e compile de novo; muitas vezes os outros somem junto.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘PRECO’ redefined</code></strong>
+<pre class="term" data-cwd="~/c/prepro">$ gcc -std=c23 -Wall -Wextra redef.c -o redef
+redef.c:3:9: warning: ‘PRECO’ redefined
+    3 | #define PRECO 15
+      |         ^~~~~
+redef.c:2:9: note: this is the location of the previous definition
+    2 | #define PRECO 12
+      |         ^~~~~</pre>
+<p><strong>O que significa:</strong> o mesmo nome foi definido duas vezes com valores diferentes ("PRECO redefinido"; a nota diz "esta é a posição da definição anterior"). Vale a última, mas é quase sempre um engano, muitas vezes porque dois arquivos <code>.h</code> definem o mesmo nome.</p>
+<p><strong>Como consertar:</strong> deixe uma definição só. Se a troca é de propósito, faça <code>#undef PRECO</code> antes do novo <code>#define</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>#include &lt;arquivo.h&gt;</code></td><td>Cola um arquivo do sistema (procura em <code>/usr/include</code> e companhia)</td></tr>
+<tr><td><code>#include "arquivo.h"</code></td><td>Cola um arquivo seu (procura primeiro na pasta do <code>.c</code>)</td></tr>
+<tr><td><code>#define NOME valor</code></td><td>Cria uma macro: <code>NOME</code> vira <code>valor</code> daí para baixo</td></tr>
+<tr><td><code>#undef NOME</code></td><td>Apaga a macro</td></tr>
+<tr><td><code>#error "texto"</code></td><td>Para a compilação com a mensagem</td></tr>
+<tr><td><code>#warning "texto"</code> <span class="versao">C23</span></td><td>Mostra um aviso e continua</td></tr>
+<tr><td><code>__FILE__</code>, <code>__LINE__</code>, <code>__func__</code></td><td>Arquivo, linha e função atuais</td></tr>
+<tr><td><code>__DATE__</code>, <code>__TIME__</code></td><td>Data e hora da compilação (texto)</td></tr>
+<tr><td><code>__STDC_VERSION__</code></td><td>Versão do C: <code>202311L</code> no C23</td></tr>
+<tr><td><code>gcc -E arquivo.c</code></td><td>Mostra o resultado do pré-processamento, com marcas de linha</td></tr>
+<tr><td><code>gcc -E -P arquivo.c</code></td><td>O mesmo, sem as marcas</td></tr>
+<tr><td><code>gcc -I pasta …</code></td><td>Acrescenta uma pasta à busca do <code>#include</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Ver o que o compilador recebe</h3>
+<p>Complete o comando que mostra o arquivo depois do pré-processamento, sem as marcas de linha:</p>
+<div class="ex-code">gcc <input data-answer="-E -P|-P -E" aria-label="opções"> mini.c</div>
+</div>
+
+<div class="exercise">
+<h3>2. Incluir um arquivo seu</h3>
+<p>Complete a linha que inclui o arquivo <code>cardapio.h</code>, que está na mesma pasta do seu <code>.c</code>:</p>
+<div class="ex-code">#include <input data-answer="&quot;cardapio.h&quot;" aria-label="arquivo"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Uma constante</h3>
+<p>Complete para que <code>MAX_ALUNOS</code> vire <code>40</code> em todo o arquivo:</p>
+<div class="ex-code"><input data-answer="#define" aria-label="diretiva"> MAX_ALUNOS 40</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Com <code>#define PRECO 12;</code> (com ponto e vírgula), em que se transforma <code>int x = PRECO * 2;</code>?</p>
+<label><input type="radio" name="q4"> <code>int x = 24;</code></label>
+<label><input type="radio" name="q4"> <code>int x = 12 * 2;</code></label>
+<label><input type="radio" name="q4"> <code>int x = 12; * 2;</code>, que dá erro</label>
+<label><input type="radio" name="q4"> <code>int x = PRECO * 2;</code>, porque o <code>;</code> desliga a macro</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Um programa com <code>printf("%s\n", __DATE__);</code> foi compilado em 17 de outubro e rodado em 20 de outubro. O que ele mostra?</p>
+<label><input type="radio" name="q5"> A data de hoje, 20 de outubro</label>
+<label><input type="radio" name="q5"> A data da compilação, 17 de outubro</label>
+<label><input type="radio" name="q5"> Nada: <code>__DATE__</code> só funciona no <code>#if</code></label>
+<label><input type="radio" name="q5"> Um erro de compilação</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual é a diferença entre <code>#error</code> e <code>#warning</code>?</p>
+<label><input type="radio" name="q6"> Nenhuma: os dois só mostram uma mensagem</label>
+<label><input type="radio" name="q6"> <code>#error</code> aparece quando o programa roda; <code>#warning</code>, ao compilar</label>
+<label><input type="radio" name="q6"> <code>#warning</code> para a compilação; <code>#error</code> não</label>
+<label><input type="radio" name="q6"> <code>#error</code> impede que o programa seja criado; <code>#warning</code> só avisa e o programa é criado</label>
+</div>
+
+<h3>Missão final: a etiqueta da lojinha</h3>
+
+<div class="tryc" data-goal="out:Lojinha da Ana,out:4 cadernos x R$ 15 = R$ 60,out:linha 13,semaviso,src:^\s*#define\s+PRECO\s+15\s*$,src:^\s*#define\s+QTD\s+4\s*$">
+<p class="try-task"><strong>Missão:</strong> o programa não compila: faltam as macros <code>PRECO</code> e <code>QTD</code>. Crie as duas com <code>#define</code> no lugar indicado (<code>PRECO</code> vale 15, <code>QTD</code> vale 4, <strong>sem</strong> <code>=</code> e sem <code>;</code>) e rode. A última linha mostra, com <code>__LINE__</code>, a linha em que o <code>printf</code> dela está escrito. Sem avisos.</p>
+<pre class="out">Lojinha da Ana
+4 cadernos x R$ 15 = R$ 60
+(etiqueta impressa pela linha 13 do programa)</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define LOJA "Lojinha da Ana"
+// crie aqui PRECO (15)
+// crie aqui QTD (4)
+
+int main(void) {
+    int total = PRECO * QTD;
+
+    printf("%s\n", LOJA);
+    printf("%d cadernos x R$ %d = R$ %d\n", QTD, PRECO, total);
+
+    printf("(etiqueta impressa pela linha %d do programa)\n", __LINE__);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define LOJA "Lojinha da Ana"
+#define PRECO 15
+#define QTD 4
+
+int main(void) {
+    int total = PRECO * QTD;
+
+    printf("%s\n", LOJA);
+    printf("%d cadernos x R$ %d = R$ %d\n", QTD, PRECO, total);
+
+    printf("(etiqueta impressa pela linha %d do programa)\n", __LINE__);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Se a última linha mostrar outro número, é porque você acrescentou ou apagou linhas acima do <code>printf</code>: o <code>__LINE__</code> sempre conta a linha em que está escrito. Volte o código a ter as macros nas linhas 4 e 5, no lugar dos comentários.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <strong>pré-processador</strong> roda antes do compilador. Ele segue as <strong>diretivas</strong> (linhas com <code>#</code>), apaga os comentários e entrega um texto C puro. Ele não entende C: só copia, troca e apaga texto.</li>
+  <li><code>gcc -E arquivo.c</code> mostra esse texto (<code>-P</code> tira as marcas de linha). É o raio X para entender macros.</li>
+  <li><code>#include</code> cola um arquivo inteiro. <code>&lt;stdio.h&gt;</code> procura nas pastas do sistema; <code>"loja.h"</code> procura primeiro na pasta do <code>.c</code>. Arquivo seu, entre aspas.</li>
+  <li><code>#define NOME valor</code> cria uma macro, sem <code>=</code> e sem <code>;</code>. A troca vale para palavras inteiras, fora de aspas, daí para baixo. <code>#undef</code> apaga.</li>
+  <li><code>__FILE__</code>, <code>__LINE__</code> e <code>__func__</code> dizem onde você está; <code>__DATE__</code> e <code>__TIME__</code> guardam o momento da compilação; <code>__STDC_VERSION__</code> diz a versão do C.</li>
+  <li><code>#error</code> impede a compilação com uma mensagem sua; <code>#warning</code> (oficial no C23) só avisa.</li>
+  <li>Para números em código novo, <code>constexpr</code> (C23) costuma ser melhor que <code>#define</code>. A seguir: <a href="macros.html">Macros com Parâmetros</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
