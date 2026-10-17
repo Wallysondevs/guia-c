@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Árvores Binárias — nós, raiz, folhas e árvore de busca | Guia C</title>
+<meta name="description" content="Árvores binárias em C para quem nunca programou: o nó com esq e dir, raiz e folhas, percorrer em ordem, pré-ordem e pós-ordem com recursão, a árvore de busca (inserir, buscar, mínimo, máximo, altura), liberar com valgrind limpo, a árvore torta e os erros reais (esquecer o retorno, esquecer o caso base, liberar na ordem errada), com saídas do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Árvores Binárias</span></h1>
+
+<p class="intro">Numa <a href="listas-ligadas.html">lista ligada</a>, cada nó aponta para <strong>um</strong> próximo, e procurar um valor obriga a olhar um por um. Numa <strong>árvore binária</strong>, cada nó aponta para <strong>dois</strong>: um à esquerda e um à direita. Com uma regra simples (os menores à esquerda, os maiores à direita), a árvore permite achar um valor entre mil olhando só uns vinte. Nesta aula você vai montar árvores com <code>malloc</code>, percorrê-las com <a href="recursao.html">recursão</a>, inserir, buscar e liberar tudo sem vazar memória.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma árvore binária e o que são <strong>raiz</strong>, <strong>filhos</strong>, <strong>folhas</strong> e <strong>altura</strong>.</li>
+  <li>Como escrever o nó, com os ponteiros <code>esq</code> e <code>dir</code>.</li>
+  <li>Os três jeitos de <strong>percorrer</strong> a árvore: em ordem, pré-ordem e pós-ordem.</li>
+  <li>O que é uma <strong>árvore de busca</strong> e como <strong>inserir</strong> e <strong>buscar</strong> nela.</li>
+  <li>Como achar o menor, o maior, contar os nós e medir a altura.</li>
+  <li>Por que a árvore precisa ser liberada "de baixo para cima", e o que é uma árvore <strong>torta</strong>.</li>
+  <li>Os erros clássicos: esquecer o retorno de <code>inserir</code>, esquecer o caso base, dar <code>free</code> no pai antes dos filhos.</li>
+</ul>
+</div>
+
+<p>Esta aula usa <a href="structs-ponteiros.html">structs e a seta <code>-&gt;</code></a>, <a href="malloc-free.html">malloc e free</a>, <a href="recursao.html">recursão</a> e <a href="listas-ligadas.html">listas ligadas</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o jogo do "maior ou menor"</h2>
+<p>A Ana pensa num número de 1 a 100, e você tenta adivinhar. A cada palpite, ela só responde "é maior" ou "é menor". Quem joga bem começa pelo 50: se ela disser "menor", nem precisa pensar nos números de 51 a 100. Depois tenta o 25, e assim por diante. A cada pergunta, metade das possibilidades some (o <a href="projeto-adivinhacao.html">Projeto Adivinhação</a> é esse jogo).</p>
+<p>Uma <strong>árvore binária de busca</strong> guarda os valores já organizados para esse jogo. Cada nó guarda um valor e tem dois "caminhos": à <strong>esquerda</strong> ficam os menores, à <strong>direita</strong> os maiores. Para procurar, você começa no topo e, a cada nó, decide: "é este? é menor? é maior?".</p>
+
+<figure>
+<svg viewBox="0 0 600 222" role="img" aria-label="Árvore de busca com 50 na raiz, 30 e 70 abaixo dela e 20, 40, 60 e 80 nas folhas" style="width:100%;max-width:600px;height:auto;display:block"><title>Árvore de busca com 50 na raiz, 30 e 70 abaixo dela e 20, 40, 60 e 80 nas folhas</title>
+<line x1="300" y1="36" x2="160" y2="106" style="stroke:var(--text);stroke-width:1.6"/><line x1="300" y1="36" x2="440" y2="106" style="stroke:var(--text);stroke-width:1.6"/><line x1="160" y1="106" x2="90" y2="176" style="stroke:var(--text);stroke-width:1.6"/><line x1="160" y1="106" x2="230" y2="176" style="stroke:var(--text);stroke-width:1.6"/><line x1="440" y1="106" x2="370" y2="176" style="stroke:var(--text);stroke-width:1.6"/><line x1="440" y1="106" x2="510" y2="176" style="stroke:var(--text);stroke-width:1.6"/><circle cx="300" cy="36" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="300" y="41" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">50</text><circle cx="160" cy="106" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="160" y="111" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="440" cy="106" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="440" y="111" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">70</text><circle cx="90" cy="176" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="90" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><circle cx="230" cy="176" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="230" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">40</text><circle cx="370" cy="176" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="370" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">60</text><circle cx="510" cy="176" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="510" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">80</text><text x="334" y="32" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:13px;text-anchor:start">raiz</text><text x="90" y="212" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">folha</text><text x="230" y="212" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">folha</text><text x="370" y="212" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">folha</text><text x="510" y="212" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">folha</text><text x="160" y="64" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">menores que 50</text><text x="440" y="64" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">maiores que 50</text>
+</svg>
+<figcaption>Uma árvore binária de busca com sete números. O 50 está no topo (a <strong>raiz</strong>). Tudo o que fica à esquerda dele é menor que 50; tudo à direita é maior. A mesma regra vale em cada nó: à esquerda do 70 está o 60, à direita o 80. Os nós de baixo, sem filhos, são as <strong>folhas</strong>.</figcaption>
+</figure>
+
+<p>As árvores da computação crescem de cabeça para baixo: a raiz fica em cima e as folhas embaixo. Os nomes vêm da árvore genealógica e da árvore de verdade:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que é</th><th>Na figura</th></tr>
+<tr><td><strong>Nó</strong></td><td>Cada caixinha com um valor (em inglês, <em>node</em>)</td><td>Os sete círculos</td></tr>
+<tr><td><strong>Raiz</strong></td><td>O nó do topo, por onde tudo começa (<em>root</em>)</td><td>50</td></tr>
+<tr><td><strong>Filho</strong> esquerdo e direito</td><td>Os (no máximo) dois nós logo abaixo de um nó. "Binária" quer dizer isso: <strong>dois</strong> filhos, no máximo</td><td>30 e 70 são filhos do 50</td></tr>
+<tr><td><strong>Pai</strong></td><td>O nó logo acima</td><td>30 é o pai do 20 e do 40</td></tr>
+<tr><td><strong>Folha</strong></td><td>Nó sem nenhum filho (<em>leaf</em>)</td><td>20, 40, 60 e 80</td></tr>
+<tr><td><strong>Subárvore</strong></td><td>Um nó com tudo o que está abaixo dele: é uma árvore também</td><td>30, 20 e 40 formam a subárvore esquerda do 50</td></tr>
+<tr><td><strong>Altura</strong></td><td>Quantos nós há no caminho mais comprido da raiz até uma folha</td><td>3 (50 → 30 → 20, por exemplo)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O nó: dois ponteiros em vez de um</h2>
+<p>O nó da lista ligada tinha um valor e um <code>prox</code>. O nó da árvore tem um valor e <strong>dois</strong> ponteiros, um para cada filho. Quando um filho não existe, o ponteiro vale <code>NULL</code>. Para começar, três nós montados à mão, sem <code>malloc</code>:</p>
+
+<pre class="file" data-file="arvore_mao.c">#include &lt;stdio.h&gt;
+
+typedef struct No {
+    int valor;
+    struct No *esq;
+    struct No *dir;
+} No;
+
+int main(void) {
+    No a = {30, NULL, NULL};
+    No b = {70, NULL, NULL};
+    No raiz = {50, &amp;a, &amp;b};
+
+    printf("Raiz: %d\n", raiz.valor);
+    printf("Filho da esquerda: %d\n", raiz.esq-&gt;valor);
+    printf("Filho da direita: %d\n", raiz.dir-&gt;valor);
+    printf("O 30 tem filhos? %s\n", a.esq == NULL &amp;&amp; a.dir == NULL ? "não, é uma folha" : "sim");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra arvore_mao.c -o arvore_mao
+$ ./arvore_mao
+Raiz: 50
+Filho da esquerda: 30
+Filho da direita: 70
+O 30 tem filhos? não, é uma folha</pre>
+
+<dl class="anatomy">
+  <dt>typedef struct No { … } No;</dt><dd>Uma struct que, como na lista ligada, aponta para outras do mesmo tipo. Dentro dela é preciso escrever <code>struct No</code>, porque o apelido <code>No</code> só existe depois do <code>;</code> final (veja <a href="typedef.html">typedef</a>).</dd>
+  <dt>struct No *esq; struct No *dir;</dt><dd>Os dois filhos: <code>esq</code> (esquerda) e <code>dir</code> (direita). Em código em inglês você vai ver <code>left</code> e <code>right</code>.</dd>
+  <dt>No a = {30, NULL, NULL};</dt><dd>Um nó com o valor 30 e sem filhos: os dois ponteiros em <code>NULL</code>. Os valores entre chaves seguem a ordem dos campos.</dd>
+  <dt>No raiz = {50, &amp;a, &amp;b};</dt><dd>O nó 50 aponta para <code>a</code> à esquerda e para <code>b</code> à direita. Ele é a <strong>raiz</strong>: dele dá para chegar a todos os outros.</dd>
+  <dt>raiz.esq-&gt;valor</dt><dd><code>raiz.esq</code> é um ponteiro (o endereço de <code>a</code>); a seta segue o ponteiro e pega o campo <code>valor</code> lá dentro: 30.</dd>
+  <dt>a.esq == NULL &amp;&amp; a.dir == NULL</dt><dd>O teste de <strong>folha</strong>: nenhum dos dois filhos existe.</dd>
+</dl>
+
+<figure>
+<svg viewBox="0 0 300 160" role="img" aria-label="Nó 50 com o 30 à esquerda e o 70 à direita" style="width:100%;max-width:300px;height:auto;display:block"><title>Nó 50 com o 30 à esquerda e o 70 à direita</title>
+<line x1="150" y1="36" x2="70" y2="116" style="stroke:var(--text);stroke-width:1.6"/><line x1="150" y1="36" x2="230" y2="116" style="stroke:var(--text);stroke-width:1.6"/><circle cx="150" cy="36" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="150" y="41" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">50</text><circle cx="70" cy="116" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="70" y="121" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="230" cy="116" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="230" y="121" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">70</text><text x="184" y="32" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:13px;text-anchor:start">raiz</text><text x="70" y="154" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">esq</text><text x="230" y="154" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:middle">dir</text>
+</svg>
+<figcaption>Os três nós do <code>arvore_mao.c</code>. As linhas são os ponteiros <code>esq</code> e <code>dir</code> do 50. O 30 e o 70 também têm <code>esq</code> e <code>dir</code>, mas valem <code>NULL</code>, e por isso não aparecem linhas saindo deles.</figcaption>
+</figure>
+
+<p>Nós montados à mão servem para entender, mas uma árvore de verdade cresce enquanto o programa roda. Daqui em diante, cada nó nasce com <code>malloc</code>.</p>
+
+<hr>
+
+<h2>2. Percorrer a árvore: recursão</h2>
+<p>Para mostrar uma lista ligada, um laço <code>while</code> anda de nó em nó. Numa árvore isso não basta: em cada nó o caminho se divide em dois, e é preciso visitar os dois lados. O jeito natural é a <a href="recursao.html">recursão</a>: "mostrar a árvore" é mostrar a subárvore da esquerda, mostrar a raiz e mostrar a subárvore da direita. E cada subárvore é mostrada do mesmo jeito.</p>
+
+<pre class="file" data-file="percursos.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct No {
+    int valor;
+    struct No *esq;
+    struct No *dir;
+} No;
+
+No *novo(int valor, No *esq, No *dir) {
+    No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;esq = esq;
+    n-&gt;dir = dir;
+    return n;
+}
+
+void em_ordem(const No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    em_ordem(raiz-&gt;esq);
+    printf("%d ", raiz-&gt;valor);
+    em_ordem(raiz-&gt;dir);
+}
+
+void pre_ordem(const No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    printf("%d ", raiz-&gt;valor);
+    pre_ordem(raiz-&gt;esq);
+    pre_ordem(raiz-&gt;dir);
+}
+
+void pos_ordem(const No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    pos_ordem(raiz-&gt;esq);
+    pos_ordem(raiz-&gt;dir);
+    printf("%d ", raiz-&gt;valor);
+}
+
+void liberar(No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    liberar(raiz-&gt;esq);
+    liberar(raiz-&gt;dir);
+    free(raiz);
+}
+
+int main(void) {
+    No *raiz = novo(50,
+                    novo(30, novo(20, NULL, NULL), novo(40, NULL, NULL)),
+                    novo(70, novo(60, NULL, NULL), novo(80, NULL, NULL)));
+
+    printf("Em ordem:  ");
+    em_ordem(raiz);
+    printf("\nPré-ordem: ");
+    pre_ordem(raiz);
+    printf("\nPós-ordem: ");
+    pos_ordem(raiz);
+    printf("\n");
+
+    liberar(raiz);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g percursos.c -o percursos
+$ ./percursos
+Em ordem:  20 30 40 50 60 70 80
+Pré-ordem: 50 30 20 40 70 60 80
+Pós-ordem: 20 40 30 60 80 70 50
+$ valgrind -q --leak-check=full ./percursos
+Em ordem:  20 30 40 50 60 70 80
+Pré-ordem: 50 30 20 40 70 60 80
+Pós-ordem: 20 40 30 60 80 70 50</pre>
+
+<dl class="anatomy">
+  <dt>No *novo(int valor, No *esq, No *dir)</dt><dd>Cria um nó no heap com <code>malloc</code> e já liga os filhos. Se faltar memória, avisa no <code>stderr</code> e encerra (veja <a href="exit.html">exit</a>).</dd>
+  <dt>novo(50, novo(30, …), novo(70, …))</dt><dd>As chamadas aninhadas desenham a árvore: o C cria primeiro os filhos (os argumentos) e depois o pai, que recebe os endereços deles. É a mesma árvore da figura do começo.</dd>
+  <dt>if (raiz == NULL) return;</dt><dd>O <strong>caso base</strong> da recursão: uma árvore vazia não tem nada para mostrar. Toda chamada que chega a um filho que não existe para aqui e volta.</dd>
+  <dt>em_ordem(raiz-&gt;esq); printf(…); em_ordem(raiz-&gt;dir);</dt><dd><strong>Em ordem</strong> (<em>in-order</em>): esquerda, raiz, direita. Numa árvore de busca, sai tudo <strong>em ordem crescente</strong>.</dd>
+  <dt>pre_ordem</dt><dd><strong>Pré-ordem</strong> (<em>pre-order</em>): a raiz <strong>antes</strong> dos filhos. É a ordem em que alguém "copiaria" a árvore: primeiro o pai, depois os filhos.</dd>
+  <dt>pos_ordem</dt><dd><strong>Pós-ordem</strong> (<em>post-order</em>): a raiz <strong>depois</strong> dos filhos. É a ordem certa para <strong>liberar</strong>: os filhos vão embora antes do pai.</dd>
+  <dt>liberar(raiz-&gt;esq); liberar(raiz-&gt;dir); free(raiz);</dt><dd>Uma pós-ordem que, no lugar de mostrar, devolve a memória. O <code>valgrind -q</code> não reclamou de nada: os 7 nós foram liberados.</dd>
+</dl>
+
+<p>A única diferença entre as três funções é <strong>onde fica o <code>printf</code></strong>: antes, entre ou depois das duas chamadas. Acompanhe a em ordem no 30: ela primeiro desce para o 20 (que não tem filhos e é mostrado), volta e mostra o 30, desce para o 40 e mostra o 40. Só então volta para o 50.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Percurso</th><th>Ordem das três partes</th><th>Resultado nesta árvore</th><th>Para que serve</th></tr>
+<tr><td>Em ordem</td><td>esquerda, <strong>raiz</strong>, direita</td><td><code>20 30 40 50 60 70 80</code></td><td>Listar os valores em ordem crescente</td></tr>
+<tr><td>Pré-ordem</td><td><strong>raiz</strong>, esquerda, direita</td><td><code>50 30 20 40 70 60 80</code></td><td>Copiar ou salvar a árvore (inserir nessa ordem reconstrói a mesma árvore)</td></tr>
+<tr><td>Pós-ordem</td><td>esquerda, direita, <strong>raiz</strong></td><td><code>20 40 30 60 80 70 50</code></td><td>Liberar a árvore; calcular algo que depende dos filhos (altura, tamanho)</td></tr>
+</table>
+</div>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e confira as três ordens. Depois troque o <code>"%d "</code> da <code>em_ordem</code> por <code>"[%d] "</code> e mude a ordem das linhas dela para <strong>direita, raiz, esquerda</strong>: o que acontece com os números? (Eles saem do maior para o menor.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct No {
+    int valor;
+    struct No *esq;
+    struct No *dir;
+} No;
+
+No *novo(int valor, No *esq, No *dir) {
+    No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        fprintf(stderr, "Sem memória\n");
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;esq = esq;
+    n-&gt;dir = dir;
+    return n;
+}
+
+void em_ordem(const No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    em_ordem(raiz-&gt;esq);
+    printf("%d ", raiz-&gt;valor);
+    em_ordem(raiz-&gt;dir);
+}
+
+void pre_ordem(const No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    printf("%d ", raiz-&gt;valor);
+    pre_ordem(raiz-&gt;esq);
+    pre_ordem(raiz-&gt;dir);
+}
+
+void pos_ordem(const No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    pos_ordem(raiz-&gt;esq);
+    pos_ordem(raiz-&gt;dir);
+    printf("%d ", raiz-&gt;valor);
+}
+
+void liberar(No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    liberar(raiz-&gt;esq);
+    liberar(raiz-&gt;dir);
+    free(raiz);
+}
+
+int main(void) {
+    No *raiz = novo(50,
+                    novo(30, novo(20, NULL, NULL), novo(40, NULL, NULL)),
+                    novo(70, novo(60, NULL, NULL), novo(80, NULL, NULL)));
+
+    printf("Em ordem:  ");
+    em_ordem(raiz);
+    printf("\nPré-ordem: ");
+    pre_ordem(raiz);
+    printf("\nPós-ordem: ");
+    pos_ordem(raiz);
+    printf("\n");
+
+    liberar(raiz);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Árvore de busca: a regra e o <code>inserir</code></h2>
+<p>Até aqui, quem decidiu onde cada nó ficava foi você, à mão. Numa <strong>árvore binária de busca</strong> (em inglês, <em>binary search tree</em>, ou BST), quem decide é uma regra:</p>
+<ul>
+  <li>Tudo o que está na subárvore <strong>esquerda</strong> de um nó é <strong>menor</strong> que ele.</li>
+  <li>Tudo o que está na subárvore <strong>direita</strong> é <strong>maior</strong>.</li>
+</ul>
+<p>Para inserir um número novo, você faz o jogo do "maior ou menor": começa na raiz e desce para a esquerda ou para a direita até achar um lugar vazio (<code>NULL</code>). O nó novo nasce ali, sempre como folha.</p>
+
+<pre class="file" data-file="inserir.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct No {
+    int valor;
+    struct No *esq;
+    struct No *dir;
+} No;
+
+No *inserir(No *raiz, int valor) {
+    if (raiz == NULL) {
+        No *n = malloc(sizeof *n);
+        if (n == NULL) {
+            fprintf(stderr, "Sem memória\n");
+            exit(1);
+        }
+        n-&gt;valor = valor;
+        n-&gt;esq = NULL;
+        n-&gt;dir = NULL;
+        return n;
+    }
+    if (valor &lt; raiz-&gt;valor) {
+        raiz-&gt;esq = inserir(raiz-&gt;esq, valor);
+    } else if (valor &gt; raiz-&gt;valor) {
+        raiz-&gt;dir = inserir(raiz-&gt;dir, valor);
+    }
+    return raiz;
+}
+
+void em_ordem(const No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    em_ordem(raiz-&gt;esq);
+    printf("%d ", raiz-&gt;valor);
+    em_ordem(raiz-&gt;dir);
+}
+
+void liberar(No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    liberar(raiz-&gt;esq);
+    liberar(raiz-&gt;dir);
+    free(raiz);
+}
+
+int main(void) {
+    int numeros[] = {50, 30, 70, 20, 40, 60, 80, 40};
+    int n = sizeof numeros / sizeof numeros[0];
+    No *raiz = NULL;
+
+    for (int i = 0; i &lt; n; i++) {
+        raiz = inserir(raiz, numeros[i]);
+    }
+    printf("Em ordem: ");
+    em_ordem(raiz);
+    printf("\n");
+    printf("Raiz: %d, esquerda: %d, direita: %d\n",
+           raiz-&gt;valor, raiz-&gt;esq-&gt;valor, raiz-&gt;dir-&gt;valor);
+
+    liberar(raiz);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra inserir.c -o inserir
+$ ./inserir
+Em ordem: 20 30 40 50 60 70 80
+Raiz: 50, esquerda: 30, direita: 70</pre>
+
+<dl class="anatomy">
+  <dt>No *inserir(No *raiz, int valor)</dt><dd>Recebe uma árvore (a raiz dela) e um valor, e <strong>devolve a raiz</strong> da árvore depois de inserir. Por que devolver? Porque, se a árvore estava vazia, a raiz muda: passa de <code>NULL</code> para o nó novo.</dd>
+  <dt>if (raiz == NULL) { … return n; }</dt><dd>Achou o lugar vazio: cria o nó, sem filhos, e o devolve. Ele vira a raiz desta (sub)árvore.</dd>
+  <dt>if (valor &lt; raiz-&gt;valor) raiz-&gt;esq = inserir(raiz-&gt;esq, valor);</dt><dd>É menor: o lugar dele está na subárvore esquerda. A chamada recursiva insere lá e devolve a raiz daquela subárvore, que é guardada de volta em <code>raiz-&gt;esq</code>. Se a esquerda era <code>NULL</code>, agora ela aponta para o nó novo.</dd>
+  <dt>else if (valor &gt; raiz-&gt;valor) …</dt><dd>É maior: mesma coisa, pela direita.</dd>
+  <dt>(e se for igual?)</dt><dd>Nenhum dos dois <code>if</code> vale e nada acontece: <strong>valores repetidos são ignorados</strong>. O segundo 40 do array não entrou. Se você quiser contar repetições, guarde um contador no nó (é a missão final).</dd>
+  <dt>raiz = inserir(raiz, numeros[i]);</dt><dd>Quem chama <strong>sempre guarda</strong> o retorno. No primeiro número, <code>raiz</code> era <code>NULL</code> e passa a apontar para o 50. Esquecer este <code>raiz =</code> é o erro mais comum (veja <a href="#errado">Quando dá errado</a>).</dd>
+</dl>
+
+<p>Repare na primeira linha da saída: os números entraram fora de ordem (50, 30, 70, 20…), mas a em ordem os mostrou <strong>ordenados</strong>. A regra da árvore garante isso. Veja como o 65 entraria nessa árvore:</p>
+
+<figure>
+<svg viewBox="0 0 600 290" role="img" aria-label="Inserindo o 65: passa pelo 50, pelo 70 e pelo 60 e vira filho da direita do 60" style="width:100%;max-width:600px;height:auto;display:block"><title>Inserindo o 65: passa pelo 50, pelo 70 e pelo 60 e vira filho da direita do 60</title>
+<line x1="300" y1="36" x2="160" y2="106" style="stroke:var(--text);stroke-width:1.6"/><line x1="300" y1="36" x2="440" y2="106" style="stroke:var(--accent);stroke-width:3"/><line x1="160" y1="106" x2="90" y2="176" style="stroke:var(--text);stroke-width:1.6"/><line x1="160" y1="106" x2="230" y2="176" style="stroke:var(--text);stroke-width:1.6"/><line x1="440" y1="106" x2="370" y2="176" style="stroke:var(--accent);stroke-width:3"/><line x1="440" y1="106" x2="510" y2="176" style="stroke:var(--text);stroke-width:1.6"/><line x1="370" y1="176" x2="410" y2="246" style="stroke:var(--text);stroke-width:1.6"/><circle cx="300" cy="36" r="21" style="fill:var(--note-bg);stroke:var(--accent);stroke-width:3"/><text x="300" y="41" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">50</text><circle cx="160" cy="106" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="160" y="111" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="440" cy="106" r="21" style="fill:var(--note-bg);stroke:var(--accent);stroke-width:3"/><text x="440" y="111" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">70</text><circle cx="90" cy="176" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="90" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><circle cx="230" cy="176" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="230" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">40</text><circle cx="370" cy="176" r="21" style="fill:var(--note-bg);stroke:var(--accent);stroke-width:3"/><text x="370" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">60</text><circle cx="510" cy="176" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="510" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">80</text><circle cx="410" cy="246" r="21" style="fill:var(--tip-bg);stroke:var(--tip-border);stroke-width:2"/><text x="410" y="251" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">65</text><text x="334" y="32" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:13px;text-anchor:start">65 &gt; 50</text><text x="474" y="102" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:13px;text-anchor:start">65 &lt; 70</text><text x="404" y="182" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:13px;text-anchor:start">65 &gt; 60</text><text x="444" y="251" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:start">novo</text>
+</svg>
+<figcaption>Inserir o 65: maior que 50 (direita), menor que 70 (esquerda), maior que 60 (direita). O <code>dir</code> do 60 era <code>NULL</code>: é ali que o 65 nasce (verde). Foram 3 comparações, e nenhum outro nó saiu do lugar.</figcaption>
+</figure>
+
+<div class="note">
+<strong>A ordem de inserção muda o formato</strong>
+<p>A primeira chave inserida vira a raiz para sempre. Inserindo os mesmos sete números na ordem <code>20, 30, 40, 50, 60, 70, 80</code>, a em ordem continua dando <code>20 30 40 50 60 70 80</code>, mas a árvore fica com outro formato: cada número à direita do anterior. A seção <a href="#torta">Árvore torta</a> mostra por que isso é um problema.</p>
+</div>
+
+<hr>
+
+<h2>4. Buscar: o caminho de um só lado</h2>
+<p>Para procurar, não é preciso visitar a árvore toda: a cada nó, a regra diz para que lado ir, e o outro lado inteiro é descartado. Como só um caminho é seguido, dá para usar um laço <code>while</code>, sem recursão. Esta versão mostra cada nó olhado:</p>
+
+<pre class="file" data-file="buscar.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct No { … } No;          // igual ao inserir.c
+No *inserir(No *raiz, int valor) { … }
+void liberar(No *raiz) { … }
+
+bool buscar(const No *raiz, int procurado) {
+    int passos = 0;
+    const No *atual = raiz;
+    while (atual != NULL) {
+        passos++;
+        printf("  olhou o %d\n", atual-&gt;valor);
+        if (procurado == atual-&gt;valor) {
+            printf("  achou em %d passos\n", passos);
+            return true;
+        }
+        if (procurado &lt; atual-&gt;valor) {
+            atual = atual-&gt;esq;
+        } else {
+            atual = atual-&gt;dir;
+        }
+    }
+    printf("  não está na árvore (%d passos)\n", passos);
+    return false;
+}
+
+int main(void) {
+    int numeros[] = {50, 30, 70, 20, 40, 60, 80};
+    No *raiz = NULL;
+    for (int i = 0; i &lt; 7; i++) {
+        raiz = inserir(raiz, numeros[i]);
+    }
+    printf("Procurando 60:\n");
+    buscar(raiz, 60);
+    printf("Procurando 45:\n");
+    buscar(raiz, 45);
+    liberar(raiz);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra buscar.c -o buscar
+$ ./buscar
+Procurando 60:
+  olhou o 50
+  olhou o 70
+  olhou o 60
+  achou em 3 passos
+Procurando 45:
+  olhou o 50
+  olhou o 30
+  olhou o 40
+  não está na árvore (3 passos)</pre>
+
+<dl class="anatomy">
+  <dt>const No *atual = raiz;</dt><dd>Um ponteiro que desce pela árvore, como o <code>atual</code> que andava pela lista ligada. O <code>const</code> diz que a busca só olha, sem mudar nada.</dd>
+  <dt>while (atual != NULL)</dt><dd>Desce até cair num filho que não existe. Se chegar ao <code>NULL</code>, o valor não está na árvore: se estivesse, teria de estar justamente ali.</dd>
+  <dt>if (procurado == atual-&gt;valor)</dt><dd>Achou: devolve <code>true</code>.</dd>
+  <dt>atual = atual-&gt;esq; / atual = atual-&gt;dir;</dt><dd>Escolhe um lado e esquece o outro. Procurando o 45, depois de ver que ele é menor que 50, os nós 70, 60 e 80 nem são olhados.</dd>
+</dl>
+
+<figure>
+<svg viewBox="0 0 620 222" role="img" aria-label="O caminho da busca pelo 60: 50, depois 70, depois 60" style="width:100%;max-width:620px;height:auto;display:block"><title>O caminho da busca pelo 60: 50, depois 70, depois 60</title>
+<line x1="300" y1="36" x2="160" y2="106" style="stroke:var(--text);stroke-width:1.6"/><line x1="300" y1="36" x2="440" y2="106" style="stroke:var(--accent);stroke-width:3"/><line x1="160" y1="106" x2="90" y2="176" style="stroke:var(--text);stroke-width:1.6"/><line x1="160" y1="106" x2="230" y2="176" style="stroke:var(--text);stroke-width:1.6"/><line x1="440" y1="106" x2="370" y2="176" style="stroke:var(--accent);stroke-width:3"/><line x1="440" y1="106" x2="510" y2="176" style="stroke:var(--text);stroke-width:1.6"/><circle cx="300" cy="36" r="21" style="fill:var(--note-bg);stroke:var(--accent);stroke-width:3"/><text x="300" y="41" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">50</text><circle cx="160" cy="106" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="160" y="111" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="440" cy="106" r="21" style="fill:var(--note-bg);stroke:var(--accent);stroke-width:3"/><text x="440" y="111" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">70</text><circle cx="90" cy="176" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="90" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><circle cx="230" cy="176" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="230" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">40</text><circle cx="370" cy="176" r="21" style="fill:var(--note-bg);stroke:var(--accent);stroke-width:3"/><text x="370" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">60</text><circle cx="510" cy="176" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="510" y="181" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">80</text><text x="334" y="32" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:13px;text-anchor:start">60 &gt; 50: direita</text><text x="474" y="102" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:13px;text-anchor:start">60 &lt; 70: esquerda</text><text x="404" y="182" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:13px;text-anchor:start">achou!</text>
+</svg>
+<figcaption>A busca pelo 60 olha só três nós: 50, 70 e 60 (em destaque). Numa lista ligada com os mesmos sete números em ordem crescente, achar o 60 levaria 5 passos; achar o 80, 7.</figcaption>
+</figure>
+
+<p>Com 7 nós a diferença é pequena. Com mais nós ela cresce depressa: uma árvore "cheia" de altura 10 guarda até 1023 valores, e qualquer busca olha no máximo 10. Uma lista com 1023 valores pode precisar de 1023 passos. Essa é a mesma ideia da <a href="busca.html">busca binária</a> num array ordenado.</p>
+
+<hr>
+
+<h2>5. Menor, maior, quantos e altura</h2>
+<p>Duas perguntas se respondem com um laço, seguindo um lado só. Outras duas precisam olhar a árvore inteira e ficam bonitas com recursão:</p>
+
+<pre class="file" data-file="medidas.c">…                                    // No, inserir e liberar como antes
+
+int contar(const No *raiz) {
+    if (raiz == NULL) {
+        return 0;
+    }
+    return 1 + contar(raiz-&gt;esq) + contar(raiz-&gt;dir);
+}
+
+int altura(const No *raiz) {
+    if (raiz == NULL) {
+        return 0;
+    }
+    int e = altura(raiz-&gt;esq);
+    int d = altura(raiz-&gt;dir);
+    return 1 + (e &gt; d ? e : d);
+}
+
+int minimo(const No *raiz) {
+    while (raiz-&gt;esq != NULL) {
+        raiz = raiz-&gt;esq;
+    }
+    return raiz-&gt;valor;
+}
+
+int maximo(const No *raiz) {
+    while (raiz-&gt;dir != NULL) {
+        raiz = raiz-&gt;dir;
+    }
+    return raiz-&gt;valor;
+}
+
+int main(void) {
+    int numeros[] = {50, 30, 70, 20, 40, 60, 80, 65};
+    No *raiz = NULL;
+    for (int i = 0; i &lt; 8; i++) {
+        raiz = inserir(raiz, numeros[i]);
+    }
+    printf("Nós: %d\n", contar(raiz));
+    printf("Altura: %d\n", altura(raiz));
+    printf("Menor: %d\n", minimo(raiz));
+    printf("Maior: %d\n", maximo(raiz));
+    liberar(raiz);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra medidas.c -o medidas
+$ ./medidas
+Nós: 8
+Altura: 4
+Menor: 20
+Maior: 80</pre>
+
+<dl class="anatomy">
+  <dt>contar: 1 + contar(raiz-&gt;esq) + contar(raiz-&gt;dir)</dt><dd>Quantos nós tem a árvore? O nó atual (1) mais os da esquerda mais os da direita. A árvore vazia tem 0.</dd>
+  <dt>altura: 1 + (e &gt; d ? e : d)</dt><dd>A altura é o nó atual mais a altura do lado <strong>mais alto</strong> (o <a href="ternario.html">ternário</a> escolhe o maior entre <code>e</code> e <code>d</code>). O 65 inserido debaixo do 60 deixou a árvore com altura 4: 50 → 70 → 60 → 65.</dd>
+  <dt>minimo: while (raiz-&gt;esq != NULL)</dt><dd>O menor valor é o que está <strong>mais à esquerda</strong>: desça pela esquerda até não dar mais. O maior, pelo mesmo raciocínio, está mais à direita.</dd>
+  <dt>(cuidado com a árvore vazia)</dt><dd><code>minimo</code> e <code>maximo</code> leem <code>raiz-&gt;esq</code> logo na primeira volta. Com uma árvore vazia (<code>NULL</code>), isso é falha de segmentação. Quem chama precisa conferir antes, ou a função pode devolver um <code>bool</code> e o valor por ponteiro, como o <code>pop</code> da aula <a href="pilhas-filas.html">Pilhas e Filas</a>.</dd>
+</dl>
+
+<div class="tryc" data-goal="out:Soma: 350">
+<p class="try-task"><strong>Missão:</strong> complete a função <code>somar</code>, que devolve a soma de todos os valores da árvore. Use o mesmo molde do <code>contar</code>: a árvore vazia soma 0; senão, é o valor da raiz mais a soma da esquerda mais a soma da direita. A saída deve ser:</p>
+<pre class="out">Soma: 350</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct No {
+    int valor;
+    struct No *esq;
+    struct No *dir;
+} No;
+
+No *novo(int valor, No *esq, No *dir) {
+    No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;esq = esq;
+    n-&gt;dir = dir;
+    return n;
+}
+
+int somar(const No *raiz) {
+    // COMPLETE: árvore vazia soma 0;
+    // senão, é o valor da raiz + a soma da esquerda + a soma da direita
+    (void)raiz;
+    return 0;
+}
+
+int main(void) {
+    No *raiz = novo(50,
+                    novo(30, novo(20, NULL, NULL), novo(40, NULL, NULL)),
+                    novo(70, novo(60, NULL, NULL), novo(80, NULL, NULL)));
+    printf("Soma: %d\n", somar(raiz));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct No {
+    int valor;
+    struct No *esq;
+    struct No *dir;
+} No;
+
+No *novo(int valor, No *esq, No *dir) {
+    No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        exit(1);
+    }
+    n-&gt;valor = valor;
+    n-&gt;esq = esq;
+    n-&gt;dir = dir;
+    return n;
+}
+
+int somar(const No *raiz) {
+    if (raiz == NULL) {
+        return 0;
+    }
+    return raiz-&gt;valor + somar(raiz-&gt;esq) + somar(raiz-&gt;dir);
+}
+
+int main(void) {
+    No *raiz = novo(50,
+                    novo(30, novo(20, NULL, NULL), novo(40, NULL, NULL)),
+                    novo(70, novo(60, NULL, NULL), novo(80, NULL, NULL)));
+    printf("Soma: %d\n", somar(raiz));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>6. Liberar: dos filhos para o pai</h2>
+<p>Cada nó nasceu de um <code>malloc</code>, então cada um precisa do seu <code>free</code>. A ordem importa: se você liberar o pai primeiro, os ponteiros <code>esq</code> e <code>dir</code> dele somem junto, e os filhos ficam sem ninguém que saiba onde eles estão. Por isso a função <code>liberar</code> é uma <strong>pós-ordem</strong>:</p>
+
+<pre class="file" data-file="liberar.c">void liberar(No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    liberar(raiz-&gt;esq);   // primeiro a subárvore da esquerda inteira
+    liberar(raiz-&gt;dir);   // depois a da direita
+    free(raiz);           // só então o próprio nó
+}
+</pre>
+
+<p>Ela já estava em todos os programas desta aula. O <code>valgrind</code> do <code>percursos.c</code> (seção 2) ficou calado, e um relatório completo de um programa que libera tudo termina assim:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g palavras.c -o palavras
+$ valgrind --leak-check=full ./palavras 2&gt;&amp;1 | tail -4
+==424411== All heap blocks were freed -- no leaks are possible
+==424411==
+==424411== For lists of detected and suppressed errors, rerun with: -s
+==424411== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</pre>
+
+<p>(O <code>palavras.c</code> é a solução da missão final. <em>All heap blocks were freed</em> = "todos os blocos do heap foram liberados".)</p>
+
+<hr>
+
+<h2 id="torta">7. A árvore torta</h2>
+<p>A busca rápida depende de a árvore ser "baixa e larga". Mas o formato depende da <strong>ordem</strong> em que os valores chegam. Se eles chegarem já em ordem crescente, cada um é maior que todos os anteriores e vai sempre para a direita:</p>
+
+<figure>
+<svg viewBox="0 0 400 262" role="img" aria-label="Árvore torta: 10, 20, 30, 40 e 50 inseridos em ordem, cada um à direita do anterior" style="width:100%;max-width:400px;height:auto;display:block"><title>Árvore torta: 10, 20, 30, 40 e 50 inseridos em ordem, cada um à direita do anterior</title>
+<line x1="40" y1="30" x2="110" y2="80" style="stroke:var(--text);stroke-width:1.6"/><line x1="110" y1="80" x2="180" y2="130" style="stroke:var(--text);stroke-width:1.6"/><line x1="180" y1="130" x2="250" y2="180" style="stroke:var(--text);stroke-width:1.6"/><line x1="250" y1="180" x2="320" y2="230" style="stroke:var(--text);stroke-width:1.6"/><circle cx="40" cy="30" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="40" y="35" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">10</text><circle cx="110" cy="80" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="110" y="85" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">20</text><circle cx="180" cy="130" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="180" y="135" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">30</text><circle cx="250" cy="180" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="250" y="185" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">40</text><circle cx="320" cy="230" r="21" style="fill:var(--code-bg);stroke:var(--text);stroke-width:1.5"/><text x="320" y="235" style="fill:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;text-anchor:middle">50</text><text x="74" y="26" style="fill:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:bold;font-size:13px;text-anchor:start">raiz</text><text x="354" y="236" style="fill:var(--muted);font-family:system-ui,sans-serif;font-size:13px;text-anchor:start">altura 5</text>
+</svg>
+<figcaption>Inserindo 10, 20, 30, 40 e 50, nessa ordem: cada nó é o filho da direita do anterior, e nenhum tem filho à esquerda. A "árvore" virou uma lista ligada inclinada, com altura 5 para 5 nós.</figcaption>
+</figure>
+
+<p>Este programa insere 1000 números em ordem numa árvore e 1000 números embaralhados em outra. Para os números "embaralhados" saírem iguais em qualquer computador, ele usa um sorteador próprio no lugar do <code>rand()</code> (que dá números diferentes no editor e no gcc; veja <a href="aleatorios.html">Números Aleatórios</a>):</p>
+
+<pre class="file" data-file="torta.c">…                                    // No, inserir e liberar como antes
+
+int altura(const No *raiz) {
+    if (raiz == NULL) {
+        return 0;
+    }
+    int e = altura(raiz-&gt;esq);
+    int d = altura(raiz-&gt;dir);
+    return 1 + (e &gt; d ? e : d);
+}
+
+// Gerador de números "embaralhados" que dá a mesma sequência em qualquer computador
+unsigned int semente = 12345;
+unsigned int sortear(void) {
+    semente = semente * 1103515245u + 12345u;
+    return (semente / 65536u) % 32768u;
+}
+
+int main(void) {
+    No *em_ordem = NULL;
+    No *embaralhada = NULL;
+    for (int i = 1; i &lt;= 1000; i++) {
+        em_ordem = inserir(em_ordem, i);
+        embaralhada = inserir(embaralhada, (int)sortear());
+    }
+    printf("1000 números em ordem:     altura %d\n", altura(em_ordem));
+    printf("1000 números embaralhados: altura %d\n", altura(embaralhada));
+    liberar(em_ordem);
+    liberar(embaralhada);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra torta.c -o torta
+$ ./torta
+1000 números em ordem:     altura 1000
+1000 números embaralhados: altura 23</pre>
+
+<p>Com os números em ordem, buscar o último exige descer 1000 nós, como numa lista. Embaralhados, nunca mais que 23. Por isso as bibliotecas de verdade usam árvores <strong>balanceadas</strong>, que se reorganizam a cada inserção para continuar baixas. As mais conhecidas são a <strong>AVL</strong> e a <strong>rubro-negra</strong> (<em>red-black tree</em>). Elas são assunto para um curso de estruturas de dados; a ideia desta aula continua valendo nelas.</p>
+
+<div class="warning">
+<strong>Recursão e árvores tortas</strong>
+<p>O <code>inserir</code> e o <code>altura</code> recursivos descem um nível por chamada, e cada chamada ocupa um pedaço da <a href="pilha-heap.html">pilha</a>. Numa árvore torta com centenas de milhares de nós, isso pode estourar a pilha (falha de segmentação). Com dados que podem chegar ordenados, prefira o <code>inserir</code> com laço da próxima seção, ou uma árvore balanceada.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes</h2>
+
+<h3>Inserir com um laço e ponteiro para ponteiro</h3>
+<p>O <code>inserir</code> recursivo devolve a raiz, e quem chama precisa guardá-la. Uma alternativa é passar o <strong>endereço</strong> da raiz (um <a href="ponteiro-ponteiro.html">ponteiro para ponteiro</a>, <code>No **</code>) e descer com um laço até o lugar vazio:</p>
+
+<pre class="file" data-file="iterativo.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct No {
+    int valor;
+    struct No *esq;
+    struct No *dir;
+} No;
+
+bool inserir(No **raiz, int valor) {
+    No **lugar = raiz;
+    while (*lugar != NULL) {
+        if (valor &lt; (*lugar)-&gt;valor) {
+            lugar = &amp;(*lugar)-&gt;esq;
+        } else if (valor &gt; (*lugar)-&gt;valor) {
+            lugar = &amp;(*lugar)-&gt;dir;
+        } else {
+            return true;
+        }
+    }
+    No *n = malloc(sizeof *n);
+    if (n == NULL) {
+        return false;
+    }
+    n-&gt;valor = valor;
+    n-&gt;esq = NULL;
+    n-&gt;dir = NULL;
+    *lugar = n;
+    return true;
+}
+
+void em_ordem(const No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    em_ordem(raiz-&gt;esq);
+    printf("%d ", raiz-&gt;valor);
+    em_ordem(raiz-&gt;dir);
+}
+
+void liberar(No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    liberar(raiz-&gt;esq);
+    liberar(raiz-&gt;dir);
+    free(raiz);
+}
+
+int main(void) {
+    int numeros[] = {50, 30, 70, 20, 40, 60, 80};
+    No *raiz = NULL;
+    for (int i = 0; i &lt; 7; i++) {
+        if (!inserir(&amp;raiz, numeros[i])) {
+            fprintf(stderr, "Sem memória\n");
+            liberar(raiz);
+            return 1;
+        }
+    }
+    em_ordem(raiz);
+    printf("\n");
+    liberar(raiz);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra iterativo.c -o iterativo
+$ ./iterativo
+20 30 40 50 60 70 80</pre>
+
+<dl class="anatomy">
+  <dt>No **lugar = raiz;</dt><dd><code>lugar</code> guarda o <strong>endereço do ponteiro</strong> onde o nó novo vai ser pendurado. No começo é o endereço da variável <code>raiz</code> do <code>main</code>.</dd>
+  <dt>lugar = &amp;(*lugar)-&gt;esq;</dt><dd><code>*lugar</code> é o nó atual; <code>(*lugar)-&gt;esq</code> é o ponteiro do filho esquerdo dele; o <code>&amp;</code> pega o endereço desse ponteiro. Assim, quando o laço parar, <code>lugar</code> aponta exatamente para o <code>esq</code> ou <code>dir</code> que está em <code>NULL</code>.</dd>
+  <dt>*lugar = n;</dt><dd>Pendura o nó novo ali. Se a árvore estava vazia, isso muda a própria <code>raiz</code> do <code>main</code>.</dd>
+  <dt>bool inserir(…)</dt><dd>Como a raiz não precisa ser devolvida, o retorno fica livre para dizer se o <code>malloc</code> deu certo, e o <code>main</code> não precisa encerrar o programa dentro de <code>inserir</code>.</dd>
+</dl>
+
+<h3>Qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Vantagem</th><th>Cuidado</th></tr>
+<tr><td>Recursiva, devolvendo a raiz (<code>raiz = inserir(raiz, v)</code>)</td><td>Curta e parecida com a definição da árvore. É a forma da maioria dos livros.</td><td>Quem chama precisa guardar o retorno. Usa pilha proporcional à altura.</td></tr>
+<tr><td>Laço com <code>No **</code> (<code>inserir(&amp;raiz, v)</code>)</td><td>Não usa recursão; o retorno fica livre para o erro do <code>malloc</code>.</td><td>O <code>&amp;(*lugar)-&gt;esq</code> assusta no começo.</td></tr>
+</table>
+</div>
+<p>Para <strong>buscar</strong>, o laço é o mais natural (só um caminho). Para <strong>percorrer, contar, medir e liberar</strong>, a recursão é o mais natural (os dois lados).</p>
+
+<h3>Árvore, lista ou array ordenado?</h3>
+<ul>
+  <li><strong>Poucos dados</strong> (dezenas): um array, ou uma lista. A diferença de tempo nem aparece.</li>
+  <li><strong>Muitos dados, buscas frequentes, inserções no meio do caminho</strong>: árvore de busca (de preferência balanceada).</li>
+  <li><strong>Muitos dados que mudam pouco</strong>: um array ordenado com <a href="ordenacao.html">qsort</a> e procurado com <a href="busca.html">bsearch</a>. É mais simples e gasta menos memória.</li>
+  <li><strong>Só procurar pela chave exata, sem precisar de ordem</strong>: uma <a href="tabela-hash.html">tabela hash</a> costuma ser ainda mais rápida.</li>
+</ul>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A árvore continua vazia: o retorno de <code>inserir</code> foi jogado fora</strong>
+<pre class="file" data-file="sem_retorno.c">    No *raiz = NULL;
+    for (int i = 0; i &lt; 3; i++) {
+        inserir(raiz, numeros[i]);      // faltou o "raiz ="
+    }
+    if (raiz == NULL) {
+        printf("A árvore está vazia!\n");
+    }
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g sem_retorno.c -o sem_retorno
+$ ./sem_retorno
+A árvore está vazia!
+$ valgrind --leak-check=full ./sem_retorno 2&gt;&amp;1 | grep -A3 'definitely lost in'
+==417713== 72 bytes in 3 blocks are definitely lost in loss record 1 of 1
+==417713==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==417713==    by 0x40011CC: inserir (sem_retorno.c:12)
+==417713==    by 0x40012B8: main (sem_retorno.c:33)</pre>
+<p><strong>O que significa:</strong> nenhum erro, nenhum aviso. Em C, os argumentos são <strong>cópias</strong>: <code>inserir</code> recebeu uma cópia de <code>raiz</code> (que valia <code>NULL</code>), criou o nó e devolveu o endereço dele, mas ninguém guardou. A variável <code>raiz</code> do <code>main</code> continuou <code>NULL</code>. Pior: os 3 nós criados ficaram perdidos na memória. O <code>valgrind</code> mostra "72 bytes em 3 blocos definitivamente perdidos" (3 nós de 24 bytes), criados na linha 12 de <code>inserir</code>.</p>
+<p><strong>Como consertar:</strong> <code>raiz = inserir(raiz, numeros[i]);</code>. Para o compilador avisar quem esquecer, marque a função com <code>[[nodiscard]]</code> <span class="versao">C23</span> (veja <a href="atributos.html">Atributos</a>):</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nodiscard.c -o nodiscard
+nodiscard.c: In function ‘main’:
+nodiscard.c:33:9: warning: ignoring return value of ‘inserir’, declared with attribute ‘nodiscard’ [-Wunused-result]
+   33 |         inserir(raiz, numeros[i]);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~
+nodiscard.c:10:19: note: declared here
+   10 | [[nodiscard]] No *inserir(No *raiz, int valor) {
+      |                   ^~~~~~~</pre>
+<p>"Ignorando o valor de retorno de <code>inserir</code>, declarada com o atributo <code>nodiscard</code>" ("não descarte"). O Clang do editor diz o mesmo com outras palavras: <code>ignoring return value of function declared with 'nodiscard' attribute</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Recursão sem caso base: <code>Falha de segmentação</code></strong>
+<pre class="file" data-file="sem_base.c">void em_ordem(const No *raiz) {
+    em_ordem(raiz-&gt;esq);        // faltou: if (raiz == NULL) return;
+    printf("%d ", raiz-&gt;valor);
+    em_ordem(raiz-&gt;dir);
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sem_base.c -o sem_base
+sem_base.c: In function ‘em_ordem’:
+sem_base.c:21:6: warning: infinite recursion detected [-Winfinite-recursion]
+   21 | void em_ordem(const No *raiz) {
+      |      ^~~~~~~~
+sem_base.c:22:5: note: recursive call
+   22 |     em_ordem(raiz-&gt;esq);
+      |     ^~~~~~~~~~~~~~~~~~~
+$ ./sem_base
+Falha de segmentação     (imagem do núcleo gravada) ./sem_base</pre>
+<p><strong>O que significa:</strong> o gcc avisou: "recursão infinita detectada", porque nenhum caminho da função termina sem chamar a si mesma. Rodando, a função desce até o 30, chama <code>em_ordem(NULL)</code>, e essa chamada tenta ler <code>raiz-&gt;esq</code> com <code>raiz</code> nulo: falha de segmentação (código 139). O <code>"Em ordem: "</code> do <code>main</code> nem apareceu: ele estava no buffer do <code>printf</code>, sem <code>\n</code>, quando o programa morreu. No editor do guia acontece o mesmo; o aviso do Clang é <code>all paths through this function will call itself</code> ("todos os caminhos desta função chamam ela mesma").</p>
+<p><strong>Como consertar:</strong> toda função recursiva de árvore começa pelo caso base: <code>if (raiz == NULL) return;</code> (ou <code>return 0;</code>, se ela devolve um número). Os filhos que não existem são justamente onde a recursão para.</p>
+</div>
+
+<div class="cenario">
+<strong><code>free</code> no pai antes dos filhos</strong>
+<pre class="file" data-file="liberar_errado.c">void liberar(No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    free(raiz);
+    liberar(raiz-&gt;esq);   // raiz já foi devolvida!
+    liberar(raiz-&gt;dir);
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -g liberar_errado.c -o liberar_errado
+liberar_errado.c: In function ‘liberar’:
+liberar_errado.c:27:17: warning: pointer ‘raiz’ used after ‘free’ [-Wuse-after-free]
+   27 |     liberar(raiz-&gt;dir);
+      |             ~~~~^~~~~
+liberar_errado.c:25:5: note: call to ‘free’ here
+   25 |     free(raiz);
+      |     ^~~~~~~~~~
+liberar_errado.c:26:17: warning: pointer ‘raiz’ used after ‘free’ [-Wuse-after-free]
+   26 |     liberar(raiz-&gt;esq);
+      |             ~~~~^~~~~
+liberar_errado.c:25:5: note: call to ‘free’ here
+   25 |     free(raiz);
+      |     ^~~~~~~~~~
+$ ./liberar_errado
+free(): invalid pointer
+Abortado                   (imagem do núcleo gravada) ./liberar_errado
+$ valgrind -q ./liberar_errado 2&gt;&amp;1 | head -10
+==417373== Invalid read of size 8
+==417373==    at 0x400122D: liberar (liberar_errado.c:26)
+==417373==    by 0x40012A5: main (liberar_errado.c:32)
+==417373==  Address 0x4a8e108 is 8 bytes inside a block of size 24 free'd
+==417373==    at 0x48538BF: free (vg_replace_malloc.c:990)
+==417373==    by 0x4001228: liberar (liberar_errado.c:25)
+==417373==    by 0x40012A5: main (liberar_errado.c:32)
+==417373==  Block was alloc'd at
+==417373==    at 0x4850858: malloc (vg_replace_malloc.c:447)
+==417373==    by 0x40011C9: novo (liberar_errado.c:11)</pre>
+<p><strong>O que significa:</strong> o gcc já avisou: "ponteiro <code>raiz</code> usado depois do <code>free</code>". Depois do <code>free(raiz)</code>, aquela memória não é mais sua, e a biblioteca pode ter escrito coisas dela por cima dos campos <code>esq</code> e <code>dir</code>. Foi o que aconteceu: o <code>raiz-&gt;esq</code> lido já não era um nó, e o <code>free</code> seguinte recebeu um endereço inválido. A glibc percebeu (<code>free(): invalid pointer</code>) e abortou o programa (código 134). O <code>valgrind</code> aponta o lugar exato: leitura inválida na linha 26, num bloco de 24 bytes liberado na linha 25.</p>
+<p>No editor do guia, o Clang não dá esse aviso e o programa morre com <code>Falha de segmentação</code> (139). O defeito é o mesmo; o jeito de morrer muda de um sistema para outro, e às vezes o programa nem morre. Por isso, confie no aviso e no <code>valgrind</code>, não na sorte.</p>
+<p><strong>Como consertar:</strong> libere em pós-ordem: os dois filhos primeiro, o <code>free(raiz)</code> por último.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operação</th><th>Código</th><th>Passos</th></tr>
+<tr><td>O nó</td><td><code>typedef struct No { int valor; struct No *esq, *dir; } No;</code></td><td></td></tr>
+<tr><td>Árvore vazia</td><td><code>No *raiz = NULL;</code></td><td></td></tr>
+<tr><td>Folha?</td><td><code>n-&gt;esq == NULL &amp;&amp; n-&gt;dir == NULL</code></td><td></td></tr>
+<tr><td>Inserir (recursivo)</td><td><code>raiz = inserir(raiz, v);</code></td><td>Até a altura</td></tr>
+<tr><td>Inserir (laço)</td><td><code>inserir(&amp;raiz, v);</code> com <code>No **lugar</code></td><td>Até a altura</td></tr>
+<tr><td>Buscar</td><td><code>while (atual) { if (v == atual-&gt;valor) …; atual = v &lt; atual-&gt;valor ? atual-&gt;esq : atual-&gt;dir; }</code></td><td>Até a altura</td></tr>
+<tr><td>Menor / maior</td><td>Descer só pela esquerda / só pela direita</td><td>Até a altura</td></tr>
+<tr><td>Em ordem (crescente)</td><td><code>f(esq); usar(raiz); f(dir);</code></td><td>Todos os nós</td></tr>
+<tr><td>Pré-ordem</td><td><code>usar(raiz); f(esq); f(dir);</code></td><td>Todos os nós</td></tr>
+<tr><td>Pós-ordem (liberar)</td><td><code>f(esq); f(dir); free(raiz);</code></td><td>Todos os nós</td></tr>
+<tr><td>Contar</td><td><code>raiz ? 1 + contar(raiz-&gt;esq) + contar(raiz-&gt;dir) : 0</code></td><td>Todos os nós</td></tr>
+<tr><td>Altura</td><td><code>1 + maior(altura(esq), altura(dir))</code>; vazia = 0</td><td>Todos os nós</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O nó do topo</h3>
+<p>Como se chama o nó do topo da árvore, por onde todas as buscas começam?</p>
+<div class="ex-code"><input data-answer="raiz|a raiz|root" aria-label="nome"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Descer para a esquerda</h3>
+<p>Complete a linha da busca que desce para o filho da esquerda:</p>
+<div class="ex-code">atual = <input data-answer="atual-&gt;esq|atual -&gt; esq|(*atual).esq" aria-label="expressão">;</div>
+</div>
+
+<div class="exercise">
+<h3>3. O caso base</h3>
+<p>Complete a primeira linha de <code>contar</code>, que devolve 0 para a árvore vazia:</p>
+<div class="ex-code">if (raiz == <input data-answer="NULL|nullptr" aria-label="valor">) return 0;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Numa árvore de busca com raiz 50, em que lado da raiz fica o 35?</p>
+<label><input type="radio" name="q4"> À direita, porque 35 é menor que 50</label>
+<label><input type="radio" name="q4"> Depende da ordem em que foi inserido</label>
+<label><input type="radio" name="q4"> À esquerda, porque 35 é menor que 50</label>
+<label><input type="radio" name="q4"> Na raiz, no lugar do 50</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Qual percurso mostra os valores de uma árvore de busca em ordem crescente?</p>
+<label><input type="radio" name="q5"> Pré-ordem (raiz, esquerda, direita)</label>
+<label><input type="radio" name="q5"> Em ordem (esquerda, raiz, direita)</label>
+<label><input type="radio" name="q5"> Pós-ordem (esquerda, direita, raiz)</label>
+<label><input type="radio" name="q5"> Nenhum: é preciso ordenar antes</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Você inseriu 1, 2, 3, …, 100, nessa ordem, numa árvore de busca simples. Qual é a altura dela?</p>
+<label><input type="radio" name="q6"> 7, porque cada passo descarta metade</label>
+<label><input type="radio" name="q6"> 2: a raiz e o resto</label>
+<label><input type="radio" name="q6"> 50</label>
+<label><input type="radio" name="q6"> 100: cada número fica à direita do anterior, como uma lista</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. Por que a função <code>liberar</code> chama <code>free(raiz)</code> só no fim?</p>
+<label><input type="radio" name="q7"> Porque depois do <code>free</code> os campos <code>esq</code> e <code>dir</code> não podem mais ser lidos</label>
+<label><input type="radio" name="q7"> Porque o <code>free</code> precisa ser a última linha de qualquer função</label>
+<label><input type="radio" name="q7"> Para a função ficar mais rápida</label>
+<label><input type="radio" name="q7"> Tanto faz: o <code>free</code> só marca a memória</label>
+</div>
+
+<h3>Missão final: as frutas da feira em ordem alfabética</h3>
+
+<div class="tryc" data-goal="outre:^abacate 1\nacerola 1\nbanana 1\ncaju 2\ngoiaba 1\nmanga 2\nuva 1\n$,src:strcmp\s*\(">
+<p class="try-task"><strong>Missão:</strong> a Ana anotou as frutas que vendeu na feira, na ordem em que vendeu, e quer a lista em ordem alfabética, com quantas vezes cada uma saiu. Cada nó guarda uma palavra e um contador <code>vezes</code>. Complete o <code>inserir</code>: compare a palavra nova com a do nó usando <code>strcmp</code> (aula <a href="funcoes-string.html">Funções de String</a>), que devolve um número negativo se a primeira vem antes no alfabeto, positivo se vem depois e zero se forem iguais. Negativo: insira na esquerda. Positivo: na direita. Zero: some 1 em <code>vezes</code>. A saída deve ser:</p>
+<pre class="out">abacate 1
+acerola 1
+banana 1
+caju 2
+goiaba 1
+manga 2
+uva 1</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct No {
+    const char *palavra;
+    int vezes;
+    struct No *esq;
+    struct No *dir;
+} No;
+
+No *inserir(No *raiz, const char *palavra) {
+    if (raiz == NULL) {
+        No *n = malloc(sizeof *n);
+        if (n == NULL) {
+            fprintf(stderr, "Sem memória\n");
+            exit(1);
+        }
+        n-&gt;palavra = palavra;
+        n-&gt;vezes = 1;
+        n-&gt;esq = NULL;
+        n-&gt;dir = NULL;
+        return n;
+    }
+    // COMPLETE: compare as palavras com strcmp(palavra, raiz-&gt;palavra)
+    //   menor que 0 -&gt; insira na esquerda
+    //   maior que 0 -&gt; insira na direita
+    //   igual a 0   -&gt; a palavra já está na árvore: some 1 em raiz-&gt;vezes
+    return raiz;
+}
+
+void mostrar(const No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    mostrar(raiz-&gt;esq);
+    printf("%s %d\n", raiz-&gt;palavra, raiz-&gt;vezes);
+    mostrar(raiz-&gt;dir);
+}
+
+void liberar(No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    liberar(raiz-&gt;esq);
+    liberar(raiz-&gt;dir);
+    free(raiz);
+}
+
+int main(void) {
+    const char *feira[] = {"banana", "manga", "caju", "abacate", "uva",
+                           "manga", "goiaba", "caju", "acerola"};
+    int n = sizeof feira / sizeof feira[0];
+    No *raiz = NULL;
+    for (int i = 0; i &lt; n; i++) {
+        raiz = inserir(raiz, feira[i]);
+    }
+    mostrar(raiz);
+    liberar(raiz);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct No {
+    const char *palavra;
+    int vezes;
+    struct No *esq;
+    struct No *dir;
+} No;
+
+No *inserir(No *raiz, const char *palavra) {
+    if (raiz == NULL) {
+        No *n = malloc(sizeof *n);
+        if (n == NULL) {
+            fprintf(stderr, "Sem memória\n");
+            exit(1);
+        }
+        n-&gt;palavra = palavra;
+        n-&gt;vezes = 1;
+        n-&gt;esq = NULL;
+        n-&gt;dir = NULL;
+        return n;
+    }
+    int c = strcmp(palavra, raiz-&gt;palavra);
+    if (c &lt; 0) {
+        raiz-&gt;esq = inserir(raiz-&gt;esq, palavra);
+    } else if (c &gt; 0) {
+        raiz-&gt;dir = inserir(raiz-&gt;dir, palavra);
+    } else {
+        raiz-&gt;vezes++;
+    }
+    return raiz;
+}
+
+void mostrar(const No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    mostrar(raiz-&gt;esq);
+    printf("%s %d\n", raiz-&gt;palavra, raiz-&gt;vezes);
+    mostrar(raiz-&gt;dir);
+}
+
+void liberar(No *raiz) {
+    if (raiz == NULL) {
+        return;
+    }
+    liberar(raiz-&gt;esq);
+    liberar(raiz-&gt;dir);
+    free(raiz);
+}
+
+int main(void) {
+    const char *feira[] = {"banana", "manga", "caju", "abacate", "uva",
+                           "manga", "goiaba", "caju", "acerola"};
+    int n = sizeof feira / sizeof feira[0];
+    No *raiz = NULL;
+    for (int i = 0; i &lt; n; i++) {
+        raiz = inserir(raiz, feira[i]);
+    }
+    mostrar(raiz);
+    liberar(raiz);
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que o <code>mostrar</code> é a em ordem de sempre, só que com palavras. As frutas foram vendidas fora de ordem e saíram em ordem alfabética, sem nenhum <code>qsort</code>. O <code>strcmp</code> compara pelos códigos dos caracteres; com acentos (<code>"maçã"</code>) a ordem já não é a do dicionário (veja <a href="acentos-utf8.html">Acentos e UTF-8</a>).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>árvore binária</strong> é feita de nós com um valor e dois ponteiros, <code>esq</code> e <code>dir</code>; filho que não existe vale <code>NULL</code>. O nó do topo é a <strong>raiz</strong>; os nós sem filhos são as <strong>folhas</strong>.</li>
+  <li>Percorrer a árvore é natural com recursão, sempre com o caso base <code>if (raiz == NULL)</code>. <strong>Em ordem</strong> (esquerda, raiz, direita), <strong>pré-ordem</strong> (raiz primeiro) e <strong>pós-ordem</strong> (raiz por último).</li>
+  <li>Numa <strong>árvore de busca</strong>, os menores ficam à esquerda e os maiores à direita. Inserir e buscar seguem um caminho só, da raiz até, no máximo, uma folha; a em ordem mostra tudo ordenado.</li>
+  <li><code>raiz = inserir(raiz, v);</code>: guarde sempre o retorno (ou use <code>[[nodiscard]]</code>, ou a versão com <code>No **</code>).</li>
+  <li>Libere em <strong>pós-ordem</strong>: os filhos antes do pai. Confira com o <code>valgrind</code>.</li>
+  <li>Valores que chegam em ordem deixam a árvore <strong>torta</strong> (altura = número de nós), e ela perde a vantagem. As árvores balanceadas (AVL, rubro-negra) resolvem isso.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
