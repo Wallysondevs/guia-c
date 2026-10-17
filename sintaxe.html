@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Sintaxe — instruções, ponto e vírgula, chaves, maiúsculas e espaços | Guia C</title>
+<meta name="description" content="As regras de escrita do C para quem está começando: instruções terminadas em ponto e vírgula (e onde não vai ;), blocos com chaves { }, maiúsculas e minúsculas (main, printf, int), espaços, linhas e recuo, texto entre aspas que não pode quebrar de linha, o que pode ficar fora da main, com os erros reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Sintaxe</span></h1>
+
+<p class="intro">Toda língua tem gramática: em português, a frase termina com ponto, os nomes próprios começam com maiúscula, e assim por diante. Uma linguagem de programação também tem a sua, e ela se chama <strong>sintaxe</strong>. A diferença é que o compilador não "entende o que você quis dizer": se a regra não for seguida, ele se recusa a criar o programa. A boa notícia é que as regras do C que você precisa agora são poucas. Esta aula mostra cada uma, com o erro real que aparece quando ela é quebrada.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma <strong>instrução</strong> e por que ela termina com <code>;</code>, e onde o <code>;</code> <strong>não</strong> vai.</li>
+  <li>Os <strong>blocos</strong>: o que as chaves <code>{ }</code> agrupam.</li>
+  <li>Por que <code>main</code>, <code>Main</code> e <code>MAIN</code> são coisas diferentes.</li>
+  <li>Onde os espaços e as quebras de linha importam, e onde o compilador nem liga.</li>
+  <li>O recuo (indentação) e os dois jeitos de posicionar a <code>{</code>.</li>
+  <li>O que pode e o que não pode ficar fora da <code>main</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos foram compilados na máquina fictícia da Ana com o comando padrão do guia, <code>gcc -std=c23 -Wall -Wextra</code> (aula <a href="compilar.html">Compilar com gcc</a>), na pasta <code>~/c</code>.</p>
+
+<hr>
+
+<h2>A ideia: a gramática de uma receita</h2>
+<p>Uma receita bem escrita tem passos curtos, um depois do outro, cada um terminado com ponto. Às vezes os passos se agrupam: "Para a cobertura: derreta o chocolate; acrescente o creme". O programa em C é igual:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na receita</th><th>Em C</th><th>Exemplo</th></tr>
+<tr><td>Um passo</td><td>Uma <strong>instrução</strong></td><td><code>printf("Oi\n");</code></td></tr>
+<tr><td>O ponto final do passo</td><td>O <strong>ponto e vírgula</strong></td><td><code>;</code></td></tr>
+<tr><td>Um grupo de passos ("para a cobertura:")</td><td>Um <strong>bloco</strong>, entre chaves</td><td><code>{ … }</code></td></tr>
+<tr><td>O título da receita</td><td>O nome da <strong>função</strong></td><td><code>int main(void)</code></td></tr>
+</table>
+</div>
+
+<p>Aqui está o programa que vai servir de exemplo, a lista de compras da Ana:</p>
+
+<pre class="file" data-file="compras.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n");
+    printf("- arroz\n");
+    printf("- feijão\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra compras.c -o compras
+$ ./compras
+Lista de compras:
+- arroz
+- feijão</pre>
+
+<hr>
+
+<h2>1. Instruções e o ponto e vírgula</h2>
+<p>Uma <strong>instrução</strong> (em inglês, <em>statement</em>) é uma ordem completa para o computador: "mostre este texto", "termine e devolva 0". No programa acima, há quatro: três <code>printf</code> e o <code>return</code>. Elas rodam <strong>uma depois da outra, de cima para baixo</strong>, na ordem em que aparecem.</p>
+
+<p>Em C, <strong>toda instrução termina com <code>;</code></strong>. O compilador não usa a quebra de linha para saber onde a instrução acaba: ele procura o ponto e vírgula. Por isso, esquecer um <code>;</code> faz o compilador "emendar" duas instruções:</p>
+
+<pre class="file" data-file="semponto.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Olá, mundo!\n")
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semponto.c -o semponto
+semponto.c: In function ‘main’:
+semponto.c:4:28: error: expected ‘;’ before ‘return’
+    4 |     printf("Olá, mundo!\n")
+      |                            ^
+      |                            ;
+    5 |     return 0;
+      |     ~~~~~~                  </pre>
+
+<p>"Esperava <code>;</code> antes do <code>return</code>". O compilador leu o <code>printf(…)</code>, não achou o <code>;</code>, continuou lendo, deu de cara com o <code>return</code> da linha de baixo e só aí reclamou. Repare que ele aponta o lugar exato (linha 4, coluna 28) e desenha o <code>;</code> que falta.</p>
+
+<p>Como quem manda é o <code>;</code>, e não a linha, você pode até escrever várias instruções na mesma linha (não é bonito, mas funciona). E um <code>;</code> sozinho é uma "instrução vazia", que não faz nada:</p>
+
+<pre class="file" data-file="vazio.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Oi\n");;
+    ;
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra vazio.c -o vazio
+$ ./vazio
+Oi</pre>
+
+<p>Compilou sem reclamar: os <code>;</code> a mais foram ignorados. Mas cuidado: no lugar errado, um <code>;</code> a mais muda o sentido do programa (você viu o <code>if (nota &gt;= 7);</code> na aula <a href="compilar.html">Compilar com gcc</a>).</p>
+
+<h3>Onde <strong>não</strong> vai ponto e vírgula</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Leva <code>;</code>?</th><th>Por quê</th></tr>
+<tr><td><code>#include &lt;stdio.h&gt;</code></td><td>Não</td><td>Linhas com <code>#</code> são ordens para o pré-processador, não instruções do C. Terminam na quebra de linha.</td></tr>
+<tr><td><code>int main(void)</code></td><td>Não</td><td>É o "título" da função; logo depois vem o corpo, entre chaves.</td></tr>
+<tr><td><code>{</code> e <code>}</code></td><td>Não</td><td>As chaves já marcam o começo e o fim do bloco.</td></tr>
+<tr><td><code>printf("…");</code>, <code>return 0;</code></td><td><strong>Sim</strong></td><td>São instruções.</td></tr>
+</table>
+</div>
+
+<p>O que acontece se puser <code>;</code> onde não vai? Depois do <code>#include</code>, o <code>gcc</code> só avisa (<em>extra tokens</em> = "símbolos a mais"):</p>
+
+<pre class="term" data-cwd="~/c">$ cat inc.c
+#include &lt;stdio.h&gt;;
+
+int main(void) {
+    printf("Oi\n");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra inc.c -o inc
+inc.c:1:19: warning: extra tokens at end of ‘#include’ directive
+    1 | #include &lt;stdio.h&gt;;
+      |                   ^</pre>
+
+<p>Depois do <code>int main(void)</code>, é erro: o <code>;</code> encerra a linha ali, e a <code>{</code> da linha seguinte fica "solta", sem dono:</p>
+
+<pre class="term" data-cwd="~/c">$ cat pontomain.c
+#include &lt;stdio.h&gt;
+
+int main(void);
+{
+    printf("Oi\n");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra pontomain.c -o pontomain
+pontomain.c:4:1: error: expected identifier or ‘(’ before ‘{’ token
+    4 | {
+      | ^</pre>
+
+<hr>
+
+<h2>2. Blocos: as chaves <code>{ }</code></h2>
+<p>As chaves agrupam instruções num <strong>bloco</strong>. O bloco que você já conhece é o corpo da <code>main</code>: tudo entre a <code>{</code> depois de <code>int main(void)</code> e a <code>}</code> correspondente pertence a ela.</p>
+
+<p>Blocos podem ficar dentro de outros blocos. Um bloco solto, sem nada antes, é permitido e só agrupa as instruções; mais para a frente, os blocos vão aparecer depois do <code>if</code> (aula <a href="if-else.html">if e else</a>) e dos laços (aula <a href="while.html">while</a>), e aí sim fazem diferença:</p>
+
+<pre class="file" data-file="blocos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Antes do bloco\n");
+    {
+        printf("Dentro do bloco\n");
+    }
+    printf("Depois do bloco\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra blocos.c -o blocos
+$ ./blocos
+Antes do bloco
+Dentro do bloco
+Depois do bloco</pre>
+
+<p>As regras das chaves:</p>
+<ul>
+  <li><strong>Toda <code>{</code> tem a sua <code>}</code></strong>, como parênteses numa conta.</li>
+  <li>A <code>}</code> fecha a <code>{</code> aberta mais recente: os blocos se encaixam, nunca se cruzam.</li>
+  <li>Depois da <code>}</code> da <code>main</code> não vai <code>;</code>.</li>
+</ul>
+
+<p>Se faltar a <code>}</code> do fim, o compilador chega ao final do arquivo esperando mais:</p>
+
+<pre class="term" data-cwd="~/c">$ cat semchave.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n");
+    return 0;
+$ gcc -std=c23 -Wall -Wextra semchave.c -o semchave
+semchave.c: In function ‘main’:
+semchave.c:5:5: error: expected declaration or statement at end of input
+    5 |     return 0;
+      |     ^~~~~~</pre>
+
+<p><em>At end of input</em> = "no fim da entrada", ou seja, no fim do arquivo. O compilador esperava mais alguma coisa (no caso, a <code>}</code>) e o arquivo acabou.</p>
+
+<hr>
+
+<h2>3. Maiúsculas e minúsculas fazem diferença</h2>
+<p>Para o C, <code>main</code>, <code>Main</code> e <code>MAIN</code> são três nomes <strong>completamente diferentes</strong>, tanto quanto <code>casa</code> e <code>cama</code>. Dizemos que o C é <strong>sensível a maiúsculas e minúsculas</strong> (em inglês, <em>case-sensitive</em>). Quase tudo do C se escreve em minúsculas: <code>int</code>, <code>main</code>, <code>void</code>, <code>return</code>, <code>printf</code>, <code>#include</code>.</p>
+
+<h3><code>Main</code> em vez de <code>main</code></h3>
+<pre class="file" data-file="maiuscula.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int Main(void) {
+    printf("Olá!\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra maiuscula.c -o maiuscula
+/usr/bin/x86_64-linux-gnu-ld.bfd: /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o: na função "_start":
+(.text+0x1b): referência não definida para "main"
+collect2: error: ld returned 1 exit status</pre>
+
+<p>Para o compilador, <code>Main</code> é uma função comum, com um nome qualquer, e está tudo certo com ela. Quem reclama é o <strong>ligador</strong> (<code>ld</code>), a última etapa: ele procura a <code>main</code>, onde o programa começa, e não acha. A mensagem saiu em português porque o ligador do Ubuntu é traduzido; em inglês, ela diz <code>undefined reference to `main'</code>.</p>
+
+<h3><code>Printf</code> em vez de <code>printf</code></h3>
+<pre class="term" data-cwd="~/c">$ cat printf2.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    Printf("Olá!\n");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra printf2.c -o printf2
+printf2.c: In function ‘main’:
+printf2.c:4:5: error: implicit declaration of function ‘Printf’; did you mean ‘printf’? [-Wimplicit-function-declaration]
+    4 |     Printf("Olá!\n");
+      |     ^~~~~~
+      |     printf</pre>
+
+<p>O <code>stdio.h</code> trouxe uma função chamada <code>printf</code>, e ninguém apresentou ao compilador uma tal de <code>Printf</code>. A mensagem diz "declaração implícita da função <code>Printf</code>", ou seja, "você usou uma função que eu não conheço", e sugere: <em>did you mean ‘printf’?</em>, "você quis dizer <code>printf</code>?".</p>
+
+<h3><code>Int</code>, <code>#Include</code> e <code>RETURN</code></h3>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra int2.c -o int2          « Int main(void) {
+int2.c:3:1: error: unknown type name ‘Int’; did you mean ‘int’?
+    3 | Int main(void) {
+      | ^~~
+      | int
+$ gcc -std=c23 -Wall -Wextra ret.c -o ret            « RETURN 0;
+ret.c: In function ‘main’:
+ret.c:5:5: error: ‘RETURN’ undeclared (first use in this function)
+    5 |     RETURN 0;
+      |     ^~~~~~
+ret.c:5:5: note: each undeclared identifier is reported only once for each function it appears in
+ret.c:5:11: error: expected ‘;’ before numeric constant
+    5 |     RETURN 0;
+      |           ^~
+      |           ;</pre>
+
+<p><code>Int</code> virou um "nome de tipo desconhecido" e <code>RETURN</code> virou um nome "não declarado" (<em>undeclared</em>), como se fosse uma variável que ninguém criou. E <code>#Include</code>?</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra inc2.c -o inc2          « #Include &lt;stdio.h&gt;
+inc2.c:1:2: error: invalid preprocessing directive #Include; did you mean #include?
+    1 | #Include &lt;stdio.h&gt;
+      |  ^~~~~~~
+      |  include
+inc2.c: In function ‘main’:
+inc2.c:4:5: error: implicit declaration of function ‘printf’ [-Wimplicit-function-declaration]
+    4 |     printf("Oi\n");
+      |     ^~~~~~
+inc2.c:1:1: note: include ‘&lt;stdio.h&gt;’ or provide a declaration of ‘printf’
+  +++ |+#include &lt;stdio.h&gt;
+    1 | #Include &lt;stdio.h&gt;
+inc2.c:4:5: warning: incompatible implicit declaration of built-in function ‘printf’ [-Wbuiltin-declaration-mismatch]
+    4 |     printf("Oi\n");
+      |     ^~~~~~
+inc2.c:4:5: note: include ‘&lt;stdio.h&gt;’ or provide a declaration of ‘printf’</pre>
+
+<p>Um erro só gerou vários: como o <code>#Include</code> não valeu, o <code>stdio.h</code> não entrou, e aí o <code>printf</code> também ficou desconhecido. Isso é muito comum: <strong>conserte o primeiro erro e compile de novo</strong>, porque os outros costumam sumir junto (aula <a href="erros-compilacao.html">Lendo Erros do Compilador</a>).</p>
+
+<div class="tryc" data-goal="compila,out:Bom dia\, Ana!">
+<p class="try-task"><strong>Missão:</strong> este programa tem dois problemas de maiúsculas. Rode, leia as mensagens e corrija até ele mostrar <code>Bom dia, Ana!</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    Printf("Bom dia, Ana!\n");
+    Return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Bom dia, Ana!\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Repare que as maiúsculas importam <strong>no código</strong>, não no texto entre aspas: dentro das aspas você escreve o que quiser (<code>"Bom dia, Ana!"</code> ou <code>"BOM DIA"</code>), e é exatamente isso que aparece na tela.</p>
+
+<hr>
+
+<h2>4. Espaços, linhas e recuo: o compilador não liga, mas você sim</h2>
+<p>Entre os "pedaços" do código (nomes, símbolos, números), o compilador ignora espaços, tabulações e quebras de linha. Este programa horrível compila e faz exatamente o mesmo que o <code>compras.c</code>:</p>
+
+<pre class="file" data-file="espacos.c">#include &lt;stdio.h&gt;
+
+int
+main
+(
+void
+)
+{
+        printf   (    "Lista de compras:\n"   )   ;
+printf("- arroz\n");
+                    printf("- feijão\n");
+    return
+    0
+    ;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra espacos.c -o espacos
+$ ./espacos
+Lista de compras:
+- arroz
+- feijão</pre>
+
+<p>E este também, tudo numa linha só depois do <code>#include</code>:</p>
+
+<pre class="file" data-file="umalinha.c">#include &lt;stdio.h&gt;
+int main(void){printf("Lista de compras:\n");printf("- arroz\n");printf("- feijão\n");return 0;}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra umalinha.c -o umalinha
+$ ./umalinha
+Lista de compras:
+- arroz
+- feijão</pre>
+
+<p>Mas há lugares em que o espaço importa:</p>
+<ul>
+  <li><strong>Dentro de um nome</strong>, espaço quebra o nome em dois: <code>pri ntf</code> não é <code>printf</code>, e <code>return0</code> (sem espaço) não é <code>return 0</code>.</li>
+  <li><strong>Dentro das aspas</strong>, cada espaço aparece na tela, exatamente como você escreveu.</li>
+  <li><strong>As linhas com <code>#</code></strong> ocupam uma linha inteira só para elas.</li>
+</ul>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra junto.c -o junto        « return0;
+junto.c: In function ‘main’:
+junto.c:5:5: error: ‘return0’ undeclared (first use in this function)
+    5 |     return0;
+      |     ^~~~~~~
+junto.c:5:5: note: each undeclared identifier is reported only once for each function it appears in</pre>
+
+<h3>O texto entre aspas não pode quebrar de linha</h3>
+<p>Um texto entre aspas tem de abrir e fechar <strong>na mesma linha</strong>. Se você apertar <kbd>Enter</kbd> no meio dele, o compilador se perde feio:</p>
+
+<pre class="term" data-cwd="~/c">$ cat quebra.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista
+de compras\n");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra quebra.c -o quebra
+quebra.c: In function ‘main’:
+quebra.c:4:12: warning: missing terminating " character
+    4 |     printf("Lista
+      |            ^
+quebra.c:4:12: error: missing terminating " character
+    4 |     printf("Lista
+      |            ^~~~~~
+quebra.c:5:1: error: ‘de’ undeclared (first use in this function)
+    5 | de compras\n");
+      | ^~
+quebra.c:5:1: note: each undeclared identifier is reported only once for each function it appears in
+quebra.c:5:3: error: expected ‘)’ before ‘compras’
+    5 | de compras\n");
+      |   ^~~~~~~~
+      |   )
+quebra.c:4:11: note: to match this ‘(’
+    4 |     printf("Lista
+      |           ^
+quebra.c:5:11: error: stray ‘\’ in program
+    5 | de compras\n");
+      |           ^
+quebra.c:5:13: warning: missing terminating " character
+    5 | de compras\n");
+      |             ^
+quebra.c:5:13: error: missing terminating " character
+    5 | de compras\n");
+      |             ^~~
+quebra.c:6:14: error: expected ‘;’ before ‘}’ token
+    6 |     return 0;
+      |              ^
+      |              ;
+    7 | }
+      | ~             </pre>
+
+<p>Seis erros por causa de um <kbd>Enter</kbd>. O primeiro é o que importa: <em>missing terminating " character</em>, "falta o caractere <code>"</code> de fechamento" na linha 4. Depois disso, o compilador tentou ler <code>de compras</code> como código, e tudo desandou.</p>
+
+<p>Se o texto é comprido e você quer dividi-lo em várias linhas do código, feche as aspas e abra outras na linha de baixo. O C <strong>junta</strong> textos entre aspas que aparecem um ao lado do outro:</p>
+
+<pre class="file" data-file="concat.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras da Ana: "
+           "arroz, feijão, café\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra concat.c -o concat
+$ ./concat
+Lista de compras da Ana: arroz, feijão, café</pre>
+
+<h3>O recuo (indentação) é para pessoas</h3>
+<p>O compilador não liga para o recuo, mas <strong>você</strong> liga, e quem for ler o seu código também. A regra é simples: <strong>tudo o que está dentro de um bloco fica recuado um nível a mais</strong> que as chaves. O guia usa 4 espaços por nível; 2 espaços, 8 espaços ou a tecla <kbd>Tab</kbd> também são comuns. O importante é ser consistente.</p>
+
+<pre class="file" data-file="recuo.c">#include &lt;stdio.h&gt;
+
+int main(void) {                    // nível 0: a main
+    printf("Antes do bloco\n");     // nível 1: dentro da main
+    {
+        printf("Dentro do bloco\n");  // nível 2: dentro do bloco
+    }
+    return 0;
+}
+</pre>
+
+<p>(O texto depois de <code>//</code> é um <strong>comentário</strong>, uma anotação que o compilador ignora: é o assunto da próxima aula, <a href="comentarios.html">Comentários</a>.)</p>
+
+<p>Sem recuo, o programa funciona igual, mas fica difícil ver onde cada bloco começa e termina, e erros como uma chave esquecida passam despercebidos. A maioria dos editores de código recua sozinha quando você aperta <kbd>Enter</kbd> depois de uma <code>{</code>.</p>
+
+<h3>Onde fica a <code>{</code>?</h3>
+<p>Existem dois estilos populares, e os dois compilam igual:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Chave na mesma linha (o do guia)</th><th>Chave na linha de baixo (estilo Allman)</th></tr>
+<tr><td><pre class="file">int main(void) {
+    printf("Oi\n");
+    return 0;
+}</pre></td><td><pre class="file">int main(void)
+{
+    printf("Oi\n");
+    return 0;
+}</pre></td></tr>
+<tr><td>A <code>{</code> fica no fim da linha do título. Ocupa menos linhas e é muito comum em C.</td><td>A <code>{</code> fica sozinha na linha de baixo. Ocupa mais linhas, mas as chaves ficam alinhadas.</td></tr>
+</table>
+</div>
+
+<p>Há também uma mistura dos dois, a do livro de Kernighan e Ritchie (os criadores do C) e do código do Linux: a chave das <strong>funções</strong> fica na linha de baixo, e a dos <code>if</code> e dos laços fica na mesma linha.</p>
+
+<p><strong>Qual usar?</strong> O guia usa a chave na mesma linha em tudo. Num projeto que já existe, siga o estilo que ele já usa: misturar os dois no mesmo arquivo é que atrapalha.</p>
+
+<hr>
+
+<h2>5. O que fica dentro e o que fica fora da <code>main</code></h2>
+<p>Um programa em C tem duas "regiões":</p>
+<ul>
+  <li><strong>Fora de qualquer função</strong> (no "nível de cima" do arquivo): os <code>#include</code> e as definições de funções, como a própria <code>main</code>. Mais tarde, também outras funções (aula <a href="funcoes.html">Funções</a>) e algumas variáveis (aula <a href="escopo.html">Escopo</a>).</li>
+  <li><strong>Dentro de uma função</strong>: as instruções, como os <code>printf</code> e o <code>return</code>.</li>
+</ul>
+
+<p>Uma instrução solta, fora de qualquer função, é erro: o compilador não saberia quando rodá-la.</p>
+
+<pre class="term" data-cwd="~/c">$ cat fora.c
+#include &lt;stdio.h&gt;
+
+printf("Olá!\n");
+
+int main(void) {
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra fora.c -o fora
+fora.c:3:8: error: expected declaration specifiers or ‘...’ before string constant
+    3 | printf("Olá!\n");
+      |        ^~~~~~~~</pre>
+
+<p>A mensagem é confusa (ela tenta interpretar a linha como a declaração de uma função), mas a linha 3 indica o lugar. O conserto é levar o <code>printf</code> para dentro das chaves da <code>main</code>.</p>
+
+<p>Resumindo, todo programa do Nível 1 tem este esqueleto:</p>
+
+<pre class="file" data-file="esqueleto.c">#include &lt;stdio.h&gt;          // 1. os cabeçalhos, no topo
+
+int main(void) {            // 2. a função principal
+    // 3. as instruções, uma por linha, cada uma com ;
+    return 0;               // 4. o fim da main
+}                           // 5. a chave que fecha a main
+</pre>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>expected ‘;’ before …</code></strong>
+<p><strong>O que significa:</strong> faltou um <code>;</code>. O erro costuma apontar para o <strong>fim da linha anterior</strong> à que o compilador cita depois do <code>before</code> ("antes de").</p>
+<p><strong>Como consertar:</strong> olhe o fim da linha indicada (e a de cima) e acrescente o <code>;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>expected declaration or statement at end of input</code></strong>
+<p><strong>O que significa:</strong> o arquivo acabou com alguma <code>{</code> ainda aberta.</p>
+<p><strong>Como consertar:</strong> confira se cada <code>{</code> tem a sua <code>}</code>. O recuo ajuda: a <code>}</code> fica alinhada com a linha que abriu o bloco.</p>
+</div>
+
+<div class="cenario">
+<strong><code>referência não definida para "main"</code> (<code>undefined reference to `main'</code>)</strong>
+<p><strong>O que significa:</strong> não existe nenhuma função chamada exatamente <code>main</code>: talvez esteja <code>Main</code>, <code>MAIN</code> ou <code>mian</code>.</p>
+<p><strong>Como consertar:</strong> <code>int main(void)</code>, tudo em minúsculas.</p>
+</div>
+
+<div class="cenario">
+<strong><code>implicit declaration of function ‘Printf’; did you mean ‘printf’?</code></strong>
+<p><strong>O que significa:</strong> o nome da função está escrito errado (maiúscula, letra trocada) ou falta o <code>#include</code> do cabeçalho dela. No gcc 15, com o C23, isso é <strong>erro</strong>; em compiladores antigos era só um aviso. No editor do guia, o Clang diz <code>use of undeclared identifier 'Printf'; did you mean 'printf'?</code> ("uso de um nome não declarado; você quis dizer <code>printf</code>?").</p>
+<p><strong>Como consertar:</strong> escreva o nome exato (<code>printf</code>) e confira o <code>#include &lt;stdio.h&gt;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>missing terminating " character</code></strong>
+<p><strong>O que significa:</strong> um texto entre aspas não fechou na mesma linha.</p>
+<p><strong>Como consertar:</strong> feche as aspas antes do fim da linha. Para quebrar a linha <strong>na tela</strong>, use <code>\n</code> dentro das aspas; para dividir um texto comprido no código, feche e abra aspas de novo (<code>"Lista " "de compras"</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>expected declaration specifiers or ‘...’ before string constant</code></strong>
+<p><strong>O que significa:</strong> há uma instrução fora de qualquer função.</p>
+<p><strong>Como consertar:</strong> mova a linha para dentro das chaves da <code>main</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Regra</th><th>Exemplo</th></tr>
+<tr><td>Toda instrução termina com <code>;</code></td><td><code>printf("Oi\n");</code></td></tr>
+<tr><td>Linhas com <code>#</code>, títulos de funções e chaves não levam <code>;</code></td><td><code>#include &lt;stdio.h&gt;</code>, <code>int main(void)</code>, <code>{</code>, <code>}</code></td></tr>
+<tr><td>As instruções rodam de cima para baixo</td><td>três <code>printf</code> = três linhas, na ordem</td></tr>
+<tr><td>Chaves agrupam instruções num bloco; toda <code>{</code> tem a sua <code>}</code></td><td><code>{ printf("a\n"); printf("b\n"); }</code></td></tr>
+<tr><td>Maiúsculas e minúsculas são diferentes</td><td><code>main</code> ≠ <code>Main</code>; <code>printf</code> ≠ <code>Printf</code></td></tr>
+<tr><td>Espaços e linhas entre os pedaços do código são livres</td><td><code>printf ( "Oi\n" ) ;</code> funciona</td></tr>
+<tr><td>Espaço dentro de um nome quebra o nome</td><td><code>pri ntf</code>, <code>return0</code> são erros</td></tr>
+<tr><td>Texto entre aspas abre e fecha na mesma linha</td><td><code>"Lista " "de compras"</code> para dividir</td></tr>
+<tr><td>Instruções só dentro de funções</td><td><code>printf</code> fora da <code>main</code> é erro</td></tr>
+<tr><td>Recue um nível a cada bloco</td><td>4 espaços por nível, no guia</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O que falta?</h3>
+<p>Complete a instrução com o símbolo que falta no fim:</p>
+<div class="ex-code">printf("Feijão\n")<input data-answer=";" aria-label="símbolo"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O nome certo</h3>
+<p>O programa tem <code>int MAIN(void) {</code>. Como deve ser escrito o nome da função?</p>
+<div class="ex-code">int <input data-answer="main" aria-label="nome">(void) {</div>
+</div>
+
+<div class="exercise">
+<h3>3. Dividir o texto</h3>
+<p>Complete para o <code>printf</code> mostrar <code>Bom dia, Ana!</code> com o texto dividido em duas linhas do código (sem <kbd>Enter</kbd> dentro das aspas):</p>
+<div class="ex-code">printf("Bom dia, "<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<input data-answer='"Ana!\n");' aria-label="resto"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual destas linhas está <strong>errada</strong>?</p>
+<label><input type="radio" name="q4"> <code>#include &lt;stdio.h&gt;</code></label>
+<label><input type="radio" name="q4"> <code>int main(void);</code> seguida de <code>{</code> na linha de baixo</label>
+<label><input type="radio" name="q4"> <code>printf("Oi\n");</code></label>
+<label><input type="radio" name="q4"> <code>return 0;</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O compilador mostrou 6 erros de uma vez. O que fazer primeiro?</p>
+<label><input type="radio" name="q5"> Corrigir o último, que é o mais recente</label>
+<label><input type="radio" name="q5"> Apagar o arquivo e começar de novo</label>
+<label><input type="radio" name="q5"> Corrigir o primeiro e compilar de novo: os outros costumam ser consequência dele</label>
+<label><input type="radio" name="q5"> Ignorar: o programa roda mesmo assim</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Sobre o recuo (os espaços no começo das linhas), é verdade que:</p>
+<label><input type="radio" name="q6"> o compilador ignora, mas ele mostra para as pessoas onde cada bloco começa e termina</label>
+<label><input type="radio" name="q6"> sem ele o programa não compila</label>
+<label><input type="radio" name="q6"> ele tem de ser de exatamente 4 espaços</label>
+<label><input type="radio" name="q6"> ele substitui as chaves</label>
+</div>
+
+<h3>Missão final: arrume a bagunça</h3>
+
+<div class="tryc" data-goal="outre:Lista de compras:\n- arroz\n- feijão\n- café\n,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana escreveu a lista de compras com pressa. Há quatro problemas: uma maiúscula errada, um <code>;</code> esquecido, um texto que quebrou de linha e uma chave que falta. Conserte até a saída ficar assim, sem avisos, e aproveite para deixar o código bem recuado:</p>
+<pre class="out">Lista de compras:
+- arroz
+- feijão
+- café</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+int main(void) {
+printf("Lista de compras:\n");
+Printf("- arroz\n");
+printf("- feijão\n")
+printf("-
+café\n");
+return 0;
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n");
+    printf("- arroz\n");
+    printf("- feijão\n");
+    printf("- café\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>A <strong>sintaxe</strong> é a gramática do C. Se ela não for seguida, o compilador não cria o programa.</li>
+  <li>Toda <strong>instrução</strong> termina com <code>;</code>. Linhas com <code>#</code>, o título <code>int main(void)</code> e as chaves não levam <code>;</code>.</li>
+  <li>As instruções rodam de cima para baixo. As <strong>chaves</strong> agrupam instruções em <strong>blocos</strong>, e toda <code>{</code> tem a sua <code>}</code>.</li>
+  <li>Maiúsculas importam: <code>main</code>, <code>printf</code>, <code>int</code>, <code>return</code> e <code>#include</code> são sempre em minúsculas.</li>
+  <li>Espaços e quebras de linha entre os pedaços são livres; dentro de um nome ou de um texto entre aspas, não. Um texto entre aspas abre e fecha na mesma linha.</li>
+  <li>Recue um nível a cada bloco: o compilador não precisa, mas as pessoas sim.</li>
+  <li>Instruções ficam dentro de funções; fora delas, só <code>#include</code> e definições.</li>
+  <li>Muitos erros de uma vez? Conserte o <strong>primeiro</strong> e compile de novo.</li>
+  <li>Próximo passo: <a href="comentarios.html">Comentários</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
