@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Enums — dar nomes a uma lista de opções | Guia C</title>
+<meta name="description" content="Enums em C para quem nunca programou: trocar números mágicos por nomes (enum Status { PENDENTE, PAGO, ENVIADO }), valores automáticos e escolhidos, enum com switch e o aviso -Wswitch, um array com o nome de cada valor, o enum é um int por baixo, nomes que colidem, o tipo escolhido do C23 (enum : unsigned char) e typedef enum, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Enums</span></h1>
+
+<p class="intro">A lojinha da Ana começou a vender pela internet. Cada pedido passa por quatro etapas: <strong>pendente</strong> (esperando o pagamento), <strong>pago</strong>, <strong>enviado</strong> e <strong>entregue</strong>. Dá para guardar a etapa num <code>int</code> e combinar que 0 é pendente, 1 é pago, e assim por diante, mas aí o código fica cheio de números que ninguém lembra o que significam. O <strong>enum</strong> resolve isso: ele dá um <strong>nome</strong> a cada opção de uma lista. Nesta aula você vai criar o seu primeiro enum, usar com <code>switch</code>, mostrar o nome de cada opção na tela e conhecer as armadilhas, porque por baixo dos nomes ainda existe um número.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um "número mágico" e por que ele atrapalha.</li>
+  <li>Como declarar um enum (<code>enum Status { PENDENTE, PAGO, … };</code>) e criar variáveis dele.</li>
+  <li>Que valores cada nome recebe, e como escolher outros (<code>JAN = 1</code>).</li>
+  <li>Como o <code>switch</code> e o aviso <code>-Wswitch</code> ajudam a não esquecer nenhuma opção.</li>
+  <li>Como mostrar o <strong>nome</strong> de cada opção com um array de textos.</li>
+  <li>Por que o C deixa guardar qualquer número num enum, e como se proteger.</li>
+  <li>O tipo escolhido do <span class="versao">C23</span> (<code>enum Status : unsigned char</code>) e o atalho <code>typedef enum</code>.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. A aula usa <a href="switch.html">switch</a> e <a href="arrays.html">arrays</a>; se precisar, reveja antes.</p>
+
+<hr>
+
+<h2>A ideia: as etiquetas coloridas do quadro de pedidos</h2>
+<p>Na parede da lojinha há um quadro com os pedidos do dia. A Ana podia escrever um número ao lado de cada pedido (0, 1, 2, 3) e deixar uma legenda num canto: "0 = pendente, 1 = pago…". Funciona, até o dia em que alguém esquece a legenda, ou escreve um 7, que não quer dizer nada.</p>
+<p>Ela preferiu comprar <strong>etiquetas impressas</strong>: PENDENTE, PAGO, ENVIADO, ENTREGUE. Só existem essas quatro, todo mundo lê sem legenda, e ninguém inventa uma quinta por engano.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No quadro</th><th>Em C</th><th>Exemplo</th></tr>
+<tr><td>O pacote com as quatro etiquetas</td><td>o <strong>enum</strong> (um tipo novo)</td><td><code>enum Status { … };</code></td></tr>
+<tr><td>Cada etiqueta</td><td>uma <strong>constante</strong> do enum (o nome técnico é <em>enumerador</em>)</td><td><code>PAGO</code></td></tr>
+<tr><td>O espaço ao lado do pedido, onde vai uma etiqueta</td><td>uma <strong>variável</strong> do tipo <code>enum Status</code></td><td><code>enum Status pedido;</code></td></tr>
+</table>
+</div>
+
+<p>O nome vem do inglês <em>enumeration</em>, "enumeração": uma lista em que você enumera, uma por uma, as opções possíveis. Use enum sempre que uma informação tem <strong>poucas opções conhecidas</strong>: os dias da semana, as cores do semáforo, o naipe de uma carta, o nível de dificuldade de um jogo.</p>
+
+<hr>
+
+<h2>1. O problema: números mágicos</h2>
+<p>Primeiro, o jeito sem enum. A etapa do pedido fica num <code>int</code>:</p>
+
+<pre class="file" data-file="magicos.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int status = 2;   /* 0 = pendente, 1 = pago, 2 = enviado, 3 = entregue */
+
+    if (status == 2) {
+        printf("Seu pedido saiu para entrega.\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra magicos.c -o magicos
+$ ./magicos
+Seu pedido saiu para entrega.</pre>
+
+<p>O programa funciona, mas olhe o <code>if (status == 2)</code>: quem lê precisa voltar ao comentário para saber o que é o 2. Um número solto no código, cujo significado só existe na cabeça de quem escreveu, é chamado de <strong>número mágico</strong>. Num programa grande, o mesmo 2 aparece em vinte lugares, e um dia alguém troca a ordem das etapas e esquece de mudar um deles.</p>
+
+<hr>
+
+<h2>2. Declarar um enum</h2>
+<p>Agora com enum. Cada etapa ganha um nome:</p>
+
+<pre class="file" data-file="pedido.c">#include &lt;stdio.h&gt;
+
+enum Status { PENDENTE, PAGO, ENVIADO, ENTREGUE };
+
+int main(void) {
+    enum Status s = ENVIADO;
+
+    if (s == ENVIADO) {
+        printf("Seu pedido saiu para entrega.\n");
+    }
+    printf("PENDENTE = %d\n", PENDENTE);
+    printf("PAGO     = %d\n", PAGO);
+    printf("ENVIADO  = %d\n", ENVIADO);
+    printf("ENTREGUE = %d\n", ENTREGUE);
+    printf("s        = %d\n", s);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>enum Status</dt><dd>Começa a declaração de um tipo novo. <code>Status</code> é a <strong>etiqueta</strong> (<em>tag</em>) do enum, como na <a href="structs.html">struct</a>. Por costume, começa com maiúscula.</dd>
+  <dt>{ PENDENTE, PAGO, ENVIADO, ENTREGUE }</dt><dd>A lista de opções, separadas por <strong>vírgula</strong> (e não por <code>;</code>, como os campos de uma struct). Por costume, os nomes vão em MAIÚSCULAS, como as constantes do <code>#define</code>, para quem lê saber que não são variáveis.</dd>
+  <dt>;</dt><dd>O ponto e vírgula depois da chave é obrigatório, igual ao da struct.</dd>
+  <dt>enum Status s = ENVIADO;</dt><dd>Cria a variável <code>s</code>, do tipo <code>enum Status</code> (as duas palavras, como em <code>struct Aluno</code>), e guarda nela a opção <code>ENVIADO</code>.</dd>
+  <dt>if (s == ENVIADO)</dt><dd>Compara com o nome. Agora o código se explica sozinho: "se o pedido foi enviado".</dd>
+  <dt>printf("%d", PENDENTE)</dt><dd>Cada nome é, por baixo, um número inteiro. O <code>%d</code> mostra esse número.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pedido.c -o pedido
+$ ./pedido
+Seu pedido saiu para entrega.
+PENDENTE = 0
+PAGO     = 1
+ENVIADO  = 2
+ENTREGUE = 3
+s        = 2</pre>
+
+<p>Repare: o C deu os números sozinho, <strong>começando em 0</strong> e somando 1 a cada nome. O programa faz exatamente o mesmo que o <code>magicos.c</code> (o <code>ENVIADO</code> vale 2), mas agora ninguém precisa de legenda.</p>
+
+<div class="tip">
+<strong>Onde declarar o enum</strong>
+<p>Como a struct, o enum vai <strong>fora</strong> das funções, lá em cima, depois dos <code>#include</code>. Assim todas as funções do arquivo conhecem os nomes. Em projetos maiores, ele fica num arquivo <code>.h</code> (veja <a href="headers.html">Arquivos .h e .c</a>).</p>
+</div>
+
+<hr>
+
+<h2>3. Escolher os valores</h2>
+<p>Às vezes o número por trás do nome importa. Os meses, por exemplo, deveriam começar em 1, e não em 0. Você pode escolher o valor de qualquer nome com <code>=</code>:</p>
+
+<pre class="file" data-file="valores.c">#include &lt;stdio.h&gt;
+
+enum Mes { JAN = 1, FEV, MAR, ABR, MAI, JUN, JUL, AGO, SET, OUT, NOV, DEZ };
+
+enum Tamanho { PEQUENO = 300, MEDIO = 500, GRANDE = 700, GIGANTE = GRANDE + 300 };
+
+enum Resposta { NAO = 0, SIM = 1, TALVEZ = -1, NEGATIVO = NAO };
+
+int main(void) {
+    printf("JAN = %d, FEV = %d, DEZ = %d\n", JAN, FEV, DEZ);
+    printf("MEDIO = %d ml, GIGANTE = %d ml\n", MEDIO, GIGANTE);
+    printf("TALVEZ = %d, NEGATIVO = %d\n", TALVEZ, NEGATIVO);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra valores.c -o valores
+$ ./valores
+JAN = 1, FEV = 2, DEZ = 12
+MEDIO = 500 ml, GIGANTE = 1000 ml
+TALVEZ = -1, NEGATIVO = 0</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que acontece</th></tr>
+<tr><td><code>JAN = 1, FEV, MAR, …</code></td><td>Só o primeiro tem valor. Os seguintes continuam contando a partir dele: <code>FEV</code> = 2, <code>MAR</code> = 3… <code>DEZ</code> = 12.</td></tr>
+<tr><td><code>PEQUENO = 300, MEDIO = 500</code></td><td>Cada um com o seu valor. Não precisam estar em sequência: são os tamanhos dos copos de suco, em ml.</td></tr>
+<tr><td><code>GIGANTE = GRANDE + 300</code></td><td>O valor pode ser uma conta com os nomes que vieram antes, desde que o compilador saiba o resultado na hora de compilar.</td></tr>
+<tr><td><code>TALVEZ = -1</code></td><td>Números negativos também valem.</td></tr>
+<tr><td><code>NEGATIVO = NAO</code></td><td>Dois nomes podem ter o <strong>mesmo</strong> valor. É permitido, mas cuidado: no <code>switch</code>, os dois seriam o mesmo <code>case</code>.</td></tr>
+</table>
+</div>
+
+<p>Na dúvida, deixe o C numerar sozinho. Escolha valores só quando o número tem um significado fora do programa: o número do mês, o código de erro de um sistema, o valor gravado num arquivo.</p>
+
+<hr>
+
+<h2>4. enum e switch: o compilador confere a lista</h2>
+<p>O par mais comum do enum é o <a href="switch.html">switch</a>: um <code>case</code> para cada opção. E aqui o enum ganha um bônus. Como o compilador conhece a lista inteira, ele percebe quando você <strong>esqueceu</strong> uma opção. A Ana escreveu a função que mostra a etapa do pedido e se esqueceu do <code>ENTREGUE</code>:</p>
+
+<pre class="file" data-file="menu.c">#include &lt;stdio.h&gt;
+
+enum Status { PENDENTE, PAGO, ENVIADO, ENTREGUE };
+
+void mostrar(enum Status s) {
+    switch (s) {
+    case PENDENTE:
+        printf("Aguardando pagamento");
+        break;
+    case PAGO:
+        printf("Pagamento aprovado");
+        break;
+    case ENVIADO:
+        printf("Saiu para entrega");
+        break;
+    }
+}
+
+int main(void) {
+    for (enum Status s = PENDENTE; s &lt;= ENTREGUE; s++) {
+        printf("%d: ", s);
+        mostrar(s);
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra menu.c -o menu
+menu.c: In function ‘mostrar’:
+menu.c:6:5: warning: enumeration value ‘ENTREGUE’ not handled in switch [-Wswitch]
+    6 |     switch (s) {
+      |     ^~~~~~
+$ ./menu
+0: Aguardando pagamento
+1: Pagamento aprovado
+2: Saiu para entrega
+3:                          « ENTREGUE: nenhum case, nada na tela</pre>
+
+<p><em>enumeration value ‘ENTREGUE’ not handled in switch</em> = "o valor <code>ENTREGUE</code> do enum não foi tratado no switch". O aviso vem do <code>-Wswitch</code>, que o <code>-Wall</code> já liga. Com um <code>int</code> e números mágicos, o compilador não teria como saber que faltava o 3. No editor do guia, o Clang dá o mesmo aviso, com aspas retas: <code>enumeration value 'ENTREGUE' not handled in switch</code>.</p>
+
+<dl class="anatomy">
+  <dt>for (enum Status s = PENDENTE; s &lt;= ENTREGUE; s++)</dt><dd>Em C, uma variável de enum aceita <code>++</code> e <code>&lt;=</code>, como um <code>int</code>. Este laço passa por todas as opções, de 0 a 3. Só funciona porque os valores estão em sequência, sem buracos.</dd>
+  <dt>printf("%d: ", s)</dt><dd>Mostra o número por trás da opção. Na seção 5 você vai mostrar o nome.</dd>
+</dl>
+
+<div class="tryc" data-goal="out:3: Entregue ao cliente,semaviso">
+<p class="try-task"><strong>Missão:</strong> rode o programa e veja o aviso do compilador e a linha <code>3:</code> vazia. Depois acrescente o <code>case ENTREGUE:</code> que falta, mostrando <code>Entregue ao cliente</code>, até o aviso sumir.</p>
+<pre class="script" data-file="menu.c">#include &lt;stdio.h&gt;
+
+enum Status { PENDENTE, PAGO, ENVIADO, ENTREGUE };
+
+void mostrar(enum Status s) {
+    switch (s) {
+    case PENDENTE:
+        printf("Aguardando pagamento");
+        break;
+    case PAGO:
+        printf("Pagamento aprovado");
+        break;
+    case ENVIADO:
+        printf("Saiu para entrega");
+        break;
+    }
+}
+
+int main(void) {
+    for (enum Status s = PENDENTE; s &lt;= ENTREGUE; s++) {
+        printf("%d: ", s);
+        mostrar(s);
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="menu.c">#include &lt;stdio.h&gt;
+
+enum Status { PENDENTE, PAGO, ENVIADO, ENTREGUE };
+
+void mostrar(enum Status s) {
+    switch (s) {
+    case PENDENTE:
+        printf("Aguardando pagamento");
+        break;
+    case PAGO:
+        printf("Pagamento aprovado");
+        break;
+    case ENVIADO:
+        printf("Saiu para entrega");
+        break;
+    case ENTREGUE:
+        printf("Entregue ao cliente");
+        break;
+    }
+}
+
+int main(void) {
+    for (enum Status s = PENDENTE; s &lt;= ENTREGUE; s++) {
+        printf("%d: ", s);
+        mostrar(s);
+        printf("\n");
+    }
+    return 0;
+}
+</pre>
+</div>
+
+<div class="note">
+<strong>E o <code>default</code>?</strong>
+<p>Se o <code>switch</code> tem <code>default:</code>, o gcc não avisa mais nada: para ele, as opções esquecidas caem no <code>default</code> de propósito. Isso é cômodo, mas apaga a sua rede de proteção. Quando alguém acrescentar uma quinta etapa (<code>CANCELADO</code>), ela cai calada no <code>default</code>. Para ser avisado mesmo com <code>default</code>, compile com <code>-Wswitch-enum</code>:</p>
+<pre class="file" data-file="comdefault.c">#include &lt;stdio.h&gt;
+
+enum Status { PENDENTE, PAGO, ENVIADO, ENTREGUE };
+
+const char *descricao(enum Status s) {
+    switch (s) {
+    case PENDENTE: return "Aguardando pagamento";
+    case PAGO:     return "Pagamento aprovado";
+    default:       return "Outro";
+    }
+}
+
+int main(void) {
+    printf("%s\n", descricao(ENTREGUE));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra -Wswitch-enum comdefault.c -o comdefault
+comdefault.c: In function ‘descricao’:
+comdefault.c:6:5: warning: enumeration value ‘ENVIADO’ not handled in switch [-Wswitch-enum]
+    6 |     switch (s) {
+      |     ^~~~~~
+comdefault.c:6:5: warning: enumeration value ‘ENTREGUE’ not handled in switch [-Wswitch-enum]</pre>
+</div>
+
+<hr>
+
+<h2>5. Mostrar o nome na tela</h2>
+<p>O <code>printf</code> não sabe que <code>2</code> se chama <code>ENVIADO</code>: os nomes do enum existem só no código-fonte, e o programa pronto guarda apenas os números. Para mostrar um texto, você monta um <strong>array de textos</strong> em que a posição é o valor do enum:</p>
+
+<pre class="file" data-file="nomes.c">#include &lt;stdio.h&gt;
+
+enum Status { PENDENTE, PAGO, ENVIADO, ENTREGUE, TOTAL_STATUS };
+
+const char *NOME_STATUS[TOTAL_STATUS] = {
+    [PENDENTE] = "pendente",
+    [PAGO]     = "pago",
+    [ENVIADO]  = "enviado",
+    [ENTREGUE] = "entregue",
+};
+
+int main(void) {
+    enum Status s = PAGO;
+    printf("Pedido 1042: %s\n", NOME_STATUS[s]);
+
+    s = ENTREGUE;
+    printf("Pedido 1042: %s\n", NOME_STATUS[s]);
+
+    printf("Há %d status possíveis.\n", TOTAL_STATUS);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>TOTAL_STATUS</dt><dd>Um nome a mais, no fim da lista, que não é uma etapa de verdade. Como a contagem começa em 0, ele vale exatamente <strong>quantos</strong> nomes vieram antes: 4. Se um dia entrar uma etapa nova antes dele, o total se ajusta sozinho.</dd>
+  <dt>const char *NOME_STATUS[TOTAL_STATUS]</dt><dd>Um array de 4 textos (cada elemento aponta para um texto fixo; veja <a href="ponteiros-strings.html">Ponteiros e Strings</a>). O tamanho vem do enum.</dd>
+  <dt>[PAGO] = "pago"</dt><dd>Um <strong>designador de posição</strong> <span class="versao">C99</span>: "na posição <code>PAGO</code> (1), ponha o texto <code>"pago"</code>". É como os designadores de struct (<code>.nome = …</code>), só que com colchetes. Assim cada texto fica ao lado do seu nome, e a ordem das linhas não importa.</dd>
+  <dt>NOME_STATUS[s]</dt><dd>Usa o valor do enum como índice do array: com <code>s = PAGO</code>, é <code>NOME_STATUS[1]</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra nomes.c -o nomes
+$ ./nomes
+Pedido 1042: pago
+Pedido 1042: entregue
+Há 4 status possíveis.</pre>
+
+<div class="tip">
+<strong>Garanta que nenhum nome ficou sem texto</strong>
+<p>Se alguém acrescentar <code>CANCELADO</code> ao enum e esquecer o texto, a posição dele no array fica com <code>NULL</code>. Um <code>static_assert(sizeof NOME_STATUS / sizeof NOME_STATUS[0] == TOTAL_STATUS);</code> sem o tamanho escrito nos colchetes impede o programa de compilar nesse caso. A aula <a href="static-assert.html">static_assert</a> mostra esse truque passo a passo.</p>
+</div>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> acrescente a etapa <code>CANCELADO</code> ao enum, <strong>antes</strong> do <code>TOTAL_STATUS</code>, com o texto <code>"cancelado"</code> no array. Mude o <code>s</code> para <code>CANCELADO</code> e veja o total passar para 5 sem você mexer nele. Depois tire o texto do array e rode de novo: o que aparece no lugar do nome?</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+enum Status { PENDENTE, PAGO, ENVIADO, ENTREGUE, TOTAL_STATUS };
+
+const char *NOME_STATUS[TOTAL_STATUS] = {
+    [PENDENTE] = "pendente",
+    [PAGO]     = "pago",
+    [ENVIADO]  = "enviado",
+    [ENTREGUE] = "entregue",
+};
+
+int main(void) {
+    enum Status s = PAGO;
+    printf("Pedido 1042: %s (código %d)\n", NOME_STATUS[s], s);
+    printf("Há %d status possíveis.\n", TOTAL_STATUS);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>6. Por baixo, um <code>int</code>: o C não confere</h2>
+<p>O enum dá nomes aos números, mas não tranca a porta. Em C, uma variável de enum é um inteiro como outro qualquer, e aceita <strong>qualquer</strong> número:</p>
+
+<pre class="file" data-file="porbaixo.c">#include &lt;stdio.h&gt;
+
+enum Status { PENDENTE, PAGO, ENVIADO, ENTREGUE };
+
+int main(void) {
+    enum Status s = PAGO;
+    int n = s;              /* enum vira int sem reclamar */
+    enum Status t = 42;     /* e int vira enum, mesmo fora da lista */
+
+    printf("sizeof(enum Status) = %zu\n", sizeof(enum Status));
+    printf("n = %d, t = %d\n", n, t);
+    s++;
+    printf("depois de s++: %d\n", s);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra porbaixo.c -o porbaixo
+$ ./porbaixo
+sizeof(enum Status) = 4
+n = 1, t = 42
+depois de s++: 2</pre>
+
+<p>Nenhum aviso, nem no gcc nem no Clang do editor: <code>t</code> guardou 42, que não é etapa nenhuma. A variável ocupa 4 bytes, o tamanho de um <code>int</code> (veja <a href="sizeof.html">sizeof</a>). E o <code>s++</code> levou <code>PAGO</code> (1) para 2, que por acaso é <code>ENVIADO</code>.</p>
+
+<div class="warning">
+<strong>Número que vem de fora: confira antes de usar</strong>
+<p>Se o valor vem do teclado ou de um arquivo, nada garante que ele está na lista. Usar um número fora da lista como índice do <code>NOME_STATUS</code> lê memória que não é do array: um texto sem sentido, <code>(null)</code> ou uma falha de segmentação (veja <a href="#pg-indice">Quando dá errado</a>). Leia num <code>int</code>, confira se está entre <code>0</code> e <code>TOTAL_STATUS - 1</code> e só então guarde no enum.</p>
+</div>
+
+<div class="note">
+<strong>Diferença para o C++</strong>
+<p>Quem vem do C++ estranha: lá, <code>enum Status t = 42;</code> é erro, e o C++ ainda tem o <code>enum class</code>, que não se mistura com <code>int</code>. Em C, o enum é só uma lista de constantes inteiras com um nome de tipo.</p>
+</div>
+
+<hr>
+
+<h2>7. Os nomes são de todos: use um prefixo</h2>
+<p>Os campos de uma struct só existem dentro dela (<code>a.nome</code> e <code>p.nome</code> não se confundem). Os nomes de um enum, não: eles ficam soltos no arquivo, como variáveis globais. Dois enums com o mesmo nome dentro dão erro:</p>
+
+<pre class="file" data-file="repetido.c">#include &lt;stdio.h&gt;
+
+enum Fruta { LARANJA, MACA, UVA };
+enum Cor { VERMELHO, LARANJA, AZUL };
+
+int main(void) {
+    enum Cor c = AZUL;
+    printf("%d\n", c);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra repetido.c -o repetido
+repetido.c:4:22: error: redeclaration of enumerator ‘LARANJA’
+    4 | enum Cor { VERMELHO, LARANJA, AZUL };
+      |                      ^~~~~~~
+repetido.c:3:14: note: previous definition of ‘LARANJA’ with type ‘enum Fruta’
+    3 | enum Fruta { LARANJA, MACA, UVA };
+      |              ^~~~~~~</pre>
+
+<p><em>redeclaration of enumerator ‘LARANJA’</em> = "o enumerador <code>LARANJA</code> foi declarado de novo"; a nota diz onde estava o primeiro. O Clang do editor diz <code>redefinition of enumerator 'LARANJA'</code>. A solução usada em quase todo programa C é um <strong>prefixo</strong> com o nome do enum: <code>FRUTA_LARANJA</code> e <code>COR_LARANJA</code>. Fica mais comprido, mas nunca colide, e quem lê sabe de que lista o nome veio.</p>
+
+<hr>
+
+<h2>8. <span class="versao">C23</span> Escolher o tipo por trás do enum</h2>
+<p>Você viu que um <code>enum Status</code> ocupa 4 bytes, mesmo com só quatro opções. Num array de mil pedidos, são 4000 bytes para guardar números de 0 a 3. A partir do C23, você escolhe o tipo inteiro que fica por baixo, escrevendo <code>: tipo</code> depois do nome:</p>
+
+<pre class="file" data-file="tipo23.c">#include &lt;stdio.h&gt;
+
+enum Status : unsigned char { PENDENTE, PAGO, ENVIADO, ENTREGUE };
+
+enum Comum { A, B, C };
+
+int main(void) {
+    printf("sizeof(enum Comum)  = %zu\n", sizeof(enum Comum));
+    printf("sizeof(enum Status) = %zu\n", sizeof(enum Status));
+    enum Status pedidos[1000] = {0};
+    printf("1000 pedidos ocupam %zu bytes\n", sizeof pedidos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra tipo23.c -o tipo23
+$ ./tipo23
+sizeof(enum Comum)  = 4
+sizeof(enum Status) = 1
+1000 pedidos ocupam 1000 bytes</pre>
+
+<p>Com <code>: unsigned char</code>, cada pedido ocupa 1 byte (o editor do guia mostra os mesmos números). Isso importa em arrays grandes e em structs gravadas em <a href="arquivos-binarios.html">arquivos binários</a>, onde você quer saber o tamanho exato de cada campo. Pode ser qualquer tipo inteiro: <code>unsigned char</code>, <code>short</code>, <code>uint8_t</code>, <code>int64_t</code> (veja <a href="stdint.html">stdint.h</a>). Em troca, o compilador confere se cada valor cabe no tipo:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra fora23.c -o fora23
+fora23.c:3:78: error: enumerator value outside the range of underlying type
+    3 | enum Status : unsigned char { PENDENTE, PAGO, ENVIADO, ENTREGUE, ARQUIVADO = 300 };
+      |                                                                              ^~~</pre>
+
+<p><em>enumerator value outside the range of underlying type</em> = "valor do enumerador fora da faixa do tipo de baixo": um <code>unsigned char</code> vai só até 255. No editor, o Clang diz <code>enumerator value is not representable in the underlying type 'unsigned char'</code>.</p>
+
+<p>Em versões antigas, o gcc aceita essa escrita como extensão, e o <code>-pedantic</code> (que avisa tudo o que está fora do padrão) reclama: <code>ISO C does not support specifying ‘enum’ underlying types before C23</code>. Para código que precisa compilar em C17 ou antes, deixe o enum sem tipo e guarde o valor num <code>unsigned char</code> quando o tamanho importar.</p>
+
+<hr>
+
+<h2>9. Um nome mais curto: <code>typedef enum</code></h2>
+<p>Escrever <code>enum Status</code> toda hora cansa. Como na struct, o <a href="typedef.html">typedef</a> cria um apelido de uma palavra só:</p>
+
+<pre class="file" data-file="typedefenum.c">#include &lt;stdio.h&gt;
+
+typedef enum { PENDENTE, PAGO, ENVIADO, ENTREGUE } Status;
+
+int main(void) {
+    Status s = ENTREGUE;
+    printf("%d\n", s);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra typedefenum.c -o typedefenum
+$ ./typedefenum
+3</pre>
+
+<p>O enum aqui nem tem etiqueta: ele é conhecido só pelo apelido <code>Status</code>. Você vai encontrar as duas formas em programas reais. Sem o <code>typedef</code>, escrever só <code>Status s;</code> é erro (veja "Quando dá errado").</p>
+
+<hr>
+
+<h2>Formas diferentes de dar nome a números: qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td><code>enum</code> com etiqueta</td><td><code>enum Status { PENDENTE, PAGO };</code></td><td>Uma <strong>lista de opções</strong> que andam juntas (etapas, cores, dias). O <code>switch</code> avisa quando falta uma.</td></tr>
+<tr><td><code>enum</code> sem etiqueta</td><td><code>enum { MAX_ALUNOS = 30 };</code></td><td>Constantes inteiras soltas, em código que precisa compilar em C antigo (veja <a href="constantes.html">Constantes</a>).</td></tr>
+<tr><td><code>constexpr</code> <span class="versao">C23</span></td><td><code>constexpr int MAX_ALUNOS = 30;</code></td><td>Uma constante só, de qualquer tipo (até <code>double</code>). A melhor escolha para valores isolados no C23.</td></tr>
+<tr><td><code>#define</code></td><td><code>#define MAX_ALUNOS 30</code></td><td>Troca de texto, sem tipo. Ainda muito comum, mas com as armadilhas da aula <a href="preprocessador.html">Pré-processador</a>.</td></tr>
+<tr><td><code>enum</code> com potências de 2</td><td><code>NEGRITO = 1 &lt;&lt; 0, ITALICO = 1 &lt;&lt; 1</code></td><td>Opções que se <strong>combinam</strong> (negrito e itálico ao mesmo tempo): aula <a href="mascaras-bits.html">Máscaras e Flags</a>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"enumeration value ‘ENTREGUE’ not handled in switch"</strong>
+<p><strong>O que aconteceu:</strong> é um aviso, não um erro: o programa compila e roda, mas o <code>switch</code> não tem <code>case</code> para uma das opções do enum (seção 4). Quando o valor chega, nada acontece.</p>
+<p><strong>Como resolver:</strong> acrescente o <code>case</code> que falta. Evite pôr um <code>default</code> só para calar o aviso: ele vai esconder também as opções que forem criadas no futuro.</p>
+</div>
+
+<div class="cenario">
+<strong>"redeclaration of enumerator ‘LARANJA’"</strong>
+<p><strong>O que aconteceu:</strong> o mesmo nome aparece em dois enums do mesmo arquivo (ou num enum e numa variável global). Os nomes do enum não ficam "dentro" dele (seção 7).</p>
+<p><strong>Como resolver:</strong> use um prefixo com o nome do enum: <code>FRUTA_LARANJA</code>, <code>COR_LARANJA</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"unknown type name ‘Status’; use ‘enum’ keyword"</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra semtag.c -o semtag
+semtag.c: In function ‘main’:
+semtag.c:6:5: error: unknown type name ‘Status’; use ‘enum’ keyword to refer to the type
+    6 |     Status s = PAGO;
+      |     ^~~~~~
+      |     enum </pre>
+<p><strong>O que aconteceu:</strong> o enum foi declarado como <code>enum Status { … };</code>, então o nome do tipo são as duas palavras. O gcc até sugere o conserto na última linha: escrever <code>enum</code> na frente. O Clang do editor diz <code>must use 'enum' tag to refer to type 'Status'</code>.</p>
+<p><strong>Como resolver:</strong> escreva <code>enum Status s = PAGO;</code>, ou crie o apelido com <code>typedef</code> (seção 9).</p>
+</div>
+
+<div class="cenario">
+<strong>"incompatible types when initializing type ‘enum Status’ using type ‘char *’"</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra texto.c -o texto
+texto.c: In function ‘main’:
+texto.c:6:21: error: incompatible types when initializing type ‘enum Status’ using type ‘char *’
+    6 |     enum Status s = "PAGO";
+      |                     ^~~~~~</pre>
+<p><strong>O que aconteceu:</strong> <code>"PAGO"</code>, com aspas, é um <strong>texto</strong> (uma string), e não o nome do enum. "Tipos incompatíveis: inicializando um <code>enum Status</code> com um <code>char *</code>". O Clang do editor diz <code>incompatible pointer to integer conversion initializing 'enum Status' with an expression of type 'char[5]'</code>.</p>
+<p><strong>Como resolver:</strong> tire as aspas: <code>enum Status s = PAGO;</code>. Se o texto veio do usuário, compare com <code>strcmp</code> para descobrir qual opção é (<code>if (strcmp(texto, "pago") == 0) s = PAGO;</code>).</p>
+</div>
+
+<div class="cenario" id="pg-indice">
+<strong><code>(null)</code> ou falha de segmentação ao mostrar o nome</strong>
+<pre class="file" data-file="foradolimite.c">#include &lt;stdio.h&gt;
+
+enum Status { PENDENTE, PAGO, ENVIADO, ENTREGUE, TOTAL_STATUS };
+
+const char *NOME_STATUS[TOTAL_STATUS] = {
+    "pendente", "pago", "enviado", "entregue",
+};
+
+int main(void) {
+    int codigo;
+    printf("Código do status (0 a 3): ");
+    if (scanf("%d", &amp;codigo) != 1) {
+        return 1;
+    }
+    enum Status s = codigo;
+    printf("Status: %s\n", NOME_STATUS[s]);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra foradolimite.c -o foradolimite
+$ ./foradolimite
+Código do status (0 a 3): 2
+Status: enviado
+$ ./foradolimite
+Código do status (0 a 3): 7
+Status: (null)
+$ ./foradolimite
+Código do status (0 a 3): 900000
+Falha de segmentação     (imagem do núcleo gravada) ./foradolimite</pre>
+<p><strong>O que aconteceu:</strong> o C aceitou 7 e 900000 no enum (seção 6), e o programa usou esses números como índice de um array de 4 posições. Com 7, ele leu um endereço vazio por acaso, e o <code>printf</code> do Linux escreve <code>(null)</code> para um texto nulo. Com 900000, foi parar numa memória que nem é do programa, e o sistema o derrubou. Ler fora do array é <a href="comportamento-indefinido.html">comportamento indefinido</a>: o resultado muda de um computador para outro. No editor do guia, o 7 também dá <code>(null)</code> e o 900000 dá <code>Falha de segmentação</code> (código 139).</p>
+<p><strong>Como resolver:</strong> confira o número <strong>antes</strong> de usá-lo:</p>
+<pre class="file" data-file="validar.c">    if (codigo &lt; 0 || codigo &gt;= TOTAL_STATUS) {
+        printf("Código inválido: %d\n", codigo);
+        return 1;
+    }
+    enum Status s = codigo;
+</pre>
+<pre class="term" data-cwd="~/c">$ ./validar
+Código do status (0 a 3): 900000
+Código inválido: 900000
+$ ./validar
+Código do status (0 a 3): 1
+Status: pago</pre>
+</div>
+
+<div class="cenario">
+<strong>"format ‘%d’ expects argument of type ‘int *’, but argument 2 has type ‘enum Status *’"</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra lerenum.c -o lerenum
+lerenum.c: In function ‘main’:
+lerenum.c:7:17: warning: format ‘%d’ expects argument of type ‘int *’, but argument 2 has type ‘enum Status *’ [-Wformat=]
+    7 |     if (scanf("%d", &amp;s) != 1) {
+      |                ~^   ~~
+      |                 |   |
+      |                 |   enum Status *
+      |                 int *
+      |                %d</pre>
+<p><strong>O que aconteceu:</strong> o <code>scanf("%d", …)</code> espera o endereço de um <code>int</code>, e recebeu o de um <code>enum Status</code>. O padrão do C deixa cada compilador escolher o tipo inteiro por trás de um enum (o gcc escolhe <code>unsigned int</code> quando não há negativos), e ele pode não ser exatamente um <code>int</code>. O Clang do editor não dá esse aviso, mas o problema é o mesmo.</p>
+<p><strong>Como resolver:</strong> leia num <code>int</code>, confira a faixa e depois guarde no enum, como no <code>validar.c</code> acima.</p>
+</div>
+
+<div class="cenario">
+<strong>"case value ‘7’ not in enumerated type ‘enum Status’"</strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra casefora.c -o casefora
+casefora.c: In function ‘main’:
+casefora.c:12:5: warning: case value ‘7’ not in enumerated type ‘enum Status’ [-Wswitch]
+   12 |     case 7:        printf("cancelado\n"); break;
+      |     ^~~~</pre>
+<p><strong>O que aconteceu:</strong> um <code>case</code> com um número que não é nenhuma opção do enum: "o valor 7 do case não está no tipo <code>enum Status</code>". Em geral, é uma opção nova que alguém quis tratar sem acrescentá-la ao enum.</p>
+<p><strong>Como resolver:</strong> acrescente a opção ao enum (<code>CANCELADO</code>) e use o nome no <code>case</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Significado</th></tr>
+<tr><td><code>enum Status { PENDENTE, PAGO, ENVIADO };</code></td><td>Declara o tipo; os nomes valem 0, 1, 2 (não esqueça o <code>;</code>).</td></tr>
+<tr><td><code>enum Mes { JAN = 1, FEV, MAR };</code></td><td>Escolhe o primeiro valor; os seguintes continuam: 1, 2, 3.</td></tr>
+<tr><td><code>enum Status s = PAGO;</code></td><td>Cria uma variável do enum.</td></tr>
+<tr><td><code>switch (s) { case PAGO: … }</code></td><td>Um <code>case</code> por opção; o <code>-Wall</code> avisa se faltar uma.</td></tr>
+<tr><td><code>…, TOTAL_STATUS };</code></td><td>Último nome extra: vale a quantidade de opções.</td></tr>
+<tr><td><code>const char *NOME[TOTAL] = { [PAGO] = "pago" };</code></td><td>Texto de cada opção, por posição (C99).</td></tr>
+<tr><td><code>printf("%d", s)</code></td><td>Mostra o número por trás da opção.</td></tr>
+<tr><td><code>enum Status : unsigned char { … };</code></td><td>C23: escolhe o tipo de baixo (aqui, 1 byte).</td></tr>
+<tr><td><code>typedef enum { … } Status;</code></td><td>Apelido: <code>Status s;</code> sem a palavra <code>enum</code>.</td></tr>
+<tr><td><code>COR_AZUL</code>, <code>FRUTA_UVA</code></td><td>Prefixo para os nomes de enums diferentes não colidirem.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Declarar o enum</h3>
+<p>Complete para criar um enum <code>Naipe</code> com as opções <code>COPAS</code>, <code>ESPADAS</code>, <code>OUROS</code> e <code>PAUS</code>, nessa ordem:</p>
+<div class="ex-code">enum Naipe { <input data-answer="COPAS, ESPADAS, OUROS, PAUS|COPAS,ESPADAS,OUROS,PAUS" aria-label="opções"> };</div>
+</div>
+
+<div class="exercise">
+<h3>2. Quanto vale?</h3>
+<p>Com <code>enum Nivel { FACIL = 1, MEDIO, DIFICIL };</code>, quanto vale <code>DIFICIL</code>?</p>
+<div class="ex-code"><input data-answer="3" aria-label="valor"></div>
+</div>
+
+<div class="exercise">
+<h3>3. A variável</h3>
+<p>Complete para criar a variável <code>n</code> do tipo do exercício 2, valendo <code>MEDIO</code>:</p>
+<div class="ex-code"><input data-answer="enum Nivel n = MEDIO;|enum Nivel n=MEDIO;" aria-label="declaração"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Com <code>enum Cor { VERDE, AMARELO, VERMELHO, TOTAL_CORES };</code>, quanto vale <code>TOTAL_CORES</code>?</p>
+<label><input type="radio" name="q4"> 4</label>
+<label><input type="radio" name="q4"> 2</label>
+<label><input type="radio" name="q4"> 3</label>
+<label><input type="radio" name="q4"> Dá erro: <code>TOTAL_CORES</code> não é uma cor</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. O que o gcc faz com <code>enum Status s = 42;</code>, se o enum só tem os valores 0 a 3?</p>
+<label><input type="radio" name="q5"> Dá erro de compilação.</label>
+<label><input type="radio" name="q5"> Compila sem aviso: <code>s</code> passa a valer 42.</label>
+<label><input type="radio" name="q5"> Guarda 3, o maior valor permitido.</label>
+<label><input type="radio" name="q5"> Guarda 0, o primeiro valor.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Um <code>switch</code> sobre um <code>enum Status</code> não tem <code>case ENTREGUE</code> nem <code>default</code>. O que o <code>-Wall</code> faz?</p>
+<label><input type="radio" name="q6"> Avisa: <code>enumeration value ‘ENTREGUE’ not handled in switch</code>.</label>
+<label><input type="radio" name="q6"> Nada: o C não confere o <code>switch</code>.</label>
+<label><input type="radio" name="q6"> Dá erro e não gera o programa.</label>
+<label><input type="radio" name="q6"> Acrescenta sozinho um <code>case</code> vazio.</label>
+</div>
+
+<h3>Missão final: o semáforo</h3>
+<div class="tryc" data-goal="out:verde → amarelo → vermelho → verde → amarelo → vermelho → verde,src:switch\s*\(">
+<p class="try-task"><strong>Missão:</strong> complete a função <code>proximo</code> com um <code>switch</code>: depois do <code>VERDE</code> vem o <code>AMARELO</code>, depois do <code>AMARELO</code> vem o <code>VERMELHO</code>, e depois do <code>VERMELHO</code> volta o <code>VERDE</code>. Hoje ela devolve o mesmo sinal, e a tela fica toda verde. A saída certa é:</p>
+<pre class="out">verde → amarelo → vermelho → verde → amarelo → vermelho → verde</pre>
+<p class="try-task">Dica: como <code>TOTAL_SINAIS</code> também é um nome do enum, o <code>-Wswitch</code> vai pedir um <code>case</code> para ele. Um <code>default:</code> resolve.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+enum Sinal { VERDE, AMARELO, VERMELHO, TOTAL_SINAIS };
+
+const char *NOME_SINAL[TOTAL_SINAIS] = {
+    [VERDE]    = "verde",
+    [AMARELO]  = "amarelo",
+    [VERMELHO] = "vermelho",
+};
+
+enum Sinal proximo(enum Sinal s) {
+    /* devolva o sinal que vem depois de s */
+    return s;
+}
+
+int main(void) {
+    enum Sinal s = VERDE;
+    for (int i = 0; i &lt; 7; i++) {
+        printf("%s", NOME_SINAL[s]);
+        if (i &lt; 6) {
+            printf(" → ");
+        }
+        s = proximo(s);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+enum Sinal { VERDE, AMARELO, VERMELHO, TOTAL_SINAIS };
+
+const char *NOME_SINAL[TOTAL_SINAIS] = {
+    [VERDE]    = "verde",
+    [AMARELO]  = "amarelo",
+    [VERMELHO] = "vermelho",
+};
+
+enum Sinal proximo(enum Sinal s) {
+    switch (s) {
+    case VERDE:
+        return AMARELO;
+    case AMARELO:
+        return VERMELHO;
+    case VERMELHO:
+        return VERDE;
+    default:
+        return VERMELHO;
+    }
+}
+
+int main(void) {
+    enum Sinal s = VERDE;
+    for (int i = 0; i &lt; 7; i++) {
+        printf("%s", NOME_SINAL[s]);
+        if (i &lt; 6) {
+            printf(" → ");
+        }
+        s = proximo(s);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Por que o <code>default</code> devolve <code>VERMELHO</code>? Se um valor estranho chegar (um 42, por exemplo), o mais seguro para um semáforo é parar o trânsito.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <strong>enum</strong> dá nomes a uma lista de opções: <code>enum Status { PENDENTE, PAGO, ENVIADO, ENTREGUE };</code>. Os nomes trocam os números mágicos do código.</li>
+  <li>Os valores começam em 0 e sobem de 1 em 1; com <code>=</code> você escolhe outros (<code>JAN = 1</code>), e os seguintes continuam a contagem.</li>
+  <li>Com <code>switch</code>, o <code>-Wall</code> avisa quando falta uma opção (<code>not handled in switch</code>). Um <code>default</code> cala esse aviso.</li>
+  <li>Para mostrar o nome, use um array de textos indexado pelo enum, e um último nome <code>TOTAL_…</code> para saber quantas opções existem.</li>
+  <li>Por baixo, é um inteiro: o C aceita qualquer número num enum. Confira a faixa antes de usar um valor que veio de fora.</li>
+  <li>Os nomes do enum são globais: use prefixos (<code>COR_AZUL</code>). No <span class="versao">C23</span>, <code>enum Status : unsigned char</code> escolhe o tipo de baixo; <code>typedef enum { … } Status;</code> encurta o nome.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
