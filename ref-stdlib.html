@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C stdlib.h e stdio.h — tabela das funções de memória, conversão, arquivos e entrada e saída | Guia C</title>
+<meta name="description" content="Referência do stdlib.h e do stdio.h em C: malloc, calloc, realloc, free, atoi, strtol, strtod, rand, qsort, bsearch, abs, div, exit, atexit, getenv, system; fopen e seus modos, fclose, fgets, fgetc, fputs, fread, fwrite, fseek, ftell, feof, remove, rename, perror; as constantes EOF, BUFSIZ e FOPEN_MAX, com saídas reais do gcc 15 e do editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">stdlib.h e stdio.h</span></h1>
+
+<p class="intro">Esta é a página de consulta rápida das duas bibliotecas que quase todo programa em C inclui. O <code>&lt;stdlib.h&gt;</code> ("standard library", biblioteca padrão) tem memória dinâmica, conversão de texto em número, números aleatórios, ordenação e o encerramento do programa. O <code>&lt;stdio.h&gt;</code> ("standard input/output", entrada e saída padrão) tem a tela, o teclado e os arquivos. Cada linha das tabelas leva à aula que explica a função com calma. Os formatos do <code>printf</code> e do <code>scanf</code> estão em <a href="ref-printf.html">printf e scanf</a>.</p>
+
+<p>Todas as saídas foram produzidas de verdade: no <strong>gcc 15.2</strong> da máquina da Ana (Linux de 64 bits, pasta <code>~/c/ref</code>, comando <code>gcc -std=c23 -Wall -Wextra</code>) e no editor do guia (Clang em WebAssembly). Quando os dois diferem, a tabela diz.</p>
+
+<p>Atalhos: <strong>stdlib.h</strong>: <a href="#memoria">Memória</a> · <a href="#conversao">Texto → número</a> · <a href="#utilidades">Ordenar, buscar, contas</a> · <a href="#aleatorios">Aleatórios</a> · <a href="#encerrar">Encerrar e ambiente</a> · <strong>stdio.h</strong>: <a href="#tela">Tela e teclado</a> · <a href="#fopen">fopen e os modos</a> · <a href="#arquivos">Arquivos</a> · <a href="#constantes">Constantes</a> · <a href="#diferencas">Editor × gcc</a> · <a href="#erros">Erros comuns</a> · <a href="#experimente">Experimente</a></p>
+
+<hr>
+
+<h2 id="memoria">stdlib.h: memória dinâmica</h2>
+<p>A memória dinâmica é a que o programa pede durante a execução, do tamanho que precisar, no <strong>heap</strong> (aula <a href="pilha-heap.html">Pilha e Heap</a>). Toda memória pedida tem de ser devolvida com <code>free</code>.</p>
+<pre class="file" data-file="mem.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    int *v = malloc(3 * sizeof *v);
+    if (v == NULL) {
+        return 1;
+    }
+    v[0] = 10; v[1] = 20; v[2] = 30;
+    int *maior = realloc(v, 5 * sizeof *v);
+    if (maior == NULL) {
+        free(v);
+        return 1;
+    }
+    v = maior;
+    v[3] = 40; v[4] = 50;
+    printf("realloc: %d %d %d %d %d\n", v[0], v[1], v[2], v[3], v[4]);
+    free(v);
+    double *z = calloc(4, sizeof *z);
+    if (z == NULL) {
+        return 1;
+    }
+    printf("calloc: %.1f %.1f %.1f %.1f\n", z[0], z[1], z[2], z[3]);
+    free(z);
+    char *gigante = malloc(300u * 1024 * 1024);
+    printf("malloc de 300 MB: %s\n", gigante ? "deu certo" : "NULL");
+    free(gigante);
+    void *alinhado = aligned_alloc(64, 128);
+    printf("aligned_alloc(64, 128): múltiplo de 64? %s\n", (unsigned long)alinhado % 64 == 0 ? "sim" : "não");
+    free(alinhado);
+    free(NULL);
+    printf("free(NULL): não faz nada\n");
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra mem.c -o mem
+$ ./mem
+realloc: 10 20 30 40 50
+calloc: 0.0 0.0 0.0 0.0
+malloc de 300 MB: deu certo                       « no editor: NULL (o limite é 256 MB)
+aligned_alloc(64, 128): múltiplo de 64? sim
+free(NULL): não faz nada</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Devolve</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>malloc(n)</code><br>"memory allocation"</td><td>Reserva <code>n</code> bytes. O conteúdo é <strong>lixo</strong>.</td><td>o endereço, ou <code>NULL</code> se não deu</td><td><code>int *v = malloc(3 * sizeof *v);</code></td><td><a href="malloc-free.html">malloc e free</a></td></tr>
+<tr><td><code>calloc(qtd, tam)</code><br>"cleared allocation"</td><td>Reserva <code>qtd</code> × <code>tam</code> bytes, <strong>todos zerados</strong>.</td><td>o endereço, ou <code>NULL</code></td><td><code>calloc(4, sizeof(double))</code> → <code>0.0 0.0 0.0 0.0</code></td><td><a href="calloc-realloc.html">calloc e realloc</a></td></tr>
+<tr><td><code>realloc(p, n)</code></td><td>Muda o tamanho do bloco <code>p</code> para <code>n</code> bytes, mantendo o conteúdo (pode mudar o bloco de lugar).</td><td>o novo endereço, ou <code>NULL</code> (aí o bloco antigo <strong>continua valendo</strong>)</td><td>de 3 para 5 <code>int</code>: <code>10 20 30 40 50</code></td><td><a href="calloc-realloc.html">calloc e realloc</a></td></tr>
+<tr><td><code>free(p)</code></td><td>Devolve o bloco. Depois disso, <code>p</code> não pode mais ser usado. <code>free(NULL)</code> não faz nada.</td><td>nada</td><td><code>free(v); v = NULL;</code></td><td><a href="vazamentos.html">Vazamentos</a></td></tr>
+<tr><td><code>aligned_alloc(al, n)</code> <span class="versao">C11</span></td><td>Como <code>malloc</code>, mas o endereço é múltiplo de <code>al</code>.</td><td>o endereço, ou <code>NULL</code></td><td><code>aligned_alloc(64, 128)</code></td><td><a href="pilha-heap.html">Pilha e Heap</a></td></tr>
+</table>
+</div>
+<p>Sempre teste o <code>NULL</code>. E nunca escreva <code>v = realloc(v, n)</code>: se o <code>realloc</code> falhar, você perde o único endereço do bloco antigo (vazamento). Use uma variável nova, como <code>maior</code> no programa acima.</p>
+
+<h2 id="conversao">stdlib.h: texto → número</h2>
+<pre class="file" data-file="conv.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;errno.h&gt;
+
+int main(void) {
+    printf("atoi(\"42abc\") = %d\n", atoi("42abc"));
+    printf("atoi(\"abc\")   = %d\n", atoi("abc"));
+    printf("atof(\"3.14\")  = %g\n", atof("3.14"));
+    char *fim;
+    long n = strtol("  -17 kg", &amp;fim, 10);
+    printf("strtol: %ld, sobrou [%s]\n", n, fim);
+    printf("strtol base 16: %ld\n", strtol("ff", NULL, 16));
+    printf("strtol base 2:  %ld\n", strtol("1010", NULL, 2));
+    printf("strtol base 0:  %ld %ld %ld\n", strtol("0x1F", NULL, 0), strtol("017", NULL, 0), strtol("17", NULL, 0));
+    n = strtol("abc", &amp;fim, 10);
+    printf("strtol(\"abc\"): %ld, nada lido: %s\n", n, *fim == 'a' ? "sim" : "não");
+    errno = 0;
+    long long g = strtoll("99999999999999999999", NULL, 10);
+    printf("strtoll grande demais: %lld, ERANGE: %s\n", g, errno == ERANGE ? "sim" : "não");
+    unsigned long u = strtoul("4000000000", NULL, 10);
+    printf("strtoul: %lu\n", u);
+    double d = strtod("12.90 reais", &amp;fim);
+    printf("strtod: %.2f, sobrou [%s]\n", d, fim);
+    float f = strtof("1e3", NULL);
+    printf("strtof: %.1f\n", f);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra conv.c -o conv
+$ ./conv
+atoi("42abc") = 42
+atoi("abc")   = 0
+atof("3.14")  = 3.14
+strtol: -17, sobrou [ kg]
+strtol base 16: 255
+strtol base 2:  10
+strtol base 0:  31 15 17
+strtol("abc"): 0, nada lido: sim
+strtoll grande demais: 9223372036854775807, ERANGE: sim
+strtoul: 4000000000
+strtod: 12.90, sobrou [ reais]
+strtof: 1000.0</pre>
+<p>A saída do editor é idêntica.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Converte para</th><th>Se o texto não é um número</th><th>Exemplo → resultado</th><th>Aula</th></tr>
+<tr><td><code>atoi(s)</code>, <code>atol(s)</code>, <code>atoll(s)</code><br>"ASCII to integer"</td><td><code>int</code>, <code>long</code>, <code>long long</code></td><td>devolve <code>0</code>, calado (não dá para saber se era <code>"0"</code>)</td><td><code>atoi("42abc")</code> → <code>42</code>; <code>atoi("abc")</code> → <code>0</code></td><td><a href="string-numero.html">Texto ↔ Número</a></td></tr>
+<tr><td><code>atof(s)</code></td><td><code>double</code></td><td>devolve <code>0.0</code>, calado</td><td><code>atof("3.14")</code> → <code>3.14</code></td><td><a href="string-numero.html">Texto ↔ Número</a></td></tr>
+<tr><td><code>strtol(s, &amp;fim, base)</code><br>"string to long"</td><td><code>long</code></td><td>devolve <code>0</code> e <code>fim</code> aponta para o começo de <code>s</code>; se o número não cabe, devolve <code>LONG_MAX</code>/<code>LONG_MIN</code> e põe <code>ERANGE</code> no <code>errno</code></td><td><code>strtol("  -17 kg", &amp;fim, 10)</code> → <code>-17</code>, <code>fim</code> = <code>" kg"</code></td><td><a href="string-numero.html">Texto ↔ Número</a></td></tr>
+<tr><td><code>strtoll</code>, <code>strtoul</code>, <code>strtoull</code></td><td><code>long long</code>, <code>unsigned long</code>, <code>unsigned long long</code></td><td>como <code>strtol</code></td><td><code>strtoll("99999999999999999999", …)</code> → <code>9223372036854775807</code> + <code>ERANGE</code></td><td><a href="validar-entrada.html">Validar a Entrada</a></td></tr>
+<tr><td><code>strtod(s, &amp;fim)</code>, <code>strtof</code>, <code>strtold</code></td><td><code>double</code>, <code>float</code>, <code>long double</code></td><td>como <code>strtol</code></td><td><code>strtod("12.90 reais", &amp;fim)</code> → <code>12.90</code>, <code>fim</code> = <code>" reais"</code></td><td><a href="string-numero.html">Texto ↔ Número</a></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A <code>base</code> do <code>strtol</code></th><th>Entende</th><th>Exemplo → resultado</th></tr>
+<tr><td><code>10</code></td><td>decimal</td><td><code>"17"</code> → <code>17</code></td></tr>
+<tr><td><code>16</code></td><td>hexadecimal, com ou sem <code>0x</code></td><td><code>"ff"</code> → <code>255</code></td></tr>
+<tr><td><code>2</code></td><td>binário</td><td><code>"1010"</code> → <code>10</code></td></tr>
+<tr><td><code>0</code></td><td>decide pelo começo: <code>0x</code> = hexadecimal, <code>0</code> = octal, o resto = decimal</td><td><code>"0x1F"</code> → <code>31</code>; <code>"017"</code> → <code>15</code>; <code>"17"</code> → <code>17</code></td></tr>
+</table>
+</div>
+<p><strong>Prefira as <code>strto…</code> às <code>ato…</code>:</strong> só elas dizem onde a leitura parou (<code>fim</code>) e se o número estourou (<code>errno</code>). Para um <code>int</code>, leia com <code>strtol</code> e confira se o valor está entre <code>INT_MIN</code> e <code>INT_MAX</code> (veja <a href="ref-tipos.html">Tipos e Limites</a>). O caminho inverso, número → texto, é o <code>snprintf</code>.</p>
+
+<h2 id="utilidades">stdlib.h: ordenar, buscar e contas com inteiros</h2>
+<pre class="file" data-file="misc.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int comparar(const void *a, const void *b) {
+    int x = *(const int *)a, y = *(const int *)b;
+    return (x &gt; y) - (x &lt; y);
+}
+
+int main(void) {
+    printf("abs(-5) = %d, labs(-5L) = %ld, llabs(-5LL) = %lld\n", abs(-5), labs(-5L), llabs(-5LL));
+    div_t r = div(17, 5);
+    printf("div(17, 5): quot = %d, rem = %d\n", r.quot, r.rem);
+    int notas[] = {7, 3, 9, 1, 5};
+    qsort(notas, 5, sizeof notas[0], comparar);
+    printf("qsort: %d %d %d %d %d\n", notas[0], notas[1], notas[2], notas[3], notas[4]);
+    int chave = 7;
+    int *achou = bsearch(&amp;chave, notas, 5, sizeof notas[0], comparar);
+    printf("bsearch(7): posição %td\n", achou - notas);
+    chave = 4;
+    printf("bsearch(4): %s\n", bsearch(&amp;chave, notas, 5, sizeof notas[0], comparar) ? "achou" : "NULL");
+    printf("getenv(\"HOME\") = %s\n", getenv("HOME"));
+    printf("getenv(\"NAO_EXISTE\") = %s\n", getenv("NAO_EXISTE") ? "achou" : "NULL");
+    printf("EXIT_SUCCESS = %d, EXIT_FAILURE = %d\n", EXIT_SUCCESS, EXIT_FAILURE);
+    printf("RAND_MAX = %d\n", RAND_MAX);
+    printf("MB_CUR_MAX = %zu\n", MB_CUR_MAX);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra misc.c -o misc
+$ ./misc
+abs(-5) = 5, labs(-5L) = 5, llabs(-5LL) = 5
+div(17, 5): quot = 3, rem = 2
+qsort: 1 3 5 7 9
+bsearch(7): posição 3
+bsearch(4): NULL
+getenv("HOME") = /home/ana
+getenv("NAO_EXISTE") = NULL
+EXIT_SUCCESS = 0, EXIT_FAILURE = 1
+RAND_MAX = 2147483647
+MB_CUR_MAX = 1</pre>
+<p>A saída do editor é idêntica (lá, o <code>HOME</code> também é <code>/home/ana</code>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo → resultado</th><th>Aula</th></tr>
+<tr><td><code>qsort(v, qtd, tam, cmp)</code><br>"quick sort"</td><td>Ordena um array qualquer. <code>cmp</code> é uma função sua que recebe dois <code>const void *</code> e devolve negativo, 0 ou positivo.</td><td><code>{7, 3, 9, 1, 5}</code> → <code>1 3 5 7 9</code></td><td><a href="ordenacao.html">Ordenação (qsort)</a></td></tr>
+<tr><td><code>bsearch(&amp;chave, v, qtd, tam, cmp)</code><br>"binary search"</td><td>Procura num array <strong>já ordenado</strong>, com a mesma <code>cmp</code>.</td><td>7 → ponteiro para a posição 3; 4 → <code>NULL</code></td><td><a href="busca.html">Busca (bsearch)</a></td></tr>
+<tr><td><code>abs(x)</code>, <code>labs</code>, <code>llabs</code><br>"absolute"</td><td>Valor absoluto (sem sinal) de um <code>int</code>, <code>long</code>, <code>long long</code>. Para <code>double</code>, é o <code>fabs</code> do <code>math.h</code>.</td><td><code>abs(-5)</code> → <code>5</code></td><td><a href="matematica.html">Matemática</a></td></tr>
+<tr><td><code>div(a, b)</code>, <code>ldiv</code>, <code>lldiv</code></td><td>Quociente e resto de uma vez, numa struct (<code>.quot</code>, <code>.rem</code>).</td><td><code>div(17, 5)</code> → <code>quot = 3</code>, <code>rem = 2</code></td><td><a href="operadores-aritmeticos.html">Aritméticos</a></td></tr>
+</table>
+</div>
+<p>A comparação <code>(x &gt; y) - (x &lt; y)</code> devolve −1, 0 ou 1 sem risco. O atalho <code>return x - y;</code> funciona com notas, mas <strong>estoura</strong> com números grandes de sinais opostos (aula <a href="inteiros.html">Inteiros</a>).</p>
+
+<h2 id="aleatorios">stdlib.h: números aleatórios</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função ou constante</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>rand()</code></td><td>Devolve um inteiro "aleatório" de 0 a <code>RAND_MAX</code>. A sequência é sempre a mesma se a semente for a mesma.</td><td><code>rand() % 6 + 1</code> → um dado, de 1 a 6</td><td><a href="aleatorios.html">Números Aleatórios</a></td></tr>
+<tr><td><code>srand(semente)</code><br>"seed rand"</td><td>Escolhe a semente. Chame <strong>uma vez</strong>, no começo do programa.</td><td><code>srand((unsigned)time(NULL));</code> (precisa de <code>&lt;time.h&gt;</code>)</td><td><a href="aleatorios.html">Números Aleatórios</a></td></tr>
+<tr><td><code>RAND_MAX</code></td><td>O maior valor do <code>rand()</code>.</td><td><code>2147483647</code> nos dois</td><td><a href="aleatorios.html">Números Aleatórios</a></td></tr>
+</table>
+</div>
+<p>Os números <strong>mudam</strong> entre o editor e o gcc: com <code>srand(42)</code>, os três primeiros <code>rand()</code> dão <code>311430560 131117839 1110653038</code> no editor e <code>1483128881 708592740 71876166</code> no gcc. O <code>rand()</code> não serve para senhas nem sorteios sérios.</p>
+
+<h2 id="encerrar">stdlib.h: encerrar o programa e falar com o sistema</h2>
+<pre class="file" data-file="saida.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void tchau(void) {
+    printf("tchau (registrada primeiro)\n");
+}
+
+void salvar(void) {
+    printf("salvando (registrada depois)\n");
+}
+
+int main(void) {
+    atexit(tchau);
+    atexit(salvar);
+    printf("trabalhando...\n");
+    exit(3);
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra saida.c -o saida
+$ ./saida; echo "código: $?"
+trabalhando...
+salvando (registrada depois)
+tchau (registrada primeiro)
+código: 3</pre>
+<p>No editor, igual, com <code>[código de saída: 3]</code> no fim. As funções do <code>atexit</code> rodam na ordem <strong>contrária</strong> à do registro.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função ou constante</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>exit(código)</code></td><td>Encerra o programa de qualquer ponto: roda as funções do <code>atexit</code>, esvazia os buffers e fecha os arquivos. O código vai para o <code>$?</code> do terminal (de 0 a 255).</td><td><code>exit(3)</code> → <code>código: 3</code></td><td><a href="exit.html">exit e atexit</a></td></tr>
+<tr><td><code>EXIT_SUCCESS</code>, <code>EXIT_FAILURE</code></td><td>Os códigos de "deu certo" e "deu errado".</td><td><code>0</code> e <code>1</code> nos dois</td><td><a href="exit.html">exit e atexit</a></td></tr>
+<tr><td><code>atexit(f)</code></td><td>Registra uma função <code>void f(void)</code> para rodar no fim (no <code>exit</code> ou no <code>return</code> do <code>main</code>).</td><td>ordem contrária: <code>salvar</code>, depois <code>tchau</code></td><td><a href="exit.html">exit e atexit</a></td></tr>
+<tr><td><code>abort()</code></td><td>Mata o programa na hora, sem <code>atexit</code> e sem esvaziar buffers.</td><td><code>Abortado (imagem do núcleo gravada)</code>, código 134</td><td><a href="sinais.html">Sinais</a></td></tr>
+<tr><td><code>quick_exit(c)</code>, <code>at_quick_exit(f)</code> <span class="versao">C11</span>; <code>_Exit(c)</code> <span class="versao">C99</span></td><td>Saídas rápidas: <code>quick_exit</code> só roda as funções do <code>at_quick_exit</code>; <code>_Exit</code> não roda nada.</td><td>raras</td><td><a href="exit.html">exit e atexit</a></td></tr>
+<tr><td><code>getenv(nome)</code><br>"get environment"</td><td>Lê uma variável de ambiente.</td><td><code>getenv("HOME")</code> → <code>/home/ana</code>; uma que não existe → <code>NULL</code></td><td><a href="getenv.html">getenv</a></td></tr>
+<tr><td><code>system(comando)</code></td><td>Roda um comando do terminal e espera ele acabar.</td><td><code>system("ls")</code>. No editor, não há terminal: sai <code>sh: 1: ls: not found</code> e devolve 32512</td><td><a href="processos.html">Processos</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="tela">stdio.h: tela e teclado</h2>
+<p>A tela é o <code>stdout</code>, o teclado é o <code>stdin</code> e as mensagens de erro vão para o <code>stderr</code> (aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>). As funções com <code>f</code> recebem um <code>FILE *</code> e servem para qualquer um dos três e para arquivos.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Devolve</th><th>Aula</th></tr>
+<tr><td><code>printf(fmt, …)</code>, <code>fprintf(arq, fmt, …)</code></td><td>Escreve com formato (<a href="ref-printf.html">tabela dos formatos</a>).</td><td>bytes escritos, ou negativo</td><td><a href="printf.html">printf</a></td></tr>
+<tr><td><code>snprintf(buf, tam, fmt, …)</code> <span class="versao">C99</span></td><td>Escreve com formato numa string, sem passar de <code>tam</code>.</td><td>bytes que <strong>precisaria</strong></td><td><a href="string-numero.html">Texto ↔ Número</a></td></tr>
+<tr><td><code>puts(s)</code></td><td>Escreve <code>s</code> e pula linha.</td><td>não negativo, ou <code>EOF</code></td><td><a href="printf.html">printf</a></td></tr>
+<tr><td><code>fputs(s, arq)</code></td><td>Escreve <code>s</code> <strong>sem</strong> pular linha.</td><td>não negativo, ou <code>EOF</code></td><td><a href="escrever-arquivos.html">Escrever Arquivos</a></td></tr>
+<tr><td><code>putchar(c)</code>, <code>fputc(c, arq)</code>, <code>putc</code></td><td>Escreve um caractere.</td><td>o caractere, ou <code>EOF</code></td><td><a href="char.html">char</a></td></tr>
+<tr><td><code>scanf(fmt, …)</code>, <code>fscanf(arq, fmt, …)</code>, <code>sscanf(s, fmt, …)</code></td><td>Lê com formato (do teclado, de um arquivo, de uma string).</td><td>campos lidos, ou <code>EOF</code></td><td><a href="scanf.html">scanf</a></td></tr>
+<tr><td><code>fgets(buf, tam, arq)</code></td><td>Lê uma linha inteira (com o <code>'\n'</code>), no máximo <code>tam - 1</code> bytes. Para o teclado: <code>fgets(buf, sizeof buf, stdin)</code>.</td><td><code>buf</code>, ou <code>NULL</code> no fim</td><td><a href="fgets.html">fgets</a></td></tr>
+<tr><td><code>getchar()</code>, <code>fgetc(arq)</code>, <code>getc</code></td><td>Lê um caractere. Guarde num <strong><code>int</code></strong>, não num <code>char</code>, para caber o <code>EOF</code>.</td><td>o caractere, ou <code>EOF</code></td><td><a href="char.html">char</a></td></tr>
+<tr><td><code>ungetc(c, arq)</code></td><td>Devolve um caractere à entrada: a próxima leitura o lê de novo.</td><td><code>c</code>, ou <code>EOF</code></td><td><a href="validar-entrada.html">Validar a Entrada</a></td></tr>
+<tr><td><code>perror(texto)</code></td><td>Escreve no <code>stderr</code>: <code>texto: mensagem do errno</code>.</td><td>nada</td><td><a href="errno.html">errno e perror</a></td></tr>
+<tr><td><code>fflush(arq)</code></td><td>Manda já o que está no buffer de saída. <code>fflush(stdin)</code> <strong>não</strong> é do C: não use.</td><td><code>0</code>, ou <code>EOF</code></td><td><a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a></td></tr>
+<tr><td><code>setvbuf(arq, buf, modo, tam)</code></td><td>Escolhe o buffer: <code>_IONBF</code> (nenhum), <code>_IOLBF</code> (por linha), <code>_IOFBF</code> (cheio).</td><td><code>0</code> se deu certo</td><td><a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a></td></tr>
+<tr><td><code>gets(buf)</code></td><td><strong>Removida no C11.</strong> Não sabia o tamanho do <code>buf</code>. No C23, nem compila (<a href="#erros">veja abaixo</a>).</td><td>—</td><td><a href="seguranca.html">Segurança</a></td></tr>
+</table>
+</div>
+
+<h2 id="fopen">stdio.h: <code>fopen</code> e os modos</h2>
+<p><code>FILE *f = fopen("compras.txt", "r");</code> abre um arquivo e devolve um <code>FILE *</code> (um "ponteiro de arquivo", que você passa para as outras funções), ou <code>NULL</code> se não deu. <strong>Sempre</strong> teste o <code>NULL</code> e feche com <code>fclose(f)</code>. Aula: <a href="arquivos.html">Arquivos</a>.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Modo</th><th>Para</th><th>Se o arquivo não existe</th><th>Se já existe</th><th>Começa em</th></tr>
+<tr><td><code>"r"</code></td><td>ler ("read")</td><td><code>NULL</code> (<code>No such file or directory</code>)</td><td>abre</td><td>no começo</td></tr>
+<tr><td><code>"w"</code></td><td>escrever ("write")</td><td>cria</td><td><strong>apaga tudo</strong> e começa vazio</td><td>no começo</td></tr>
+<tr><td><code>"a"</code></td><td>acrescentar ("append")</td><td>cria</td><td>mantém</td><td>no <strong>fim</strong> (toda escrita vai para o fim)</td></tr>
+<tr><td><code>"r+"</code></td><td>ler e escrever</td><td><code>NULL</code></td><td>mantém</td><td>no começo</td></tr>
+<tr><td><code>"w+"</code></td><td>escrever e ler</td><td>cria</td><td>apaga tudo</td><td>no começo</td></tr>
+<tr><td><code>"a+"</code></td><td>ler e acrescentar</td><td>cria</td><td>mantém</td><td>lê de qualquer lugar; escreve no fim</td></tr>
+<tr><td><code>"wx"</code>, <code>"w+x"</code> <span class="versao">C11</span></td><td>criar um arquivo <strong>novo</strong></td><td>cria</td><td><code>NULL</code> (<code>File exists</code>): não apaga nada</td><td>no começo</td></tr>
+<tr><td><code>b</code> no modo (<code>"rb"</code>, <code>"wb"</code>, <code>"ab"</code>…)</td><td>arquivo binário</td><td colspan="3">No Linux não muda nada; no Windows, desliga a troca de <code>\n</code> por <code>\r\n</code>. Use em <code>fread</code>/<code>fwrite</code>. Aula: <a href="arquivos-binarios.html">Arquivos Binários</a>.</td></tr>
+</table>
+</div>
+
+<h2 id="arquivos">stdio.h: ler, escrever e andar no arquivo</h2>
+<pre class="file" data-file="arq.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *f = fopen("compras.txt", "w");
+    if (f == NULL) {
+        perror("compras.txt");
+        return 1;
+    }
+    fprintf(f, "arroz\nfeijão\n");
+    fputs("café\n", f);
+    fclose(f);
+
+    f = fopen("compras.txt", "a");
+    fputc('p', f);
+    fputs("ão\n", f);
+    fclose(f);
+
+    f = fopen("compras.txt", "r");
+    char linha[50];
+    while (fgets(linha, sizeof linha, f) != NULL) {
+        printf("lido: %s", linha);
+    }
+    printf("feof = %d, ferror = %d\n", feof(f) != 0, ferror(f) != 0);
+    fseek(f, 0, SEEK_END);
+    printf("tamanho: %ld bytes\n", ftell(f));
+    rewind(f);
+    int c = fgetc(f);
+    ungetc(c, f);
+    printf("primeira letra: %c, de novo: %c\n", c, fgetc(f));
+    fclose(f);
+
+    if (fopen("compras.txt", "wx") == NULL) {
+        perror("modo \"wx\"");
+    }
+    if (rename("compras.txt", "lista.txt") == 0) {
+        printf("rename: ok\n");
+    }
+    if (fopen("compras.txt", "r") == NULL) {
+        perror("compras.txt");
+    }
+    printf("remove: %d\n", remove("lista.txt"));
+    printf("remove de novo: %d\n", remove("lista.txt"));
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra arq.c -o arq
+$ ./arq
+lido: arroz
+lido: feijão
+lido: café
+lido: pão
+feof = 1, ferror = 0
+tamanho: 25 bytes
+primeira letra: a, de novo: a
+modo "wx": File exists
+rename: ok
+compras.txt: No such file or directory
+remove: 0
+remove de novo: -1</pre>
+<p>A saída do editor é idêntica (os arquivos ficam numa pasta em memória, que começa limpa a cada Rodar). O tamanho, 25 bytes, é a soma de 18 letras, 4 <code>\n</code> e mais 1 byte para cada uma das 3 letras acentuadas (que ocupam 2 bytes).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Devolve</th><th>Aula</th></tr>
+<tr><td><code>fopen(nome, modo)</code></td><td>Abre (<a href="#fopen">tabela dos modos</a>).</td><td><code>FILE *</code>, ou <code>NULL</code></td><td><a href="arquivos.html">Arquivos</a></td></tr>
+<tr><td><code>fclose(f)</code></td><td>Fecha: grava o que estava no buffer e libera o <code>FILE</code>.</td><td><code>0</code>, ou <code>EOF</code></td><td><a href="arquivos.html">Arquivos</a></td></tr>
+<tr><td><code>fgets</code>, <code>fgetc</code>, <code>fscanf</code></td><td>Leem uma linha, um caractere, com formato.</td><td>veja <a href="#tela">acima</a></td><td><a href="ler-arquivos.html">Ler Arquivos</a></td></tr>
+<tr><td><code>fprintf</code>, <code>fputs</code>, <code>fputc</code></td><td>Escrevem com formato, uma string, um caractere.</td><td>veja <a href="#tela">acima</a></td><td><a href="escrever-arquivos.html">Escrever Arquivos</a></td></tr>
+<tr><td><code>fread(buf, tam, qtd, f)</code></td><td>Lê <code>qtd</code> itens de <code>tam</code> bytes, do jeito que estão na memória (binário).</td><td>quantos itens leu (<code>size_t</code>)</td><td><a href="arquivos-binarios.html">Arquivos Binários</a></td></tr>
+<tr><td><code>fwrite(buf, tam, qtd, f)</code></td><td>Escreve <code>qtd</code> itens de <code>tam</code> bytes.</td><td>quantos itens escreveu</td><td><a href="arquivos-binarios.html">Arquivos Binários</a></td></tr>
+<tr><td><code>fseek(f, desloc, origem)</code></td><td>Vai para outra posição: <code>desloc</code> bytes a partir de <code>SEEK_SET</code> (começo), <code>SEEK_CUR</code> (onde está) ou <code>SEEK_END</code> (fim).</td><td><code>0</code> se deu certo</td><td><a href="fseek.html">fseek e ftell</a></td></tr>
+<tr><td><code>ftell(f)</code></td><td>A posição atual, em bytes desde o começo. Depois de <code>fseek(f, 0, SEEK_END)</code>, é o tamanho do arquivo.</td><td><code>long</code>, ou <code>-1</code></td><td><a href="fseek.html">fseek e ftell</a></td></tr>
+<tr><td><code>rewind(f)</code></td><td>Volta ao começo (e limpa o <code>feof</code>).</td><td>nada</td><td><a href="fseek.html">fseek e ftell</a></td></tr>
+<tr><td><code>feof(f)</code>, <code>ferror(f)</code></td><td>Dizem se uma leitura <strong>já</strong> bateu no fim, ou se deu erro. Use <strong>depois</strong> que a leitura falhou, para saber o motivo.</td><td>não zero = sim</td><td><a href="ler-arquivos.html">Ler Arquivos</a></td></tr>
+<tr><td><code>clearerr(f)</code></td><td>Limpa os indicadores de fim e de erro.</td><td>nada</td><td><a href="ler-arquivos.html">Ler Arquivos</a></td></tr>
+<tr><td><code>remove(nome)</code></td><td>Apaga o arquivo.</td><td><code>0</code>, ou não zero (aqui, <code>-1</code>)</td><td><a href="arquivos.html">Arquivos</a></td></tr>
+<tr><td><code>rename(velho, novo)</code></td><td>Muda o nome (ou a pasta) do arquivo.</td><td><code>0</code>, ou não zero</td><td><a href="arquivos.html">Arquivos</a></td></tr>
+<tr><td><code>tmpfile()</code></td><td>Cria um arquivo temporário, apagado ao fechar. Não existe no editor (erro do ligador <code>undefined symbol: tmpfile</code>).</td><td><code>FILE *</code>, ou <code>NULL</code></td><td><a href="arquivos.html">Arquivos</a></td></tr>
+</table>
+</div>
+
+<h2 id="constantes">Constantes do stdio.h</h2>
+<pre class="file" data-file="constantes.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("EOF = %d\n", EOF);
+    printf("BUFSIZ = %d\n", BUFSIZ);
+    printf("FILENAME_MAX = %d\n", FILENAME_MAX);
+    printf("FOPEN_MAX = %d\n", FOPEN_MAX);
+    printf("SEEK_SET = %d, SEEK_CUR = %d, SEEK_END = %d\n", SEEK_SET, SEEK_CUR, SEEK_END);
+    printf("_IOFBF = %d, _IOLBF = %d, _IONBF = %d\n", _IOFBF, _IOLBF, _IONBF);
+    return 0;
+}
+</pre>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Constante</th><th>O que é</th><th>gcc 15 (glibc)</th><th>Editor (wasi-libc)</th></tr>
+<tr><td><code>EOF</code></td><td>"end of file": o valor que as leituras devolvem no fim da entrada</td><td><code>-1</code></td><td><code>-1</code></td></tr>
+<tr><td><code>NULL</code></td><td>o ponteiro nulo (também em <code>stdlib.h</code>, <code>string.h</code>, <code>stddef.h</code>)</td><td colspan="2">veja <a href="ponteiro-nulo.html">Ponteiro Nulo</a></td></tr>
+<tr><td><code>BUFSIZ</code></td><td>um bom tamanho de buffer para <code>setvbuf</code></td><td><code>8192</code></td><td><code>1024</code></td></tr>
+<tr><td><code>FILENAME_MAX</code></td><td>tamanho de array que cabe o maior nome de arquivo</td><td><code>4096</code></td><td><code>4096</code></td></tr>
+<tr><td><code>FOPEN_MAX</code></td><td>quantos arquivos abertos ao mesmo tempo, no mínimo, são garantidos</td><td><code>16</code></td><td><code>1000</code></td></tr>
+<tr><td><code>SEEK_SET</code>, <code>SEEK_CUR</code>, <code>SEEK_END</code></td><td>as origens do <code>fseek</code></td><td><code>0</code>, <code>1</code>, <code>2</code></td><td><code>0</code>, <code>1</code>, <code>2</code></td></tr>
+<tr><td><code>_IOFBF</code>, <code>_IOLBF</code>, <code>_IONBF</code></td><td>os modos do <code>setvbuf</code></td><td><code>0</code>, <code>1</code>, <code>2</code></td><td><code>0</code>, <code>1</code>, <code>2</code></td></tr>
+<tr><td><code>TMP_MAX</code>, <code>L_tmpnam</code></td><td>limites do <code>tmpnam</code> (nomes temporários)</td><td><code>238328</code>, <code>20</code></td><td>não existem (<code>use of undeclared identifier 'TMP_MAX'</code>)</td></tr>
+</table>
+</div>
+<p>Escreva o nome da constante, nunca o número: <code>while ((c = getchar()) != EOF)</code>, e não <code>!= -1</code>.</p>
+
+<h2 id="diferencas">Editor × gcc</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Assunto</th><th>Editor (Clang + wasi-libc)</th><th>gcc 15 (glibc)</th></tr>
+<tr><td><code>strtol("3000000000", NULL, 10)</code></td><td><code>2147483647</code> e <code>ERANGE</code> (o <code>long</code> tem 4 bytes)</td><td><code>3000000000</code>, sem erro (o <code>long</code> tem 8)</td></tr>
+<tr><td><code>malloc</code> de 300 MB</td><td><code>NULL</code> (limite de 256 MB)</td><td>funciona</td></tr>
+<tr><td><code>srand(42)</code> + <code>rand()</code></td><td><code>311430560 131117839 1110653038</code></td><td><code>1483128881 708592740 71876166</code></td></tr>
+<tr><td><code>system("ls")</code></td><td><code>sh: 1: ls: not found</code>, devolve 32512</td><td>roda o <code>ls</code></td></tr>
+<tr><td><code>tmpfile</code>, <code>tmpnam</code>, <code>TMP_MAX</code></td><td>não existem</td><td>existem</td></tr>
+<tr><td><code>BUFSIZ</code>, <code>FOPEN_MAX</code></td><td><code>1024</code>, <code>1000</code></td><td><code>8192</code>, <code>16</code></td></tr>
+<tr><td><code>free</code> duplo</td><td>passa calado</td><td><code>free(): double free detected in tcache 2</code> + <code>Abortado</code> (134)</td></tr>
+<tr><td>Arquivos</td><td>numa pasta em memória (<code>/home/ana</code>), limpa a cada Rodar</td><td>no disco, na pasta atual</td></tr>
+</table>
+</div>
+<p>Iguais nos dois: as conversões <code>ato…</code>/<code>strto…</code> (fora o tamanho do <code>long</code>), <code>qsort</code>, <code>bsearch</code>, <code>abs</code>, <code>div</code>, <code>atexit</code>/<code>exit</code>, <code>getenv("HOME")</code>, <code>EOF</code>, <code>RAND_MAX</code>, os modos do <code>fopen</code> e as mensagens do <code>perror</code>.</p>
+
+<hr>
+
+<h2 id="erros">Erros comuns</h2>
+
+<div class="cenario">
+<strong>Esqueceu o <code>#include &lt;stdlib.h&gt;</code> (e usou <code>gets</code>)</strong>
+<pre class="file" data-file="semstdlib.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int *v = malloc(10 * sizeof *v);
+    char nome[20];
+    gets(nome);
+    free(v);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra semstdlib.c -o semstdlib
+semstdlib.c: In function ‘main’:
+semstdlib.c:4:14: error: implicit declaration of function ‘malloc’ [-Wimplicit-function-declaration]
+    4 |     int *v = malloc(10 * sizeof *v);
+      |              ^~~~~~
+semstdlib.c:2:1: note: include ‘&lt;stdlib.h&gt;’ or provide a declaration of ‘malloc’
+    1 | #include &lt;stdio.h&gt;
+  +++ |+#include &lt;stdlib.h&gt;
+    2 |
+semstdlib.c:4:14: warning: incompatible implicit declaration of built-in function ‘malloc’ [-Wbuiltin-declaration-mismatch]
+    4 |     int *v = malloc(10 * sizeof *v);
+      |              ^~~~~~
+semstdlib.c:4:14: note: include ‘&lt;stdlib.h&gt;’ or provide a declaration of ‘malloc’
+semstdlib.c:6:5: error: implicit declaration of function ‘gets’; did you mean ‘fgets’? [-Wimplicit-function-declaration]
+    6 |     gets(nome);
+      |     ^~~~
+      |     fgets
+semstdlib.c:7:5: error: implicit declaration of function ‘free’ [-Wimplicit-function-declaration]
+    7 |     free(v);
+      |     ^~~~
+semstdlib.c:7:5: note: include ‘&lt;stdlib.h&gt;’ or provide a declaration of ‘free’
+semstdlib.c:7:5: warning: incompatible implicit declaration of built-in function ‘free’ [-Wbuiltin-declaration-mismatch]
+semstdlib.c:7:5: note: include ‘&lt;stdlib.h&gt;’ or provide a declaration of ‘free’</pre>
+<p>No editor (Clang):</p>
+<pre class="term">semstdlib.c:4:14: error: call to undeclared library function 'malloc' with type 'void *(__size_t)' (aka 'void *(unsigned long)'); ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+semstdlib.c:4:14: note: include the header &lt;stdlib.h&gt; or explicitly provide a declaration for 'malloc'
+semstdlib.c:6:5: error: use of undeclared identifier 'gets'
+semstdlib.c:7:5: error: call to undeclared library function 'free' with type 'void (void *)'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]</pre>
+<p><strong>O que significa:</strong> o <code>malloc</code> e o <code>free</code> moram no <code>&lt;stdlib.h&gt;</code>; sem ele, o compilador não os conhece. Os dois compiladores até dizem qual <code>#include</code> falta (o gcc mostra a linha com <code>+++ |+</code>). Já o <code>gets</code> foi <strong>removido</strong> do C: não existe em nenhum cabeçalho.</p>
+<p><strong>Como consertar:</strong> acrescente <code>#include &lt;stdlib.h&gt;</code> e troque <code>gets(nome)</code> por <code>fgets(nome, sizeof nome, stdin)</code>. Aulas: <a href="prototipos.html">Protótipos</a> e <a href="fgets.html">fgets</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>O laço <code>while (!feof(f))</code> leu a última nota duas vezes</strong>
+<pre class="file" data-file="feof.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *f = fopen("notas.txt", "w");
+    if (f == NULL) {
+        return 1;
+    }
+    fprintf(f, "7\n9\n");
+    fclose(f);
+    f = fopen("notas.txt", "r");
+    if (f == NULL) {
+        return 1;
+    }
+    int nota = 0, soma = 0;
+    while (!feof(f)) {
+        fscanf(f, "%d", &amp;nota);
+        printf("leu %d\n", nota);
+        soma += nota;
+    }
+    printf("soma = %d\n", soma);
+    fclose(f);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/ref">$ gcc -std=c23 -Wall -Wextra feof.c -o feof
+$ ./feof
+leu 7
+leu 9
+leu 9
+soma = 25</pre>
+<p><strong>O que significa:</strong> o <code>feof</code> não adivinha o futuro. Depois de ler o <code>9</code>, ainda sobrou o <code>\n</code>, então o fim não foi alcançado. A volta seguinte chama <code>fscanf</code>, que falha (devolve <code>EOF</code>) e <strong>não muda</strong> <code>nota</code>: o 9 é somado de novo. Sem aviso nenhum, nos dois compiladores.</p>
+<p><strong>Como consertar:</strong> o teste é o <strong>retorno da leitura</strong>: <code>while (fscanf(f, "%d", &amp;nota) == 1)</code>, ou <code>while (fgets(linha, sizeof linha, f) != NULL)</code>. É a missão abaixo. Aula: <a href="ler-arquivos.html">Ler Arquivos</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Não testou o <code>NULL</code> do <code>fopen</code> ou do <code>malloc</code></strong>
+<p>Se o arquivo não existe, <code>fopen</code> devolve <code>NULL</code>, e o primeiro <code>fgets(linha, 50, f)</code> com esse <code>f</code> derruba o programa com <code>Falha de segmentação</code> (139), no gcc e no editor. <strong>Como consertar:</strong> <code>if (f == NULL) { perror("compras.txt"); return 1; }</code>, que mostra <code>compras.txt: No such file or directory</code>. Aula: <a href="errno.html">errno e perror</a>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>char c = getchar()</code> num laço até <code>EOF</code></strong>
+<p>O <code>getchar</code> devolve <code>int</code> porque o <code>EOF</code> (−1) precisa ser diferente de todos os 256 caracteres. Guardado num <code>char</code>, o <code>EOF</code> se confunde com o byte 255 (ou nunca é visto, se o <code>char</code> não tem sinal). <strong>Como consertar:</strong> <code>int c;</code>. Aula: <a href="char.html">char</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="experimente">Experimente</h2>
+<div class="tryc" data-goal="out:soma = 16,src:==\s*1">
+<p class="try-task"><strong>Missão:</strong> o arquivo <code>notas.txt</code> (na outra aba) tem as notas 7 e 9, mas o programa soma 25, porque usa <code>while (!feof(f))</code>. Troque a condição do laço pelo retorno do <code>fscanf</code> (<code>== 1</code>), apague o <code>fscanf</code> de dentro do laço e faça o programa mostrar <code>soma = 16</code>.</p>
+<pre class="script" data-file="notas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *f = fopen("notas.txt", "r");
+    if (f == NULL) {
+        perror("notas.txt");
+        return 1;
+    }
+    int nota = 0, soma = 0;
+    while (!feof(f)) {
+        fscanf(f, "%d", &amp;nota);
+        printf("leu %d\n", nota);
+        soma += nota;
+    }
+    printf("soma = %d\n", soma);
+    fclose(f);
+    return 0;
+}
+</pre>
+<pre class="script" data-file="notas.txt">7
+9
+</pre>
+<pre class="solucao" data-file="notas.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    FILE *f = fopen("notas.txt", "r");
+    if (f == NULL) {
+        perror("notas.txt");
+        return 1;
+    }
+    int nota = 0, soma = 0;
+    while (fscanf(f, "%d", &amp;nota) == 1) {
+        printf("leu %d\n", nota);
+        soma += nota;
+    }
+    printf("soma = %d\n", soma);
+    fclose(f);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>stdlib.h:</strong> <code>malloc</code>/<code>calloc</code>/<code>realloc</code>/<code>free</code> (teste o <code>NULL</code>; todo <code>malloc</code> tem o seu <code>free</code>); <code>strtol</code>/<code>strtod</code> (melhores que <code>atoi</code>/<code>atof</code>); <code>qsort</code>/<code>bsearch</code>; <code>abs</code>/<code>div</code>; <code>rand</code>/<code>srand</code>; <code>exit</code>/<code>atexit</code>/<code>abort</code>; <code>getenv</code>/<code>system</code>.</li>
+  <li><strong>stdio.h:</strong> <code>printf</code>/<code>puts</code>/<code>putchar</code> e <code>scanf</code>/<code>fgets</code>/<code>getchar</code> para tela e teclado; <code>fopen</code> (<code>"r"</code>, <code>"w"</code> apaga, <code>"a"</code> acrescenta, <code>"x"</code> não apaga) e <code>fclose</code>; <code>fread</code>/<code>fwrite</code> para binário; <code>fseek</code>/<code>ftell</code>/<code>rewind</code>; <code>remove</code>/<code>rename</code>; <code>perror</code>.</li>
+  <li>Leia em laço pelo <strong>retorno</strong> da leitura, nunca com <code>while (!feof(f))</code>.</li>
+  <li>No editor, o <code>long</code> tem 4 bytes (o <code>strtol</code> estoura antes) e o <code>malloc</code> vai até 256 MB.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
