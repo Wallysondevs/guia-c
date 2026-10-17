@@ -145,7 +145,7 @@ No `.exercise`, `data-answer="a|b"` aceita respostas alternativas. Para uma barr
 - `node tools/testar-missoes.js suas-paginas.html [-v] [--nativo]`: confere as missões (inicial não cumpre, solução cumpre), os `&lt;`/`&amp;` dentro dos `<pre>`, as metas e as regex.
 
 ## 5. Fidelidade: o laboratório (`~/guia-c-lab/lab`)
-É a máquina da Ana do Guia Bash: usuária `ana`, computador `notebook`, `/home/ana`, pt_BR. Ferramentas do Ubuntu 26.04: **gcc 15.2**, **clang 21.1**, **make 4.4**, **cmake 4.2**, **gdb 17.1**, **ninja**.
+É a máquina da Ana do Guia Bash: usuária `ana`, computador `notebook`, `/home/ana`, pt_BR. Ferramentas do Ubuntu 26.04: **gcc 15.2**, **clang 21.1**, **make 4.4**, **cmake 4.2**, **gdb 17.1**, **ninja** e **valgrind 3.26** (`valgrind --leak-check=full ./programa` funciona; compile com `-g` para ver `arquivo.c:linha`).
 ```bash
 L=~/guia-c-lab/lab
 printf '%s\n' 'mkdir -p c && cd c' "cat > ola.c <<'FIM'" '#include <stdio.h>' 'int main(void) { printf("Olá, mundo!\n"); return 0; }' 'FIM' 'gcc -std=c23 -Wall -Wextra ola.c -o ola' './ola' | timeout 60 $L -n SEUNOME -i
