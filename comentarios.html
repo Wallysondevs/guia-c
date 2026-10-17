@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Comentários — // e /* */, comentar código para testar | Guia C</title>
+<meta name="description" content="Comentários em C para quem está começando: o comentário de linha // (desde o C99) e o de bloco /* */, por que /* */ não pode ficar dentro de outro, comentar código para testar, o truque do #if 0, o que vale a pena escrever num comentário e os erros reais do gcc 15 (unterminated comment, multi-line comment, C++ style comments no C90).">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Comentários</span></h1>
+
+<p class="intro">Um <strong>comentário</strong> é um texto que você escreve dentro do código e que o compilador <strong>ignora</strong> por completo. Ele não vira parte do programa, não aparece na tela e não deixa nada mais lento: serve só para as pessoas que vão ler o código, inclusive você daqui a um mês. O C tem dois tipos de comentário, e esta aula mostra os dois, os cuidados com cada um e um uso que você vai fazer o tempo todo: "desligar" uma linha para testar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O comentário de linha, <code>//</code>, e desde quando ele existe no C.</li>
+  <li>O comentário de bloco, <code>/* … */</code>, que pode ocupar várias linhas ou ficar no meio de uma.</li>
+  <li>Comentar código para testar, e o truque do <code>#if 0</code>.</li>
+  <li>Por que um <code>/* */</code> não pode ficar dentro de outro.</li>
+  <li>O que vale a pena escrever num comentário (e o que não vale).</li>
+  <li>Os erros reais que os comentários causam.</li>
+</ul>
+</div>
+
+<p>Os exemplos foram compilados na máquina fictícia da Ana com o comando padrão do guia, <code>gcc -std=c23 -Wall -Wextra</code>, na pasta <code>~/c</code>.</p>
+
+<hr>
+
+<h2>A ideia: anotações a lápis na receita</h2>
+<p>Pense numa receita de família, cheia de anotações a lápis na margem: "a vó usava menos açúcar", "não deixar mais de 40 minutos", "esta parte é opcional". A cozinheira lê as anotações, mas não as "cozinha": elas não vão para dentro do bolo. Às vezes a anotação até risca um passo inteiro: "~~acrescentar nozes~~ (o Pedro é alérgico)".</p>
+
+<p>Os comentários são essas anotações. O compilador pula tudo o que está marcado como comentário, como se não estivesse lá.</p>
+
+<hr>
+
+<h2>1. Comentário de linha: <code>//</code></h2>
+<p>Duas barras, <code>//</code>, começam um comentário que vai <strong>até o fim da linha</strong>. Ele pode ocupar a linha inteira ou ficar depois de uma instrução:</p>
+
+<pre class="file" data-file="compras.c">// compras.c: mostra a lista de compras da Ana
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n");  // título
+    printf("- arroz\n");
+    printf("- feijão\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra compras.c -o compras
+$ ./compras
+Lista de compras:
+- arroz
+- feijão</pre>
+
+<dl class="anatomy">
+  <dt>// compras.c: …</dt><dd>Linha 1: um comentário que ocupa a linha toda. É comum começar o arquivo dizendo o que ele faz.</dd>
+  <dt>// título</dt><dd>Linha 5: um comentário no fim de uma linha de código. O <code>printf</code> antes dele roda normalmente; só o que vem <strong>depois</strong> das <code>//</code> é ignorado.</dd>
+</dl>
+
+<p>Nada dos comentários apareceu na saída, e o programa é exatamente o mesmo que seria sem eles.</p>
+
+<div class="note">
+<strong>O <code>//</code> chegou no C99</strong> <span class="versao">C99</span>
+<p>O <code>//</code> veio do C++ e só entrou no C oficial em 1999. Antes disso, só existia o <code>/* */</code>. Se você compilar como C89/C90 (o C de 1989), o <code>gcc</code> recusa:</p>
+<pre class="term" data-cwd="~/c">$ gcc -std=c89 antigo.c -o antigo
+antigo.c: In function ‘main’:
+antigo.c:4:5: error: C++ style comments are not allowed in ISO C90
+    4 |     // comentário de linha
+      |     ^
+antigo.c:4:5: note: (this will be reported only once per input file)</pre>
+<p>"Comentários no estilo C++ não são permitidos no ISO C90". Hoje em dia isso quase não acontece: só em projetos muito antigos ou que exigem o C89 de propósito. Com <code>-std=c99</code> ou mais novo, o <code>//</code> funciona.</p>
+</div>
+
+<hr>
+
+<h2>2. Comentário de bloco: <code>/* … */</code></h2>
+<p>O outro tipo começa com <code>/*</code> e termina com <code>*/</code>. Tudo o que fica entre os dois é ignorado, mesmo que ocupe várias linhas:</p>
+
+<pre class="file" data-file="compras2.c">#include &lt;stdio.h&gt;
+
+/*
+ * Programa da lista de compras.
+ * Autora: Ana
+ */
+int main(void) {
+    printf("Lista de compras:\n");
+    printf("- arroz\n");
+    printf("- feijão\n");
+    return 0;  /* tudo certo */
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>/*</dt><dd>Linha 3: abre o comentário.</dd>
+  <dt> * Programa da… / * Autora: Ana</dt><dd>Linhas 4 e 5: o texto. Os <code>*</code> no começo de cada linha <strong>não são obrigatórios</strong>: são só um costume, para deixar claro que aquilo ainda é comentário.</dd>
+  <dt> */</dt><dd>Linha 6: fecha o comentário. A partir daqui, é código de novo.</dd>
+  <dt>/* tudo certo */</dt><dd>Linha 11: um comentário de bloco curto, no fim de uma linha.</dd>
+</dl>
+
+<p>Diferente do <code>//</code>, o <code>/* */</code> termina onde você mandar, e por isso pode ficar até no <strong>meio</strong> de uma linha, com código antes e depois:</p>
+
+<pre class="file" data-file="meio.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Total: " /* sem centavos */ "R$ 30\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra meio.c -o meio
+$ ./meio
+Total: R$ 30</pre>
+
+<p>O comentário sumiu, e os dois textos entre aspas, agora vizinhos, foram juntados (você viu isso em <a href="sintaxe.html">Sintaxe</a>). Funciona, mas comentário no meio da linha atrapalha a leitura; use com moderação.</p>
+
+<hr>
+
+<h2>3. Comentar código para testar</h2>
+<p>Este é o uso mais prático dos comentários no dia a dia. Quer ver como o programa se comporta <strong>sem</strong> uma linha, mas não quer apagá-la? Transforme a linha em comentário. Os programadores chamam isso de <strong>comentar</strong> a linha (e, para voltar, <strong>descomentar</strong>):</p>
+
+<pre class="file" data-file="compras3.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n");
+    printf("- arroz\n");
+    printf("- feijão\n");
+    /* printf("- chocolate\n"); */
+    // printf("- sorvete\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra compras3.c -o compras3
+$ ./compras3
+Lista de compras:
+- arroz
+- feijão                 « nada de chocolate nem de sorvete</pre>
+
+<p>As duas linhas continuam no arquivo, prontas para voltar: basta apagar o <code>//</code> (ou o <code>/*</code> e o <code>*/</code>) e compilar de novo. Quase todo editor de código tem um atalho para isso; no VS Code e em muitos outros, é <kbd>Ctrl</kbd> + <kbd>/</kbd>, que coloca ou tira <code>//</code> nas linhas selecionadas.</p>
+
+<div class="tryc" data-goal="outre:^Lista de compras:\n- arroz\n- feijão\n$,src:(//|/\*).*chocolate">
+<p class="try-task"><strong>Missão:</strong> a Ana está de dieta. <strong>Comente</strong> (não apague!) a linha do chocolate, para ela não aparecer na lista. Use <code>//</code> ou <code>/* */</code>, como preferir.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n");
+    printf("- arroz\n");
+    printf("- chocolate\n");
+    printf("- feijão\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n");
+    printf("- arroz\n");
+    // printf("- chocolate\n");
+    printf("- feijão\n");
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Um <code>/* */</code> não pode ficar dentro de outro</h2>
+<p>Esta é a pegadinha dos comentários de bloco. O <code>*/</code> fecha o comentário na <strong>primeira</strong> vez que aparece, não importa quantos <code>/*</code> vieram antes. Veja o que acontece quando a Ana tenta comentar duas linhas, e uma delas já tinha um comentário:</p>
+
+<pre class="file" data-file="aninhado.c · erro de propósito">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n");
+    /*
+    printf("- arroz\n");   /* o arroz acabou? */
+    printf("- feijão\n");
+    */
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aninhado.c -o aninhado
+aninhado.c: In function ‘main’:
+aninhado.c:6:28: warning: ‘/*’ within comment [-Wcomment]
+    6 |     printf("- arroz\n");   /* o arroz acabou? */
+aninhado.c:8:6: error: expected expression before ‘/’ token
+    8 |     */
+      |      ^</pre>
+
+<p>Siga o compilador, da esquerda para a direita:</p>
+<ol>
+  <li>Linha 5: <code>/*</code> abre o comentário.</li>
+  <li>Linha 6: o segundo <code>/*</code> é só texto dentro do comentário (o <code>-Wall</code> avisa: <em>‘/*’ within comment</em>, "<code>/*</code> dentro de comentário"). Logo depois, o primeiro <code>*/</code> <strong>fecha</strong> o comentário.</li>
+  <li>Linha 7: o <code>printf("- feijão\n");</code> voltou a ser código.</li>
+  <li>Linha 8: sobrou um <code>*/</code> solto, que não significa nada para o compilador: erro.</li>
+</ol>
+
+<p>Dizemos que os comentários de bloco <strong>não se aninham</strong> (não ficam um dentro do outro). O <code>//</code> não tem esse problema: um <code>/*</code> ou um <code>*/</code> dentro de um comentário <code>//</code> é só texto, e um <code>//</code> dentro de <code>/* */</code> também.</p>
+
+<h3>O truque do <code>#if 0</code></h3>
+<p>Para desligar um trecho grande que já tem comentários de bloco dentro, há um truque do pré-processador: <code>#if 0</code> ("se falso") no começo e <code>#endif</code> no fim. Tudo entre os dois some antes da compilação, com comentários e tudo:</p>
+
+<pre class="file" data-file="ifzero.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n");
+#if 0
+    printf("- arroz\n");   /* o arroz acabou? */
+    printf("- feijão\n");
+#endif
+    printf("- café\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ifzero.c -o ifzero
+$ ./ifzero
+Lista de compras:
+- café</pre>
+
+<p>O <code>#if</code> é explicado na aula <a href="compilacao-condicional.html">Compilação Condicional</a>. Por enquanto, basta saber que <code>#if 0</code> … <code>#endif</code> funciona como um "comentário que aninha".</p>
+
+<hr>
+
+<h2>5. Dentro das aspas não é comentário</h2>
+<p>Um <code>//</code> ou um <code>/*</code> dentro de um texto entre aspas é só texto, e aparece na tela normalmente:</p>
+
+<pre class="file" data-file="string.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Site: http://exemplo.com\n");
+    printf("Isto /* não é */ comentário\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra string.c -o string
+$ ./string
+Site: http://exemplo.com
+Isto /* não é */ comentário</pre>
+
+<p>Ainda bem: senão, nenhum programa conseguiria mostrar um endereço da internet.</p>
+
+<hr>
+
+<h2>6. O que escrever num comentário</h2>
+<p>Comentar bem é uma arte. A regra principal: <strong>o código diz <em>o que</em> está sendo feito; o comentário diz <em>por quê</em></strong>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comentário que não ajuda</th><th>Comentário que ajuda</th></tr>
+<tr><td><code>printf("- arroz\n");  // mostra arroz</code><br>(repete o que o código já diz)</td><td><code>printf("- arroz\n");  // o integral, não o branco</code><br>(diz algo que o código não diz)</td></tr>
+<tr><td><code>return 0;  // retorna 0</code></td><td><code>return 0;  // 0 = deu tudo certo</code> (útil enquanto você aprende)</td></tr>
+<tr><td>Um comentário antigo que não confere mais com o código (pior do que nenhum)</td><td>Ao mudar o código, mude o comentário junto</td></tr>
+</table>
+</div>
+
+<p>Bons lugares para um comentário:</p>
+<ul>
+  <li><strong>No topo do arquivo</strong>: o que o programa faz, quem escreveu, como compilar.</li>
+  <li><strong>Antes de um trecho complicado</strong>: a ideia geral, em uma ou duas frases.</li>
+  <li><strong>Avisos para o futuro</strong>: "cuidado: esta conta não funciona com números negativos". Muita gente marca tarefas pendentes com <code>// TODO:</code> ("a fazer"), e os editores costumam destacar essa palavra.</li>
+</ul>
+
+<p>Nas primeiras aulas, vale comentar mais do que o normal: escrever "o que esta linha faz" com as suas palavras ajuda a fixar. Com o tempo, os comentários ficam mais raros e mais úteis. E pode escrever em português, com acento: o compilador ignora tudo mesmo.</p>
+
+<div class="note">
+<strong><code>/** … */</code>: comentários de documentação</strong>
+<p>Em projetos maiores, você vai ver comentários que começam com <code>/**</code> (duas estrelas), com marcações como <code>@param</code> e <code>@return</code>. Para o compilador, são comentários de bloco comuns. Mas ferramentas como o <strong>Doxygen</strong> leem esses comentários e geram páginas de documentação automaticamente. Eles aparecem antes de funções, um assunto da aula <a href="funcoes.html">Funções</a>.</p>
+</div>
+
+<h3>Os dois tipos, e qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Vai até</th><th>Bom para</th></tr>
+<tr><td><code>// …</code> <span class="versao">C99</span></td><td>O fim da linha</td><td>Notas curtas; comentar uma ou poucas linhas de código</td></tr>
+<tr><td><code>/* … */</code></td><td>O <code>*/</code> (pode ser várias linhas depois)</td><td>Textos longos, como o cabeçalho do arquivo; código que precisa compilar como C89</td></tr>
+<tr><td><code>#if 0</code> … <code>#endif</code></td><td>O <code>#endif</code></td><td>Desligar um trecho grande que já tem comentários dentro</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> No dia a dia, <code>//</code> para quase tudo, e <code>/* */</code> para textos de várias linhas. Muitos projetos antigos e o código do Linux preferem <code>/* */</code> em tudo; num projeto que já existe, siga o costume dele.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: unterminated comment</code></strong>
+<pre class="term" data-cwd="~/c">$ cat aberto.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Lista de compras:\n");
+    /* comentário que nunca fecha
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra aberto.c -o aberto
+aberto.c: In function ‘main’:
+aberto.c:5:5: error: unterminated comment
+    5 |     /* comentário que nunca fecha
+      |     ^
+aberto.c:4:5: error: expected declaration or statement at end of input
+    4 |     printf("Lista de compras:\n");
+      |     ^~~~~~</pre>
+<p><strong>O que significa:</strong> "comentário não terminado". Um <code>/*</code> foi aberto e nunca fechado, então o resto do arquivo inteiro virou comentário, inclusive o <code>return 0;</code> e a <code>}</code> (por isso o segundo erro: o arquivo "acabou" com a <code>main</code> aberta). No editor do guia, o Clang diz <code>unterminated /* comment</code>.</p>
+<p><strong>Como consertar:</strong> feche o comentário com <code>*/</code> no lugar certo. Editores com cores ajudam muito: tudo o que virou comentário fica da mesma cor.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: ‘/*’ within comment</code> e um erro logo depois</strong>
+<p><strong>O que significa:</strong> há um <code>/* */</code> dentro de outro (seção 4). O primeiro <code>*/</code> fechou o comentário antes da hora.</p>
+<p><strong>Como consertar:</strong> use <code>//</code> nas linhas que você quer desligar, ou tire o comentário de dentro, ou use <code>#if 0</code> … <code>#endif</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: multi-line comment</code>: uma linha sumiu</strong>
+<pre class="term" data-cwd="~/c">$ cat barra.c
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    // pasta: C:\Users\ana\
+    printf("Esta linha some!\n");
+    printf("Esta aparece.\n");
+    return 0;
+}
+$ gcc -std=c23 -Wall -Wextra barra.c -o barra
+barra.c: In function ‘main’:
+barra.c:4:5: warning: multi-line comment [-Wcomment]
+    4 |     // pasta: C:\Users\ana\
+      |     ^
+$ ./barra
+Esta aparece.            « cadê a outra linha?</pre>
+<p><strong>O que significa:</strong> em C, uma barra invertida <code>\</code> no <strong>último caractere</strong> da linha emenda a linha de baixo nela. O comentário <code>//</code>, que deveria acabar na linha 4, "engoliu" a linha 5. O aviso diz "comentário de várias linhas", e só aparece com <code>-Wall</code>.</p>
+<p><strong>Como consertar:</strong> não termine um comentário <code>//</code> com <code>\</code>. Acrescente qualquer coisa depois (um ponto, por exemplo) ou use <code>/* */</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>C++ style comments are not allowed in ISO C90</code></strong>
+<p><strong>O que significa:</strong> o programa está sendo compilado como C89/C90 (<code>-std=c89</code> ou <code>-std=c90</code>), que não tem o <code>//</code>.</p>
+<p><strong>Como consertar:</strong> compile com uma versão mais nova (<code>-std=c23</code>) ou, se o projeto exige o C89, troque os <code>//</code> por <code>/* */</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>// texto</code></td><td>Comentário até o fim da linha (desde o C99)</td></tr>
+<tr><td><code>/* texto */</code></td><td>Comentário até o <code>*/</code>; pode ter várias linhas ou ficar no meio de uma</td></tr>
+<tr><td><code>/** texto */</code></td><td>Comentário de documentação (lido pelo Doxygen); para o compilador, é um <code>/* */</code></td></tr>
+<tr><td><code>// printf(…);</code></td><td>"Comentar" uma linha: ela fica no arquivo, mas não roda</td></tr>
+<tr><td><code>#if 0</code> … <code>#endif</code></td><td>Desliga um trecho inteiro, mesmo com comentários dentro</td></tr>
+<tr><td><code>/* … /* … */ … */</code></td><td><strong>Errado</strong>: comentários de bloco não se aninham</td></tr>
+<tr><td><code>\</code> no fim de um <code>//</code></td><td><strong>Cuidado</strong>: emenda a linha de baixo no comentário</td></tr>
+<tr><td><code>"http://…"</code></td><td>Dentro das aspas, <code>//</code> e <code>/*</code> são texto comum</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Comentário de linha</h3>
+<p>Complete com os símbolos que transformam o resto da linha em comentário:</p>
+<div class="ex-code">printf("- arroz\n");  <input data-answer="//" aria-label="símbolos"> o integral</div>
+</div>
+
+<div class="exercise">
+<h3>2. Fechar o bloco</h3>
+<p>Complete o comentário de bloco:</p>
+<div class="ex-code">/* Autora: Ana <input data-answer="*/" aria-label="fechamento"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Desligar um trecho</h3>
+<p>Que linha vem antes do trecho para desligá-lo com o pré-processador (e termina com <code>#endif</code>)?</p>
+<div class="ex-code"><input data-answer="#if 0" aria-label="linha"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que aparece na tela com <code>printf("Oi\n"); // printf("Tchau\n");</code>?</p>
+<label><input type="radio" name="q4"> <code>Oi</code> e <code>Tchau</code></label>
+<label><input type="radio" name="q4"> Só <code>Oi</code></label>
+<label><input type="radio" name="q4"> Só <code>Tchau</code></label>
+<label><input type="radio" name="q4"> Nada: a linha toda virou comentário</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que <code>/* a /* b */ c */</code> dá erro?</p>
+<label><input type="radio" name="q5"> Porque comentários não podem ter letras soltas</label>
+<label><input type="radio" name="q5"> Porque falta um <code>;</code></label>
+<label><input type="radio" name="q5"> Porque o primeiro <code>*/</code> fecha o comentário, e o <code>c */</code> sobra como código</label>
+<label><input type="radio" name="q5"> Não dá erro: os comentários se aninham</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual comentário é mais útil?</p>
+<label><input type="radio" name="q6"> <code>printf("Oi\n"); // chama o printf</code></label>
+<label><input type="radio" name="q6"> <code>return 0; // return</code></label>
+<label><input type="radio" name="q6"> <code>// a linha abaixo mostra texto</code></label>
+<label><input type="radio" name="q6"> <code>// a loja fecha às 18h, por isso o aviso sai antes</code></label>
+</div>
+
+<h3>Missão final: o comentário que engoliu o código</h3>
+
+<div class="tryc" data-goal="outre:^Cardápio do dia:\n- arroz\n- feijão\n- salada\n$,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana tentou desligar a linha da sobremesa e criou um problema: há um comentário de bloco dentro de outro. Rode e leia as mensagens. Depois conserte, de modo que o cardápio mostre só arroz, feijão e salada, <strong>sem nenhum aviso</strong>. (Dica: troque o comentário de fora por <code>//</code>.)</p>
+<pre class="out">Cardápio do dia:
+- arroz
+- feijão
+- salada</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Cardápio do dia:\n");
+    printf("- arroz\n");
+    printf("- feijão\n");
+    printf("- salada\n");
+    /*
+    printf("- pudim\n");   /* sobremesa de domingo */
+    */
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Cardápio do dia:\n");
+    printf("- arroz\n");
+    printf("- feijão\n");
+    printf("- salada\n");
+    // printf("- pudim\n");   /* sobremesa de domingo */
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Comentários são anotações para pessoas: o compilador ignora tudo o que está neles.</li>
+  <li><code>//</code> vai até o fim da linha (desde o C99). <code>/* */</code> vai até o <code>*/</code> e pode ter várias linhas.</li>
+  <li>"Comentar" uma linha desliga o código sem apagá-lo: ótimo para testar.</li>
+  <li>Comentários de bloco <strong>não se aninham</strong>: o primeiro <code>*/</code> fecha tudo. Para desligar um trecho que já tem <code>/* */</code>, use <code>//</code> ou <code>#if 0</code> … <code>#endif</code>.</li>
+  <li>Dentro das aspas, <code>//</code> e <code>/*</code> são texto comum.</li>
+  <li>Um bom comentário diz <em>por quê</em>, não <em>o que</em>. Ao mudar o código, atualize o comentário.</li>
+  <li>Próximo passo: <a href="printf.html">Saída com printf</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
