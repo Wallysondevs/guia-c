@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Erros Comuns — mensagens do gcc, do ligador e do programa | Guia C</title>
+<meta name="description" content="Referência das mensagens de erro do C: o texto real de cada erro e aviso do gcc 15, do ligador ld e do programa em execução (Falha de segmentação, Abortado, stack smashing, double free), a versão do Clang do editor, o que cada uma significa, como consertar e em que aula do guia aprender.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Erros Comuns</span></h1>
+
+<p class="intro">Quando algo dá errado, o C fala inglês, em frases curtas e às vezes misteriosas. Esta página junta as mensagens que você mais vai ver, em três momentos: na <strong>compilação</strong> (o gcc), na <strong>ligação</strong> (o <code>ld</code>) e na <strong>execução</strong> (o seu programa caindo). Cada uma vem com o que ela quer dizer, como consertar e a aula onde o assunto é explicado. Todas foram <strong>provocadas de verdade</strong>.</p>
+
+<div class="note">
+<strong>Como usar esta página</strong>
+<ul>
+  <li>Copie um pedaço da mensagem que apareceu para você (por exemplo, <code>undeclared</code>) e procure aqui com <kbd>Ctrl</kbd>+<kbd>F</kbd>.</li>
+  <li>Os programas ficam na pasta <code>~/c/erros</code> da Ana e foram compilados com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. No seu computador, o nome do arquivo e o número da linha serão outros; o <strong>texto</strong> da mensagem é o mesmo.</li>
+  <li>As mensagens do <strong>gcc</strong> saem em inglês, com aspas tipográficas ‘assim’. As do <strong>ligador</strong> e do <strong>terminal</strong> saem em português na máquina da Ana, porque esses programas têm tradução instalada; a versão em inglês aparece ao lado, porque é a que você vai achar nos fóruns.</li>
+  <li>O <strong>editor do guia</strong> usa o <strong>Clang</strong>, não o gcc: as mensagens dizem a mesma coisa com outras palavras. Por isso, cada tabela tem as duas colunas. Veja também <a href="simulador.html">O Editor do Guia</a>.</li>
+</ul>
+</div>
+
+<p>Atalhos: <a href="#ler">Ler uma mensagem</a> · <a href="#fases">Compilação, ligação ou execução?</a> · <a href="#compilacao">Erros de compilação</a> · <a href="#avisos">Avisos</a> · <a href="#ligacao">Erros de ligação</a> · <a href="#terminal">Erros do terminal</a> · <a href="#execucao">Erros de execução</a> · <a href="#codigos">Códigos de saída</a> · <a href="#experimente">Experimente</a></p>
+
+<hr>
+
+<h2 id="ler">Como ler uma mensagem do gcc</h2>
+<pre class="file" data-file="e01.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int idade = 29;
+    printf("%d\n", idad);
+    return 0;
+}
+</pre>
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra e01.c -o e01
+e01.c: In function ‘main’:
+e01.c:5:20: error: ‘idad’ undeclared (first use in this function); did you mean ‘idade’?
+    5 |     printf("%d\n", idad);
+      |                    ^~~~
+      |                    idade
+e01.c:5:20: note: each undeclared identifier is reported only once for each function it appears in
+e01.c:4:9: warning: unused variable ‘idade’ [-Wunused-variable]
+    4 |     int idade = 29;
+      |         ^~~~~</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pedaço</th><th>O que quer dizer</th></tr>
+<tr><td><code>e01.c: In function ‘main’:</code></td><td>Contexto: "dentro da função <code>main</code>". Não é um erro; diz onde estão os próximos.</td></tr>
+<tr><td><code>e01.c:5:20:</code></td><td><strong>arquivo:linha:coluna</strong>. Linha 5, coluna 20. Os editores de código pulam direto para lá.</td></tr>
+<tr><td><code>error:</code></td><td>O <strong>tipo</strong>. <code>error</code> impede o programa de ser criado; <code>warning</code> (aviso) deixa criar, mas aponta algo suspeito; <code>note</code> (nota) é uma informação extra sobre a mensagem de cima; <code>fatal error</code> para tudo na hora.</td></tr>
+<tr><td><code>‘idad’ undeclared (first use in this function)</code></td><td>O texto: "<code>idad</code> não foi declarada (primeiro uso nesta função)".</td></tr>
+<tr><td><code>did you mean ‘idade’?</code></td><td>Uma <strong>sugestão</strong>: "você quis dizer <code>idade</code>?". Embaixo do código, a linha <code>idade</code> mostra como ficaria.</td></tr>
+<tr><td><code>    5 |     printf(…);</code><br><code>      |            ^~~~</code></td><td>A linha do código, com o <code>^</code> apontando a coluna e os <code>~</code> sublinhando o trecho.</td></tr>
+<tr><td><code>[-Wunused-variable]</code></td><td>O nome do aviso, isto é, a opção que o liga. Útil para procurar na internet.</td></tr>
+</table>
+</div>
+<p><strong>Conserte sempre o primeiro erro primeiro.</strong> Um erro costuma provocar outros em cascata: aqui, o aviso <code>unused variable ‘idade’</code> só existe por causa do erro de digitação. E o erro de verdade pode estar <strong>antes</strong> da linha apontada (um <code>;</code> que faltou na linha de cima, por exemplo). Aula: <a href="erros-compilacao.html">Lendo Erros do Compilador</a>.</p>
+
+<h2 id="fases">Compilação, ligação ou execução?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Fase</th><th>Quem reclama</th><th>Como reconhecer</th><th>O programa existe?</th><th>Aula</th></tr>
+<tr><td><strong>Compilação</strong></td><td>o compilador (<code>gcc</code>, <code>cc1</code>)</td><td><code>arquivo.c:linha:coluna: error:</code></td><td>não</td><td><a href="erros-compilacao.html">Lendo Erros</a></td></tr>
+<tr><td><strong>Ligação</strong></td><td>o ligador (<code>ld</code>), chamado pelo gcc</td><td><code>referência não definida para</code> (<code>undefined reference to</code>) e, no fim, <code>collect2: error: ld returned 1 exit status</code>; não há número de linha</td><td>não</td><td><a href="como-funciona.html">Como o C Vira Programa</a></td></tr>
+<tr><td><strong>Execução</strong></td><td>o sistema, ou a biblioteca C</td><td>o programa começa, e então aparece <code>Falha de segmentação</code>, <code>Abortado</code>, <code>***</code>…</td><td>sim, e caiu</td><td><a href="depuracao-gdb.html">Depurar com gdb</a></td></tr>
+<tr><td><strong>Terminal</strong></td><td>o bash</td><td><code>bash: …</code> (nem chegou a rodar o seu programa)</td><td>talvez</td><td><a href="compilar.html">Compilar com gcc</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="compilacao">Erros de compilação</h2>
+<p>Cada linha desta tabela é um programa pequeno, provocado de propósito. A coluna do gcc mostra só o texto principal (sem <code>arquivo:linha:coluna</code>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código com o erro</th><th>gcc 15</th><th>Clang (editor)</th><th>O que significa e como consertar</th><th>Aula</th></tr>
+<tr><td><code>printf("%d\n", idad);</code></td><td><code>‘idad’ undeclared (first use in this function); did you mean ‘idade’?</code></td><td><code>use of undeclared identifier 'idad'; did you mean 'idade'?</code></td><td>Nome que não existe: erro de digitação, variável declarada depois ou dentro de outro bloco. Confira a grafia (maiúsculas contam).</td><td><a href="variaveis.html">Variáveis</a></td></tr>
+<tr><td><code>int preco = 10</code><br>(sem <code>;</code>)</td><td><code>expected ‘,’ or ‘;’ before ‘printf’</code> (aponta a linha <strong>seguinte</strong>)</td><td><code>expected ';' at end of declaration</code></td><td>Faltou o <code>;</code> no fim da linha de <strong>cima</strong>.</td><td><a href="sintaxe.html">Sintaxe</a></td></tr>
+<tr><td><code>dobro(4)</code> antes de <code>int dobro(int n) {…}</code></td><td><code>implicit declaration of function ‘dobro’ [-Wimplicit-function-declaration]</code></td><td><code>use of undeclared identifier 'dobro'</code></td><td>A função foi usada antes de ser declarada. Ponha um protótipo (<code>int dobro(int n);</code>) antes do <code>main</code>, ou a função inteira.</td><td><a href="prototipos.html">Protótipos</a></td></tr>
+<tr><td><code>printf</code> sem <code>#include &lt;stdio.h&gt;</code></td><td><code>implicit declaration of function ‘printf’</code> + <code>note: include ‘&lt;stdio.h&gt;’ or provide a declaration of ‘printf’</code></td><td><code>call to undeclared library function 'printf' with type 'int (const char *, ...)'</code> + <code>note: include the header &lt;stdio.h&gt;</code></td><td>Faltou o <code>#include</code>. Os dois dizem qual.</td><td><a href="headers.html">Arquivos .h</a></td></tr>
+<tr><td>um <code>{</code> sem o <code>}</code></td><td><code>expected declaration or statement at end of input</code></td><td><code>expected '}'</code> + <code>note: to match this '{'</code></td><td>O arquivo acabou com uma chave aberta. Conte as chaves; um editor com indentação automática ajuda a ver qual ficou sem par.</td><td><a href="sintaxe.html">Sintaxe</a></td></tr>
+<tr><td><code>printf("%d\n", (2 + 3);</code></td><td><code>expected ‘)’ before ‘;’ token</code></td><td><code>expected ')'</code> + <code>note: to match this '('</code></td><td>Parêntese aberto e não fechado.</td><td><a href="sintaxe.html">Sintaxe</a></td></tr>
+<tr><td><code>printf("Olá, mundo!\n);</code></td><td><code>missing terminating " character</code></td><td><code>missing terminating '"' character</code> + <code>expected expression</code></td><td>Faltou fechar as aspas.</td><td><a href="escapes.html">Escapes</a></td></tr>
+<tr><td><code>printf(“Olá”);</code><br>(aspas curvas, copiadas de um site ou de um documento)</td><td><code>stray ‘\342’ in program</code></td><td><code>unexpected character &lt;U+201C&gt;</code></td><td>"Caractere perdido": as aspas <code>“ ”</code> não são as <code>"</code> do C. Apague e digite de novo no editor de código.</td><td><a href="acentos-utf8.html">Acentos e UTF-8</a></td></tr>
+<tr><td><code>string nome = "Ana";</code></td><td><code>unknown type name ‘string’; did you mean ‘stdin’?</code></td><td><code>use of undeclared identifier 'string'; did you mean 'stdin'?</code></td><td>O C não tem tipo <code>string</code> (isso é de outras linguagens). Use <code>char nome[] = "Ana";</code>.</td><td><a href="strings.html">Strings</a></td></tr>
+<tr><td><code>char nome[20]; nome = "Ana";</code></td><td><code>assignment to expression with array type</code></td><td><code>array type 'char[20]' is not assignable</code></td><td>Não se atribui um array com <code>=</code>. Inicialize na declaração (<code>char nome[20] = "Ana";</code>) ou copie: <code>snprintf(nome, sizeof nome, "%s", "Ana")</code>.</td><td><a href="funcoes-string.html">Funções de String</a></td></tr>
+<tr><td><code>int idade = "29";</code></td><td><code>initialization of ‘int’ from ‘char *’ makes integer from pointer without a cast [-Wint-conversion]</code></td><td><code>incompatible pointer to integer conversion initializing 'int' with an expression of type 'char[3]'</code></td><td><code>"29"</code> é texto. Escreva <code>29</code>, ou converta com <code>strtol</code>.</td><td><a href="string-numero.html">Texto ↔ Número</a></td></tr>
+<tr><td><code>dobrar(x);</code> com <code>void dobrar(int *p)</code></td><td><code>passing argument 1 of ‘dobrar’ makes pointer from integer without a cast</code> + <code>note: possible fix: take the address with ‘&amp;’</code></td><td><code>incompatible integer to pointer conversion passing 'int' to parameter of type 'int *'; take the address with &amp;</code></td><td>A função quer um endereço: <code>dobrar(&amp;x)</code>.</td><td><a href="passagem-ponteiro.html">Passar por Ponteiro</a></td></tr>
+<tr><td><code>int *p = &amp;preco;</code> com <code>double preco</code></td><td><code>initialization of ‘int *’ from incompatible pointer type ‘double *’ [-Wincompatible-pointer-types]</code></td><td><code>incompatible pointer types initializing 'int *' with an expression of type 'double *'</code></td><td>O ponteiro tem de ser do tipo da variável: <code>double *p</code>.</td><td><a href="ponteiros.html">Ponteiros</a></td></tr>
+<tr><td><code>soma(1)</code>, <code>soma(1, 2, 3)</code> com <code>int soma(int a, int b)</code></td><td><code>too few arguments to function ‘soma’; expected 2, have 1</code> / <code>too many arguments…</code></td><td><code>too few arguments to function call, expected 2, have 1</code> / <code>too many…</code></td><td>Passe exatamente os parâmetros que a função pede.</td><td><a href="parametros.html">Parâmetros</a></td></tr>
+<tr><td><code>int area(int lado);</code> e depois <code>int area(double lado) {…}</code></td><td><code>conflicting types for ‘area’; have ‘int(double)’</code> + <code>note: previous declaration of ‘area’ with type ‘int(int)’</code></td><td><code>conflicting types for 'area'</code></td><td>O protótipo e a função não batem. Deixe os dois iguais.</td><td><a href="prototipos.html">Protótipos</a></td></tr>
+<tr><td><code>return n;</code> numa função <code>void</code>; <code>return;</code> numa função <code>int</code></td><td><code>‘return’ with a value, in function returning void [-Wreturn-mismatch]</code> / <code>‘return’ with no value, in function returning non-void</code></td><td><code>void function 'mostrar' should not return a value</code> / <code>non-void function 'calcular' should return a value</code></td><td>O <code>return</code> não combina com o tipo da função.</td><td><a href="retorno.html">Valor de Retorno</a></td></tr>
+<tr><td><code>int total = 0;</code> duas vezes no mesmo bloco</td><td><code>redefinition of ‘total’</code></td><td><code>redefinition of 'total'</code></td><td>Declare uma vez só; depois, só atribua (<code>total = 5;</code>).</td><td><a href="escopo.html">Escopo</a></td></tr>
+<tr><td><code>5 = x;</code></td><td><code>lvalue required as left operand of assignment</code></td><td><code>expression is not assignable</code></td><td>À esquerda do <code>=</code> tem de haver um lugar para guardar (uma variável). Talvez você quisesse <code>x = 5</code> ou <code>x == 5</code>.</td><td><a href="operadores-atribuicao.html">Atribuição</a></td></tr>
+<tr><td><code>limite = 20;</code> com <code>const int limite</code></td><td><code>assignment of read-only variable ‘limite’</code></td><td><code>cannot assign to variable 'limite' with const-qualified type 'const int'</code></td><td>Uma constante não muda. Tire o <code>const</code> se ela precisa mudar.</td><td><a href="constantes.html">Constantes</a></td></tr>
+<tr><td><code>break;</code> dentro de um <code>if</code>, fora de laço</td><td><code>break statement not within loop or switch</code></td><td><code>'break' statement not in loop or switch statement</code></td><td><code>break</code> só sai de laços e de <code>switch</code>. Para sair de uma função, <code>return</code>.</td><td><a href="break-continue.html">break e continue</a></td></tr>
+<tr><td>dois <code>case 1:</code> no mesmo <code>switch</code></td><td><code>duplicate case value</code></td><td><code>duplicate case value '1'</code></td><td>Cada <code>case</code> precisa de um valor diferente.</td><td><a href="switch.html">switch</a></td></tr>
+<tr><td>duas linhas num <code>if</code> sem chaves, depois <code>else</code></td><td><code>‘else’ without a previous ‘if’</code> (e antes, o aviso <code>this ‘if’ clause does not guard...</code>)</td><td><code>expected expression</code> (e o aviso <code>misleading indentation</code>)</td><td>Sem chaves, o <code>if</code> só pega a primeira linha. Use sempre <code>{ }</code>.</td><td><a href="if-else.html">if e else</a></td></tr>
+<tr><td><code>p.x</code> com <code>struct ponto *p</code></td><td><code>‘p’ is a pointer; did you mean to use ‘-&gt;’?</code></td><td><code>member reference type 'struct ponto *' is a pointer; did you mean to use '-&gt;'?</code></td><td>Com ponteiro, use <code>p-&gt;x</code>.</td><td><a href="structs-ponteiros.html">Structs e Ponteiros</a></td></tr>
+<tr><td><code>struct produto item;</code> só com <code>struct produto;</code> declarada</td><td><code>storage size of ‘item’ isn’t known</code></td><td><code>variable has incomplete type 'struct produto'</code></td><td>A struct foi anunciada mas não definida (faltam os campos, ou falta o <code>#include</code> do <code>.h</code> que a define).</td><td><a href="structs.html">Structs</a></td></tr>
+<tr><td><code>nome + sobrenome</code> com dois <code>char *</code></td><td><code>invalid operands to binary + (have ‘char *’ and ‘char *’)</code></td><td><code>invalid operands to binary expression ('char *' and 'char *')</code></td><td>Não se juntam strings com <code>+</code>. Use <code>snprintf</code> ou <code>strcat</code>.</td><td><a href="ref-string.html#copiar">string.h</a></td></tr>
+<tr><td><code>nota[0]</code> com <code>int nota</code></td><td><code>subscripted value is neither array nor pointer nor vector</code></td><td><code>subscripted value is not an array, pointer, or vector</code></td><td>Os colchetes só valem para arrays e ponteiros.</td><td><a href="arrays.html">Arrays</a></td></tr>
+<tr><td><code>int v[n] = {0};</code> com <code>n</code> variável</td><td><code>variable-sized object may not be initialized except with an empty initializer</code></td><td><code>variable-sized object may not be initialized</code></td><td>Um array de tamanho variável (VLA) só aceita <code>= {}</code> <span class="versao">C23</span>, ou um laço que zere.</td><td><a href="arrays.html">Arrays</a></td></tr>
+<tr><td><code>#include &lt;stdioh&gt;</code></td><td><code>fatal error: stdioh: Arquivo ou diretório inexistente</code> + <code>compilation terminated.</code></td><td><code>fatal error: 'stdioh' file not found</code></td><td>O cabeçalho não existe: nome errado (aqui, faltou o <code>.</code>) ou biblioteca não instalada. Num <code>.h</code> seu, use aspas: <code>#include "loja.h"</code>.</td><td><a href="preprocessador.html">Pré-processador</a></td></tr>
+<tr><td><code>bool ok = true;</code> com <code>-std=c17</code></td><td><code>unknown type name ‘bool’</code> + <code>note: ‘bool’ is defined in header ‘&lt;stdbool.h&gt;’; this is probably fixable by adding ‘#include &lt;stdbool.h&gt;’</code></td><td><code>use of undeclared identifier 'bool'</code></td><td>Antes do C23, <code>bool</code>, <code>true</code> e <code>false</code> precisam de <code>#include &lt;stdbool.h&gt;</code> (e <code>nullptr</code> não existe). Com <code>-std=c23</code>, ou sem <code>-std</code> no gcc 15, funcionam direto.</td><td><a href="bool.html">bool</a></td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>"Não sei o que é": três jeitos de achar o erro</strong>
+<ol>
+  <li>Leia só a <strong>primeira</strong> mensagem <code>error:</code> e olhe a linha dela <strong>e a de cima</strong>.</li>
+  <li>Copie o texto da mensagem (sem o nome do arquivo e os números) e procure nesta página ou na internet.</li>
+  <li>Comente metade do código (<code>/* … */</code>) e compile de novo, até achar a linha culpada.</li>
+</ol>
+</div>
+
+<h2 id="avisos">Avisos (<code>warning</code>)</h2>
+<p>Um aviso não impede o programa de ser criado, mas quase sempre aponta um bug. Compile sempre com <code>-Wall -Wextra</code>, e trate cada aviso como erro (a opção <code>-Werror</code> faz isso de verdade). Este programa junta os avisos mais comuns:</p>
+<pre class="file" data-file="w01.c">#include &lt;stdio.h&gt;
+
+int maior(int a, int b) {
+    if (a &gt; b) {
+        return a;
+    }
+}
+
+int *criar(void) {
+    int local = 7;
+    return &amp;local;
+}
+
+int main(int argc, char *argv[]) {
+    int sobra;
+    int x;
+    printf("%d\n", x);
+    x == 5;
+    if (x &gt; 5);
+    {
+        printf("maior\n");
+    }
+    int opcao = 1;
+    switch (opcao) {
+        case 1:
+            printf("um\n");
+        case 2:
+            printf("dois\n");
+            break;
+    }
+    if (x &gt; 0)
+        printf("a\n");
+        printf("b\n");
+    printf("%d %p\n", maior(1, 2), (void *)criar());
+    return 0;
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>gcc 15</th><th>Clang (editor)</th><th>O que significa e como consertar</th><th>Aula</th></tr>
+<tr><td><code>int sobra;</code> nunca usada</td><td><code>unused variable ‘sobra’ [-Wunused-variable]</code></td><td><code>unused variable 'sobra' [-Wunused-variable]</code></td><td>Sobrou do código antigo, ou você usou outro nome por engano. Apague.</td><td><a href="avisos.html">Avisos</a></td></tr>
+<tr><td><code>printf("%d\n", x);</code> sem valor em <code>x</code></td><td><code>‘x’ is used uninitialized [-Wuninitialized]</code></td><td><code>variable 'x' is uninitialized when used here [-Wuninitialized]</code></td><td>A variável tem lixo. Inicialize: <code>int x = 0;</code>.</td><td><a href="variaveis.html">Variáveis</a></td></tr>
+<tr><td><code>int main(int argc, char *argv[])</code> sem usá-los</td><td><code>unused parameter ‘argc’ [-Wunused-parameter]</code></td><td><code>unused parameter 'argc' [-Wunused-parameter]</code></td><td>Se não usa, escreva <code>int main(void)</code>.</td><td><a href="argc-argv.html">Argumentos</a></td></tr>
+<tr><td><code>maior</code> sem <code>return</code> no fim</td><td><code>control reaches end of non-void function [-Wreturn-type]</code></td><td><code>non-void function does not return a value in all control paths [-Wreturn-type]</code></td><td>Num dos caminhos, a função acaba sem devolver nada (e quem chamou recebe lixo). Ponha um <code>return</code> no fim.</td><td><a href="retorno.html">Valor de Retorno</a></td></tr>
+<tr><td><code>return &amp;local;</code></td><td><code>function returns address of local variable [-Wreturn-local-addr]</code></td><td><code>address of stack memory associated with local variable 'local' returned [-Wreturn-stack-address]</code></td><td>A variável local some quando a função termina; o endereço fica apontando para o nada. Use <code>malloc</code> ou receba um ponteiro de quem chama.</td><td><a href="pilha-heap.html">Pilha e Heap</a></td></tr>
+<tr><td><code>x == 5;</code> sozinho</td><td><code>statement with no effect [-Wunused-value]</code></td><td><code>equality comparison result unused [-Wunused-comparison]</code> + <code>note: use '=' to turn this equality comparison into an assignment</code></td><td>Você quis <code>x = 5;</code>.</td><td><a href="operadores-comparacao.html">Comparação</a></td></tr>
+<tr><td><code>if (x &gt; 5);</code></td><td><code>suggest braces around empty body in an ‘if’ statement [-Wempty-body]</code></td><td><code>if statement has empty body [-Wempty-body]</code></td><td>O <code>;</code> logo depois do <code>if</code> é o corpo dele (vazio): o bloco de baixo roda <strong>sempre</strong>. Tire o <code>;</code>.</td><td><a href="if-else.html">if e else</a></td></tr>
+<tr><td><code>case 1:</code> sem <code>break</code></td><td><code>this statement may fall through [-Wimplicit-fallthrough=]</code></td><td>(nenhum aviso)</td><td>O <code>case 1</code> continua no <code>case 2</code> e mostra <code>um</code> e <code>dois</code>. Ponha <code>break;</code>, ou <code>[[fallthrough]];</code> <span class="versao">C23</span> se for de propósito.</td><td><a href="switch.html">switch</a></td></tr>
+<tr><td>duas linhas indentadas sob um <code>if</code> sem chaves</td><td><code>this ‘if’ clause does not guard... [-Wmisleading-indentation]</code></td><td><code>misleading indentation; statement is not part of the previous 'if' [-Wmisleading-indentation]</code></td><td>A segunda linha <strong>não</strong> está dentro do <code>if</code>, apesar do recuo. Use chaves.</td><td><a href="if-else.html">if e else</a></td></tr>
+<tr><td><code>printf("%d", preco)</code> com <code>double</code></td><td><code>format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘double’ [-Wformat=]</code></td><td><code>format specifies type 'int' but the argument has type 'double' [-Wformat]</code></td><td>Formato e valor não combinam. Tabela completa: <a href="ref-printf.html#erros">printf e scanf</a>.</td><td><a href="formatos-printf.html">Formatos</a></td></tr>
+<tr><td><code>if (idade = 18)</code></td><td><code>suggest parentheses around assignment used as truth value [-Wparentheses]</code></td><td><code>using the result of an assignment as a condition without parentheses</code></td><td>Comparar é <code>==</code>. Mais armadilhas de operadores: <a href="ref-operadores.html#armadilhas">Operadores</a>.</td><td><a href="operadores-comparacao.html">Comparação</a></td></tr>
+<tr><td><code>i &lt; strlen(s)</code> com <code>int i</code></td><td><code>comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]</code></td><td>(nenhum aviso)</td><td><code>int</code> × sem sinal: um negativo vira um número enorme. Use <code>size_t i</code>. Veja <a href="ref-tipos.html#erros">Tipos e Limites</a>.</td><td><a href="conversao-tipos.html">Conversão</a></td></tr>
+<tr><td><code>free(v); free(v);</code></td><td><code>pointer ‘v’ used after ‘free’ [-Wuse-after-free]</code></td><td>(nenhum aviso)</td><td>Depois do <code>free</code>, o ponteiro não vale mais. Faça <code>v = NULL;</code> logo depois.</td><td><a href="malloc-free.html">malloc e free</a></td></tr>
+<tr><td>uma função que chama a si mesma sempre</td><td><code>infinite recursion detected [-Winfinite-recursion]</code></td><td><code>all paths through this function will call itself [-Winfinite-recursion]</code></td><td>Falta o caso base (o <code>if</code> que para a recursão).</td><td><a href="recursao.html">Recursão</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="ligacao">Erros de ligação (o <code>ld</code>)</h2>
+<p>O compilador transforma cada <code>.c</code> num arquivo-objeto (<code>.o</code>); o <strong>ligador</strong> junta tudo, com as bibliotecas, num executável. Os erros dele não têm número de linha e terminam sempre com <code>collect2: error: ld returned 1 exit status</code> ("o ld terminou com o código 1"). Aula: <a href="como-funciona.html">Como o C Vira Programa</a>.</p>
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra l01.c -o l01               « l01.c declara int soma(int a, int b); mas não a define
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccOoraNE.o: na função "main":
+l01.c:(.text+0x13): referência não definida para "soma"
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra l02.c -o l02               « escreveu int Main(void)
+/usr/bin/x86_64-linux-gnu-ld.bfd: /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o: na função "_start":
+(.text+0x1b): referência não definida para "main"
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra l03.c -o l03               « usa sqrt(x) do math.h
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccezM8a9.o: na função "main":
+l03.c:(.text+0x23): referência não definida para "sqrt"
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra l03.c -o l03 -lm
+$ ./l03
+1.414
+$ gcc -std=c23 -Wall -Wextra l04a.c l04b.c -o l04       « os dois arquivos têm int contador = 0;
+/usr/bin/x86_64-linux-gnu-ld.bfd: /tmp/ccWgCA1M.o:(.bss+0x0): múltiplas definições de "contador"; /tmp/cc7vaz22.o:(.bss+0x0): definido primeiro aqui
+collect2: error: ld returned 1 exit status
+$ gcc -std=c23 -Wall -Wextra l01.c -o l01 -lfoo
+/usr/bin/x86_64-linux-gnu-ld.bfd: não foi possível localizar -lfoo: Arquivo ou diretório inexistente
+collect2: error: ld returned 1 exit status</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do <code>ld</code> (português / inglês)</th><th>No editor</th><th>O que significa e como consertar</th><th>Aula</th></tr>
+<tr><td><code>referência não definida para "soma"</code><br><code>undefined reference to `soma'</code></td><td><code>wasm-ld: error: …: undefined symbol: soma</code> + <code>clang: error: linker command failed with exit code 1</code></td><td>A função foi declarada (protótipo) mas ninguém a escreveu, ou o <code>.c</code> que a tem não entrou no comando. Escreva a função ou ponha todos os <code>.c</code>: <code>gcc main.c loja.c -o loja</code>.</td><td><a href="multiplos-arquivos.html">Vários Arquivos</a></td></tr>
+<tr><td><code>referência não definida para "main"</code></td><td>compila, e o programa cai com <code>Falha de segmentação</code> (139)</td><td>Não há função <code>main</code>: nome errado (<code>Main</code>, <code>mian</code>) ou o arquivo certo não entrou no comando.</td><td><a href="primeiro-programa.html">Olá, Mundo</a></td></tr>
+<tr><td><code>referência não definida para "sqrt"</code></td><td>funciona (o editor não precisa de <code>-lm</code>)</td><td>As funções do <code>math.h</code> ficam na biblioteca <code>libm</code>: acrescente <code>-lm</code> no <strong>fim</strong> do comando.</td><td><a href="matematica.html">Matemática</a></td></tr>
+<tr><td><code>múltiplas definições de "contador"; … definido primeiro aqui</code><br><code>multiple definition of `contador'</code></td><td><code>wasm-ld: error: duplicate symbol: contador</code></td><td>Dois <code>.c</code> definem a mesma variável global (ou função). Defina em um só; no outro, e no <code>.h</code>, declare com <code>extern int contador;</code>.</td><td><a href="static-extern.html">static e extern</a></td></tr>
+<tr><td><code>não foi possível localizar -lfoo</code><br><code>cannot find -lfoo</code></td><td>—</td><td>A biblioteca <code>libfoo</code> não está instalada, ou o nome está errado. Instale o pacote de desenvolvimento dela (<code>libfoo-dev</code>) ou indique a pasta com <code>-L</code>.</td><td><a href="bibliotecas.html">Bibliotecas</a></td></tr>
+</table>
+</div>
+
+<h3>Outras mensagens do gcc</h3>
+<pre class="term" data-cwd="~/c/erros">$ gcc -std=c23 -Wall -Wextra nao-existe.c -o x
+cc1: fatal error: nao-existe.c: Arquivo ou diretório inexistente
+compilation terminated.
+$ gcc
+gcc: fatal error: no input files
+compilation terminated.</pre>
+<p>O arquivo não está nesta pasta (confira com <code>ls</code> e <code>pwd</code>) ou o nome está errado; e o <code>gcc</code> precisa de pelo menos um arquivo. Aula: <a href="compilar.html">Compilar com gcc</a>.</p>
+
+<h2 id="terminal">Erros do terminal (o bash)</h2>
+<pre class="term" data-cwd="~/c/erros">$ ./e01                                                  « o e01.c tinha erro: o programa não foi criado
+bash: ./e01: Arquivo ou diretório inexistente
+$ ./l03                                                  « o arquivo perdeu a permissão de execução
+bash: ./l03: Permissão negada
+$ ola                                                    « faltou o ./
+bash: ola: comando não encontrado</pre>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (português / inglês)</th><th>O que significa e como consertar</th><th>Aula</th></tr>
+<tr><td><code>Arquivo ou diretório inexistente</code><br><code>No such file or directory</code></td><td>O programa não existe: a compilação falhou (role para cima e leia o erro) ou o nome depois do <code>-o</code> é outro.</td><td><a href="compilar.html">Compilar</a></td></tr>
+<tr><td><code>Permissão negada</code><br><code>Permission denied</code></td><td>O arquivo não é executável: você tentou rodar o <code>.c</code> (<code>./ola.c</code>) em vez do programa, ou ele perdeu a permissão (<code>chmod +x programa</code>).</td><td><a href="compilar.html">Compilar</a></td></tr>
+<tr><td><code>comando não encontrado</code><br><code>command not found</code></td><td>Para rodar um programa da pasta atual, escreva <code>./</code> antes: <code>./ola</code>. Se for o próprio <code>gcc</code>, ele não está instalado.</td><td><a href="instalar-linux.html">Instalar no Linux</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="execucao">Erros de execução</h2>
+<p>O programa compilou, começou a rodar e caiu. Aqui, a mensagem vem do sistema ou da biblioteca C, sem número de linha. Para achar a linha, use o <a href="depuracao-gdb.html">gdb</a>, os <a href="sanitizers.html">sanitizers</a> (<code>-fsanitize=address</code>) ou o <a href="valgrind.html">Valgrind</a>. As saídas abaixo são do terminal da Ana (<code>-t</code>, terminal de verdade):</p>
+
+<pre class="term" data-cwd="~/c/erros">$ ./r1                                                   « int *p = NULL; *p = 5;
+Vou escrever no endereço nulo...
+Falha de segmentação     (imagem do núcleo gravada) ./r1
+$ echo "código: $?"
+código: 139
+$ ./r3                                                   « assert(estoque &gt;= 0); com estoque = -2
+r3: r3.c:6: main: Assertion `estoque &gt;= 0' failed.
+Abortado                   (imagem do núcleo gravada) ./r3
+$ ./r4                                                   « free(v); free(v);
+free(): double free detected in tcache 2
+Abortado                   (imagem do núcleo gravada) ./r4
+$ ./r6                                                   « free num array que não veio do malloc
+free(): invalid pointer
+Abortado                   (imagem do núcleo gravada) ./r6
+$ ./r7                                                   « recursão sem fim
+Falha de segmentação     (imagem do núcleo gravada) ./r7
+$ echo AnaSouzaDaSilva | ./r5                            « scanf("%s", nome) num char nome[8]
+Nome: Olá, AnaSouzaDaSilva!
+*** stack smashing detected ***: terminated
+Abortado                   (imagem do núcleo gravada) echo AnaSouzaDaSilva | ./r5</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (português / inglês)</th><th>Causas comuns</th><th>No editor</th><th>Como consertar</th><th>Aula</th></tr>
+<tr><td><code>Falha de segmentação (imagem do núcleo gravada)</code><br><code>Segmentation fault (core dumped)</code></td><td>usar um ponteiro <code>NULL</code> (um <code>fopen</code> ou <code>malloc</code> sem teste); <code>scanf</code> sem <code>&amp;</code>; mudar uma string literal; <code>printf("%s")</code> com um número; recursão sem fim (estouro da pilha)</td><td>a mesma mensagem e 139 no ponteiro nulo e na recursão; muitos dos outros casos passam calados</td><td>teste os <code>NULL</code>; leia os avisos do <code>-Wall</code>; rode no <code>gdb</code> para ver a linha</td><td><a href="ponteiro-nulo.html">Ponteiro Nulo</a></td></tr>
+<tr><td><code>Exceção de ponto flutuante (imagem do núcleo gravada)</code><br><code>Floating point exception</code></td><td>divisão (ou <code>%</code>) de <strong>inteiros</strong> por zero, apesar do nome</td><td>igual (136)</td><td><code>if (divisor != 0)</code> antes da conta</td><td><a href="operadores-aritmeticos.html">Aritméticos</a></td></tr>
+<tr><td><code>Assertion `estoque &gt;= 0' failed.</code> + <code>Abortado</code><br><code>Aborted</code></td><td>um <code>assert</code> cuja condição deu falsa: é o seu programa avisando que algo "impossível" aconteceu</td><td><code>Assertion failed: estoque &gt;= 0 (r3.c: main: 6)</code> + <code>Abortado</code> (134)</td><td>descubra por que a condição ficou falsa (a mensagem diz o arquivo, a função e a linha)</td><td><a href="testes.html">Testes (assert)</a></td></tr>
+<tr><td><code>free(): double free detected in tcache 2</code> + <code>Abortado</code></td><td><code>free</code> duas vezes no mesmo ponteiro</td><td>passa calado (o programa termina normalmente)</td><td><code>free(v); v = NULL;</code></td><td><a href="malloc-free.html">malloc e free</a></td></tr>
+<tr><td><code>free(): invalid pointer</code> + <code>Abortado</code></td><td><code>free</code> num endereço que não veio do <code>malloc</code> (um array comum, ou o meio de um bloco)</td><td>passa calado</td><td>só dê <code>free</code> no que veio de <code>malloc</code>/<code>calloc</code>/<code>realloc</code></td><td><a href="malloc-free.html">malloc e free</a></td></tr>
+<tr><td><code>*** stack smashing detected ***: terminated</code> + <code>Abortado</code></td><td>escrever além do fim de um array local: <code>scanf("%s")</code> sem largura, <code>strcpy</code>, <code>gets</code>, laço que passa do fim. O gcc percebe na saída da função (repare que o <code>Olá</code> saiu antes)</td><td>passa calado (mostra <code>Olá, AnaSouzaDaSilva!</code> e termina com 0)</td><td>sempre com tamanho: <code>%7s</code>, <code>fgets</code>, <code>snprintf</code></td><td><a href="seguranca.html">Segurança</a></td></tr>
+<tr><td>o programa "trava" e não termina</td><td>laço infinito; <code>scanf</code> esperando a entrada; laço com <code>scanf</code> que não confere o retorno</td><td>para em 15 s</td><td><kbd>Ctrl</kbd>+<kbd>C</kbd> para interromper; confira a condição do laço</td><td><a href="while.html">while</a></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>No editor, muitos erros de memória passam calados</strong>
+<p>O WebAssembly organiza a memória de outro jeito: o <code>free</code> duplo, o <code>free</code> inválido, o estouro de array e a escrita numa string literal não derrubam o programa no editor. Isso <strong>não</strong> quer dizer que o código esteja certo: no Linux, os mesmos programas caem. Para ver esses erros de verdade, compile no seu computador com <code>-fsanitize=address</code> (aula <a href="sanitizers.html">Sanitizers</a>).</p>
+</div>
+
+<h2 id="codigos">Códigos de saída</h2>
+<p>Todo programa termina com um número, que o terminal guarda em <code>$?</code> (<code>echo $?</code> mostra) e que o editor mostra como <code>[código de saída: N]</code>. Acima de 128, é 128 + o número do <strong>sinal</strong> que matou o programa. Aula: <a href="exit.html">exit e atexit</a>.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Quer dizer</th><th>Exemplo real</th><th>Aula</th></tr>
+<tr><td><code>0</code></td><td>deu certo</td><td><code>return 0;</code>, <code>exit(EXIT_SUCCESS)</code></td><td><a href="exit.html">exit</a></td></tr>
+<tr><td><code>1</code> (ou outro de 1 a 125)</td><td>o programa avisou que deu errado</td><td><code>return 1;</code>, <code>exit(EXIT_FAILURE)</code>; o próprio <code>gcc</code> termina com 1 quando a compilação falha</td><td><a href="exit.html">exit</a></td></tr>
+<tr><td><code>126</code></td><td>o bash achou o arquivo mas não pôde executá-lo</td><td><code>Permissão negada</code></td><td><a href="compilar.html">Compilar</a></td></tr>
+<tr><td><code>127</code></td><td>o bash não achou o comando</td><td><code>comando não encontrado</code></td><td><a href="compilar.html">Compilar</a></td></tr>
+<tr><td><code>130</code></td><td>128 + 2 (<code>SIGINT</code>): interrompido com <kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>um laço infinito interrompido</td><td><a href="sinais.html">Sinais</a></td></tr>
+<tr><td><code>134</code></td><td>128 + 6 (<code>SIGABRT</code>): <code>Abortado</code></td><td><code>abort()</code>, <code>assert</code> falho, <code>double free</code>, <code>stack smashing</code></td><td><a href="sinais.html">Sinais</a></td></tr>
+<tr><td><code>136</code></td><td>128 + 8 (<code>SIGFPE</code>): <code>Exceção de ponto flutuante</code></td><td>divisão inteira por zero</td><td><a href="sinais.html">Sinais</a></td></tr>
+<tr><td><code>139</code></td><td>128 + 11 (<code>SIGSEGV</code>): <code>Falha de segmentação</code></td><td>ponteiro nulo, recursão sem fim</td><td><a href="sinais.html">Sinais</a></td></tr>
+<tr><td><code>143</code></td><td>128 + 15 (<code>SIGTERM</code>): <code>Terminado</code></td><td><code>kill</code> no programa, ou <code>raise(SIGTERM)</code></td><td><a href="sinais.html">Sinais</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="experimente">Experimente</h2>
+<div class="tryc" data-goal="out:Total: R$ 30,semaviso">
+<p class="try-task"><strong>Missão:</strong> a Ana escreveu a conta da papelaria com pressa, e o programa nem compila. Clique em Rodar, leia a <strong>primeira</strong> mensagem de erro, conserte, rode de novo, e repita até sair <code>Total: R$ 30</code>, sem nenhum aviso. (São três erros; use as tabelas desta página.)</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int canetas = 3
+    int cadernos = 2;
+    int total = canetas * 4 + cadernos * 9;
+    printf("Total: R$ %d\n", totl);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int canetas = 3;
+    int cadernos = 2;
+    int total = canetas * 4 + cadernos * 9;
+    printf("Total: R$ %d\n", total);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Compilação</strong> (<code>arquivo:linha:coluna: error:</code>): conserte o primeiro erro primeiro e olhe também a linha de cima. Os mais comuns: <code>undeclared</code>, <code>expected ‘;’</code>, <code>implicit declaration</code>, aspas e chaves sem par.</li>
+  <li><strong>Avisos</strong> (<code>warning:</code>): quase sempre são bugs. Compile com <code>-Wall -Wextra</code> e deixe zero avisos.</li>
+  <li><strong>Ligação</strong> (<code>referência não definida para</code>, <code>collect2: error: ld returned 1 exit status</code>): falta uma função, o <code>main</code>, um <code>.c</code> no comando ou o <code>-lm</code>.</li>
+  <li><strong>Execução</strong>: <code>Falha de segmentação</code> (139), <code>Abortado</code> (134: <code>assert</code>, <code>double free</code>, <code>stack smashing</code>), <code>Exceção de ponto flutuante</code> (136). Ache a linha com <code>gdb</code> ou <code>-fsanitize=address</code>.</li>
+  <li>No editor, as mensagens são do Clang, e muitos erros de memória passam calados: confira no gcc.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
