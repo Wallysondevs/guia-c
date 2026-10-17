@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Makefile — make, regras, variáveis e dependências | Guia C</title>
+<meta name="description" content="Makefile para projetos em C, para quem nunca usou o make: a regra (alvo, pré-requisitos e receita com TAB), como o make decide pela data dos arquivos e recompila só o que mudou, variáveis CC, CFLAGS, LDLIBS, as automáticas $@, $&lt; e $^, a regra de padrão %.o: %.c, make clean e .PHONY, as dependências dos .h com -MMD -MP, make -n e make -j, e os erros reais do make 4.4 em português (faltando o separador, Sem regra para processar o alvo), com o inglês citado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Makefile</span></h1>
+
+<p class="intro">Na aula <a href="multiplos-arquivos.html">Vários Arquivos</a>, a Ana aprendeu a compilar cada <code>.c</code> separado e a recompilar só o que mudou. Funciona, mas é chato: ela tem de lembrar o que mudou, que <code>.c</code> inclui qual <code>.h</code>, e digitar os comandos certos. O programa <strong><code>make</code></strong> faz isso por ela. Você escreve uma vez, num arquivo chamado <code>Makefile</code>, <strong>o que</strong> depende de quê e <strong>como</strong> se faz cada coisa; depois, é só digitar <code>make</code>. Ele olha a data de cada arquivo e roda apenas os comandos necessários.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A escrever uma regra: <strong>alvo</strong>, <strong>pré-requisitos</strong> e <strong>receita</strong> (que começa com TAB).</li>
+  <li>Como o <code>make</code> decide o que refazer, pela data dos arquivos.</li>
+  <li>A usar variáveis (<code>CC</code>, <code>CFLAGS</code>, <code>LDLIBS</code>) e as variáveis automáticas <code>$@</code>, <code>$&lt;</code> e <code>$^</code>.</li>
+  <li>A regra de padrão <code>%.o: %.c</code>, o <code>make clean</code> e o <code>.PHONY</code>.</li>
+  <li>A não esquecer os <code>.h</code>, com <code>-MMD -MP</code>.</li>
+  <li>Os erros reais do <code>make</code>: <code>faltando o separador</code>, <code>Sem regra para processar o alvo</code> e <code>Error 1</code>.</li>
+</ul>
+</div>
+
+<p>Todos os comandos rodaram na máquina fictícia da Ana, na pasta <code>~/c/make</code>, com o <strong>GNU Make 4.4</strong> e o <strong>gcc 15.2</strong>. O sistema dela está em português, e o <code>make</code> fala português (o inglês, que aparece em fóruns e tutoriais, vai citado ao lado). O <code>make</code> não roda no editor do guia: lá, todas as abas <code>.c</code> são compiladas juntas a cada Rodar. Mas você vai ver o <strong>raciocínio</strong> dele num programa C. Para instalar no seu Linux: <code>sudo apt install make</code> (veja <a href="instalar-linux.html">Instalar no Linux</a>).</p>
+
+<hr>
+
+<h2>A ideia: a lista de tarefas da padaria</h2>
+<p>Na padaria, o bolo depende da massa e da cobertura; a massa depende da farinha e dos ovos. Se chegou cobertura nova, o padeiro refaz só a cobertura e monta o bolo de novo: a massa continua boa. Se nada mudou desde o último bolo, ele não faz nada. O <code>make</code> pensa assim:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na padaria</th><th>No <code>make</code></th><th>Exemplo</th></tr>
+<tr><td>O que se quer pronto</td><td>O <strong>alvo</strong> (<em>target</em>)</td><td><code>app</code>, <code>main.o</code></td></tr>
+<tr><td>Do que ele depende</td><td>Os <strong>pré-requisitos</strong> (<em>prerequisites</em>)</td><td><code>main.c</code>, <code>util.h</code></td></tr>
+<tr><td>Como fazer</td><td>A <strong>receita</strong> (<em>recipe</em>): os comandos</td><td><code>gcc -c main.c</code></td></tr>
+<tr><td>"Chegou ingrediente novo?"</td><td>Algum pré-requisito é <strong>mais novo</strong> que o alvo?</td><td>a data de <code>util.c</code> &gt; a de <code>util.o</code></td></tr>
+</table>
+</div>
+
+<p>A <strong>regra de ouro</strong>: o <code>make</code> refaz um alvo quando ele <strong>não existe</strong> ou quando algum pré-requisito foi <strong>modificado depois</strong> dele. Todo o resto é jeito de escrever menos.</p>
+
+<hr>
+
+<h2>1. O primeiro <code>Makefile</code></h2>
+<p>O projeto é o da lojinha, da aula <a href="multiplos-arquivos.html">Vários Arquivos</a>: <code>main.c</code>, <code>util.c</code> e <code>util.h</code>. Sem <code>Makefile</code>, o <code>make</code> não sabe o que fazer:</p>
+
+<pre class="term" data-cwd="~/c/make">$ ls
+main.c
+util.c
+util.h
+$ make
+make: *** Nenhum alvo indicado e nenhum arquivo make encontrado.  Pare.</pre>
+
+<p>("Nenhum alvo indicado e nenhum <em>makefile</em> encontrado"; em inglês, <code>No targets specified and no makefile found.  Stop.</code>) A Ana cria, na mesma pasta, um arquivo chamado exatamente <code>Makefile</code>, sem extensão, com uma regra só:</p>
+
+<pre class="file" data-file="Makefile">app: main.c util.c util.h
+	gcc -std=c23 -Wall -Wextra main.c util.c -o app
+</pre>
+
+<dl class="anatomy">
+  <dt>app</dt><dd>O <strong>alvo</strong>: o arquivo que esta regra produz. Vem antes dos dois-pontos.</dd>
+  <dt>main.c util.c util.h</dt><dd>Os <strong>pré-requisitos</strong>: se algum deles mudar, o <code>app</code> tem de ser refeito. O <code>util.h</code> entra porque o código dos dois <code>.c</code> depende dele.</dd>
+  <dt>(TAB) gcc …</dt><dd>A <strong>receita</strong>: o comando que faz o alvo. A linha <strong>tem de começar com um TAB</strong> (a tecla <kbd>Tab</kbd>), não com espaços. É a regra mais famosa e mais odiada do <code>make</code>; você vai ver o erro na próxima seção.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/make">$ make
+gcc -std=c23 -Wall -Wextra main.c util.c -o app
+$ ./app
+--------------------
+Lojinha da Ana
+--------------------
+3 cadernos: R$ 36
+5 lápis:    R$ 10
+--------------------</pre>
+
+<p>O <code>make</code> leu o <code>Makefile</code>, viu que o <code>app</code> não existia, <strong>mostrou</strong> o comando da receita e o rodou. Agora rode de novo, sem mudar nada:</p>
+
+<pre class="term" data-cwd="~/c/make">$ make
+make: 'app' está atualizado.</pre>
+
+<p>(Em inglês: <code>make: 'app' is up to date.</code>) O <code>app</code> é mais novo que todos os pré-requisitos: não há o que fazer. O comando <code>touch</code> ("tocar") muda a data de um arquivo para agora, como se você o tivesse editado e salvado:</p>
+
+<pre class="term" data-cwd="~/c/make">$ touch util.c
+$ make
+gcc -std=c23 -Wall -Wextra main.c util.c -o app</pre>
+
+<p>Sem argumento, o <code>make</code> faz o <strong>primeiro alvo</strong> do arquivo. Você também pode pedir um alvo pelo nome: <code>make app</code> é o mesmo que <code>make</code> aqui.</p>
+
+<h3>TAB, não espaços: <code>faltando o separador</code></h3>
+<p>Muitos editores trocam o TAB por quatro espaços. Para o <code>make</code>, isso é outra coisa:</p>
+
+<pre class="term" data-cwd="~/c/make">$ make
+Makefile:2: *** faltando o separador.  Pare.</pre>
+
+<p>"Na linha 2 do <code>Makefile</code>, falta o separador; pare." Em inglês, a frase que você vai achar em todo fórum: <code>Makefile:2: *** missing separator.  Stop.</code> O "separador" que falta é o TAB no começo da receita. Na tela, espaços e TAB parecem iguais. O comando <code>cat -A</code> mostra os caracteres invisíveis: o fim de cada linha aparece como <code>$</code>, e um TAB, como <code>^I</code>. No <code>Makefile</code> quebrado, a receita começa com quatro espaços:</p>
+
+<pre class="term" data-cwd="~/c/make">$ cat -A Makefile
+app: main.c util.c util.h$
+    gcc -std=c23 -Wall -Wextra main.c util.c -o app$</pre>
+
+<p>No <code>Makefile</code> que funciona, o começo da receita é um <code>^I</code>:</p>
+
+<pre class="term" data-cwd="~/c/make">$ cat -A Makefile
+app: main.c util.c util.h$
+^Igcc -std=c23 -Wall -Wextra main.c util.c -o app$</pre>
+
+<p>O conserto: apague os espaços e digite um TAB. No VS Code, o canto de baixo da janela mostra "Espaços: 4" ou "Tamanho da Tabulação"; nos arquivos chamados <code>Makefile</code>, ele já usa TAB sozinho.</p>
+
+<hr>
+
+<h2>2. Uma regra para cada <code>.o</code></h2>
+<p>O primeiro <code>Makefile</code> recompila <strong>tudo</strong> quando qualquer arquivo muda. Para recompilar só o necessário, escreva uma regra para cada etapa da aula <a href="multiplos-arquivos.html">Vários Arquivos</a>: uma para cada <code>.o</code> e uma para ligar.</p>
+
+<pre class="file" data-file="Makefile">app: main.o util.o
+	gcc main.o util.o -o app
+
+main.o: main.c util.h
+	gcc -std=c23 -Wall -Wextra -c main.c
+
+util.o: util.c util.h
+	gcc -std=c23 -Wall -Wextra -c util.c
+</pre>
+
+<p>Leia de baixo para cima: o <code>util.o</code> depende do <code>util.c</code> e do <code>util.h</code>; o <code>main.o</code>, do <code>main.c</code> e do <code>util.h</code>; o <code>app</code>, dos dois <code>.o</code>. Quando a Ana pede o <code>app</code>, o <code>make</code> percebe que precisa dos <code>.o</code> antes, e os faz primeiro:</p>
+
+<pre class="term" data-cwd="~/c/make">$ make
+gcc -std=c23 -Wall -Wextra -c main.c
+gcc -std=c23 -Wall -Wextra -c util.c
+gcc main.o util.o -o app
+$ make
+make: 'app' está atualizado.</pre>
+
+<p>Agora o teste que importa. A Ana mexeu só no <code>util.c</code>:</p>
+
+<pre class="term" data-cwd="~/c/make">$ touch util.c
+$ make
+gcc -std=c23 -Wall -Wextra -c util.c
+gcc main.o util.o -o app</pre>
+
+<ol class="passo">
+  <li><code>main.o</code>: o <code>main.c</code> e o <code>util.h</code> são mais velhos que ele. Nada a fazer.</li>
+  <li><code>util.o</code>: o <code>util.c</code> é mais novo. Recompila.</li>
+  <li><code>app</code>: o <code>util.o</code> acabou de ficar mais novo que ele. Liga de novo.</li>
+</ol>
+
+<p>E se ela mexer no <code>util.h</code>, que os dois <code>.c</code> incluem? Os dois <code>.o</code> são refeitos, exatamente como a aula anterior mandava fazer à mão:</p>
+
+<pre class="term" data-cwd="~/c/make">$ touch util.h
+$ make
+gcc -std=c23 -Wall -Wextra -c main.c
+gcc -std=c23 -Wall -Wextra -c util.c
+gcc main.o util.o -o app</pre>
+
+<h3>Ver sem fazer: <code>make -n</code></h3>
+<p>O <code>-n</code> (de <em>no-op</em>, "não faça") mostra os comandos que o <code>make</code> rodaria, sem rodá-los. Bom para conferir um <code>Makefile</code> novo:</p>
+
+<pre class="term" data-cwd="~/c/make">$ touch main.c
+$ make -n
+gcc -std=c23 -Wall -Wextra -c main.c
+gcc main.o util.o -o app</pre>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> o editor não roda o <code>make</code>, mas este programa C faz o mesmo raciocínio. Cada arquivo tem uma "hora" (número maior = mais novo), cada regra tem um alvo, dois pré-requisitos e uma receita, e a função <code>make</code> aplica a regra de ouro. Rode e compare com a saída real acima. Depois troque o <code>touch("util.c")</code> do <code>main</code> por <code>touch("util.h")</code> e por <code>touch("main.c")</code>.</p>
+<pre class="script" data-file="minimake.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+// "hora" da última modificação de cada arquivo: maior = mais novo
+typedef struct {
+    const char *nome;
+    int hora;
+} Arquivo;
+
+Arquivo arquivos[] = {
+    {"main.c", 10}, {"util.c", 10}, {"util.h", 10},
+    {"main.o", 20}, {"util.o", 20}, {"app", 30},
+};
+#define N_ARQUIVOS 6
+
+typedef struct {
+    const char *alvo;
+    const char *deps[2];
+    const char *receita;
+} Regra;
+
+// em ordem: primeiro os .o, depois o programa
+Regra regras[] = {
+    {"main.o", {"main.c", "util.h"}, "gcc -std=c23 -Wall -Wextra -c main.c"},
+    {"util.o", {"util.c", "util.h"}, "gcc -std=c23 -Wall -Wextra -c util.c"},
+    {"app",    {"main.o", "util.o"}, "gcc main.o util.o -o app"},
+};
+#define N_REGRAS 3
+
+int relogio = 100;
+
+Arquivo *achar(const char *nome) {
+    for (int i = 0; i &lt; N_ARQUIVOS; i++) {
+        if (strcmp(arquivos[i].nome, nome) == 0) {
+            return &amp;arquivos[i];
+        }
+    }
+    return nullptr;
+}
+
+void touch(const char *nome) {
+    relogio++;
+    achar(nome)-&gt;hora = relogio;
+}
+
+void make(void) {
+    bool fez_algo = false;
+    for (int i = 0; i &lt; N_REGRAS; i++) {
+        Regra *r = &amp;regras[i];
+        bool refazer = false;
+        for (int j = 0; j &lt; 2; j++) {
+            if (achar(r-&gt;deps[j])-&gt;hora &gt; achar(r-&gt;alvo)-&gt;hora) {
+                refazer = true;      // a dependência é mais nova que o alvo
+            }
+        }
+        if (refazer) {
+            printf("%s\n", r-&gt;receita);
+            touch(r-&gt;alvo);          // o alvo acabou de ser refeito
+            fez_algo = true;
+        }
+    }
+    if (!fez_algo) {
+        printf("make: 'app' está atualizado.\n");
+    }
+}
+
+int main(void) {
+    printf("$ make\n");
+    make();
+    printf("$ touch util.c\n");
+    touch("util.c");
+    printf("$ make\n");
+    make();
+    return 0;
+}
+</pre>
+</div>
+
+<p>(O <code>make</code> de verdade lê a data de cada arquivo no disco, em vez de uma tabela, e descobre sozinho a ordem das regras; o programa acima as percorre na ordem em que foram escritas.)</p>
+
+<hr>
+
+<h2>3. Variáveis, <code>$@</code>, <code>$&lt;</code> e <code>clean</code></h2>
+<p>O <code>Makefile</code> da seção 2 repete <code>-std=c23 -Wall -Wextra</code> em cada regra. Para trocar uma opção, a Ana teria de mudar várias linhas. As <strong>variáveis</strong> resolvem isso:</p>
+
+<pre class="file" data-file="Makefile">CC = gcc
+CFLAGS = -std=c23 -Wall -Wextra
+OBJS = main.o util.o
+
+app: $(OBJS)
+	$(CC) $(OBJS) -o $@
+
+main.o: main.c util.h
+	$(CC) $(CFLAGS) -c $&lt; -o $@
+
+util.o: util.c util.h
+	$(CC) $(CFLAGS) -c $&lt; -o $@
+
+clean:
+	rm -f app $(OBJS)
+
+.PHONY: clean
+</pre>
+
+<dl class="anatomy">
+  <dt>CC = gcc</dt><dd>Cria a variável <code>CC</code> (de <em>C compiler</em>, "compilador C"). <code>$(CC)</code> é trocado por <code>gcc</code> onde aparecer. Os nomes <code>CC</code>, <code>CFLAGS</code> e <code>LDLIBS</code> são uma convenção que todo mundo segue.</dd>
+  <dt>CFLAGS</dt><dd>"<em>C flags</em>", as opções de compilação.</dd>
+  <dt>OBJS</dt><dd>Um nome inventado pela Ana para a lista dos <code>.o</code>.</dd>
+  <dt>$@</dt><dd><strong>Variável automática</strong>: o alvo da regra. Na regra do <code>util.o</code>, <code>$@</code> vale <code>util.o</code>.</dd>
+  <dt>$&lt;</dt><dd>O <strong>primeiro</strong> pré-requisito. Na regra do <code>util.o</code>, vale <code>util.c</code>. (Por isso o <code>.c</code> vem antes do <code>.h</code> na lista.)</dd>
+  <dt>clean:</dt><dd>Um alvo que não é arquivo: uma "tarefa" que apaga o que o <code>make</code> gerou. Não tem pré-requisitos.</dd>
+  <dt>.PHONY: clean</dt><dd>"<code>clean</code> é um alvo falso (<em>phony</em>)": nunca procure um arquivo com esse nome. Você vai ver por que ele importa logo abaixo.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/make">$ make clean
+rm -f app main.o util.o
+$ make
+gcc -std=c23 -Wall -Wextra -c main.c -o main.o
+gcc -std=c23 -Wall -Wextra -c util.c -o util.o
+gcc main.o util.o -o app</pre>
+
+<p>Repare que o <code>make</code> mostra os comandos <strong>já com as variáveis trocadas</strong>: <code>$(CFLAGS)</code> virou <code>-std=c23 -Wall -Wextra</code>, <code>$&lt;</code> virou <code>main.c</code> e <code>$@</code> virou <code>main.o</code>. O <code>make clean</code> é o jeito de começar do zero (por exemplo, depois de mudar o <code>CFLAGS</code>, para que tudo seja recompilado com as opções novas).</p>
+
+<h3>Por que o <code>.PHONY</code></h3>
+<p>Sem a linha <code>.PHONY: clean</code>, o <code>make</code> trata <code>clean</code> como um arquivo. Na maior parte do tempo dá certo, porque esse arquivo não existe. Mas se um dia aparecer um arquivo chamado <code>clean</code> na pasta (aqui, a Ana o cria com <code>touch</code>):</p>
+
+<pre class="term" data-cwd="~/c/make">$ touch clean
+$ make clean
+make: 'clean' está atualizado.</pre>
+
+<p>O alvo <code>clean</code> "existe" e não tem pré-requisitos, então está sempre atualizado, e o <code>rm</code> nunca roda. Com o <code>.PHONY: clean</code> de volta, o <code>make</code> ignora o arquivo e roda a receita:</p>
+
+<pre class="term" data-cwd="~/c/make">$ make clean
+rm -f app main.o util.o</pre>
+
+<p>Ponha no <code>.PHONY</code> todo alvo que é uma tarefa, e não um arquivo (<code>.PHONY: clean all teste</code>).</p>
+
+<hr>
+
+<h2>4. A regra de padrão <code>%.o: %.c</code></h2>
+<p>As regras do <code>main.o</code> e do <code>util.o</code> são iguais, só muda o nome. Com dez arquivos, seriam dez regras iguais. Uma <strong>regra de padrão</strong> diz de uma vez como fazer <strong>qualquer</strong> <code>.o</code> a partir do <code>.c</code> de mesmo nome. A Ana aproveitou para acrescentar um módulo novo, <code>frete.c</code>, que calcula o frete com a função <code>ceil</code> do <code>math.h</code> (arredondar para cima: R$ 5 a cada 10 km começados):</p>
+
+<pre class="file" data-file="frete.c">#include &lt;math.h&gt;
+#include "frete.h"
+
+double frete(double km) {
+    return ceil(km / 10.0) * 5.0;
+}
+</pre>
+
+<p>O <code>frete.h</code> tem o protótipo <code>double frete(double km);</code>, e o <code>main.c</code> ganhou a linha <code>printf("Frete (23 km): R$ %.2f\n", frete(23.0));</code>. O <code>Makefile</code> ficou assim:</p>
+
+<pre class="file" data-file="Makefile">CC = gcc
+CFLAGS = -std=c23 -Wall -Wextra
+OBJS = main.o util.o frete.o
+
+app: $(OBJS)
+	$(CC) $^ -o $@ $(LDLIBS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $&lt; -o $@
+
+clean:
+	rm -f app $(OBJS)
+
+.PHONY: clean
+</pre>
+
+<dl class="anatomy">
+  <dt>%.o: %.c</dt><dd>"Para fazer um <code>.o</code> qualquer, use o <code>.c</code> de mesmo nome." O <code>%</code> é o pedaço que casa: para <code>frete.o</code>, ele vale <code>frete</code>, e o pré-requisito é <code>frete.c</code>.</dd>
+  <dt>$^</dt><dd><strong>Todos</strong> os pré-requisitos. Na regra do <code>app</code>, vale <code>main.o util.o frete.o</code>.</dd>
+  <dt>$(LDLIBS)</dt><dd>As bibliotecas para ligar (de <em>LD libraries</em>; <code>ld</code> é o ligador). Vai no <strong>fim</strong> do comando. Por enquanto, a variável não existe e vale vazio.</dd>
+</dl>
+
+<p>Para acrescentar um módulo, agora basta pôr o <code>.o</code> na lista <code>OBJS</code>. O <code>make</code> descobre sozinho como fazer o <code>frete.o</code>. Mas a ligação falha:</p>
+
+<pre class="term" data-cwd="~/c/make">$ make
+gcc -std=c23 -Wall -Wextra -c main.c -o main.o
+gcc -std=c23 -Wall -Wextra -c util.c -o util.o
+gcc -std=c23 -Wall -Wextra -c frete.c -o frete.o
+gcc main.o util.o frete.o -o app
+/usr/bin/x86_64-linux-gnu-ld.bfd: frete.o: na função "frete":
+frete.c:(.text+0x2d): referência não definida para "ceil"
+collect2: error: ld returned 1 exit status
+make: *** [Makefile:6: app] Error 1</pre>
+
+<dl class="anatomy">
+  <dt>referência não definida para "ceil"</dt><dd>O erro de verdade, do ligador: a função <code>ceil</code> mora na biblioteca de matemática, que o gcc só liga com <code>-lm</code> (aulas <a href="matematica.html">Matemática</a> e <a href="bibliotecas.html">Bibliotecas</a>).</dd>
+  <dt>make: *** [Makefile:6: app] Error 1</dt><dd>O recado do <code>make</code>: "a receita do alvo <code>app</code>, na linha 6 do <code>Makefile</code>, terminou com erro (código 1)". O <code>make</code> para no primeiro comando que falha. Este recado sai em inglês mesmo no sistema em português; ele só diz <strong>onde</strong> parou, e o motivo está nas linhas de cima.</dd>
+</dl>
+
+<p>A Ana cria a variável <code>LDLIBS = -lm</code> logo abaixo do <code>CFLAGS</code>. Os três <code>.o</code> já estão prontos; só falta ligar:</p>
+
+<pre class="term" data-cwd="~/c/make">$ make
+gcc main.o util.o frete.o -o app -lm
+$ ./app
+--------------------
+Lojinha da Ana
+--------------------
+3 cadernos: R$ 36
+Frete (23 km): R$ 15.00
+--------------------</pre>
+
+<h3>O perigo: o <code>make</code> não lê os seus <code>#include</code></h3>
+<p>A regra <code>%.o: %.c</code> só fala do <code>.c</code>. Veja o que acontece quando a Ana muda o <code>util.h</code>:</p>
+
+<pre class="term" data-cwd="~/c/make">$ touch util.h
+$ make
+make: 'app' está atualizado.</pre>
+
+<p>Errado! O <code>util.h</code> mudou, e os <code>.o</code> que o incluem estão velhos. Como a aula <a href="multiplos-arquivos.html">Vários Arquivos</a> avisou, um <code>.o</code> compilado com a promessa antiga pode fazer o programa ligar e se comportar mal. O <code>make</code> não abre o seu código para ver os <code>#include</code>: ele só sabe o que está escrito no <code>Makefile</code>. O conserto é dizer quem depende de quem, em linhas <strong>sem receita</strong> (a receita continua vindo da regra de padrão):</p>
+
+<pre class="file" data-file="Makefile (acrescentado)">main.o util.o: util.h
+main.o frete.o: frete.h
+</pre>
+
+<pre class="term" data-cwd="~/c/make">$ make
+gcc -std=c23 -Wall -Wextra -c main.c -o main.o
+gcc -std=c23 -Wall -Wextra -c util.c -o util.o
+gcc main.o util.o frete.o -o app -lm</pre>
+
+<p>Agora sim: o <code>util.h</code> era mais novo que o <code>main.o</code> e o <code>util.o</code>, e os dois foram refeitos. O <code>frete.o</code>, que não inclui o <code>util.h</code>, ficou como estava. Escrever essas linhas à mão funciona, mas é fácil esquecer uma quando você acrescenta um <code>#include</code>. A seção 5 mostra como deixar o gcc escrevê-las.</p>
+
+<h3>Mudar uma variável na hora: <code>make CC=clang</code></h3>
+<p>Uma variável escrita na linha de comando vale mais que a do <code>Makefile</code>. Para compilar o projeto inteiro com o Clang, sem mudar o arquivo:</p>
+
+<pre class="term" data-cwd="~/c/make">$ make clean
+rm -f app main.o util.o frete.o
+$ make CC=clang
+clang -std=c23 -Wall -Wextra -c main.c -o main.o
+clang -std=c23 -Wall -Wextra -c util.c -o util.o
+clang -std=c23 -Wall -Wextra -c frete.c -o frete.o
+clang main.o util.o frete.o -o app -lm
+$ ./app | tail -2
+Frete (23 km): R$ 15.00
+--------------------</pre>
+
+<hr>
+
+<h2>5. Dependências automáticas: <code>-MMD -MP</code></h2>
+<p>O gcc sabe exatamente quais <code>.h</code> cada <code>.c</code> inclui: afinal, foi ele que os leu. Com as opções <code>-MMD -MP</code>, ele grava essa lista num arquivo <code>.d</code> (de <em>dependências</em>) ao lado de cada <code>.o</code>, já no formato do <code>make</code>. Este é o <code>Makefile</code> completo da Ana, um bom modelo para os seus projetos:</p>
+
+<pre class="file" data-file="Makefile">CC = gcc
+CFLAGS = -std=c23 -Wall -Wextra -MMD -MP
+LDLIBS = -lm
+OBJS = main.o util.o frete.o
+DEPS = $(OBJS:.o=.d)
+
+app: $(OBJS)
+	$(CC) $^ -o $@ $(LDLIBS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $&lt; -o $@
+
+clean:
+	rm -f app $(OBJS) $(DEPS)
+
+.PHONY: clean
+
+-include $(DEPS)
+</pre>
+
+<dl class="anatomy">
+  <dt>-MMD</dt><dd>Opção do gcc: enquanto compila, grave no <code>.d</code> a lista dos <code>.h</code> que este <code>.c</code> incluiu (só os seus, não os do sistema, como o <code>stdio.h</code>).</dd>
+  <dt>-MP</dt><dd>Acrescente ao <code>.d</code> uma regra vazia para cada <code>.h</code>. Assim, se você apagar ou renomear um <code>.h</code>, o <code>make</code> não para com erro.</dd>
+  <dt>DEPS = $(OBJS:.o=.d)</dt><dd>"A lista <code>OBJS</code>, trocando <code>.o</code> por <code>.d</code> no fim de cada nome": <code>main.d util.d frete.d</code>.</dd>
+  <dt>-include $(DEPS)</dt><dd>Leia esses arquivos como se fizessem parte do <code>Makefile</code>. O <code>-</code> na frente quer dizer "se não existirem, tudo bem" (na primeira vez, ainda não existem).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/make">$ make
+gcc -std=c23 -Wall -Wextra -MMD -MP -c main.c -o main.o
+gcc -std=c23 -Wall -Wextra -MMD -MP -c util.c -o util.o
+gcc -std=c23 -Wall -Wextra -MMD -MP -c frete.c -o frete.o
+gcc main.o util.o frete.o -o app -lm
+$ cat main.d
+main.o: main.c util.h frete.h
+util.h:
+frete.h:</pre>
+
+<p>O <code>main.d</code> é a linha que a Ana escrevia à mão, agora escrita pelo gcc (mais as duas regras vazias do <code>-MP</code>). Teste com o <code>frete.h</code>, que só o <code>main.c</code> e o <code>frete.c</code> incluem:</p>
+
+<pre class="term" data-cwd="~/c/make">$ touch frete.h
+$ make
+gcc -std=c23 -Wall -Wextra -MMD -MP -c main.c -o main.o
+gcc -std=c23 -Wall -Wextra -MMD -MP -c frete.c -o frete.o
+gcc main.o util.o frete.o -o app -lm
+$ make
+make: 'app' está atualizado.</pre>
+
+<p>Exatamente os dois certos. Se amanhã o <code>util.c</code> passar a incluir o <code>frete.h</code>, o <code>util.d</code> é reescrito na próxima compilação, sem a Ana mexer no <code>Makefile</code>.</p>
+
+<h3>Compilar em paralelo: <code>make -j</code></h3>
+<p>Os três <code>.o</code> não dependem uns dos outros. O <code>-j4</code> (de <em>jobs</em>, "tarefas") deixa o <code>make</code> rodar até quatro comandos ao mesmo tempo, um por núcleo do processador:</p>
+
+<pre class="term" data-cwd="~/c/make">$ make clean
+rm -f app main.o util.o frete.o main.d util.d frete.d
+$ make -j4
+gcc -std=c23 -Wall -Wextra -MMD -MP -c main.c -o main.o
+gcc -std=c23 -Wall -Wextra -MMD -MP -c util.c -o util.o
+gcc -std=c23 -Wall -Wextra -MMD -MP -c frete.c -o frete.o
+gcc main.o util.o frete.o -o app -lm</pre>
+
+<p>Com três arquivos pequenos, não se nota diferença (e a ordem das linhas pode mudar de uma vez para outra). Num projeto com centenas de <code>.c</code>, o <code>-j</code> divide o tempo de compilação pelo número de núcleos. A ligação sempre espera todos os <code>.o</code> ficarem prontos.</p>
+
+<hr>
+
+<h2>Formas diferentes e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Bom para</th><th>Ruim porque</th></tr>
+<tr><td>Uma regra só, com o <code>gcc</code> de todos os <code>.c</code> (seção 1)</td><td>Dois ou três arquivos; não ter de lembrar o comando</td><td>Recompila tudo quando qualquer coisa muda</td></tr>
+<tr><td>Uma regra por <code>.o</code>, escrita à mão (seção 2)</td><td>Entender como o <code>make</code> pensa</td><td>Repetição; cada <code>#include</code> novo tem de ir para o <code>Makefile</code></td></tr>
+<tr><td>Variáveis + <code>%.o: %.c</code> + <code>-MMD -MP</code> (seção 5)</td><td>Qualquer projeto C no Linux, pequeno ou médio</td><td>Mais coisas para entender na primeira vez</td></tr>
+<tr><td><a href="cmake.html">CMake</a></td><td>Projetos grandes, que compilam também no Windows e no macOS</td><td>Mais uma ferramenta para aprender; ele próprio gera um <code>Makefile</code></td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> Copie o <code>Makefile</code> da seção 5 e troque a lista <code>OBJS</code> e o nome <code>app</code>. Ele serve para quase todo projeto de estudo. Quando o projeto precisar compilar em outros sistemas, passe para o <a href="cmake.html">CMake</a>.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>Makefile:2: *** faltando o separador.  Pare.</code> (<code>missing separator.  Stop.</code>)</strong>
+<p><strong>O que significa:</strong> a receita na linha 2 começa com espaços em vez de TAB (ou a linha não é nem regra, nem variável, nem receita).</p>
+<p><strong>Como consertar:</strong> confira com <code>cat -A Makefile</code>: toda receita começa com <code>^I</code>. Apague os espaços e digite um TAB.</p>
+</div>
+
+<div class="cenario">
+<strong><code>make: *** Nenhum alvo indicado e nenhum arquivo make encontrado.  Pare.</code></strong>
+<p><strong>O que significa:</strong> não há <code>Makefile</code> na pasta atual (em inglês: <code>No targets specified and no makefile found.  Stop.</code>).</p>
+<p><strong>Como consertar:</strong> entre na pasta do projeto (<code>cd</code>) e confira o nome: <code>Makefile</code> (ou <code>makefile</code>), sem extensão. Um <code>Makefile.txt</code> salvo pelo editor de texto não vale.</p>
+</div>
+
+<div class="cenario">
+<strong><code>make: *** Sem regra para processar o alvo 'fretes.o', necessário por 'app'.  Pare.</code></strong>
+<p><strong>O que significa:</strong> o <code>app</code> precisa de um <code>fretes.o</code>, e o <code>make</code> não sabe fazê-lo: não há regra para ele, e a regra <code>%.o: %.c</code> não serve, porque não existe <code>fretes.c</code>. Em inglês: <code>No rule to make target 'fretes.o', needed by 'app'.  Stop.</code> Com um <code>.h</code> que não existe, a frase é a mesma: <code>Sem regra para processar o alvo 'fretes.h', necessário por 'main.o'</code>.</p>
+<p><strong>Como consertar:</strong> quase sempre é um nome digitado errado no <code>Makefile</code> (aqui, <code>fretes</code> em vez de <code>frete</code>) ou um arquivo que ficou em outra pasta.</p>
+</div>
+
+<div class="cenario">
+<strong><code>make: *** [Makefile:10: main.o] Error 1</code></strong>
+<p><strong>O que significa:</strong> o comando da receita do <code>main.o</code> (linha 10 do <code>Makefile</code> da seção 4, a da regra <code>%.o: %.c</code>) falhou. O <code>make</code> não erra: ele só repassa o erro do gcc e para. Por exemplo, com o <code>;</code> faltando depois das três chamadas <code>linha()</code> do <code>main.c</code>:</p>
+<pre class="term" data-cwd="~/c/make">$ make
+gcc -std=c23 -Wall -Wextra -c main.c -o main.o
+main.c: In function ‘main’:
+main.c:6:12: error: expected ‘;’ before ‘printf’
+    6 |     linha()
+      |            ^
+      |            ;
+    7 |     printf("Lojinha da Ana\n");
+      |     ~~~~~~
+main.c:8:12: error: expected ‘;’ before ‘printf’
+    8 |     linha()
+      |            ^
+      |            ;
+    9 |     printf("3 cadernos: R$ %d\n", total_compra(12, 3));
+      |     ~~~~~~
+main.c:11:12: error: expected ‘;’ before ‘return’
+   11 |     linha()
+      |            ^
+      |            ;
+   12 |     return 0;
+      |     ~~~~~~
+make: *** [Makefile:10: main.o] Error 1</pre>
+<p><strong>Como consertar:</strong> leia as linhas de <strong>cima</strong>, que são do gcc (aqui, um erro de sintaxe no <code>main.c</code>), conserte e rode o <code>make</code> de novo. O que já tinha ficado pronto não é refeito.</p>
+</div>
+
+<div class="cenario">
+<strong><code>make: 'app' está atualizado.</code>, mas você mudou um <code>.h</code></strong>
+<p><strong>O que significa:</strong> o <code>.h</code> não aparece como pré-requisito de nenhum <code>.o</code>. O <code>make</code> não lê os <code>#include</code>.</p>
+<p><strong>Como consertar:</strong> use <code>-MMD -MP</code> e o <code>-include $(DEPS)</code> da seção 5. Na hora do aperto, um <code>make clean</code> seguido de <code>make</code> recompila tudo.</p>
+</div>
+
+<div class="cenario">
+<strong><code>make: 'clean' está atualizado.</code></strong>
+<p><strong>O que significa:</strong> existe um arquivo chamado <code>clean</code> na pasta, e o alvo <code>clean</code> não foi declarado em <code>.PHONY</code>.</p>
+<p><strong>Como consertar:</strong> acrescente <code>.PHONY: clean</code> (e os outros alvos que não são arquivos).</p>
+</div>
+
+<div class="cenario">
+<strong><code>referência não definida para "ceil"</code> (ou <code>sqrt</code>, <code>pow</code>) dentro do <code>make</code></strong>
+<p><strong>O que significa:</strong> faltou ligar a biblioteca de matemática.</p>
+<p><strong>Como consertar:</strong> <code>LDLIBS = -lm</code>, e o <code>$(LDLIBS)</code> no <strong>fim</strong> da receita de ligação.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No <code>Makefile</code></th><th>O que quer dizer</th></tr>
+<tr><td><code>alvo: pré-requisitos</code> + receita com TAB</td><td>Uma regra: faça o alvo com a receita se ele não existir ou se algum pré-requisito for mais novo</td></tr>
+<tr><td><code>NOME = valor</code> e <code>$(NOME)</code></td><td>Criar e usar uma variável</td></tr>
+<tr><td><code>CC</code>, <code>CFLAGS</code>, <code>LDLIBS</code></td><td>Compilador, opções de compilação, bibliotecas (<code>-lm</code>)</td></tr>
+<tr><td><code>$@</code></td><td>O alvo da regra</td></tr>
+<tr><td><code>$&lt;</code></td><td>O primeiro pré-requisito</td></tr>
+<tr><td><code>$^</code></td><td>Todos os pré-requisitos</td></tr>
+<tr><td><code>%.o: %.c</code></td><td>Regra de padrão: qualquer <code>.o</code> a partir do <code>.c</code> de mesmo nome</td></tr>
+<tr><td><code>main.o: util.h</code> (sem receita)</td><td>Só acrescenta um pré-requisito</td></tr>
+<tr><td><code>.PHONY: clean</code></td><td><code>clean</code> não é arquivo</td></tr>
+<tr><td><code>$(OBJS:.o=.d)</code></td><td>A lista, trocando <code>.o</code> por <code>.d</code></td></tr>
+<tr><td><code>-include arquivos</code></td><td>Ler outros arquivos de regras, sem erro se não existirem</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No terminal</th><th>O que faz</th></tr>
+<tr><td><code>make</code></td><td>Faz o primeiro alvo do <code>Makefile</code></td></tr>
+<tr><td><code>make util.o</code></td><td>Faz só esse alvo (e o que ele precisar)</td></tr>
+<tr><td><code>make clean</code></td><td>Roda a tarefa <code>clean</code></td></tr>
+<tr><td><code>make -n</code></td><td>Mostra os comandos, sem rodar</td></tr>
+<tr><td><code>make -j4</code></td><td>Até 4 comandos ao mesmo tempo</td></tr>
+<tr><td><code>make CC=clang</code></td><td>Troca uma variável só desta vez</td></tr>
+<tr><td><code>touch arquivo</code></td><td>Muda a data do arquivo para agora (como se tivesse sido editado)</td></tr>
+<tr><td><code>cat -A Makefile</code></td><td>Mostra os TABs (<code>^I</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O que começa a receita</h3>
+<p>Que caractere tem de vir no começo de cada linha de receita? Escreva o nome da tecla:</p>
+<div class="ex-code"><input data-answer="TAB|Tab|tab|tabulação|Tabulação" aria-label="tecla"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O alvo da regra</h3>
+<p>Complete a receita para que o <code>.o</code> gerado tenha o nome do alvo, sem escrever o nome:</p>
+<div class="ex-code">estoque.o: estoque.c estoque.h<br>&nbsp;&nbsp;&nbsp;&nbsp;$(CC) $(CFLAGS) -c estoque.c -o <input data-answer="$@" aria-label="variável"></div>
+</div>
+
+<div class="exercise">
+<h3>3. A biblioteca de matemática</h3>
+<p>Complete a variável que faz o <code>make</code> ligar a biblioteca do <code>math.h</code>:</p>
+<div class="ex-code">LDLIBS = <input data-answer="-lm" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. No <code>Makefile</code> da seção 2, a Ana mudou só o <code>main.c</code>. O que o <code>make</code> roda?</p>
+<label><input type="radio" name="q4"> Nada: está atualizado</label>
+<label><input type="radio" name="q4"> Recompila o <code>main.c</code> e o <code>util.c</code> e liga</label>
+<label><input type="radio" name="q4"> Recompila só o <code>main.c</code> e liga</label>
+<label><input type="radio" name="q4"> Só liga</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Na regra <code>util.o: util.c util.h</code>, quanto vale <code>$&lt;</code>?</p>
+<label><input type="radio" name="q5"> <code>util.o</code></label>
+<label><input type="radio" name="q5"> <code>util.c</code></label>
+<label><input type="radio" name="q5"> <code>util.c util.h</code></label>
+<label><input type="radio" name="q5"> <code>util.h</code></label>
+</div>
+
+<h3>Missão final: escreva a regra de ouro</h3>
+
+<div class="tryc" data-goal="outre:^\$ make\nmake: 'app' está atualizado\.\n\$ touch util\.h\n\$ make\ngcc -std=c23 -Wall -Wextra -c main\.c\ngcc -std=c23 -Wall -Wextra -c util\.c\ngcc main\.o util\.o -o app\n$">
+<p class="try-task"><strong>Missão:</strong> o mini-make abaixo está quase pronto, mas a função <code>precisa_refazer</code> sempre responde <code>false</code>. Escreva o corpo dela: devolva <code>true</code> se <strong>algum</strong> pré-requisito da regra tiver hora <strong>maior</strong> que a do alvo (use a <code>hora</code>, que já está pronta). O <code>main</code> roda <code>make</code> (nada a fazer), depois <code>touch util.h</code> e <code>make</code> de novo. A saída deve ser igual à do <code>make</code> de verdade, na seção 2:</p>
+<pre class="out">$ make
+make: 'app' está atualizado.
+$ touch util.h
+$ make
+gcc -std=c23 -Wall -Wextra -c main.c
+gcc -std=c23 -Wall -Wextra -c util.c
+gcc main.o util.o -o app</pre>
+<pre class="script" data-file="minimake.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct {
+    const char *nome;
+    int hora;
+} Arquivo;
+
+Arquivo arquivos[] = {
+    {"main.c", 10}, {"util.c", 10}, {"util.h", 10},
+    {"main.o", 20}, {"util.o", 20}, {"app", 30},
+};
+#define N_ARQUIVOS 6
+
+typedef struct {
+    const char *alvo;
+    const char *deps[2];
+    const char *receita;
+} Regra;
+
+Regra regras[] = {
+    {"main.o", {"main.c", "util.h"}, "gcc -std=c23 -Wall -Wextra -c main.c"},
+    {"util.o", {"util.c", "util.h"}, "gcc -std=c23 -Wall -Wextra -c util.c"},
+    {"app",    {"main.o", "util.o"}, "gcc main.o util.o -o app"},
+};
+#define N_REGRAS 3
+
+int relogio = 100;
+
+int hora(const char *nome) {
+    for (int i = 0; i &lt; N_ARQUIVOS; i++) {
+        if (strcmp(arquivos[i].nome, nome) == 0) {
+            return arquivos[i].hora;
+        }
+    }
+    return 0;   // arquivo que não existe: "hora zero", mais velho que tudo
+}
+
+void touch(const char *nome) {
+    relogio++;
+    for (int i = 0; i &lt; N_ARQUIVOS; i++) {
+        if (strcmp(arquivos[i].nome, nome) == 0) {
+            arquivos[i].hora = relogio;
+        }
+    }
+}
+
+bool precisa_refazer(const Regra *r) {
+    // escreva aqui: percorra r-&gt;deps[0] e r-&gt;deps[1]
+    // e compare a hora de cada um com hora(r-&gt;alvo)
+    (void)r;   // (esta linha só cala o aviso de parâmetro não usado; pode apagar)
+    return false;
+}
+
+void make(void) {
+    bool fez_algo = false;
+    for (int i = 0; i &lt; N_REGRAS; i++) {
+        if (precisa_refazer(&amp;regras[i])) {
+            printf("%s\n", regras[i].receita);
+            touch(regras[i].alvo);
+            fez_algo = true;
+        }
+    }
+    if (!fez_algo) {
+        printf("make: 'app' está atualizado.\n");
+    }
+}
+
+int main(void) {
+    printf("$ make\n");
+    make();
+    printf("$ touch util.h\n");
+    touch("util.h");
+    printf("$ make\n");
+    make();
+    return 0;
+}
+</pre>
+<pre class="solucao" data-file="minimake.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+typedef struct {
+    const char *nome;
+    int hora;
+} Arquivo;
+
+Arquivo arquivos[] = {
+    {"main.c", 10}, {"util.c", 10}, {"util.h", 10},
+    {"main.o", 20}, {"util.o", 20}, {"app", 30},
+};
+#define N_ARQUIVOS 6
+
+typedef struct {
+    const char *alvo;
+    const char *deps[2];
+    const char *receita;
+} Regra;
+
+Regra regras[] = {
+    {"main.o", {"main.c", "util.h"}, "gcc -std=c23 -Wall -Wextra -c main.c"},
+    {"util.o", {"util.c", "util.h"}, "gcc -std=c23 -Wall -Wextra -c util.c"},
+    {"app",    {"main.o", "util.o"}, "gcc main.o util.o -o app"},
+};
+#define N_REGRAS 3
+
+int relogio = 100;
+
+int hora(const char *nome) {
+    for (int i = 0; i &lt; N_ARQUIVOS; i++) {
+        if (strcmp(arquivos[i].nome, nome) == 0) {
+            return arquivos[i].hora;
+        }
+    }
+    return 0;   // arquivo que não existe: "hora zero", mais velho que tudo
+}
+
+void touch(const char *nome) {
+    relogio++;
+    for (int i = 0; i &lt; N_ARQUIVOS; i++) {
+        if (strcmp(arquivos[i].nome, nome) == 0) {
+            arquivos[i].hora = relogio;
+        }
+    }
+}
+
+bool precisa_refazer(const Regra *r) {
+    for (int j = 0; j &lt; 2; j++) {
+        if (hora(r-&gt;deps[j]) &gt; hora(r-&gt;alvo)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void make(void) {
+    bool fez_algo = false;
+    for (int i = 0; i &lt; N_REGRAS; i++) {
+        if (precisa_refazer(&amp;regras[i])) {
+            printf("%s\n", regras[i].receita);
+            touch(regras[i].alvo);
+            fez_algo = true;
+        }
+    }
+    if (!fez_algo) {
+        printf("make: 'app' está atualizado.\n");
+    }
+}
+
+int main(void) {
+    printf("$ make\n");
+    make();
+    printf("$ touch util.h\n");
+    touch("util.h");
+    printf("$ make\n");
+    make();
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <code>make</code> lê o <code>Makefile</code> e refaz um alvo quando ele não existe ou quando um pré-requisito é <strong>mais novo</strong>. Sem argumento, faz o primeiro alvo.</li>
+  <li>Uma regra é <code>alvo: pré-requisitos</code> e, embaixo, a receita, que <strong>começa com TAB</strong>. Com espaços: <code>faltando o separador</code> (<code>missing separator</code>).</li>
+  <li>Uma regra por <code>.o</code> faz o <code>make</code> recompilar só o que mudou; <code>make -n</code> mostra o que ele faria.</li>
+  <li>Variáveis: <code>CC</code>, <code>CFLAGS</code>, <code>LDLIBS = -lm</code>. Automáticas: <code>$@</code> (alvo), <code>$&lt;</code> (primeiro pré-requisito), <code>$^</code> (todos). <code>%.o: %.c</code> vale para todos os <code>.o</code>.</li>
+  <li><code>clean</code> apaga o que foi gerado; <code>.PHONY: clean</code> diz que ele não é arquivo.</li>
+  <li>O <code>make</code> não lê os <code>#include</code>: use <code>-MMD -MP</code> e <code>-include $(DEPS)</code> para o gcc escrever as dependências dos <code>.h</code>.</li>
+  <li><code>make: *** [Makefile:N: alvo] Error 1</code> só diz onde parou; o erro de verdade está nas linhas de cima. Para projetos que compilam em vários sistemas, o próximo passo é o <a href="cmake.html">CMake</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
