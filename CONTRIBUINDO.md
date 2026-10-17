@@ -197,6 +197,9 @@ Conferido com `tools/sim.js --nativo`. **Nas metas, use o que é igual nos dois*
 | `toupper(-61)` (`char` negativo, byte de acento) | `-61` | `195` |
 | `isdigit("7")` (aspas duplas) | erro: `incompatible pointer to integer conversion` | compila **sem aviso** e cai: `Falha de segmentação`, 139 |
 | `iswalpha(L'ç')` sem `setlocale` | `1` | `0` |
+| `malloc(n)` sem `sizeof`, `free(&local)`, `free(p+1)` | passam calados (código 0) | `malloc(): corrupted top size` / `free(): invalid pointer`, 134 |
+| `realloc` que cresce o bloco | costuma ficar no mesmo endereço (esquecer de usar o ponteiro novo "funciona") | muda de lugar (o ponteiro velho mostra lixo). Para essa missão, use `src:` |
+| `realloc(p, 0)` (UB no C23) | devolve um ponteiro | devolve `NULL` |
 | Ordem de avaliação dos argumentos (não especificada pelo C) | `printf("%d %d\n", remove("b.txt"), remove("b.txt"))` dá `0 -1` (da esquerda para a direita) | dá `-1 0` (da direita para a esquerda) |
 
 Iguais nos dois: `int` com 4 bytes, `long long` com 8, `0.1 + 0.2` (`0.30000000000000004` com `%.17g`), a formatação do `printf` (`%5.2f`, `%-5d`, `%05d`, `%x`, `%o`, `%e`), `strtol`, `qsort`, as mensagens do `perror`, os códigos de saída (134, 136, 139), o estouro de `int` (`2147483647 + 1` = `-2147483648`) e a saída perdida do `printf` sem `\n` antes de um segfault.
@@ -231,7 +234,7 @@ printf '%s\n' 'mkdir -p c && cd c' "cat > ola.c <<'FIM'" '#include <stdio.h>' 'i
   - `math.h` no gcc: confira se precisa de `-lm` no seu exemplo e mostre o erro real se precisar.
 - **O ligador (`ld`) e o `make` saem em português** no laboratório (`referência não definida para "main"`); mostre a saída real e cite o inglês (`undefined reference to`), que aparece em fóruns e no editor.
 - **As mensagens do gcc saem em inglês**, com aspas tipográficas ‘assim’: copie como saíram e explique em português.
-- **Saída com buffer:** quando o programa morre (segfault), o que estava no `printf` sem `\n`… ou mesmo com `\n` mas indo para um pipe, pode **não aparecer**. Com `-i` a saída vai para um pipe (buffer cheio); com `-t` é terminal (buffer de linha). Para mostrar o que o leitor vê no terminal dele, use `-t`. Para mostrar a entrada digitada no `-t`, mande-a com atraso, senão ela não aparece na tela: `{ echo ./prog; sleep 2; echo 29; sleep 1; echo exit; } | ~/guia-c-lab/vps '~/guia-c-lab/lab -n SEUNOME -t'`.
+- **Saída com buffer:** quando o programa morre (segfault), o que estava no `printf` sem `\n`… ou mesmo com `\n` mas indo para um pipe, pode **não aparecer**. Com `-i` a saída vai para um pipe (buffer cheio); com `-t` é terminal (buffer de linha). Para mostrar o que o leitor vê no terminal dele, use `-t` (vale também antes de um `abort`, de um relatório do ASan ou do LeakSanitizer). Para mostrar a entrada digitada no `-t`, mande-a com atraso, senão ela não aparece na tela: `{ echo ./prog; sleep 2; echo 29; sleep 1; echo exit; } | ~/guia-c-lab/vps '~/guia-c-lab/lab -n SEUNOME -t'`.
 - **TAB no lab `-i`:** o readline engole o TAB que chega pelo stdin, então um Makefile escrito com heredoc fica sem TAB e dá `faltando o separador`. Escreva `@@` no começo da linha e troque depois: `sed -i 's/^@@/\t/' Makefile`. No editor, a tecla Tab insere 4 espaços: não dá para praticar Makefile numa caixa.
 - **Exercícios `.exercise`:** o site corta os espaços do começo e do fim da resposta (`data-answer=" %c"` aceita `%c`). Se o espaço importa, peça a resposta entre aspas.
 - Um processo por vez, sempre com `timeout 60`. Programas que travam rodam com `timeout 3`.
