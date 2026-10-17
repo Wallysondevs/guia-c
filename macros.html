@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Macros com Parâmetros — parênteses, # e ##, do while (0) | Guia C</title>
+<meta name="description" content="Macros com parâmetros em C para iniciantes: #define QUADRADO(x) ((x) * (x)) e o bug sem parênteses, o efeito duplo de QUADRADO(i++), os operadores # e ##, macros de várias linhas com do { } while (0), __VA_ARGS__ e quando trocar a macro por uma função inline, com saídas reais do gcc 15.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Macros com Parâmetros</span></h1>
+
+<p class="intro">Na aula <a href="preprocessador.html">Pré-processador</a>, o <code>#define</code> trocava um nome por um valor fixo: <code>PRECO</code> virava <code>12</code>. Uma macro também pode receber <strong>parâmetros</strong>, como uma função: <code>QUADRADO(4)</code> vira <code>((4) * (4))</code>. Parece uma função, mas não é. É troca de texto, e essa diferença produz alguns dos bugs mais famosos do C. Nesta aula você vai escrever macros com parâmetros, ver cada armadilha acontecer de verdade e aprender as regras que os programadores de C usam para se proteger delas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como criar uma macro com parâmetros: <code>#define QUADRADO(x) ((x) * (x))</code>.</li>
+  <li>Por que <code>QUADRADO(2+3)</code> pode dar 11, e a regra dos parênteses.</li>
+  <li>Por que <code>QUADRADO(i++)</code> soma 2 no <code>i</code> (o efeito duplo).</li>
+  <li>Os operadores <code>#</code> (transforma em texto) e <code>##</code> (cola dois pedaços).</li>
+  <li>Como escrever macros de várias linhas com <code>\</code> e por que elas usam <code>do { … } while (0)</code>.</li>
+  <li>Macros com número variável de argumentos (<code>...</code> e <code>__VA_ARGS__</code>).</li>
+  <li>Quando usar uma função <code>inline</code> em vez de uma macro.</li>
+</ul>
+</div>
+
+<p>Todos os programas desta aula foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c/macros</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. Para entender cada macro, vamos usar muito o <code>gcc -E -P</code>, que mostra o código depois do pré-processamento (veja <a href="preprocessador.html">Pré-processador</a>).</p>
+
+<hr>
+
+<h2>A ideia: um carimbo com lacuna</h2>
+<p>Pense num carimbo de papelaria escrito "<em>Pago: R$ ____</em>". Toda vez que você carimba, escreve um valor diferente na lacuna. O carimbo não confere nada: se você escrever "banana" na lacuna, o papel fica "<em>Pago: R$ banana</em>".</p>
+<p>Uma macro com parâmetro é esse carimbo. O <code>#define</code> diz o texto do carimbo, e o parâmetro é a lacuna. Onde você escreve <code>QUADRADO(4)</code>, o pré-processador carimba o texto da macro e escreve <code>4</code> em cada lacuna. Ele não calcula, não confere o tipo, não sabe o que é um número. Uma <strong>função</strong> de verdade (aula <a href="funcoes.html">Funções</a>) é diferente: ela recebe o <strong>valor</strong> já calculado, confere o tipo e roda quando o programa roda.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Macro com parâmetro</th><th>Função</th></tr>
+<tr><td>Quem cuida</td><td>o pré-processador, antes de compilar</td><td>o compilador, e ela roda com o programa</td></tr>
+<tr><td>O que recebe</td><td>o <strong>texto</strong> que você escreveu</td><td>o <strong>valor</strong> já calculado</td></tr>
+<tr><td>Confere o tipo?</td><td>não</td><td>sim</td></tr>
+<tr><td>O argumento é calculado</td><td>quantas vezes ele aparecer na macro</td><td>uma vez só</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. A primeira macro com parâmetro</h2>
+<p>A Ana quer calcular a área de mesas quadradas para a lojinha. Ela escreve uma macro que eleva um número ao quadrado:</p>
+
+<pre class="file" data-file="quadrado.c">#include &lt;stdio.h&gt;
+
+#define QUADRADO(x) x * x
+
+int main(void) {
+    printf("QUADRADO(4)   = %d\n", QUADRADO(4));
+    printf("QUADRADO(2+3) = %d\n", QUADRADO(2+3));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>QUADRADO</dt><dd>O nome da macro, em maiúsculas por costume.</dd>
+  <dt>(x)</dt><dd>A lista de parâmetros, <strong>colada</strong> no nome, sem espaço. O <code>x</code> é a lacuna do carimbo.</dd>
+  <dt>x * x</dt><dd>O texto de troca. Cada <code>x</code> será trocado pelo texto que estiver entre os parênteses na hora do uso.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra quadrado.c -o quadrado &amp;&amp; ./quadrado
+QUADRADO(4)   = 16
+QUADRADO(2+3) = 11          « 2+3 é 5, e 5 ao quadrado é 25, não 11!</pre>
+
+<p>Nenhum erro, nenhum aviso, e uma resposta errada. Este é o bug mais famoso das macros. O <code>gcc -E -P</code> mostra o motivo. Num arquivo pequeno, sem <code>#include</code>, o resultado fica curto:</p>
+
+<pre class="file" data-file="mini.c">#define QUADRADO(x) x * x
+#define QUADRADO2(x) (x) * (x)
+#define QUADRADO3(x) ((x) * (x))
+
+int a = QUADRADO(2+3);
+int b = 100 / QUADRADO2(5);
+int c = 100 / QUADRADO3(5);
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -E -P mini.c
+int a = 2+3 * 2+3;              « o texto "2+3" entrou em cada x
+int b = 100 / (5) * (5);
+int c = 100 / ((5) * (5));</pre>
+
+<p>Olhe a primeira linha. O pré-processador não calculou <code>2+3</code>: ele copiou o <strong>texto</strong> <code>2+3</code> para cada <code>x</code> e entregou <code>2+3 * 2+3</code> ao compilador. A multiplicação vem antes da soma (aula <a href="precedencia.html">Precedência</a>), então a conta é <code>2 + 6 + 3 = 11</code>.</p>
+
+<h3>Parênteses em cada parâmetro…</h3>
+<p>O primeiro conserto é cercar cada <code>x</code> de parênteses, como no <code>QUADRADO2</code>: <code>(2+3) * (2+3)</code> dá 25. Mas a segunda linha da saída mostra que ainda falta algo:</p>
+
+<pre class="file" data-file="meio.c">#include &lt;stdio.h&gt;
+
+#define QUADRADO(x) (x) * (x)
+
+int main(void) {
+    printf("QUADRADO(2+3)     = %d\n", QUADRADO(2+3));
+    printf("100 / QUADRADO(5) = %d\n", 100 / QUADRADO(5));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra meio.c -o meio &amp;&amp; ./meio
+QUADRADO(2+3)     = 25
+100 / QUADRADO(5) = 100          « 5 ao quadrado é 25, e 100 / 25 é 4!</pre>
+
+<p>O texto virou <code>100 / (5) * (5)</code>. Divisão e multiplicação têm a mesma força e são feitas da esquerda para a direita: <code>100 / 5 = 20</code>, depois <code>20 * 5 = 100</code>.</p>
+
+<h3>…e em volta da macro inteira</h3>
+<pre class="file" data-file="certo.c">#include &lt;stdio.h&gt;
+
+#define QUADRADO(x) ((x) * (x))
+
+int main(void) {
+    printf("QUADRADO(2+3)     = %d\n", QUADRADO(2+3));
+    printf("100 / QUADRADO(5) = %d\n", 100 / QUADRADO(5));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra certo.c -o certo &amp;&amp; ./certo
+QUADRADO(2+3)     = 25
+100 / QUADRADO(5) = 4</pre>
+
+<div class="tip">
+<strong>A regra dos parênteses.</strong> Numa macro que calcula um valor, ponha parênteses em volta de <strong>cada uso de cada parâmetro</strong> e em volta do <strong>texto inteiro</strong>: <code>((x) * (x))</code>, <code>((a) + (b))</code>. Os de dentro protegem contra o que entra; os de fora protegem contra o que está em volta. Parece exagero, e é de propósito.
+</div>
+
+<div class="tryc" data-goal="out:QUADRADO(2+3) = 25,out:100 / QUADRADO(5) = 4,src:#define\s+QUADRADO\(x\)">
+<p class="try-task"><strong>Missão:</strong> rode e veja os dois resultados errados. Depois conserte <strong>só a linha do <code>#define</code></strong>, com a regra dos parênteses, até aparecer 25 e 4.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define QUADRADO(x) x * x
+
+int main(void) {
+    printf("QUADRADO(2+3) = %d\n", QUADRADO(2+3));
+    printf("100 / QUADRADO(5) = %d\n", 100 / QUADRADO(5));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+#define QUADRADO(x) ((x) * (x))
+
+int main(void) {
+    printf("QUADRADO(2+3) = %d\n", QUADRADO(2+3));
+    printf("100 / QUADRADO(5) = %d\n", 100 / QUADRADO(5));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. O efeito duplo: o argumento roda duas vezes</h2>
+<p>Os parênteses resolvem a conta, mas não resolvem tudo. Na macro <code>((x) * (x))</code>, o <code>x</code> aparece <strong>duas vezes</strong>. Então o que você escrever ali será copiado, e executado, duas vezes. Com um número, tanto faz. Com algo que <strong>muda</strong> uma variável, não:</p>
+
+<pre class="file" data-file="duplo.c">#include &lt;stdio.h&gt;
+
+#define QUADRADO(x) ((x) * (x))
+
+int main(void) {
+    int i = 3;
+    int q = QUADRADO(i++);
+    printf("q = %d, i = %d\n", q, i);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra duplo.c -o duplo &amp;&amp; ./duplo
+duplo.c: In function ‘main’:
+duplo.c:7:23: warning: operation on ‘i’ may be undefined [-Wsequence-point]
+    7 |     int q = QUADRADO(i++);
+      |                       ^
+duplo.c:3:29: note: in definition of macro ‘QUADRADO’
+    3 | #define QUADRADO(x) ((x) * (x))
+      |                             ^
+q = 12, i = 5          « era para ser q = 9 e i = 4</pre>
+
+<p>A linha 7 virou <code>int q = ((i++) * (i++));</code>. O <code>i++</code> (aula <a href="incremento.html">++ e --</a>) aparece duas vezes, então o <code>i</code> subiu duas vezes: de 3 para 5. E pior: mudar a mesma variável duas vezes na mesma conta é <strong>comportamento indefinido</strong> em C (aula <a href="comportamento-indefinido.html">Comportamento Indefinido</a>): a norma não diz qual resultado sai. O gcc deu 12; outro compilador pode dar outra coisa. Por isso o aviso: "a operação em <code>i</code> pode ser indefinida". O Clang do editor avisa a mesma coisa com outras palavras: <code>multiple unsequenced modifications to 'i'</code>.</p>
+
+<p>Mesmo sem <code>++</code>, o efeito duplo aparece com funções. A macro <code>MAIOR</code> devolve o maior de dois números, e a Ana passa a ela uma função que lê uma nota:</p>
+
+<pre class="file" data-file="maior.c">#include &lt;stdio.h&gt;
+
+#define MAIOR(a, b) ((a) &gt; (b) ? (a) : (b))
+
+int ler_nota(void) {
+    printf("  (lendo a nota...)\n");
+    return 8;
+}
+
+int main(void) {
+    int m = MAIOR(ler_nota(), 5);
+    printf("Maior: %d\n", m);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra maior.c -o maior &amp;&amp; ./maior
+  (lendo a nota...)
+  (lendo a nota...)          « a função rodou duas vezes!
+Maior: 8
+$ gcc -E -P maior.c | tail -4
+    int m = ((ler_nota()) &gt; (5) ? (ler_nota()) : (5));
+    printf("Maior: %d\n", m);
+    return 0;
+}</pre>
+
+<p>Repare: a macro tem dois parâmetros, separados por vírgula, e usa o operador ternário (aula <a href="ternario.html">Operador Ternário</a>). Como <code>a</code> aparece duas vezes no texto, <code>ler_nota()</code> é chamada uma vez para comparar e outra para devolver o valor. Se a função lesse o teclado, a Ana teria de digitar a nota duas vezes. E desta vez <strong>nenhum aviso</strong> apareceu.</p>
+
+<div class="warning">
+<strong>Regra:</strong> nunca passe para uma macro algo que muda alguma coisa: <code>i++</code>, <code>x = 5</code>, <code>scanf(…)</code>, uma função que imprime ou lê. Passe só nomes de variáveis e contas simples. Como ninguém lembra disso o tempo todo, a solução de verdade é usar uma função (seção 6).
+</div>
+
+<hr>
+
+<h2>3. <code>#</code>: transformar o argumento em texto</h2>
+<p>Dentro de uma macro, um <code>#</code> antes do nome do parâmetro transforma o argumento em um <strong>texto entre aspas</strong>. O nome técnico é <em>stringification</em>, "transformar em string". Com isso, a Ana cria uma macro que mostra o nome da variável e o valor dela, ótima para depurar:</p>
+
+<pre class="file" data-file="mostra.c">#include &lt;stdio.h&gt;
+
+#define MOSTRA(x) printf(#x " = %d\n", x)
+
+int main(void) {
+    int cadernos = 3;
+    int preco = 12;
+    MOSTRA(cadernos);
+    MOSTRA(preco);
+    MOSTRA(cadernos * preco);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra mostra.c -o mostra &amp;&amp; ./mostra
+cadernos = 3
+preco = 12
+cadernos * preco = 36
+$ gcc -E -P mostra.c | tail -6
+    int preco = 12;
+    printf("cadernos" " = %d\n", cadernos);
+    printf("preco" " = %d\n", preco);
+    printf("cadernos * preco" " = %d\n", cadernos * preco);
+    return 0;
+}</pre>
+
+<dl class="anatomy">
+  <dt>#x</dt><dd>Vira o texto do argumento entre aspas: <code>"cadernos"</code>, <code>"cadernos * preco"</code>.</dd>
+  <dt>" = %d\n"</dt><dd>Um segundo texto, logo ao lado.</dd>
+  <dt>x</dt><dd>O argumento normal, sem <code>#</code>: vira o valor que o <code>printf</code> mostra.</dd>
+</dl>
+
+<p>E como <code>"cadernos" " = %d\n"</code> funciona no <code>printf</code>? Em C, dois textos entre aspas lado a lado, separados só por espaço, são <strong>colados</strong> pelo compilador num texto só: <code>"cadernos = %d\n"</code>. Isso vale em qualquer lugar do código, não só em macros.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode. Depois acrescente <code>MOSTRA(preco * 2);</code> e <code>MOSTRA(cadernos + 1);</code> e veja a conta aparecer escrita na saída, do jeito que você digitou.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+#define MOSTRA(x) printf(#x " = %d\n", x)
+
+int main(void) {
+    int cadernos = 3;
+    int preco = 12;
+    MOSTRA(cadernos);
+    MOSTRA(preco);
+    MOSTRA(cadernos * preco);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>4. <code>##</code>: colar dois pedaços num nome só</h2>
+<p>O <code>##</code> cola o que está à esquerda com o que está à direita, formando <strong>uma palavra só</strong>. O nome técnico é <em>token pasting</em>, "colar pedaços":</p>
+
+<pre class="file" data-file="cola.c">#include &lt;stdio.h&gt;
+
+#define PRECO(item) preco_##item
+
+int main(void) {
+    int preco_caderno = 12;
+    int preco_lapis = 2;
+    printf("Caderno: %d\n", PRECO(caderno));
+    printf("Lápis:   %d\n", PRECO(lapis));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra cola.c -o cola &amp;&amp; ./cola
+Caderno: 12
+Lápis:   2</pre>
+
+<p><code>PRECO(caderno)</code> virou <code>preco_caderno</code>, o nome da variável. Sem o <code>##</code>, <code>preco_item</code> seria uma palavra só e o <code>item</code> nem seria trocado. Você vai ver <code>##</code> em bibliotecas que geram várias funções parecidas de uma vez (uma para <code>int</code>, outra para <code>double</code>…). No dia a dia, use com moderação: um nome que só aparece depois do pré-processamento é difícil de achar com a busca do editor.</p>
+
+<hr>
+
+<h2>5. Macros de várias linhas e o <code>do { } while (0)</code></h2>
+<p>Uma diretiva termina no fim da linha. Para continuar na linha de baixo, termine a linha com uma <strong>barra invertida</strong> <code>\</code>. Ela tem de ser o último caractere da linha (nem um espaço depois).</p>
+
+<p>A Ana quer uma macro <code>VENDER</code> que mostra a venda e soma 1 no contador. São dois comandos. A primeira tentativa:</p>
+
+<pre class="file" data-file="conta_ruim.c">#include &lt;stdio.h&gt;
+
+int vendas = 0;
+#define VENDER(item) printf("Vendido: %s\n", item); vendas++
+
+int main(void) {
+    int tem_estoque = 0;
+    if (tem_estoque)
+        VENDER("caderno");
+    printf("Vendas: %d\n", vendas);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra conta_ruim.c -o conta_ruim &amp;&amp; ./conta_ruim
+conta_ruim.c: In function ‘main’:
+conta_ruim.c:4:22: warning: macro expands to multiple statements [-Wmultistatement-macros]
+    4 | #define VENDER(item) printf("Vendido: %s\n", item); vendas++
+      |                      ^~~~~~
+conta_ruim.c:9:9: note: in expansion of macro ‘VENDER’
+    9 |         VENDER("caderno");
+      |         ^~~~~~
+conta_ruim.c:8:5: note: some parts of macro expansion are not guarded by this ‘if’ clause
+    8 |     if (tem_estoque)
+      |     ^~
+Vendas: 1          « não vendeu nada, mas contou uma venda!</pre>
+
+<p>Sem estoque, nada foi vendido, mas o contador subiu. O <code>if</code> sem chaves comanda só <strong>um</strong> comando (aula <a href="if-else.html">if e else</a>). Depois da troca, o código ficou assim:</p>
+
+<pre class="file" data-file="trecho">    if (tem_estoque)
+        printf("Vendido: %s\n", "caderno");
+    vendas++;                       // fora do if: roda sempre
+</pre>
+
+<p>O gcc percebeu e avisou: "a macro se expande em vários comandos" e "algumas partes da expansão não estão protegidas por este <code>if</code>". O Clang do editor <strong>não</strong> dá esse aviso: lá, o programa simplesmente mostra <code>Vendas: 1</code>.</p>
+
+<h3>Chaves resolvem? Quase.</h3>
+<p>A ideia natural é pôr chaves em volta: <code>{ printf(…); vendas++; }</code>. Agora o bloco todo fica dentro do <code>if</code>. Mas veja o que acontece com um <code>else</code>, nesta macro que troca dois valores:</p>
+
+<pre class="file" data-file="troca_ruim.c">#include &lt;stdio.h&gt;
+
+#define TROCA(a, b) { int tmp = a; a = b; b = tmp; }
+
+int main(void) {
+    int x = 1, y = 2;
+    if (x &lt; y)
+        TROCA(x, y);
+    else
+        printf("Já estava em ordem\n");
+    printf("x = %d, y = %d\n", x, y);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra troca_ruim.c -o troca_ruim
+troca_ruim.c: In function ‘main’:
+troca_ruim.c:9:5: error: ‘else’ without a previous ‘if’
+    9 |     else
+      |     ^~~~</pre>
+
+<p>"<code>else</code> sem um <code>if</code> antes." O culpado é o <code>;</code> que você escreve depois de <code>TROCA(x, y)</code>, como em qualquer comando. O texto ficou <code>if (x &lt; y) { … } ; else</code>. O <code>if</code> termina no <code>}</code>, o <code>;</code> é um comando vazio, e o <code>else</code> fica sem par. (No editor, o Clang diz só <code>error: expected expression</code>, na mesma linha.)</p>
+
+<h3>O truque: <code>do { … } while (0)</code></h3>
+<p>Os programadores de C resolveram isso com um laço que roda <strong>exatamente uma vez</strong>. O <code>do { } while (0)</code> (aula <a href="do-while.html">do while</a>) junta vários comandos num só e <strong>exige</strong> o <code>;</code> no final, como um comando comum:</p>
+
+<pre class="file" data-file="conta_boa.c">#include &lt;stdio.h&gt;
+
+int vendas = 0;
+#define VENDER(item)                       \
+    do {                                   \
+        printf("Vendido: %s\n", item);     \
+        vendas++;                          \
+    } while (0)
+
+int main(void) {
+    int tem_estoque = 0;
+    if (tem_estoque)
+        VENDER("caderno");
+    else
+        printf("Sem estoque!\n");
+    printf("Vendas: %d\n", vendas);
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>\</dt><dd>No fim de cada linha: "a macro continua na linha de baixo". O alinhamento das barras é só para ficar bonito.</dd>
+  <dt>do {</dt><dd>Abre o bloco com os comandos da macro.</dd>
+  <dt>} while (0)</dt><dd>"Repita enquanto 0": 0 é falso, então o bloco roda uma vez e acaba. Sem <code>;</code> aqui: quem põe o <code>;</code> é quem usa a macro.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra conta_boa.c -o conta_boa &amp;&amp; ./conta_boa
+Sem estoque!
+Vendas: 0</pre>
+
+<p>Sem aviso, sem erro, e o contador certo. O texto agora é <code>if (tem_estoque) do { … } while (0); else …</code>: o <code>do … while (0);</code> é <strong>um</strong> comando, o <code>if</code> comanda tudo e o <code>else</code> encontra o seu par. O compilador some com o laço na hora de gerar o programa; ele não custa nada.</p>
+
+<h3>Macros com número variável de argumentos <span class="versao">C99</span></h3>
+<p>Uma macro pode receber "quantos argumentos vierem", com <code>...</code> na lista e <code>__VA_ARGS__</code> no texto (<em>variable arguments</em>, "argumentos variáveis"). Antes, um uso que mostra por que macros ainda existem. A Ana quer mensagens de depuração que digam a linha de onde vieram:</p>
+
+<pre class="file" data-file="log.c">#include &lt;stdio.h&gt;
+
+#define LOG(msg) fprintf(stderr, "[%s:%d] %s\n", __FILE__, __LINE__, msg)
+
+int main(void) {
+    int estoque = 2;
+    LOG("Programa começou");
+    if (estoque &lt; 5)
+        LOG("Estoque baixo!");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra log.c -o log &amp;&amp; ./log
+[log.c:7] Programa começou
+[log.c:9] Estoque baixo!</pre>
+
+<p>Cada mensagem mostra a sua própria linha, porque o <code>__LINE__</code> foi carimbado no lugar onde o <code>LOG</code> foi usado. Uma <strong>função</strong> <code>log</code> mostraria sempre a linha de dentro dela. O <code>fprintf(stderr, …)</code> escreve na saída de erros (aula <a href="stdin-stdout-stderr.html">stdin, stdout e stderr</a>).</p>
+
+<p>Para o <code>LOG</code> aceitar um formato com valores, como o <code>printf</code>, use <code>...</code>. O <code>__VA_OPT__(,)</code> <span class="versao">C23</span> põe a vírgula só quando vieram valores extras:</p>
+
+<pre class="file" data-file="logv.c">#include &lt;stdio.h&gt;
+
+#define LOG(fmt, ...) \
+    fprintf(stderr, "[%s:%d] " fmt "\n", __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
+
+int main(void) {
+    int estoque = 2;
+    LOG("Programa começou");
+    LOG("Estoque baixo: %d unidades de %s", estoque, "caderno");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra logv.c -o logv &amp;&amp; ./logv
+[logv.c:8] Programa começou
+[logv.c:9] Estoque baixo: 2 unidades de caderno</pre>
+
+<p>No segundo <code>LOG</code>, <code>fmt</code> é o texto com os <code>%</code>, e <code>__VA_ARGS__</code> é <code>estoque, "caderno"</code>. Antes do C23 não existia <code>__VA_OPT__</code>, e cada compilador tinha o seu truque (o gcc aceita <code>, ##__VA_ARGS__</code>). Com <code>-std=c17 -pedantic</code>, o gcc avisa: <code>‘__VA_OPT__’ is not available until C23</code>. Funções com número variável de argumentos de verdade têm aula própria: <a href="variadicas.html">Funções Variádicas</a>.</p>
+
+<hr>
+
+<h2>6. Macro ou função <code>inline</code>?</h2>
+<p>Quase tudo o que uma macro calcula, uma <strong>função</strong> calcula melhor. A palavra <code>inline</code> <span class="versao">C99</span> sugere ao compilador "copie o código desta função no lugar da chamada", que era a vantagem de velocidade das macros. E o <code>static</code> diz que ela é só deste arquivo (aula <a href="static-extern.html">static e extern</a>). Veja a mesma conta como função:</p>
+
+<pre class="file" data-file="inline.c">#include &lt;stdio.h&gt;
+
+static inline int quadrado(int x) {
+    return x * x;
+}
+
+int main(void) {
+    int i = 3;
+    printf("quadrado(2+3) = %d\n", quadrado(2+3));
+    int q = quadrado(i++);
+    printf("q = %d, i = %d\n", q, i);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra inline.c -o inline &amp;&amp; ./inline
+quadrado(2+3) = 25
+q = 9, i = 4</pre>
+
+<p>Sem um parêntese a mais, <code>quadrado(2+3)</code> dá 25: a função recebe o <strong>valor</strong> 5, e não o texto. E <code>quadrado(i++)</code> dá 9 com <code>i</code> valendo 4: o argumento é calculado uma vez só. A função também confere o tipo. Passe um texto para a macro e para a função e compare as mensagens:</p>
+
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra tipo.c -o tipo
+tipo.c: In function ‘main’:
+tipo.c:3:26: error: invalid operands to binary * (have ‘char *’ and ‘char *’)
+    3 | #define QUADRADO(x) ((x) * (x))
+      |                      ~   ^
+      |                      |   |
+      |                      |   char *
+      |                      char *
+tipo.c:6:20: note: in expansion of macro ‘QUADRADO’
+    6 |     printf("%d\n", QUADRADO("oi"));
+      |                    ^~~~~~~~</pre>
+
+<p>Com a macro, o erro aponta para dentro do <code>#define</code> (linha 3), com uma nota dizendo onde ela foi usada. Com a função <code>quadrado("oi")</code>, o gcc diz direto na linha da chamada: <code>passing argument 1 of ‘quadrado’ makes integer from pointer without a cast</code> ("passar o argumento 1 de <code>quadrado</code> transforma um ponteiro em inteiro"). Num programa grande, a diferença é enorme.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Use…</th><th>Quando</th></tr>
+<tr><td>Função (com <code>static inline</code> se for pequena e usada só no arquivo)</td><td>Para <strong>calcular</strong> algo: contas, comparações, conversões. É a escolha padrão.</td></tr>
+<tr><td>Macro com parâmetros</td><td>Quando precisa de algo que só o pré-processador faz: <code>#</code> (nome da variável como texto), <code>##</code>, <code>__FILE__</code>/<code>__LINE__</code> do lugar de uso, ou servir para vários tipos ao mesmo tempo (para isso o C11 também tem <a href="generic.html"><code>_Generic</code></a>).</td></tr>
+</table>
+</div>
+
+<p>Mais sobre <code>inline</code> na aula <a href="inline.html">Funções inline</a>.</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: ‘x’ undeclared</code> apontando para dentro do <code>#define</code></strong>
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra espaco.c -o espaco
+espaco.c: In function ‘main’:
+espaco.c:3:19: error: ‘x’ undeclared (first use in this function)
+    3 | #define QUADRADO (x) ((x) * (x))
+      |                   ^
+espaco.c:6:20: note: in expansion of macro ‘QUADRADO’
+    6 |     printf("%d\n", QUADRADO(4));
+      |                    ^~~~~~~~
+   «  … a mesma nota repetida …</pre>
+<p><strong>O que significa:</strong> há um <strong>espaço</strong> entre <code>QUADRADO</code> e <code>(x)</code>. Com o espaço, o pré-processador entende uma macro <strong>sem</strong> parâmetros, cujo texto é <code>(x) ((x) * (x))</code>. Aí <code>QUADRADO(4)</code> vira <code>(x) ((x) * (x))(4)</code>, e o <code>x</code> não existe.</p>
+<p><strong>Como consertar:</strong> o parêntese dos parâmetros vem <strong>colado</strong> no nome: <code>#define QUADRADO(x) …</code>. No uso, tanto faz: <code>QUADRADO (4)</code> funciona.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: macro ‘QUADRADO’ passed 2 arguments, but takes just 1</code></strong>
+<pre class="term" data-cwd="~/c/macros">$ gcc -std=c23 -Wall -Wextra args.c -o args
+args.c: In function ‘main’:
+args.c:6:33: error: macro ‘QUADRADO’ passed 2 arguments, but takes just 1
+    6 |     printf("%d\n", QUADRADO(3, 4));
+      |                                 ^
+args.c:3:9: note: macro ‘QUADRADO’ defined here
+    3 | #define QUADRADO(x) ((x) * (x))
+      |         ^~~~~~~~
+   «  … e um erro ‘QUADRADO’ undeclared, consequência do primeiro …</pre>
+<p><strong>O que significa:</strong> "a macro recebeu 2 argumentos, mas aceita só 1". A vírgula separa argumentos, como numa função.</p>
+<p><strong>Como consertar:</strong> passe o número certo de argumentos. Se o argumento precisa ter uma vírgula de verdade dentro, ponha-o entre parênteses: <code>MOSTRA((a, b))</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Resultado errado, sem erro nem aviso</strong>
+<p><strong>O que significa:</strong> quase sempre, faltam parênteses na macro (<code>QUADRADO(2+3)</code> dando 11) ou um argumento foi calculado duas vezes (uma função chamada duas vezes, como em <code>MAIOR(ler_nota(), 5)</code>).</p>
+<p><strong>Como consertar:</strong> rode <code>gcc -E -P arquivo.c</code> e leia o texto que o compilador recebeu. Aplique a regra dos parênteses. Se o argumento tem efeito (<code>++</code>, função), guarde o valor numa variável antes, ou troque a macro por uma função.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: macro expands to multiple statements</code> / <code>error: ‘else’ without a previous ‘if’</code></strong>
+<p><strong>O que significa:</strong> uma macro com vários comandos foi usada num <code>if</code> sem chaves. Sem chaves na macro, só o primeiro comando fica dentro do <code>if</code>. Com chaves mas sem <code>do … while (0)</code>, o <code>;</code> depois do uso separa o <code>if</code> do <code>else</code>.</p>
+<p><strong>Como consertar:</strong> escreva a macro como <code>do { … } while (0)</code>, sem <code>;</code> no final. E, de quebra, use sempre chaves nos seus <code>if</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>warning: backslash and newline separated by space</code></strong>
+<p><strong>O que significa:</strong> numa macro de várias linhas, há um espaço depois da <code>\</code>. O gcc avisa ("barra invertida e quebra de linha separadas por espaço") e aceita assim mesmo, mas outros compiladores podem terminar a macro ali.</p>
+<p><strong>Como consertar:</strong> apague os espaços depois da <code>\</code>. Ela tem de ser o último caractere da linha.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>#define F(x) ((x) * 2)</code></td><td>Macro com um parâmetro (parênteses colados no nome)</td></tr>
+<tr><td><code>#define F(a, b) ((a) + (b))</code></td><td>Macro com dois parâmetros</td></tr>
+<tr><td><code>#x</code></td><td>Transforma o argumento em texto: <code>MOSTRA(preco)</code> → <code>"preco"</code></td></tr>
+<tr><td><code>a##b</code></td><td>Cola dois pedaços num nome: <code>preco_##item</code> → <code>preco_caderno</code></td></tr>
+<tr><td><code>\</code> no fim da linha</td><td>A macro continua na linha de baixo</td></tr>
+<tr><td><code>do { … } while (0)</code></td><td>Junta vários comandos num só, seguro em <code>if</code>/<code>else</code></td></tr>
+<tr><td><code>#define F(fmt, ...)</code> + <code>__VA_ARGS__</code></td><td>Número variável de argumentos <span class="versao">C99</span></td></tr>
+<tr><td><code>__VA_OPT__(,)</code></td><td>Põe a vírgula só se vieram argumentos extras <span class="versao">C23</span></td></tr>
+<tr><td><code>static inline int f(int x) { … }</code></td><td>A alternativa com tipo e cálculo único</td></tr>
+<tr><td><code>gcc -E -P arquivo.c</code></td><td>Mostra o texto depois das trocas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Parênteses</h3>
+<p>Complete a macro <code>DOBRO</code> com a regra dos parênteses:</p>
+<div class="ex-code">#define DOBRO(n) <input data-answer="((n) * 2)|((n)*2)|(2 * (n))|(2*(n))" aria-label="texto da macro"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Nome como texto</h3>
+<p>Complete para que <code>NOME(idade)</code> vire o texto <code>"idade"</code>:</p>
+<div class="ex-code">#define NOME(v) <input data-answer="#v" aria-label="operador"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Com <code>#define DOBRO(n) n * 2</code>, quanto vale <code>DOBRO(1+4)</code>?</p>
+<label><input type="radio" name="q3"> 10</label>
+<label><input type="radio" name="q3"> 9, porque vira <code>1+4 * 2</code></label>
+<label><input type="radio" name="q3"> 6</label>
+<label><input type="radio" name="q3"> Não compila</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Com <code>#define MAIOR(a, b) ((a) &gt; (b) ? (a) : (b))</code>, quantas vezes <code>ler()</code> pode ser chamada em <code>MAIOR(ler(), 0)</code>?</p>
+<label><input type="radio" name="q4"> Nenhuma: macros não chamam funções</label>
+<label><input type="radio" name="q4"> Sempre uma</label>
+<label><input type="radio" name="q4"> Duas, se <code>ler()</code> devolver um número maior que 0</label>
+<label><input type="radio" name="q4"> Três</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Por que as macros de vários comandos usam <code>do { … } while (0)</code>?</p>
+<label><input type="radio" name="q5"> Para virar um comando só, que funciona dentro de <code>if</code>/<code>else</code> sem chaves e pede o <code>;</code> no fim</label>
+<label><input type="radio" name="q5"> Para os comandos rodarem várias vezes</label>
+<label><input type="radio" name="q5"> Porque o pré-processador só aceita laços</label>
+<label><input type="radio" name="q5"> Para o programa ficar mais rápido</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. A Ana quer calcular a média de duas notas. Qual é a melhor escolha?</p>
+<label><input type="radio" name="q6"> <code>#define MEDIA(a, b) a + b / 2</code></label>
+<label><input type="radio" name="q6"> <code>#define MEDIA(a, b) (a + b) / 2</code></label>
+<label><input type="radio" name="q6"> <code>#define MEDIA (a, b) (((a) + (b)) / 2)</code></label>
+<label><input type="radio" name="q6"> <code>static inline double media(double a, double b) { return (a + b) / 2; }</code></label>
+</div>
+
+<h3>Missão final: o caixa da lojinha</h3>
+
+<div class="tryc" data-goal="out:Vendido: lápis,out:Sem estoque: caderno,out:Vendas: 1,semaviso,src:while\s*\(\s*0\s*\)">
+<p class="try-task"><strong>Missão:</strong> o programa não compila: a macro <code>VENDER</code> tem dois comandos e quebra o <code>if</code>/<code>else</code>. Reescreva <strong>só a macro</strong> com <code>do { … } while (0)</code> (use <code>\</code> no fim das linhas, ou escreva tudo numa linha só). A saída deve ficar assim, sem avisos:</p>
+<pre class="out">Vendido: lápis
+Sem estoque: caderno
+Vendas: 1</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int vendas = 0;
+
+#define VENDER(item) printf("Vendido: %s\n", item); vendas++
+
+void atender(const char *item, int estoque) {
+    if (estoque &gt; 0)
+        VENDER(item);
+    else
+        printf("Sem estoque: %s\n", item);
+}
+
+int main(void) {
+    atender("lápis", 5);
+    atender("caderno", 0);
+    printf("Vendas: %d\n", vendas);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int vendas = 0;
+
+#define VENDER(item)                   \
+    do {                               \
+        printf("Vendido: %s\n", item); \
+        vendas++;                      \
+    } while (0)
+
+void atender(const char *item, int estoque) {
+    if (estoque &gt; 0)
+        VENDER(item);
+    else
+        printf("Sem estoque: %s\n", item);
+}
+
+int main(void) {
+    atender("lápis", 5);
+    atender("caderno", 0);
+    printf("Vendas: %d\n", vendas);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma macro com parâmetros (<code>#define F(x) …</code>, parêntese colado no nome) é um carimbo: o pré-processador copia o <strong>texto</strong> do argumento em cada lacuna. Não calcula e não confere o tipo.</li>
+  <li><strong>Regra dos parênteses:</strong> em volta de cada parâmetro e da macro inteira, <code>((x) * (x))</code>. Sem eles, <code>QUADRADO(2+3)</code> dá 11 e <code>100 / QUADRADO(5)</code> dá 100.</li>
+  <li><strong>Efeito duplo:</strong> o argumento roda tantas vezes quantas aparece. Nunca passe <code>i++</code> ou funções com efeito para uma macro.</li>
+  <li><code>#x</code> transforma o argumento em texto; <code>a##b</code> cola dois pedaços num nome.</li>
+  <li>Macro com vários comandos: <code>\</code> no fim das linhas e <code>do { … } while (0)</code>, sem <code>;</code> no fim.</li>
+  <li><code>...</code> e <code>__VA_ARGS__</code> (C99) aceitam vários argumentos; <code>__VA_OPT__</code> (C23) resolve a vírgula.</li>
+  <li>Para calcular, prefira uma função (<code>static inline</code>). Deixe as macros para o que só o pré-processador faz. Para enxergar qualquer macro: <code>gcc -E -P</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
