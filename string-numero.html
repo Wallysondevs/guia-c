@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Texto ↔ Número — atoi, strtol, strtod, sscanf e snprintf | Guia C</title>
+<meta name="description" content="Converter texto em número e número em texto em C, para quem nunca programou: atoi (que não detecta erro), strtol com endptr e errno (o jeito certo), bases 2, 16 e 0, strtod para números com ponto, sscanf para vários valores e snprintf para transformar números em texto, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Texto ↔ Número</span></h1>
+
+<p class="intro">Tudo o que chega do teclado, de um arquivo ou da linha de comando chega como <strong>texto</strong>. Se a Ana digita <code>12</code>, o programa recebe os caracteres <code>'1'</code> e <code>'2'</code>, e não o número doze. Para fazer contas, é preciso <strong>converter</strong> o texto em número. E, no caminho de volta, montar um código de pedido como <code>PED-00042</code> exige transformar o número em texto. Nesta aula você vai ver as ferramentas do C para as duas direções, e por que a mais famosa delas, o <code>atoi</code>, é a que você menos deve usar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que <code>"20"</code> e <code>20</code> são coisas diferentes.</li>
+  <li><code>atoi</code>: o jeito curto, que <strong>não avisa</strong> quando o texto não é um número.</li>
+  <li><code>strtol</code> com <code>endptr</code> e <code>errno</code>: o jeito certo, que detecta texto inválido, lixo depois do número e número grande demais.</li>
+  <li>Outras bases: binário, hexadecimal e a base 0.</li>
+  <li><code>strtod</code> para números com casas decimais (e o problema da vírgula).</li>
+  <li><code>sscanf</code> para tirar vários valores de uma linha, como uma data.</li>
+  <li>Número → texto com <code>snprintf</code> (e por que <code>itoa</code> não existe).</li>
+</ul>
+</div>
+
+<p>Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>. As funções de conversão moram no <code>stdlib.h</code> ("standard library", biblioteca padrão), menos o <code>sscanf</code> e o <code>snprintf</code>, que são do <code>stdio.h</code>.</p>
+
+<hr>
+
+<h2>A ideia: o desenho do número e o número</h2>
+<p>Pense numa etiqueta de preço escrita à mão: "20". Você lê e entende "vinte", mas a etiqueta é só tinta no papel, dois <strong>desenhos</strong> de algarismos. Para somar dois preços, sua cabeça converte os desenhos em quantidades, soma, e escreve o resultado com novos desenhos.</p>
+
+<p>O computador também. Na memória, a string <code>"20"</code> são os bytes 50 e 48 (os códigos de <code>'2'</code> e <code>'0'</code>) e um <code>'\0'</code>; o <code>int</code> 20 é a quantidade vinte. Com strings, o máximo que dá para fazer é colar os desenhos:</p>
+
+<pre class="file" data-file="soma.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char a[] = "20";
+    char b[] = "22";
+    printf("Como texto: %s%s\n", a, b);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra soma.c -o soma
+$ ./soma
+Como texto: 2022          « colou os desenhos, não somou</pre>
+
+<p>Para somar, converta primeiro. A tabela mostra os dois sentidos e as ferramentas desta aula:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sentido</th><th>Ferramentas</th></tr>
+<tr><td>Texto → inteiro</td><td><code>atoi</code> (curto, sem detectar erro), <code>strtol</code> (o jeito certo), <code>sscanf</code></td></tr>
+<tr><td>Texto → número com casas decimais</td><td><code>atof</code> (sem detectar erro), <code>strtod</code> (o jeito certo), <code>sscanf</code></td></tr>
+<tr><td>Número → texto</td><td><code>snprintf</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. <code>atoi</code>: curto, mas cego</h2>
+<p><code>atoi</code> = "ASCII to integer", de texto (ASCII) para inteiro. É a primeira função que todo mundo aprende:</p>
+
+<pre class="file" data-file="atoi.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    printf("atoi(\"42\")    = %d\n", atoi("42"));
+    printf("atoi(\"  -7\")  = %d\n", atoi("  -7"));
+    printf("atoi(\"12abc\") = %d\n", atoi("12abc"));
+    printf("atoi(\"abc\")   = %d\n", atoi("abc"));
+    printf("atoi(\"0\")     = %d\n", atoi("0"));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra atoi.c -o atoi
+$ ./atoi
+atoi("42")    = 42
+atoi("  -7")  = -7        « pula espaços do começo e entende o sinal
+atoi("12abc") = 12        « lê até onde dá e ignora o resto, calado
+atoi("abc")   = 0         « não é número: devolve 0…
+atoi("0")     = 0         « …e um "0" de verdade também dá 0</pre>
+
+<p>As duas últimas linhas mostram o defeito: <strong>o <code>atoi</code> não tem como avisar que deu errado</strong>. Se a Ana digitar "abc" na quantidade, o programa segue com zero unidades, como se ela tivesse digitado 0. E "12abc" vira 12 sem nenhum aviso. Pior: com um número grande demais o resultado é <strong>comportamento indefinido</strong>. No laboratório, <code>atoi("99999999999999999999")</code> deu <code>-1</code>; no editor do guia, o mesmo código deu <code>1661992959</code>.</p>
+
+<p>Use <code>atoi</code> só quando o texto <strong>com certeza</strong> é um número válido (por exemplo, um número que o seu próprio programa escreveu). Para qualquer coisa digitada por uma pessoa, use <code>strtol</code>.</p>
+
+<hr>
+
+<h2>2. <code>strtol</code>: o jeito certo</h2>
+<p><code>strtol</code> = "string to long", de texto para <code>long</code> (um inteiro, em geral maior que o <code>int</code>, aula <a href="inteiros.html">Inteiros</a>). A diferença para o <code>atoi</code> é que ele conta <strong>onde parou</strong> de ler:</p>
+
+<pre class="file" data-file="strtol.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    char texto[] = "125 reais";
+    char *fim;
+    long valor = strtol(texto, &amp;fim, 10);
+    printf("valor = %ld\n", valor);
+    printf("parou em: \"%s\"\n", fim);
+    printf("leu %d caracteres\n", (int)(fim - texto));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>char *fim;</dt><dd>Uma variável que vai guardar um <strong>lugar</strong> dentro do texto (um ponteiro, aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>). Leia como "marcador de página".</dd>
+  <dt>strtol(texto,</dt><dd>1º argumento: o texto a converter.</dd>
+  <dt>&amp;fim,</dt><dd>2º argumento: <em>endptr</em> ("ponteiro do fim"). O <code>strtol</code> põe em <code>fim</code> o lugar do <strong>primeiro caractere que ele não usou</strong>. O <code>&amp;</code> é porque a função precisa escrever na sua variável, como no <code>scanf</code>.</dd>
+  <dt>10)</dt><dd>3º argumento: a <strong>base</strong>. 10 é a base decimal de sempre (seção 3 mostra outras).</dd>
+  <dt>%ld</dt><dd>O formato de <code>long</code> no <code>printf</code> (aula <a href="formatos-printf.html">Formatos do printf</a>).</dd>
+  <dt>fim - texto</dt><dd>A distância entre o começo e onde ele parou: quantos caracteres viraram número.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra strtol.c -o strtol
+$ ./strtol
+valor = 125
+parou em: " reais"        « o resto do texto, a partir do espaço
+leu 3 caracteres</pre>
+
+<p>Com o marcador <code>fim</code>, dá para responder três perguntas que o <code>atoi</code> não responde:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Como saber</th><th>Exemplo</th></tr>
+<tr><td>Havia algum número?</td><td><code>fim == texto</code>: não andou nada, então não havia dígitos</td><td><code>"abc"</code>, <code>""</code></td></tr>
+<tr><td>Sobrou lixo depois?</td><td><code>*fim != '\0'</code>: o caractere onde parou não é o fim da string</td><td><code>"12abc"</code></td></tr>
+<tr><td>Coube no <code>long</code>?</td><td><code>errno == ERANGE</code> (precisa zerar <code>errno</code> antes)</td><td><code>"99999999999999999999"</code></td></tr>
+</table>
+</div>
+
+<p>O <code>*fim</code> (com asterisco) quer dizer "o caractere que está no lugar marcado por <code>fim</code>". E o <code>errno</code> ("error number", número do erro, do <code>errno.h</code>) é uma variável global que as funções da biblioteca usam para contar o que deu errado; <code>ERANGE</code> quer dizer "fora do intervalo" (aula <a href="errno.html">Erros do Sistema</a>).</p>
+
+<h3>Juntando tudo: ler uma quantidade com segurança</h3>
+<p>Este é o modelo para ler um número digitado: <code>fgets</code> para a linha (aula <a href="fgets.html">Ler uma Linha</a>) e <code>strtol</code> com as três conferências:</p>
+
+<pre class="file" data-file="validar.c">#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[100];
+    printf("Quantidade: ");
+    if (fgets(linha, sizeof linha, stdin) == NULL) {
+        return 1;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+
+    char *fim;
+    errno = 0;
+    long qtd = strtol(linha, &amp;fim, 10);
+
+    if (fim == linha) {
+        printf("\"%s\" não é um número.\n", linha);
+    } else if (*fim != '\0') {
+        printf("Sobrou texto depois do número: \"%s\"\n", fim);
+    } else if (errno == ERANGE) {
+        printf("Número grande demais.\n");
+    } else {
+        printf("Ok: %ld unidades.\n", qtd);
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>linha[strcspn(linha, "\n")] = '\0';</dt><dd>Tira o <code>'\n'</code> do Enter. Sem isso, o <code>'\n'</code> seria o "lixo depois do número" em toda leitura.</dd>
+  <dt>errno = 0;</dt><dd>O <code>strtol</code> só <strong>escreve</strong> no <code>errno</code> quando dá erro; ele nunca o zera. Se você não zerar antes, pode ler um erro antigo, de outra função.</dd>
+  <dt>if (fim == linha)</dt><dd>Nenhum dígito: texto vazio ou que não começa com número.</dd>
+  <dt>else if (*fim != '\0')</dt><dd>Leu um número, mas a linha não acabou ali.</dd>
+  <dt>else if (errno == ERANGE)</dt><dd>O número não cabe num <code>long</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra validar.c -o validar
+$ echo "12" | ./validar
+Quantidade: Ok: 12 unidades.
+$ echo "abc" | ./validar
+Quantidade: "abc" não é um número.
+$ echo "12abc" | ./validar
+Quantidade: Sobrou texto depois do número: "abc"
+$ echo "" | ./validar
+Quantidade: "" não é um número.
+$ echo "99999999999999999999" | ./validar
+Quantidade: Número grande demais.
+$ echo " 8" | ./validar
+Quantidade: Ok: 8 unidades.        « espaços no começo são aceitos
+$ echo "-3" | ./validar
+Quantidade: Ok: -3 unidades.       « o sinal também (confira se negativo faz sentido)
+$ echo "7 " | ./validar
+Quantidade: Sobrou texto depois do número: " "   « espaço no fim conta como sobra</pre>
+
+<p>Cada entrada errada recebeu a mensagem certa. Repare nas duas últimas: o <code>strtol</code> aceita <code>-3</code>, e uma quantidade negativa não faz sentido na lojinha. Conferir se o valor está na faixa esperada (<code>qtd &lt; 1</code>, por exemplo) é trabalho seu, depois da conversão. Se você precisa do valor num <code>int</code>, confira também se ele cabe (<code>qtd &gt;= INT_MIN &amp;&amp; qtd &lt;= INT_MAX</code>, com <code>limits.h</code>) antes de guardar. A aula <a href="validar-entrada.html">Validar a Entrada</a> transforma esse modelo numa função reutilizável.</p>
+
+<h3>O número grande demais, por dentro</h3>
+
+<pre class="file" data-file="grande.c">#include &lt;errno.h&gt;
+#include &lt;limits.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    errno = 0;
+    long n = strtol("99999999999999999999", NULL, 10);
+    printf("n = %ld\n", n);
+    printf("LONG_MAX = %ld\n", LONG_MAX);
+    printf("errno == ERANGE? %s\n", errno == ERANGE ? "sim" : "não");
+    printf("atoi: %d\n", atoi("99999999999999999999"));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra grande.c -o grande
+$ ./grande
+n = 9223372036854775807
+LONG_MAX = 9223372036854775807    « o maior long no Linux de 64 bits
+errno == ERANGE? sim
+atoi: -1                          « comportamento indefinido</pre>
+
+<p>Quando o número não cabe, o <code>strtol</code> devolve o maior valor possível (<code>LONG_MAX</code>, ou <code>LONG_MIN</code> para negativos) e põe <code>ERANGE</code> no <code>errno</code>: um resultado previsível e um aviso. O <code>NULL</code> no lugar de <code>&amp;fim</code> quer dizer "não quero saber onde parou". No editor do guia, o <code>long</code> tem 4 bytes e o mesmo programa mostra <code>2147483647</code> nas duas primeiras linhas (veja <a href="simulador.html">O Editor do Guia</a>).</p>
+
+<div class="tryc" data-goal="out:Entrada inválida,src:strtol" data-stdin="12abc">
+<p class="try-task"><strong>Missão:</strong> a Ana digitou <code>12abc</code> (já está no campo Entrada) e o programa aceitou 12 unidades. Troque o <code>atoi</code> por <code>strtol</code> com <code>&amp;fim</code> e confira se sobrou texto: nesse caso, mostre <code>Entrada inválida.</code>. Depois, teste com <code>12</code> na Entrada: tem de continuar dando <code>Ok: 12 unidades.</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[100];
+    printf("Quantidade: ");
+    if (fgets(linha, sizeof linha, stdin) == NULL) {
+        return 1;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+
+    int qtd = atoi(linha);
+    printf("Ok: %d unidades.\n", qtd);
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha[100];
+    printf("Quantidade: ");
+    if (fgets(linha, sizeof linha, stdin) == NULL) {
+        return 1;
+    }
+    linha[strcspn(linha, "\n")] = '\0';
+
+    char *fim;
+    long qtd = strtol(linha, &amp;fim, 10);
+    if (fim == linha || *fim != '\0') {
+        printf("Entrada inválida.\n");
+        return 1;
+    }
+    printf("Ok: %ld unidades.\n", qtd);
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Outras bases</h2>
+<p>O 3º argumento do <code>strtol</code> é a base. Além de 10, as mais usadas são 2 (binário), 16 (hexadecimal, com dígitos de 0 a 9 e de a a f) e a base <strong>0</strong>, que descobre a base pelo jeito como o número começa:</p>
+
+<pre class="file" data-file="bases.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    printf("\"ff\" na base 16   = %ld\n", strtol("ff", NULL, 16));
+    printf("\"1010\" na base 2  = %ld\n", strtol("1010", NULL, 2));
+    printf("\"0x1F\" na base 0  = %ld\n", strtol("0x1F", NULL, 0));
+    printf("\"017\" na base 0   = %ld\n", strtol("017", NULL, 0));
+    printf("\"017\" na base 10  = %ld\n", strtol("017", NULL, 10));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra bases.c -o bases
+$ ./bases
+"ff" na base 16   = 255
+"1010" na base 2  = 10
+"0x1F" na base 0  = 31     « começa com 0x: hexadecimal
+"017" na base 0   = 15     « começa com 0: octal (base 8)!
+"017" na base 10  = 17</pre>
+
+<div class="warning">
+<strong>A base 0 e o zero à esquerda</strong>
+<p>Na base 0, um número que começa com <code>0</code> é lido em <strong>octal</strong> (base 8), como no código C (aula <a href="inteiros.html">Inteiros</a>). Um CEP, um mês "07" ou um código "017" digitado por uma pessoa viraria outra coisa. Para números digitados por gente, use sempre a <strong>base 10</strong>.</p>
+</div>
+
+<hr>
+
+<h2>4. <code>strtod</code>: números com casas decimais</h2>
+<p><code>strtod</code> = "string to double". Funciona como o <code>strtol</code>, com o mesmo <code>&amp;fim</code> e o mesmo <code>errno</code>, mas sem a base:</p>
+
+<pre class="file" data-file="strtod.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void) {
+    char *fim;
+    double preco = strtod("4.99", &amp;fim);
+    printf("preço = %.2f (sobrou \"%s\")\n", preco, fim);
+    double virgula = strtod("4,99", &amp;fim);
+    printf("com vírgula = %.2f (sobrou \"%s\")\n", virgula, fim);
+    double cientifico = strtod("1.5e3", &amp;fim);
+    printf("1.5e3 = %.1f\n", cientifico);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra strtod.c -o strtod
+$ ./strtod
+preço = 4.99 (sobrou "")
+com vírgula = 4.00 (sobrou ",99")    « parou na vírgula!
+1.5e3 = 1500.0                       « notação científica: 1,5 × 10³</pre>
+
+<p>O C usa o <strong>ponto</strong> como separador decimal, como os Estados Unidos. Com <code>"4,99"</code>, o <code>strtod</code> leu o 4 e parou na vírgula, e o <code>fim</code> mostra isso. Num programa para brasileiros, há duas saídas simples: avisar "use ponto" quando <code>*fim</code> for uma vírgula, ou trocar a vírgula por ponto na string antes de converter (com <code>strchr</code>, aula <a href="funcoes-string.html">Funções de String</a>). Existe também o <code>atof</code> ("ASCII to float"), o <code>atoi</code> dos decimais, com o mesmo defeito: não avisa erro.</p>
+
+<hr>
+
+<h2>5. <code>sscanf</code>: vários valores de uma vez</h2>
+<p>O <code>sscanf</code> ("string scanf") é o <code>scanf</code> que lê de uma string em vez do teclado. É prático quando o texto tem um <strong>formato fixo</strong>, como uma data:</p>
+
+<pre class="file" data-file="sscanf.c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    char data[] = "17/10/2026";
+    int dia, mes, ano;
+    int lidos = sscanf(data, "%d/%d/%d", &amp;dia, &amp;mes, &amp;ano);
+    printf("lidos = %d\n", lidos);
+    printf("dia %d, mês %d, ano %d\n", dia, mes, ano);
+
+    char outra[] = "17-10-2026";
+    lidos = sscanf(outra, "%d/%d/%d", &amp;dia, &amp;mes, &amp;ano);
+    printf("com traços: lidos = %d\n", lidos);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra sscanf.c -o sscanf
+$ ./sscanf
+lidos = 3
+dia 17, mês 10, ano 2026
+com traços: lidos = 1     « leu o 17 e travou no '-', que não é '/'</pre>
+
+<dl class="anatomy">
+  <dt>sscanf(data, …)</dt><dd>O 1º argumento é a string de onde ler; o resto é igual ao <code>scanf</code> (aula <a href="scanf.html">Entrada com scanf</a>).</dd>
+  <dt>"%d/%d/%d"</dt><dd>Um número, uma barra, um número, uma barra, um número. As barras do formato precisam aparecer no texto.</dd>
+  <dt>lidos</dt><dd>Quantos valores foram lidos. Confira se é o número esperado (3): com traços, só o dia foi lido.</dd>
+</dl>
+
+<p>O <code>sscanf</code> com <code>%d</code> detecta texto que não é número (o retorno fica menor), mas <strong>não</strong> detecta número grande demais: isso é comportamento indefinido. Para um único número digitado, prefira o <code>strtol</code>; para um formato com várias partes, o <code>sscanf</code> é a ferramenta mais prática.</p>
+
+<hr>
+
+<h2>6. Número → texto: <code>snprintf</code></h2>
+<p>O caminho de volta é o <code>snprintf</code> da aula <a href="funcoes-string.html">Funções de String</a>: o <code>printf</code> que escreve num array, com limite. Todos os formatos do <code>printf</code> valem (aula <a href="formatos-printf.html">Formatos do printf</a>):</p>
+
+<pre class="file" data-file="paratexto.c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    int pedido = 42;
+    double total = 37.5;
+    char codigo[20];
+    char valor[20];
+
+    snprintf(codigo, sizeof codigo, "PED-%05d", pedido);
+    snprintf(valor, sizeof valor, "R$ %.2f", total);
+
+    printf("%s: %s\n", codigo, valor);
+    printf("O código tem %zu caracteres.\n", strlen(codigo));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>"PED-%05d"</dt><dd>O número com 5 dígitos, completando com zeros à esquerda.</dd>
+  <dt>"R$ %.2f"</dt><dd>O <code>double</code> com 2 casas decimais.</dd>
+  <dt>strlen(codigo)</dt><dd>Agora é uma string de verdade: dá para medir, comparar, copiar, guardar num arquivo.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra paratexto.c -o paratexto
+$ ./paratexto
+PED-00042: R$ 37.50
+O código tem 9 caracteres.</pre>
+
+<p>Você pode encontrar em tutoriais uma função <code>itoa</code> ("integer to ASCII"). Ela <strong>não faz parte do C</strong>: existia em alguns compiladores antigos do Windows. No gcc 15:</p>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra itoa.c -o itoa
+itoa.c: In function ‘main’:
+itoa.c:6:5: error: implicit declaration of function ‘itoa’ [-Wimplicit-function-declaration]
+    6 |     itoa(42, texto, 10);
+      |     ^~~~</pre>
+
+<p>O jeito portátil é sempre <code>snprintf(texto, sizeof texto, "%d", n);</code>. E o <code>sprintf</code> (sem o <code>n</code>) tem o mesmo problema do <code>strcpy</code>: não recebe o tamanho do array.</p>
+
+<hr>
+
+<h2>Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Um inteiro digitado por uma pessoa</td><td><code>strtol(texto, &amp;fim, 10)</code> + as três conferências</td></tr>
+<tr><td>Um número com casas decimais digitado</td><td><code>strtod(texto, &amp;fim)</code> + as mesmas conferências</td></tr>
+<tr><td>Vários valores num formato fixo (data, hora, coordenadas)</td><td><code>sscanf</code>, conferindo o retorno</td></tr>
+<tr><td>Texto que com certeza é um número válido</td><td><code>atoi</code> / <code>atof</code> servem, mas o <code>strtol</code> nunca é pior</td></tr>
+<tr><td>Número → texto</td><td><code>snprintf(dest, sizeof dest, "%d", n)</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Digitei letras e o programa aceitou como 0 (ou "12abc" virou 12)</strong>
+<p><strong>O que significa:</strong> o programa usa <code>atoi</code>, que não detecta erro.</p>
+<p><strong>Como consertar:</strong> troque por <code>strtol(texto, &amp;fim, 10)</code> e confira <code>fim == texto</code> (nenhum dígito) e <code>*fim != '\0'</code> (sobrou texto).</p>
+</div>
+
+<div class="cenario">
+<strong>Todo número digitado dá "sobrou texto depois do número"</strong>
+<p><strong>O que significa:</strong> a linha veio do <code>fgets</code> com o <code>'\n'</code> no fim, e o <code>strtol</code> parou nele.</p>
+<p><strong>Como consertar:</strong> tire o <code>'\n'</code> antes de converter: <code>linha[strcspn(linha, "\n")] = '\0';</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>errno</code> diz <code>ERANGE</code> para um número pequeno</strong>
+<p><strong>O que significa:</strong> o <code>errno</code> tinha um erro antigo de outra função; o <code>strtol</code> não o zera quando dá certo.</p>
+<p><strong>Como consertar:</strong> escreva <code>errno = 0;</code> logo antes do <code>strtol</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>"4,99"</code> virou <code>4.00</code></strong>
+<p><strong>O que significa:</strong> o <code>strtod</code> só entende ponto; parou na vírgula.</p>
+<p><strong>Como consertar:</strong> confira <code>*fim</code>; avise para usar ponto ou troque a vírgula por ponto antes de converter.</p>
+</div>
+
+<div class="cenario">
+<strong><code>"08"</code> ou <code>"017"</code> virou outro número (ou parou no meio)</strong>
+<p><strong>O que significa:</strong> você usou a base 0, que lê números com zero à esquerda em octal (<code>"017"</code> = 15; em <code>"08"</code>, o 8 nem é dígito octal).</p>
+<p><strong>Como consertar:</strong> use a base 10.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘itoa’</code></strong>
+<p><strong>O que significa:</strong> <code>itoa</code> não existe no C padrão.</p>
+<p><strong>Como consertar:</strong> <code>snprintf(texto, sizeof texto, "%d", n);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: implicit declaration of function ‘strtol’</code> (ou <code>‘atoi’</code>)</strong>
+<p><strong>O que significa:</strong> faltou o <code>#include &lt;stdlib.h&gt;</code>. Para <code>errno</code> e <code>ERANGE</code>, falta o <code>#include &lt;errno.h&gt;</code>.</p>
+<p><strong>Como consertar:</strong> acrescente os includes no topo.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Nome em inglês</th><th>Cabeçalho</th><th>Converte</th><th>Detecta erro?</th></tr>
+<tr><td><code>atoi(s)</code></td><td>ASCII to integer</td><td><code>stdlib.h</code></td><td>texto → <code>int</code></td><td>Não (devolve 0; estouro é indefinido)</td></tr>
+<tr><td><code>atol(s)</code></td><td>ASCII to long</td><td><code>stdlib.h</code></td><td>texto → <code>long</code></td><td>Não</td></tr>
+<tr><td><code>atof(s)</code></td><td>ASCII to float</td><td><code>stdlib.h</code></td><td>texto → <code>double</code></td><td>Não</td></tr>
+<tr><td><code>strtol(s, &amp;fim, base)</code></td><td>string to long</td><td><code>stdlib.h</code></td><td>texto → <code>long</code></td><td>Sim: <code>fim</code> e <code>errno == ERANGE</code></td></tr>
+<tr><td><code>strtoll(s, &amp;fim, base)</code></td><td>string to long long</td><td><code>stdlib.h</code></td><td>texto → <code>long long</code></td><td>Sim</td></tr>
+<tr><td><code>strtoul(s, &amp;fim, base)</code></td><td>string to unsigned long</td><td><code>stdlib.h</code></td><td>texto → <code>unsigned long</code></td><td>Sim (mas aceita "-1"!)</td></tr>
+<tr><td><code>strtod(s, &amp;fim)</code></td><td>string to double</td><td><code>stdlib.h</code></td><td>texto → <code>double</code></td><td>Sim</td></tr>
+<tr><td><code>sscanf(s, "%d", &amp;n)</code></td><td>string scan formatted</td><td><code>stdio.h</code></td><td>texto → vários</td><td>Em parte: retorno conta os lidos; estouro é indefinido</td></tr>
+<tr><td><code>snprintf(d, sizeof d, "%d", n)</code></td><td>string n print formatted</td><td><code>stdio.h</code></td><td>número → texto</td><td>Retorno: tamanho que o texto teria</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A base certa</h3>
+<p>Complete para converter um texto digitado por uma pessoa:</p>
+<div class="ex-code">long n = strtol(texto, &amp;fim, <input data-answer="10" aria-label="base">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Nenhum dígito</h3>
+<p>Complete a condição que é verdadeira quando o texto não tinha nenhum número:</p>
+<div class="ex-code">if (fim <input data-answer="==" aria-label="operador"> texto)</div>
+</div>
+
+<div class="exercise">
+<h3>3. Número para texto</h3>
+<p>Complete para guardar o número <code>n</code> como texto em <code>s</code>:</p>
+<div class="ex-code"><input data-answer="snprintf" aria-label="função">(s, sizeof s, "%d", n);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Quanto vale <code>atoi("abc")</code>?</p>
+<label><input type="radio" name="q4"> -1</label>
+<label><input type="radio" name="q4"> Dá erro de compilação</label>
+<label><input type="radio" name="q4"> 0, sem nenhum aviso</label>
+<label><input type="radio" name="q4"> O programa para com uma mensagem</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Depois de <code>strtol("30kg", &amp;fim, 10)</code>, o que <code>printf("%s", fim)</code> mostra?</p>
+<label><input type="radio" name="q5"> <code>30kg</code></label>
+<label><input type="radio" name="q5"> <code>kg</code></label>
+<label><input type="radio" name="q5"> <code>30</code></label>
+<label><input type="radio" name="q5"> Nada</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Por que escrever <code>errno = 0;</code> antes do <code>strtol</code>?</p>
+<label><input type="radio" name="q6"> Senão o <code>strtol</code> não funciona</label>
+<label><input type="radio" name="q6"> Para o número começar do zero</label>
+<label><input type="radio" name="q6"> O compilador exige</label>
+<label><input type="radio" name="q6"> Porque o <code>strtol</code> não zera o <code>errno</code> quando dá certo: sobraria um erro antigo</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. O que <code>strtod("2,5", &amp;fim)</code> devolve?</p>
+<label><input type="radio" name="q7"> 2.0, e <code>fim</code> aponta para <code>",5"</code></label>
+<label><input type="radio" name="q7"> 2.5</label>
+<label><input type="radio" name="q7"> 25.0</label>
+<label><input type="radio" name="q7"> 0.0</label>
+</div>
+
+<h3>Missão final: o recibo da lojinha</h3>
+
+<div class="tryc" data-goal="out:3 x R$ 2.50 = R$ 7.50,out:Recibo com 21 caracteres,src:strtol,src:strtod,src:snprintf,semaviso" data-stdin="3\n2.50">
+<p class="try-task"><strong>Missão:</strong> a Ana digita a quantidade (<code>3</code>) e o preço unitário (<code>2.50</code>), uma linha cada (já estão no campo Entrada). Converta a quantidade com <code>strtol</code> e o preço com <code>strtod</code>, calcule o total e monte o recibo numa string com <code>snprintf</code>, no formato <code>"%ld x R$ %.2f = R$ %.2f"</code>. Mostre o recibo e quantos caracteres ele tem. Sem avisos.</p>
+<pre class="out">3 x R$ 2.50 = R$ 7.50
+Recibo com 21 caracteres</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha_qtd[50];
+    char linha_preco[50];
+    char recibo[60] = "";
+
+    if (fgets(linha_qtd, sizeof linha_qtd, stdin) == NULL ||
+        fgets(linha_preco, sizeof linha_preco, stdin) == NULL) {
+        return 1;
+    }
+
+    // converta, calcule e monte o recibo aqui
+
+    printf("%s\n", recibo);
+    printf("Recibo com %zu caracteres\n", strlen(recibo));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char linha_qtd[50];
+    char linha_preco[50];
+    char recibo[60] = "";
+
+    if (fgets(linha_qtd, sizeof linha_qtd, stdin) == NULL ||
+        fgets(linha_preco, sizeof linha_preco, stdin) == NULL) {
+        return 1;
+    }
+
+    long qtd = strtol(linha_qtd, NULL, 10);
+    double preco = strtod(linha_preco, NULL);
+    double total = qtd * preco;
+    snprintf(recibo, sizeof recibo, "%ld x R$ %.2f = R$ %.2f", qtd, preco, total);
+
+    printf("%s\n", recibo);
+    printf("Recibo com %zu caracteres\n", strlen(recibo));
+    return 0;
+}
+</pre>
+</div>
+
+<p>Aqui o <code>NULL</code> no lugar de <code>&amp;fim</code> deixa a solução curta, e o <code>'\n'</code> no fim das linhas não atrapalha porque nada é conferido. Num programa de verdade, use o modelo da seção 2 com as três conferências. O <code>recibo</code> começa como string vazia (<code>= ""</code>) para o programa inicial não mostrar lixo.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Texto que parece número (<code>"20"</code>) não é número: é preciso converter para fazer contas.</li>
+  <li><code>atoi</code> é curto, mas devolve 0 para texto inválido, ignora lixo depois do número e tem resultado indefinido para números grandes. Só para texto que com certeza é válido.</li>
+  <li><code>strtol(texto, &amp;fim, 10)</code> é o jeito certo: <code>fim == texto</code> (nenhum dígito), <code>*fim != '\0'</code> (sobrou texto), <code>errno == ERANGE</code> (grande demais, com <code>errno = 0</code> antes). Tire o <code>'\n'</code> do <code>fgets</code> antes.</li>
+  <li>Use base 10 para números digitados; a base 0 lê <code>"017"</code> como octal.</li>
+  <li><code>strtod</code> converte decimais e só entende ponto. <code>sscanf</code> tira vários valores de um formato fixo; confira o retorno.</li>
+  <li>Número → texto: <code>snprintf(dest, sizeof dest, "%d", n)</code>. <code>itoa</code> não existe no C padrão.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
