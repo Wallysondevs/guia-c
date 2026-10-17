@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Ponteiros para Funções — int (*op)(int, int), callbacks e qsort | Guia C</title>
+<meta name="description" content="Ponteiros para funções em C para quem está começando: declarar int (*op)(int, int), escolher a operação de uma calculadora, passar uma função para outra (callback), um menu com array de ponteiros de função, o qsort e o typedef que deixa tudo legível, com saídas reais do gcc 15 e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<style>
+svg.mem{display:block;width:100%;height:auto;margin:0 auto}
+svg.mem text{font-family:"Ubuntu Mono",ui-monospace,Menlo,Consolas,monospace;font-size:15px;fill:var(--text)}
+svg.mem .nome{font-weight:bold;font-size:17px}
+svg.mem .tipo,svg.mem .end{fill:var(--muted);font-size:13px}
+svg.mem .caixa{fill:var(--code-bg);stroke:var(--border);stroke-width:2}
+svg.mem .ptr{stroke:var(--accent)}
+svg.mem .alvo{stroke:var(--ok)}
+svg.mem .regiao{fill:none;stroke:var(--border);stroke-dasharray:5 4}
+svg.mem .seta{stroke:var(--accent);stroke-width:2;fill:none}
+svg.mem .ponta{fill:var(--accent)}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>C <span class="hl">Ponteiros para Funções</span></h1>
+
+<p class="intro">Você já sabe que variáveis moram em endereços. As <strong>funções</strong> também: as instruções de cada função ficam guardadas na memória do programa, e o nome da função é, no fundo, o endereço onde elas começam. Um <strong>ponteiro para função</strong> guarda esse endereço, e com ele você pode <strong>escolher qual função chamar enquanto o programa roda</strong>: a operação de uma calculadora, a ação de um item de menu, o critério de uma ordenação. É assim que o <code>qsort</code> da biblioteca padrão ordena qualquer coisa.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como declarar um ponteiro para função (<code>int (*op)(int, int)</code>) e por que os parênteses são obrigatórios.</li>
+  <li>Como guardar uma função nele e chamá-la: <code>op = somar;</code> e <code>op(6, 3)</code>.</li>
+  <li>Como escolher a operação de uma calculadora durante a execução.</li>
+  <li>Como passar uma função para outra função (o <strong>callback</strong>), como faz o <code>qsort</code>.</li>
+  <li>Como montar um menu com um <strong>array de ponteiros de função</strong>.</li>
+  <li>Como o <code>typedef</code> deixa esses tipos legíveis.</li>
+  <li>Os erros reais: tipo de função incompatível, parênteses esquecidos, chamar no lugar de apontar e chamar um ponteiro nulo.</li>
+</ul>
+</div>
+
+<p>Esta aula supõe que você já leu <a href="funcoes.html">Funções</a> e <a href="ponteiros.html">Ponteiros</a>. Todos os programas foram compilados com o <strong>gcc 15.2</strong> na máquina fictícia da Ana (usuária <code>ana</code>, computador <code>notebook</code>), na pasta <code>~/c</code>, com o comando padrão do guia: <code>gcc -std=c23 -Wall -Wextra arquivo.c -o programa</code>.</p>
+
+<hr>
+
+<h2>A ideia: o botão programável</h2>
+<p>O controle remoto da TV da Ana tem um botão com uma estrela, o "favorito". Ele não faz nada de fábrica: a Ana escolhe o que ele faz. Hoje ele abre o canal de esportes; amanhã ela reprograma e ele passa a abrir o aplicativo de música. O botão é sempre o mesmo, mas a <strong>ação</strong> guardada nele muda.</p>
+<p>Um ponteiro para função é esse botão. Você guarda nele "qual função rodar" e, quando aperta (chama o ponteiro), roda a função que estiver guardada naquele momento.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No controle remoto</th><th>Em C</th></tr>
+<tr><td>As ações possíveis (canal de esportes, música…)</td><td>As funções: <code>somar</code>, <code>multiplicar</code>…</td></tr>
+<tr><td>O botão favorito</td><td>O ponteiro: <code>op</code></td></tr>
+<tr><td>Programar o botão</td><td><code>op = somar;</code></td></tr>
+<tr><td>Apertar o botão</td><td><code>op(6, 3)</code></td></tr>
+<tr><td>O botão só aceita ações "de TV"</td><td>O ponteiro só aceita funções com os mesmos parâmetros e o mesmo retorno</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Declarar, guardar e chamar</h2>
+
+<pre class="file" data-file="pf1.c">#include &lt;stdio.h&gt;
+
+int somar(int a, int b) {
+    return a + b;
+}
+
+int multiplicar(int a, int b) {
+    return a * b;
+}
+
+int main(void) {
+    int (*op)(int, int);
+
+    op = somar;
+    printf("op(6, 3) = %d\n", op(6, 3));
+
+    op = multiplicar;
+    printf("op(6, 3) = %d\n", op(6, 3));
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pf1.c -o pf1
+$ ./pf1
+op(6, 3) = 9             « op guardava somar
+op(6, 3) = 18            « a mesma linha, agora com multiplicar</pre>
+
+<p>A mesma chamada <code>op(6, 3)</code> deu dois resultados, porque a função guardada em <code>op</code> mudou entre uma e outra. Agora, a parte que assusta todo mundo, a declaração:</p>
+
+<figure>
+<div class="table-wrap">
+<table class="ref">
+<tr><th><code>int</code></th><th><code>(*op)</code></th><th><code>(int, int)</code></th><th><code>;</code></th></tr>
+<tr><td>o que a função <strong>devolve</strong></td><td><code>op</code> é um <strong>ponteiro</strong></td><td>os <strong>parâmetros</strong> que a função recebe</td><td>fim</td></tr>
+</table>
+</div>
+<figcaption>Leia de dentro para fora, começando pelo nome: "<code>op</code> é um ponteiro (<code>*op</code>) para uma função que recebe dois <code>int</code> (<code>(int, int)</code>) e devolve <code>int</code>".</figcaption>
+</figure>
+
+<dl class="anatomy">
+  <dt>int (*op)(int, int);</dt><dd>É a mesma "forma" do protótipo <code>int somar(int a, int b);</code>, com <code>(*op)</code> no lugar do nome. Os nomes dos parâmetros podem ficar de fora.</dd>
+  <dt>(*op)</dt><dd>Os parênteses são <strong>obrigatórios</strong>. Sem eles, <code>int *op(int, int);</code> declara uma <strong>função</strong> chamada <code>op</code> que devolve <code>int *</code>. É o erro mais comum deste assunto (veja "Quando dá errado").</dd>
+  <dt>op = somar;</dt><dd>O nome de uma função, <strong>sem parênteses</strong>, é o endereço dela. Com parênteses (<code>somar(6, 3)</code>) você estaria chamando a função e guardando o resultado, 9, o que não é um endereço.</dd>
+  <dt>op(6, 3)</dt><dd>Chama a função para onde <code>op</code> aponta, como se <code>op</code> fosse o nome dela.</dd>
+</dl>
+
+<div class="note">
+<strong>Escritas equivalentes</strong>
+<p><code>op = somar;</code> e <code>op = &amp;somar;</code> fazem o mesmo; <code>op(6, 3)</code> e <code>(*op)(6, 3)</code> também. Código antigo usa muito o <code>(*op)(…)</code> para deixar claro que <code>op</code> é um ponteiro. Quer uma prova de que <code>&amp;somar</code> e <code>somar</code> são a mesma coisa? Compare os dois com <code>==</code>, e o próprio gcc avisa: <code>warning: self-comparison always evaluates to true</code> ("comparar uma coisa consigo mesma sempre dá verdadeiro").</p>
+</div>
+
+<h3>Onde as funções moram</h3>
+<p>Para ver os endereços, dá para mostrar a função com <code>%p</code>, convertendo para <code>(void *)</code>:</p>
+
+<pre class="file" data-file="ondemora.c">#include &lt;stdio.h&gt;
+
+int somar(int a, int b)       { return a + b; }
+int multiplicar(int a, int b) { return a * b; }
+
+int main(void) {
+    int (*op)(int, int) = somar;
+    printf("somar       mora em %p\n", (void *)somar);
+    printf("multiplicar mora em %p\n", (void *)multiplicar);
+    printf("op guarda           %p\n", (void *)op);
+    printf("op mora em          %p\n", (void *)&amp;op);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ondemora.c -o ondemora
+$ ./ondemora
+somar       mora em 0x56f0e9d1c169       « na região do código do programa
+multiplicar mora em 0x56f0e9d1c181       « 0x18 (24) bytes depois: o tamanho das instruções de somar
+op guarda           0x56f0e9d1c169       « o endereço de somar
+op mora em          0x7ffdaf0af500       « o próprio op é uma variável local, na pilha</pre>
+
+<figure>
+<svg class="mem" viewBox="0 0 660 200" style="max-width:660px" role="img" aria-label="op, na pilha, guarda o endereço de somar, que fica na região do código">
+<defs><marker id="pf-seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="ponta" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+<rect class="regiao" x="10" y="10" width="220" height="170" rx="8"/>
+<text class="tipo" x="120" y="32" text-anchor="middle">pilha (variáveis locais)</text>
+<text class="nome" x="120" y="70" text-anchor="middle">op</text>
+<text class="tipo" x="120" y="86" text-anchor="middle">int (*)(int, int)</text>
+<rect class="caixa ptr" x="40" y="96" width="160" height="44" rx="6"/>
+<text x="120" y="123" text-anchor="middle">0x56f0e9d1c169</text>
+<text class="end" x="120" y="162" text-anchor="middle">mora em …af500</text>
+<line class="seta" x1="202" y1="118" x2="318" y2="76" marker-end="url(#pf-seta)"/>
+<rect class="regiao" x="300" y="10" width="350" height="170" rx="8"/>
+<text class="tipo" x="475" y="32" text-anchor="middle">código do programa (instruções)</text>
+<rect class="caixa alvo" x="330" y="50" width="300" height="50" rx="6"/>
+<text class="nome" x="345" y="72">somar</text>
+<text class="end" x="345" y="90">…c169: return a + b;</text>
+<rect class="caixa" x="330" y="112" width="300" height="50" rx="6"/>
+<text class="nome" x="345" y="134">multiplicar</text>
+<text class="end" x="345" y="152">…c181: return a * b;</text>
+</svg>
+<figcaption>O ponteiro para função é uma variável como outra qualquer (mora na pilha), mas o endereço guardado nele aponta para a região do <strong>código</strong>, onde ficam as instruções das funções. A aula <a href="pilha-heap.html">Pilha e Heap</a> mostra o mapa completo.</figcaption>
+</figure>
+
+<p>Dois detalhes honestos sobre esse programa. Primeiro, o padrão do C não garante que um endereço de função caiba num <code>void *</code>; no Linux cabe, mas com <code>-pedantic</code> o gcc avisa: <code>ISO C forbids conversion of function pointer to object pointer type</code> ("o C padrão proíbe converter ponteiro de função em ponteiro de dado"). Use isso só para curiosidade. Segundo, no <strong>editor do guia</strong> a saída é bem diferente: <code>somar mora em 0x1</code>, <code>multiplicar mora em 0x2</code>. No WebAssembly, as funções ficam numa tabela separada da memória e o "endereço" é só a posição nessa tabela. A ideia continua a mesma: um número que identifica a função.</p>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode. Depois crie uma função <code>int maior(int a, int b)</code> que devolve o maior dos dois números, guarde-a em <code>op</code> e mostre <code>op(6, 3)</code> mais uma vez.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int somar(int a, int b) {
+    return a + b;
+}
+
+int multiplicar(int a, int b) {
+    return a * b;
+}
+
+int main(void) {
+    int (*op)(int, int);
+
+    op = somar;
+    printf("op(6, 3) = %d\n", op(6, 3));
+
+    op = multiplicar;
+    printf("op(6, 3) = %d\n", op(6, 3));
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Escolher a operação: uma calculadora</h2>
+<p>A vantagem aparece quando a função é escolhida <strong>durante a execução</strong>, a partir do que o usuário digitou. A calculadora da Ana lê uma conta como <code>6 * 3</code>, escolhe a função uma vez e depois chama <code>op</code> sem precisar saber qual é:</p>
+
+<pre class="file" data-file="calc.c">#include &lt;stdio.h&gt;
+
+int somar(int a, int b)       { return a + b; }
+int subtrair(int a, int b)    { return a - b; }
+int multiplicar(int a, int b) { return a * b; }
+
+int main(void) {
+    int a = 0, b = 0;
+    char sinal = ' ';
+    printf("Conta (ex.: 6 + 3): ");
+    if (scanf("%d %c %d", &amp;a, &amp;sinal, &amp;b) != 3) {
+        printf("Não entendi a conta.\n");
+        return 1;
+    }
+
+    int (*op)(int, int) = NULL;
+    if (sinal == '+') {
+        op = somar;
+    } else if (sinal == '-') {
+        op = subtrair;
+    } else if (sinal == '*') {
+        op = multiplicar;
+    }
+
+    if (op == NULL) {
+        printf("Não conheço a operação '%c'.\n", sinal);
+        return 1;
+    }
+    printf("%d %c %d = %d\n", a, sinal, b, op(a, b));
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>scanf("%d %c %d", …)</dt><dd>Lê um número, um caractere (o sinal) e outro número. O espaço antes do <code>%c</code> pula os espaços digitados. Conferir o retorno (3 itens lidos) é a regra do guia (aula <a href="scanf.html">Entrada com scanf</a>).</dd>
+  <dt>int (*op)(int, int) = NULL;</dt><dd>O ponteiro começa <strong>nulo</strong>: "nenhuma função escolhida ainda". Toda variável nasce com valor, e ponteiros também.</dd>
+  <dt>op = somar;</dt><dd>Cada <code>if</code> só <strong>escolhe</strong>; ninguém faz conta ainda.</dd>
+  <dt>if (op == NULL)</dt><dd>Se o sinal não era conhecido, <code>op</code> continua nulo. Chamar um ponteiro nulo derruba o programa, então a conferência é obrigatória.</dd>
+  <dt>op(a, b)</dt><dd>Uma linha só faz a conta, qualquer que seja a operação.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra calc.c -o calc
+$ ./calc
+Conta (ex.: 6 + 3): 6 * 3
+6 * 3 = 18
+$ ./calc
+Conta (ex.: 6 + 3): 10 - 4
+10 - 4 = 6
+$ ./calc
+Conta (ex.: 6 + 3): 8 / 2
+Não conheço a operação '/'.</pre>
+
+<p>"Mas um <code>if</code> que já fizesse a conta não daria no mesmo?" Neste programa pequeno, quase. A diferença aparece quando a escolha é feita num lugar e o uso em outro: a função escolhida pode ser guardada, passada para outras funções, colocada num array. As próximas seções mostram isso.</p>
+
+<div class="tryc" data-goal="out:8 / 2 = 4" data-stdin="8 / 2">
+<p class="try-task"><strong>Missão:</strong> ensine a calculadora a dividir. Crie a função <code>int dividir(int a, int b)</code> (com <code>return a / b;</code>) e acrescente um <code>else if</code> que a escolha quando o sinal for <code>'/'</code>. A entrada <code>8 / 2</code> já está preparada; a saída deve terminar com <code>8 / 2 = 4</code>.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+int somar(int a, int b)       { return a + b; }
+int subtrair(int a, int b)    { return a - b; }
+int multiplicar(int a, int b) { return a * b; }
+
+int main(void) {
+    int a = 0, b = 0;
+    char sinal = ' ';
+    printf("Conta (ex.: 6 + 3): ");
+    if (scanf("%d %c %d", &amp;a, &amp;sinal, &amp;b) != 3) {
+        printf("Não entendi a conta.\n");
+        return 1;
+    }
+
+    int (*op)(int, int) = NULL;
+    if (sinal == '+') {
+        op = somar;
+    } else if (sinal == '-') {
+        op = subtrair;
+    } else if (sinal == '*') {
+        op = multiplicar;
+    }
+
+    if (op == NULL) {
+        printf("Não conheço a operação '%c'.\n", sinal);
+        return 1;
+    }
+    printf("%d %c %d = %d\n", a, sinal, b, op(a, b));
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+
+int somar(int a, int b)       { return a + b; }
+int subtrair(int a, int b)    { return a - b; }
+int multiplicar(int a, int b) { return a * b; }
+int dividir(int a, int b)     { return a / b; }
+
+int main(void) {
+    int a = 0, b = 0;
+    char sinal = ' ';
+    printf("Conta (ex.: 6 + 3): ");
+    if (scanf("%d %c %d", &amp;a, &amp;sinal, &amp;b) != 3) {
+        printf("Não entendi a conta.\n");
+        return 1;
+    }
+
+    int (*op)(int, int) = NULL;
+    if (sinal == '+') {
+        op = somar;
+    } else if (sinal == '-') {
+        op = subtrair;
+    } else if (sinal == '*') {
+        op = multiplicar;
+    } else if (sinal == '/') {
+        op = dividir;
+    }
+
+    if (op == NULL) {
+        printf("Não conheço a operação '%c'.\n", sinal);
+        return 1;
+    }
+    printf("%d %c %d = %d\n", a, sinal, b, op(a, b));
+    return 0;
+}
+</pre>
+</div>
+
+<p>Depois de cumprir a missão, troque o que está no campo <strong>Entrada</strong> por <code>8 / 0</code>, rode de novo e veja o programa morrer com <code>Exceção de ponto flutuante</code>: divisão inteira por zero. Uma calculadora de verdade conferiria o <code>b</code> antes (aula <a href="operadores-aritmeticos.html">Operadores Aritméticos</a>).</p>
+
+<hr>
+
+<h2>3. Passar uma função para outra: o callback</h2>
+<p>Um ponteiro para função pode ser <strong>parâmetro</strong>. Assim, quem chama decide uma parte do trabalho da função chamada. A função <code>aplicar</code> abaixo percorre um array e aplica em cada item "alguma transformação", que ela recebe pronta:</p>
+
+<pre class="file" data-file="aplicar.c">#include &lt;stdio.h&gt;
+
+int dobro(int x)    { return x * 2; }
+int quadrado(int x) { return x * x; }
+
+void aplicar(int *v, int n, int (*f)(int)) {
+    for (int i = 0; i &lt; n; i++) {
+        v[i] = f(v[i]);
+    }
+}
+
+void mostrar(const int *v, int n) {
+    for (int i = 0; i &lt; n; i++) {
+        printf("%d ", v[i]);
+    }
+    printf("\n");
+}
+
+int main(void) {
+    int pontos[4] = {1, 2, 3, 4};
+    aplicar(pontos, 4, dobro);
+    mostrar(pontos, 4);
+    aplicar(pontos, 4, quadrado);
+    mostrar(pontos, 4);
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra aplicar.c -o aplicar
+$ ./aplicar
+2 4 6 8                  « cada ponto dobrou
+4 16 36 64               « e depois foi ao quadrado</pre>
+
+<dl class="anatomy">
+  <dt>int (*f)(int)</dt><dd>O terceiro parâmetro de <code>aplicar</code> é um ponteiro para uma função que recebe um <code>int</code> e devolve um <code>int</code>.</dd>
+  <dt>v[i] = f(v[i]);</dt><dd><code>aplicar</code> não sabe se está dobrando, elevando ao quadrado ou outra coisa. Ela só chama <code>f</code>.</dd>
+  <dt>aplicar(pontos, 4, dobro)</dt><dd>Passa a função <code>dobro</code> (sem parênteses!) como argumento.</dd>
+</dl>
+
+<p>Uma função passada para outra, que a chama "de volta" na hora certa, se chama <strong>callback</strong> ("chamar de volta"). É como deixar seu número com a pizzaria: você não fica ligando para perguntar se a pizza saiu; eles <em>chamam de volta</em> quando estiver pronta.</p>
+
+<h3>O callback mais famoso: <code>qsort</code></h3>
+<p>A biblioteca padrão tem uma função de ordenação, <code>qsort</code> ("quick sort", ordenação rápida), que ordena arrays de <strong>qualquer</strong> tipo. Como ela não sabe comparar seus dados (números? nomes? fichas de alunos?), você entrega uma função que compara dois itens:</p>
+
+<pre class="file" data-file="ordena.c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int comparar(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    if (x &lt; y) return -1;
+    if (x &gt; y) return 1;
+    return 0;
+}
+
+int main(void) {
+    int notas[] = {7, 3, 10, 5, 9};
+    size_t n = sizeof notas / sizeof notas[0];
+
+    qsort(notas, n, sizeof notas[0], comparar);
+
+    printf("Notas:");
+    for (size_t i = 0; i &lt; n; i++) {
+        printf(" %d", notas[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra ordena.c -o ordena
+$ ./ordena
+Notas: 3 5 7 9 10</pre>
+
+<dl class="anatomy">
+  <dt>qsort(notas, n, sizeof notas[0], comparar)</dt><dd>O array, quantos itens, o tamanho de cada item e a função que compara. O protótipo é <code>void qsort(void *base, size_t n, size_t tamanho, int (*comparar)(const void *, const void *))</code>: o último parâmetro é um ponteiro para função.</dd>
+  <dt>const void *a, const void *b</dt><dd>O <code>qsort</code> entrega os endereços de dois itens como <code>void *</code>, porque não sabe o tipo deles (aula <a href="void-ponteiro.html">Ponteiro void*</a>). A sua função converte para o tipo certo.</dd>
+  <dt>return -1 / 1 / 0</dt><dd>A regra do <code>qsort</code>: negativo se <code>a</code> vem antes, positivo se <code>a</code> vem depois, zero se tanto faz.</dd>
+</dl>
+
+<p>Repare que <strong>você nunca chama <code>comparar</code></strong>. Quem chama é o <code>qsort</code>, quantas vezes precisar, durante a ordenação. Os detalhes (ordenar nomes, structs, critérios de desempate) estão em <a href="ordenacao.html">Ordenação (qsort)</a>, e o <code>bsearch</code>, que usa a mesma ideia para procurar, em <a href="busca.html">Busca</a>.</p>
+
+<div class="tip">
+<strong>Por que não <code>return x - y;</code>?</strong>
+<p>Muita gente escreve a comparação como <code>return x - y;</code>. Funciona com notas pequenas, mas com números grandes a subtração pode estourar o <code>int</code> e dar o sinal errado. As duas comparações com <code>&lt;</code> e <code>&gt;</code> nunca estouram.</p>
+</div>
+
+<hr>
+
+<h2>4. Um array de ponteiros de função: o menu</h2>
+<p>Ponteiros para funções podem ir para um <strong>array</strong>, como qualquer outro valor. Com isso, um menu vira uma tabela: o número escolhido é o índice, e o item do array é a ação.</p>
+
+<pre class="file" data-file="menu.c">#include &lt;stdio.h&gt;
+
+void novo_jogo(void)  { printf("Começando um jogo novo...\n"); }
+void carregar(void)   { printf("Carregando o jogo salvo...\n"); }
+void recordes(void)   { printf("Recorde: Ana, 1200 pontos\n"); }
+
+int main(void) {
+    void (*acoes[])(void) = {novo_jogo, carregar, recordes};
+    const char *nomes[] = {"Novo jogo", "Carregar", "Recordes"};
+    int total = sizeof acoes / sizeof acoes[0];
+
+    for (int i = 0; i &lt; total; i++) {
+        printf("%d) %s\n", i + 1, nomes[i]);
+    }
+    printf("Escolha: ");
+
+    int escolha = 0;
+    if (scanf("%d", &amp;escolha) != 1 || escolha &lt; 1 || escolha &gt; total) {
+        printf("Opção inválida.\n");
+        return 1;
+    }
+    acoes[escolha - 1]();
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>void (*acoes[])(void)</dt><dd>Leia a partir do nome: <code>acoes</code> é um array (<code>[]</code>) de ponteiros (<code>*</code>) para funções sem parâmetros (<code>(void)</code>) que não devolvem nada (<code>void</code>). O tamanho sai da lista entre chaves: 3.</dd>
+  <dt>{novo_jogo, carregar, recordes}</dt><dd>Os endereços das três funções, na ordem do menu.</dd>
+  <dt>sizeof acoes / sizeof acoes[0]</dt><dd>Quantos itens o array tem (veja <a href="arrays.html">Arrays</a>). Se você acrescentar uma função na lista, o menu cresce sozinho.</dd>
+  <dt>escolha &lt; 1 || escolha &gt; total</dt><dd>Conferência <strong>obrigatória</strong>: um índice fora do array pegaria um "endereço" qualquer da memória e o programa pularia para lá.</dd>
+  <dt>acoes[escolha - 1]()</dt><dd>Pega o ponteiro na posição escolhida (o menu começa em 1, o array em 0) e chama a função. Os <code>()</code> no fim são a chamada.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra menu.c -o menu
+$ ./menu
+1) Novo jogo
+2) Carregar
+3) Recordes
+Escolha: 3
+Recorde: Ana, 1200 pontos
+$ ./menu
+1) Novo jogo
+2) Carregar
+3) Recordes
+Escolha: 7
+Opção inválida.</pre>
+
+<figure>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Índice</th><th>Nome no menu</th><th>O que <code>acoes[i]</code> guarda</th><th><code>acoes[i]()</code> faz</th></tr>
+<tr><td>0</td><td>1) Novo jogo</td><td>endereço de <code>novo_jogo</code></td><td>Começando um jogo novo...</td></tr>
+<tr><td>1</td><td>2) Carregar</td><td>endereço de <code>carregar</code></td><td>Carregando o jogo salvo...</td></tr>
+<tr><td>2</td><td>3) Recordes</td><td>endereço de <code>recordes</code></td><td>Recorde: Ana, 1200 pontos</td></tr>
+</table>
+</div>
+<figcaption>O menu como tabela. Sem ponteiros de função, seria um <code>switch</code> com um <code>case</code> por opção; com o array, acrescentar uma opção é acrescentar uma linha na lista.</figcaption>
+</figure>
+
+<div class="tryc">
+<p class="try-task"><strong>Experimente:</strong> rode e digite um número quando o programa pedir. Depois crie uma função <code>void sair(void)</code> que mostre <code>Até logo!</code> e acrescente-a ao fim dos dois arrays (<code>acoes</code> e <code>nomes</code>): o menu ganha a opção 4 sem você mexer em mais nada.</p>
+<pre class="script">#include &lt;stdio.h&gt;
+
+void novo_jogo(void)  { printf("Começando um jogo novo...\n"); }
+void carregar(void)   { printf("Carregando o jogo salvo...\n"); }
+void recordes(void)   { printf("Recorde: Ana, 1200 pontos\n"); }
+
+int main(void) {
+    void (*acoes[])(void) = {novo_jogo, carregar, recordes};
+    const char *nomes[] = {"Novo jogo", "Carregar", "Recordes"};
+    int total = sizeof acoes / sizeof acoes[0];
+
+    for (int i = 0; i &lt; total; i++) {
+        printf("%d) %s\n", i + 1, nomes[i]);
+    }
+    printf("Escolha: ");
+
+    int escolha = 0;
+    if (scanf("%d", &amp;escolha) != 1 || escolha &lt; 1 || escolha &gt; total) {
+        printf("Opção inválida.\n");
+        return 1;
+    }
+    acoes[escolha - 1]();
+    return 0;
+}
+</pre>
+</div>
+
+<hr>
+
+<h2>5. <code>typedef</code>: dando um nome ao tipo</h2>
+<p>Declarações como <code>void (*acoes[])(void)</code> são difíceis de ler, e ficam piores quando uma função <strong>devolve</strong> um ponteiro para função. Veja uma função <code>escolher</code> que recebe o sinal e devolve a operação, escrita sem ajuda:</p>
+
+<pre class="file" data-file="semtypedef.c">int (*escolher(char sinal))(int, int) {
+    if (sinal == '+') return somar;
+    if (sinal == '-') return subtrair;
+    return NULL;
+}
+</pre>
+
+<p>Compila, funciona, e quase ninguém consegue ler: "<code>escolher</code> é uma função que recebe um <code>char</code> e devolve um ponteiro para função que recebe dois <code>int</code> e devolve <code>int</code>". O <code>typedef</code> (aula <a href="typedef.html">typedef</a>) dá um <strong>nome</strong> a esse tipo, e daí em diante você usa o nome:</p>
+
+<pre class="file" data-file="typedef.c">#include &lt;stdio.h&gt;
+
+typedef int (*Operacao)(int, int);
+
+int somar(int a, int b)       { return a + b; }
+int subtrair(int a, int b)    { return a - b; }
+int multiplicar(int a, int b) { return a * b; }
+
+Operacao escolher(char sinal) {
+    switch (sinal) {
+        case '+': return somar;
+        case '-': return subtrair;
+        case '*': return multiplicar;
+        default:  return NULL;
+    }
+}
+
+int main(void) {
+    const char *contas = "+-*/";
+    for (const char *s = contas; *s != '\0'; s++) {
+        Operacao op = escolher(*s);
+        if (op == NULL) {
+            printf("8 %c 2: operação desconhecida\n", *s);
+        } else {
+            printf("8 %c 2 = %d\n", *s, op(8, 2));
+        }
+    }
+    return 0;
+}
+</pre>
+
+<dl class="anatomy">
+  <dt>typedef int (*Operacao)(int, int);</dt><dd>Escreva a declaração do ponteiro como se fosse uma variável e ponha <code>typedef</code> na frente: o "nome da variável" (<code>Operacao</code>) vira o <strong>nome do tipo</strong>.</dd>
+  <dt>Operacao escolher(char sinal)</dt><dd>Agora sim, se lê de primeira: "<code>escolher</code> devolve uma <code>Operacao</code>".</dd>
+  <dt>Operacao op = escolher(*s);</dt><dd>Uma variável do tipo <code>Operacao</code>, como <code>int x</code>.</dd>
+  <dt>"+-*/"</dt><dd>Uma string usada como lista de sinais; o laço anda por ela com um ponteiro até o <code>'\0'</code> (aula <a href="ponteiros-strings.html">Ponteiros e Strings</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra typedef.c -o typedef
+$ ./typedef
+8 + 2 = 10
+8 - 2 = 6
+8 * 2 = 16
+8 / 2: operação desconhecida</pre>
+
+<p>Com o <code>typedef</code>, o menu da seção 4 também fica mais claro: <code>typedef void (*Acao)(void);</code> e depois <code>Acao acoes[] = {novo_jogo, carregar, recordes};</code>.</p>
+
+<div class="note">
+<strong>Outro estilo: <code>typedef</code> do tipo da função</strong>
+<p>Também dá para dar nome ao tipo da <strong>função</strong> (sem o asterisco) e escrever o <code>*</code> na hora de usar: <code>typedef int Operacao(int, int);</code> e depois <code>Operacao *op = somar;</code>. Alguns projetos preferem assim porque o <code>*</code> fica à vista e ninguém esquece que <code>op</code> é um ponteiro. As duas formas estão certas; escolha uma e use sempre a mesma.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Prefira</th></tr>
+<tr><td>A escolha é simples e a função é usada uma vez, ali mesmo</td><td>Um <code>if</code>/<code>switch</code> que chama a função direto. Ponteiro de função seria complicação sem ganho.</td></tr>
+<tr><td>A função é escolhida num lugar e usada em outro (ou várias vezes)</td><td>Uma variável ponteiro para função, iniciada com <code>NULL</code></td></tr>
+<tr><td>Uma função precisa de um "pedaço de comportamento" que quem chama decide (ordenar, filtrar, transformar)</td><td>Um parâmetro ponteiro para função (callback), como o <code>qsort</code></td></tr>
+<tr><td>Muitas opções numeradas (menu, comandos, estados de um jogo)</td><td>Um array de ponteiros de função, com conferência do índice</td></tr>
+<tr><td>O tipo aparece mais de uma vez ou tem mais de um par de parênteses</td><td><code>typedef</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>error: initialization of ‘int (*)(int,  int)’ from incompatible pointer type ‘int (*)(int)’</code></strong>
+<pre class="file" data-file="pfe1.c">int somar(int a, int b) { return a + b; }
+int dobro(int x)        { return x * 2; }
+…
+    int (*op)(int, int) = dobro;
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pfe1.c -o pfe1
+pfe1.c: In function ‘main’:
+pfe1.c:7:27: error: initialization of ‘int (*)(int,  int)’ from incompatible pointer type ‘int (*)(int)’ [-Wincompatible-pointer-types]
+    7 |     int (*op)(int, int) = dobro;
+      |                           ^~~~~
+pfe1.c:4:5: note: ‘dobro’ declared here
+    4 | int dobro(int x)        { return x * 2; }
+      |     ^~~~~</pre>
+<p><strong>O que significa:</strong> o ponteiro espera uma função com <strong>dois</strong> <code>int</code> (<code>int (*)(int, int)</code> é o jeito de escrever esse tipo sem nome), e <code>dobro</code> recebe um só. Desde o gcc 14 isso é erro (antes era aviso, e o programa chamava a função com os argumentos errados). O Clang do editor diz <code>incompatible function pointer types initializing 'int (*)(int, int)' with an expression of type 'int (int)'</code>.</p>
+<p><strong>Como consertar:</strong> a função guardada tem de ter exatamente os mesmos parâmetros e o mesmo retorno do ponteiro. Ou ajuste a função, ou declare o ponteiro com o tipo dela (<code>int (*f)(int)</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: function ‘op’ is initialized like a variable</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pfe2.c -o pfe2
+pfe2.c: In function ‘main’:
+pfe2.c:6:5: error: function ‘op’ is initialized like a variable
+    6 |     int *op(int, int) = somar;
+      |     ^~~</pre>
+<p><strong>O que significa:</strong> faltaram os parênteses em volta de <code>*op</code>. Sem eles, <code>int *op(int, int)</code> é o protótipo de uma <strong>função</strong> <code>op</code> que devolve <code>int *</code>, e função não pode receber valor com <code>=</code>: "a função <code>op</code> está sendo inicializada como uma variável". O Clang diz <code>illegal initializer (only variables can be initialized)</code>.</p>
+<p><strong>Como consertar:</strong> <code>int (*op)(int, int) = somar;</code>. Os parênteses "grudam" o <code>*</code> no nome.</p>
+</div>
+
+<div class="cenario">
+<strong><code>error: assignment to ‘int (*)(int,  int)’ from ‘int’ makes pointer from integer without a cast</code></strong>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pfe3.c -o pfe3
+pfe3.c: In function ‘main’:
+pfe3.c:7:8: error: assignment to ‘int (*)(int,  int)’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
+    7 |     op = somar(6, 3);
+      |        ^</pre>
+<p><strong>O que significa:</strong> <code>somar(6, 3)</code> <strong>chama</strong> a função e dá 9, um <code>int</code>. Você tentou guardar o número 9 num ponteiro para função.</p>
+<p><strong>Como consertar:</strong> para guardar a função, escreva o nome <strong>sem parênteses</strong>: <code>op = somar;</code>. Os parênteses e os argumentos ficam para a hora de chamar: <code>op(6, 3)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Falha de segmentação (imagem do núcleo gravada)</code> ao chamar o ponteiro</strong>
+<pre class="file" data-file="pfe4.c">    int (*op)(int, int) = NULL;
+    printf("Vou chamar op...\n");
+    printf("%d\n", op(6, 3));
+</pre>
+<pre class="term" data-cwd="~/c">$ gcc -std=c23 -Wall -Wextra pfe4.c -o pfe4
+$ ./pfe4
+Vou chamar op...
+Falha de segmentação     (imagem do núcleo gravada) ./pfe4</pre>
+<p><strong>O que significa:</strong> o programa tentou pular para o endereço zero para rodar "a função" que está lá, e não há função nenhuma. Compilou sem aviso, porque o compilador não sabe o que <code>op</code> vai valer. No editor do guia acontece o mesmo: <code>Falha de segmentação (imagem do núcleo gravada)</code>, código 139.</p>
+<p><strong>Como consertar:</strong> antes de chamar um ponteiro que pode estar vazio, confira: <code>if (op != NULL) …</code>. Num array de ações, confira o índice antes de usá-lo.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que é</th></tr>
+<tr><td><code>int (*op)(int, int);</code></td><td>Ponteiro para função que recebe dois <code>int</code> e devolve <code>int</code></td></tr>
+<tr><td><code>int *op(int, int);</code></td><td>Cuidado: é uma <strong>função</strong> que devolve <code>int *</code></td></tr>
+<tr><td><code>op = somar;</code> / <code>op = &amp;somar;</code></td><td>Guarda a função (as duas formas são iguais)</td></tr>
+<tr><td><code>op(6, 3)</code> / <code>(*op)(6, 3)</code></td><td>Chama a função guardada (iguais)</td></tr>
+<tr><td><code>int (*op)(int, int) = NULL;</code></td><td>Começa sem função; confira com <code>if (op != NULL)</code> antes de chamar</td></tr>
+<tr><td><code>void f(int (*g)(int))</code></td><td>Função que recebe outra função (callback)</td></tr>
+<tr><td><code>void (*acoes[])(void) = {a, b, c};</code></td><td>Array de ponteiros de função</td></tr>
+<tr><td><code>acoes[i]()</code></td><td>Chama a função da posição <code>i</code></td></tr>
+<tr><td><code>typedef int (*Operacao)(int, int);</code></td><td>Dá o nome <code>Operacao</code> ao tipo do ponteiro</td></tr>
+<tr><td><code>qsort(v, n, sizeof v[0], comparar);</code></td><td>Ordena com a sua função de comparação (<code>stdlib.h</code>)</td></tr>
+<tr><td><code>int comparar(const void *a, const void *b)</code></td><td>A forma que o <code>qsort</code> exige: negativo, zero ou positivo</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Declarar</h3>
+<p>Complete para declarar <code>f</code>, um ponteiro para função que recebe um <code>double</code> e devolve <code>double</code>:</p>
+<div class="ex-code">double <input data-answer="(*f)" aria-label="declarador">(double);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Guardar a função</h3>
+<p>Complete para que <code>op</code> passe a apontar para a função <code>subtrair</code>:</p>
+<div class="ex-code">op = <input data-answer="subtrair|&amp;subtrair" aria-label="valor">;</div>
+</div>
+
+<div class="exercise">
+<h3>3. typedef</h3>
+<p>Complete para dar o nome <code>Acao</code> ao tipo "ponteiro para função sem parâmetros que não devolve nada":</p>
+<div class="ex-code">typedef void <input data-answer="(*Acao)" aria-label="declarador">(void);</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que declara <code>int *f(int);</code>?</p>
+<label><input type="radio" name="q4"> Um ponteiro para função que recebe <code>int</code> e devolve <code>int</code></label>
+<label><input type="radio" name="q4"> Uma função <code>f</code> que recebe <code>int</code> e devolve <code>int *</code></label>
+<label><input type="radio" name="q4"> Um array de ponteiros</label>
+<label><input type="radio" name="q4"> Nada: é erro de sintaxe</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. No <code>qsort(notas, n, sizeof notas[0], comparar)</code>, quem chama a função <code>comparar</code>?</p>
+<label><input type="radio" name="q5"> O <code>main</code>, antes de chamar o <code>qsort</code></label>
+<label><input type="radio" name="q5"> Ninguém: ela só é usada para descobrir o tipo</label>
+<label><input type="radio" name="q5"> O compilador, durante a compilação</label>
+<label><input type="radio" name="q5"> O próprio <code>qsort</code>, várias vezes, enquanto ordena</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Num menu com <code>acoes[escolha - 1]()</code>, por que conferir se <code>escolha</code> está entre 1 e o total?</p>
+<label><input type="radio" name="q6"> Porque um índice fora do array pegaria um valor qualquer da memória e o programa tentaria rodar uma "função" que não existe</label>
+<label><input type="radio" name="q6"> Porque senão não compila</label>
+<label><input type="radio" name="q6"> Porque o <code>scanf</code> só lê números de 1 a 9</label>
+<label><input type="radio" name="q6"> Não precisa: o C confere os índices sozinho</label>
+</div>
+
+<h3>Missão final: ranking do maior para o menor</h3>
+
+<div class="tryc" data-goal="out:Notas: 10 9 7 5 3,src:qsort\s*\(">
+<p class="try-task"><strong>Missão:</strong> o programa ordena as notas da turma da Ana do <strong>menor para o maior</strong>. Para o ranking, ela quer do <strong>maior para o menor</strong>. Mude só a função <code>comparar</code> (o <code>qsort</code> fica como está). Dica: basta inverter o que ela devolve. A saída deve ser:</p>
+<pre class="out">Notas: 10 9 7 5 3</pre>
+<pre class="script">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int comparar(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    if (x &lt; y) return -1;
+    if (x &gt; y) return 1;
+    return 0;
+}
+
+int main(void) {
+    int notas[] = {7, 3, 10, 5, 9};
+    size_t n = sizeof notas / sizeof notas[0];
+
+    qsort(notas, n, sizeof notas[0], comparar);
+
+    printf("Notas:");
+    for (size_t i = 0; i &lt; n; i++) {
+        printf(" %d", notas[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+<pre class="solucao">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int comparar(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    if (x &gt; y) return -1;
+    if (x &lt; y) return 1;
+    return 0;
+}
+
+int main(void) {
+    int notas[] = {7, 3, 10, 5, 9};
+    size_t n = sizeof notas / sizeof notas[0];
+
+    qsort(notas, n, sizeof notas[0], comparar);
+
+    printf("Notas:");
+    for (size_t i = 0; i &lt; n; i++) {
+        printf(" %d", notas[i]);
+    }
+    printf("\n");
+    return 0;
+}
+</pre>
+</div>
+
+<p>Quer ir além? Mantenha as duas funções, <code>crescente</code> e <code>decrescente</code>, e escolha qual passar ao <code>qsort</code> com um ponteiro <code>int (*criterio)(const void *, const void *)</code>. É o mesmo truque da calculadora, agora decidindo a ordem.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Funções moram na memória; o nome de uma função, sem parênteses, é o endereço dela.</li>
+  <li><code>int (*op)(int, int);</code> declara um ponteiro para função; os parênteses em <code>(*op)</code> são obrigatórios (<code>int *op(int, int)</code> seria uma função que devolve <code>int *</code>).</li>
+  <li>Guarde com <code>op = somar;</code> e chame com <code>op(6, 3)</code>. O tipo da função guardada tem de bater exatamente com o do ponteiro (desde o gcc 14, é erro se não bater).</li>
+  <li>Comece com <code>NULL</code> e confira antes de chamar: chamar um ponteiro nulo dá falha de segmentação.</li>
+  <li>Passar uma função como parâmetro é um <strong>callback</strong>; o <code>qsort</code> recebe a sua função de comparação e a chama quando precisa.</li>
+  <li>Um array de ponteiros de função transforma um menu numa tabela (confira o índice!).</li>
+  <li><code>typedef int (*Operacao)(int, int);</code> dá nome ao tipo e deixa as declarações legíveis.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
